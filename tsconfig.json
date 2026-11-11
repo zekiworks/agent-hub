@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "packages/protocol/src/**/*.ts",
+    "packages/server/src/**/*.ts",
+    "packages/server/ui/**/*.ts",
+    "packages/server/scripts/**/*.ts",
+    "packages/cli/src/**/*.ts",
+    "packages/client/src/**/*.ts",
+    "packages/omp-extension/src/**/*.ts",
+    "packages/pi-extension/src/**/*.ts",
+    "packages/antigravity-plugin/src/**/*.ts",
+    "packages/antigravity-plugin/scripts/**/*.ts",
+    "packages/claude-plugin/src/**/*.ts",
+    "packages/claude-plugin/scripts/**/*.ts",
+    "packages/codex-plugin/src/**/*.ts",
+    "packages/codex-plugin/scripts/**/*.ts",
+    "tests/**/*.ts"
+  ]
+}
