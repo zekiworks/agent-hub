@@ -183,7 +183,7 @@ test("delivers like the composer: idle starts a turn, busy queues a follow-up, a
   const beta = await rawAgent("beta");
 
   const { message: standup } = await post({ from: "carol", to: "@all", text: "standup in 5" });
-  const sent = `${new Date(standup.createdAt).toISOString().slice(0, 16).replace("T", " ")}Z`;
+  const sent = new Date(standup.createdAt).toISOString().slice(0, 16).replace("T", " "); // tests run in UTC (setup.ts)
   expect(await alpha.injectedWith("standup in 5")).toEqual({
     via: "user",
     content: `[message-bus] #1 @carol → @all · ${sent}\nstandup in 5\n(Reply only if they need something from you: message-bus reply, message_id 1 → @all.)`,

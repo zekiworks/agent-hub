@@ -121,9 +121,14 @@ export function describeReceipts(receipts: readonly Receipt[]): string {
     .join("; ");
 }
 
-/** `2026-11-03 17:59Z`: minute precision, UTC. */
-export function formatUtc(ts: number): string {
-  return `${new Date(ts).toISOString().slice(0, 16).replace("T", " ")}Z`;
+/**
+ * `2026-11-03 18:59`: minute precision, in the local time of the machine that formats it (each harness for what its
+ * agent reads, the bus's host for its own notices). No zone is written: the team's machines share one.
+ */
+export function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const two = (n: number): string => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
 }
 
 /**
@@ -135,11 +140,11 @@ export function provenanceMark(verified: boolean | undefined): string {
 }
 
 /**
- * First line of the text a harness injects for delivery `seq`, with the UTC time it was written. Harnesses
+ * First line of the text a harness injects for delivery `seq`, with the local time it was written. Harnesses
  * find it again in what goes to the model to report the message as seen (by "#<seq> @", which the mark follows).
  */
 export function deliveryHeader(seq: number, from: string, where: string, createdAt: number, verified?: boolean): string {
-  return `[message-bus] #${seq} @${from}${provenanceMark(verified)} → ${where} · ${formatUtc(createdAt)}`;
+  return `[message-bus] #${seq} @${from}${provenanceMark(verified)} → ${where} · ${formatTime(createdAt)}`;
 }
 
 /** Message seqs whose delivery headers appear in `text`. */

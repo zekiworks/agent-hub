@@ -5,7 +5,7 @@
 import { realpathSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { defangHeaders, deliveryHeader, describeReceipts, formatAddress, formatUtc, provenanceMark, quoteLine } from "../../protocol/src/address";
+import { defangHeaders, deliveryHeader, describeReceipts, formatAddress, formatTime, provenanceMark, quoteLine } from "../../protocol/src/address";
 import type { Reservation, ReservationResponse, Resource, ResourcesResponse } from "../../protocol/src/resources";
 import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptFrame } from "../../protocol/src/types";
 import type { BusConnection, Delivery } from "./connection";
@@ -79,7 +79,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   { name: "reservation", type: "string", description: "a reservation id, r_… (release, extend, mode)" },
   { name: "hours", type: "number", description: "how long (reserve) or how much longer from now (extend), at most 48" },
   { name: "amount", type: "number", description: "part of the resource (GPUs: GB of memory; services: slots); omit for all of it (reserve)" },
-  { name: "start", type: "string", description: 'reserve: omit for now, a UTC time ("2026-11-10 14:00Z"), or "next" to queue until it is free' },
+  { name: "start", type: "string", description: 'reserve: omit for now, a time ("2026-11-10 14:00"), or "next" to queue until it is free' },
   { name: "purpose", type: "string", description: "one line: what it is for (reserve)" },
   { name: "mode", type: "string", enum: ["shared", "private"], description: '"shared" (default: others may send requests to your servers) or "private" (reserve, mode)' },
 ];
@@ -207,7 +207,7 @@ const READ_BUDGET_CHARS = 30_000;
  */
 export function formatReadMessage(message: Message, conversation: Conversation | undefined, maxText: number, savedFiles: string[] = []): string {
   const where = !conversation ? message.conversationId : conversation.kind === "all" ? "@all" : formatAddress(conversation.members);
-  const lines = [`#${message.seq} @${message.from}${provenanceMark(message.verified)} → ${where} · ${formatUtc(message.createdAt)}`];
+  const lines = [`#${message.seq} @${message.from}${provenanceMark(message.verified)} → ${where} · ${formatTime(message.createdAt)}`];
   if (message.quote) lines.push(quoteLine(message.quote));
   if (message.text) {
     const text =
@@ -228,7 +228,7 @@ export function formatSearchHit(message: Message, conversation: Conversation | u
   const start = Math.max(0, at - 80);
   const snippet = `${start > 0 ? "…" : ""}${flat.slice(start, start + 200)}${start + 200 < flat.length ? "…" : ""}`;
   const files = message.files.length > 0 ? ` [${message.files.map((f) => f.name).join(", ")}]` : "";
-  return `#${message.seq} · ${formatUtc(message.createdAt)} · @${message.from} → ${where}: ${defangHeaders(snippet) || "(no text)"}${files}`;
+  return `#${message.seq} · ${formatTime(message.createdAt)} · @${message.from} → ${where}: ${defangHeaders(snippet) || "(no text)"}${files}`;
 }
 
 /** Joins entries newest-last within the budget, dropping the oldest first. */
@@ -246,13 +246,14 @@ function withinBudget(entries: string[], separator: string): { text: string; dro
 
 // ---- Resource schedule texts ----
 
-/** "now", a UTC time ("2026-11-10 14:00Z" or ISO) or "next", as the server takes it. */
+/** "now", a local time ("2026-11-10 14:00", or ISO with a zone) or "next", as the server takes it. */
 function parseStart(start: string): number | "next" {
   const s = start.trim().toLowerCase();
   if (s === "next") return "next";
   if (s === "now") return Date.now();
+  // Without a zone, "2026-11-10T14:00" is read as local time.
   const at = Date.parse(start.trim().replace(" ", "T"));
-  if (Number.isNaN(at)) throw new Error(`start must be "next", "now" or a UTC time like "2026-11-10 14:00Z", not ${JSON.stringify(start)}.`);
+  if (Number.isNaN(at)) throw new Error(`start must be "next", "now" or a time like "2026-11-10 14:00", not ${JSON.stringify(start)}.`);
   return at;
 }
 
@@ -267,7 +268,7 @@ function formatAmount(amount: number, resource: Resource): string {
   return `${amount} ${resource.unit}`;
 }
 
-const SHORT_TIME = (ts: number): string => formatUtc(ts).slice(5);
+const SHORT_TIME = (ts: number): string => formatTime(ts).slice(5);
 
 export function formatReservation(r: Reservation, resource: Resource): string {
   const part = r.amount === undefined ? "all of it" : formatAmount(r.amount, resource);

@@ -135,7 +135,7 @@ READ_BUDGET_CHARS = 30_000
 
 
 def _utc(ms: int) -> str:
-    return time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(ms / 1000))
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(ms / 1000))
 
 
 def _where(message: dict, conversations: dict) -> str:
@@ -221,7 +221,7 @@ def format_delivery(frame: dict, saved_files: list[str]) -> str:
     message, conversation = frame["message"], frame["conversation"]
     where = "@all" if conversation["kind"] == "all" else _format_address(conversation["addressed"])
     # Header format shared with deliveryHeader in packages/protocol/src/address.ts; pre_llm_call finds it again.
-    sent = time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(message["createdAt"] / 1000))
+    sent = time.strftime("%Y-%m-%d %H:%M", time.localtime(message["createdAt"] / 1000))
     lines = [f"[message-bus] #{message['seq']} @{message['from']}{provenance_mark(message.get('verified'))} → {where} · {sent}"]
     if message.get("quote"):
         lines.append(quote_line(message["quote"]))

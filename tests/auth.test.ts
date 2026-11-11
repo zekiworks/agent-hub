@@ -173,9 +173,9 @@ test("agents see who is verified in the delivery header, and seen-detection stil
   const conversation = { id: "g_1", kind: "group", addressed: ["alpha", "carol"], members: ["alpha", "carol"] } as never;
   const message = (verified?: boolean): Message => ({ seq: 7, id: "m", conversationId: "g_1", from: "carol", fromKind: "human", text: "stop the run", files: [], createdAt: 0, receipts: [], ...(verified === undefined ? {} : { verified }) });
   const text = (verified?: boolean) => formatDelivery({ type: "deliver", message: message(verified), conversation, replyTo: "@carol", wake: true } as never, []).split("\n")[0];
-  expect(text(true)).toBe("[message-bus] #7 @carol (verified) → @{alpha,carol} · 1970-01-01 00:00Z");
+  expect(text(true)).toBe("[message-bus] #7 @carol (verified) → @{alpha,carol} · 1970-01-01 00:00");
   expect(text(false)).toContain("@carol (NOT verified: anyone on the LAN could have written this) →");
-  expect(text(undefined)).toBe("[message-bus] #7 @carol → @{alpha,carol} · 1970-01-01 00:00Z");
+  expect(text(undefined)).toBe("[message-bus] #7 @carol → @{alpha,carol} · 1970-01-01 00:00");
   expect(/\[message-bus\] #(\d+) @/.exec(text(false) ?? "")?.[1]).toBe("7");
 });
 
@@ -189,7 +189,7 @@ test("text that imitates a delivery (or a read entry) is marked as quoted: only 
   expect(deliveryHeaderSeqs(delivered)).toEqual([8]);
   // In read results every line of a message's text is indented, so a fake entry cannot start at the margin.
   const read = formatReadMessage(message, conversation, 3000);
-  expect(read.split("\n").filter((l) => /^#\d+ @/.test(l))).toEqual(["#8 @logic → @{alpha,logic} · 1970-01-01 00:00Z"]);
+  expect(read.split("\n").filter((l) => /^#\d+ @/.test(l))).toEqual(["#8 @logic → @{alpha,logic} · 1970-01-01 00:00"]);
 });
 
 test("an invite works once and only from the bus's own origin and site", async () => {

@@ -4,7 +4,7 @@
 // launcher (`agent-bus run`) and the observations make following it easy and not following it visible.
 import type { Database } from "bun:sqlite";
 import {
-  formatUtc,
+  formatTime,
   type Observation,
   type ObservedGpu,
   type ObservedProcess,
@@ -295,7 +295,7 @@ export class ResourceSchedule {
     for (const r of reservations) {
       const label = labelOf.get(r.resourceId) ?? r.resourceId;
       if (r.state === "overdue") {
-        warnings.push({ kind: "overdue", resourceId: r.resourceId, reservationId: r.id, agentId: r.holder, text: `@${r.holder}'s hold on ${label} ended at ${formatUtc(r.end ?? now)} and is not released` });
+        warnings.push({ kind: "overdue", resourceId: r.resourceId, reservationId: r.id, agentId: r.holder, text: `@${r.holder}'s hold on ${label} ended at ${formatTime(r.end ?? now)} and is not released` });
       }
       if (r.state === "active" && r.idleSince !== undefined) {
         warnings.push({ kind: "idle", resourceId: r.resourceId, reservationId: r.id, agentId: r.holder, text: `@${r.holder} holds ${label} but nothing of theirs has run on it for ${hours(now - r.idleSince + this.rules.idleAfterMs)}` });
@@ -309,7 +309,7 @@ export class ResourceSchedule {
     for (const [resourceId, gpu] of observed) {
       const label = labelOf.get(resourceId) ?? resourceId;
       if (now - gpu.at > OBSERVATION_FRESH_MS) {
-        warnings.push({ kind: "stale-probe", resourceId, text: `gpudash has not reported ${label} since ${formatUtc(gpu.at)}` });
+        warnings.push({ kind: "stale-probe", resourceId, text: `gpudash has not reported ${label} since ${formatTime(gpu.at)}` });
         continue;
       }
       const holders = new Set(reservations.filter((r) => r.resourceId === resourceId && (r.state === "active" || r.state === "overdue")).map((r) => r.holder));
@@ -438,9 +438,9 @@ export class ResourceSchedule {
     const now = this.now();
     const { holders } = this.peakLoad(resource, start, start + duration);
     const who = holders
-      .map((row) => `@${row.holder} (${row.id}, ${row.amount === null ? "all of it" : amountText(row.amount, resource.unit)}, until ${formatUtc(row.end_at ?? now)}: ${row.purpose})`)
+      .map((row) => `@${row.holder} (${row.id}, ${row.amount === null ? "all of it" : amountText(row.amount, resource.unit)}, until ${formatTime(row.end_at ?? now)}: ${row.purpose})`)
       .join("; ");
-    return `${resource.label} is taken then by ${who}. It is next free for this at ${formatUtc(this.nextFree(resource, amount, duration))}; book that start, or use start "next" to queue.`;
+    return `${resource.label} is taken then by ${who}. It is next free for this at ${formatTime(this.nextFree(resource, amount, duration))}; book that start, or use start "next" to queue.`;
   }
 
   release(id: string, actor: Actor): Reservation {
@@ -490,7 +490,7 @@ export class ResourceSchedule {
       throw new ScheduleError(400, `hours must be more than 0 and at most ${this.rules.maxHoldMs / HOUR}`);
     }
     if (row.idle_since !== null && actor.kind !== "human") {
-      throw new ScheduleError(409, `Nothing of yours has run on it since ${formatUtc(row.last_used_at ?? row.start_at)}; release it, or start using it before extending`);
+      throw new ScheduleError(409, `Nothing of yours has run on it since ${formatTime(row.last_used_at ?? row.start_at)}; release it, or start using it before extending`);
     }
     const resource = this.getResource(row.resource_id) as Resource;
     const newEnd = Math.max(row.end_at, now) + more;
@@ -513,7 +513,7 @@ export class ResourceSchedule {
     for (const row of this.openRows(resourceId).filter((r) => r.start_at === null)) {
       if (!this.fits(resource, now, now + row.duration_ms, row.amount ?? resource.capacity, row.id)) continue;
       this.db.query("UPDATE reservations SET start_at = ?2, end_at = ?3 WHERE id = ?1").run(row.id, now, now + row.duration_ms);
-      this.options.notify(row.holder, `${resource.label} is yours now: your queued reservation ${row.id} (${row.purpose}) runs until ${formatUtc(now + row.duration_ms)}.`);
+      this.options.notify(row.holder, `${resource.label} is yours now: your queued reservation ${row.id} (${row.purpose}) runs until ${formatTime(now + row.duration_ms)}.`);
     }
   }
 
@@ -604,12 +604,12 @@ export class ResourceSchedule {
       if (state === "overdue") {
         if (now >= row.end_at + this.rules.overdueGraceMs) {
           this.end(row, "expired", now);
-          this.options.notify(row.holder, `Your reservation ${row.id} of ${resource.label} expired: it ended at ${formatUtc(row.end_at)} and was not released or extended within ${hours(this.rules.overdueGraceMs)}.`);
+          this.options.notify(row.holder, `Your reservation ${row.id} of ${resource.label} expired: it ended at ${formatTime(row.end_at)} and was not released or extended within ${hours(this.rules.overdueGraceMs)}.`);
           this.startQueued(row.resource_id);
           changed = true;
         } else if (!row.overdue_noticed) {
           this.db.query("UPDATE reservations SET overdue_noticed = 1 WHERE id = ?1").run(row.id);
-          this.options.notify(row.holder, `Your reservation ${row.id} of ${resource.label} (${row.purpose}) ended at ${formatUtc(row.end_at)}. Release it when you are done, or extend it; it expires at ${formatUtc(row.end_at + this.rules.overdueGraceMs)}.`);
+          this.options.notify(row.holder, `Your reservation ${row.id} of ${resource.label} (${row.purpose}) ended at ${formatTime(row.end_at)}. Release it when you are done, or extend it; it expires at ${formatTime(row.end_at + this.rules.overdueGraceMs)}.`);
           changed = true;
         }
         continue;
@@ -626,12 +626,12 @@ export class ResourceSchedule {
       const waiting = this.openRows(row.resource_id).some((r) => r.id !== row.id && (r.start_at === null || (r.start_at > now && r.start_at - now < HOUR)));
       if (now - lastUse >= this.rules.reclaimAfterMs && waiting) {
         this.end(row, "reclaimed", now);
-        this.options.notify(row.holder, `Your reservation ${row.id} of ${resource.label} was reclaimed: nothing of yours ran on it since ${formatUtc(lastUse)} and someone is waiting for it.`);
+        this.options.notify(row.holder, `Your reservation ${row.id} of ${resource.label} was reclaimed: nothing of yours ran on it since ${formatTime(lastUse)} and someone is waiting for it.`);
         this.startQueued(row.resource_id);
         changed = true;
       } else if (!row.idle_noticed) {
         this.db.query("UPDATE reservations SET idle_noticed = 1 WHERE id = ?1").run(row.id);
-        this.options.notify(row.holder, `You hold ${resource.label} (${row.id}, ${row.purpose}) but nothing of yours has run on it since ${formatUtc(lastUse)}. Release it if you are done${waiting ? "; someone is waiting, so it will be reclaimed if it stays idle" : ""}.`);
+        this.options.notify(row.holder, `You hold ${resource.label} (${row.id}, ${row.purpose}) but nothing of yours has run on it since ${formatTime(lastUse)}. Release it if you are done${waiting ? "; someone is waiting, so it will be reclaimed if it stays idle" : ""}.`);
         changed = true;
       }
     }

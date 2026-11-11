@@ -6,3 +6,5 @@ import path from "node:path";
 const dir = mkdtempSync(path.join(tmpdir(), "mb-tests-"));
 // The shared client creates and reads the agent token here instead of ~/.agent-bus/agent-token.
 process.env.AGENT_BUS_TOKEN_FILE = path.join(dir, "agent-token");
+// Times on the bus are local; tests format and parse them in one fixed zone, wherever they run.
+process.env.TZ = "UTC";

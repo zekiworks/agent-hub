@@ -55,10 +55,10 @@ test("a GPU is shared by memory until it is full; a refusal names the holder and
   schedule.reserve({ from: "alpha", resource: "host1 GPU 2", hours: 2, amount: 40_000, purpose: "eval" }, ALPHA);
   schedule.reserve({ from: "beta", resource: "aaaa1111", hours: 4, amount: 40_000, purpose: "training" }, BETA);
   expect(() => schedule.reserve({ from: "beta", resource: gpu.id, hours: 1, amount: 40_000, purpose: "more" }, BETA)).toThrow(
-    /taken then by @alpha .*@beta .*next free for this at 2026-11-10 10:00Z/
+    /taken then by @alpha .*@beta .*next free for this at 2026-11-10 10:00/
   );
   // All of it: only when nobody holds any of it.
-  expect(() => schedule.reserve({ from: "beta", resource: gpu.id, hours: 1, purpose: "all" }, BETA)).toThrow(/next free for this at 2026-11-10 12:00Z/);
+  expect(() => schedule.reserve({ from: "beta", resource: gpu.id, hours: 1, purpose: "all" }, BETA)).toThrow(/next free for this at 2026-11-10 12:00;/);
   // Booking that start works.
   const later = schedule.reserve({ from: "beta", resource: gpu.id, hours: 1, start: Date.parse("2026-11-10T12:00:00Z"), purpose: "all" }, BETA);
   expect(later.state).toBe("planned");
@@ -189,7 +189,7 @@ test("servers: each running model with its URL, whose it is, and whether others 
   );
   const a = schedule.reserve({ from: "alpha", resource: "host1 GPU 2", hours: 2, purpose: "serving" }, ALPHA);
   schedule.observe(observation([serving({ pid: 1, container: "gemma4-31b" })]));
-  expect(formatServers(schedule.listing())).toContain("@alpha's, shared until 11-10 10:00Z");
+  expect(formatServers(schedule.listing())).toContain("@alpha's, shared until 11-10 10:00");
   schedule.setPrivate(a.id, true, ALPHA);
   expect(formatServers(schedule.listing())).toContain("@alpha's, PRIVATE: do not send requests");
 });
