@@ -197,7 +197,13 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
           try {
             return await handleApi(req, url);
           } catch (error) {
-            return errorResponse(error);
+            const res = errorResponse(error);
+            // Sign-in failures are invisible otherwise (they happen on someone's phone): the journal keeps why.
+            if (pathname.startsWith("/api/auth/")) {
+              const why = error instanceof Error ? error.message : String(error);
+              console.warn(`sign-in: ${req.method} ${pathname} → ${res.status} ${why} (${srv.requestIP(req)?.address ?? "?"}, ${req.headers.get("user-agent") ?? "?"})`);
+            }
+            return res;
           }
         }
         const page = req.method === "GET" ? website.serve(pathname) : undefined;
