@@ -40,8 +40,10 @@ const OPENS_CHAT = new Set(["sessionStart", "beforeSubmitPrompt"]);
 /** What the model must do at the end of every turn so that bus messages can wake the chat (see wait.ts). */
 const KEEP_WAITER =
   "At the end of every turn, as your last step, start the shell command `agent-bus wait` in the background (do not wait " +
-  "for it) in the project folder. It exits when the next bus message arrives and prints it, and that wakes this chat; " +
-  "if one is already running it says so and exits at once. Without it, bus messages wait until the user types.";
+  "for it) in the project folder, outside the sandbox (with full permissions: it talks to this plugin's local socket, " +
+  "which a sandboxed shell cannot reach). It exits when the next bus message arrives and prints it, and that wakes " +
+  "this chat; if one is already running it says so and exits at once; if it cannot reach the plugin it exits with the " +
+  "reason. Without it, bus messages wait until the user types.";
 
 export const DESCRIPTION = toolDescription({
   arrives:

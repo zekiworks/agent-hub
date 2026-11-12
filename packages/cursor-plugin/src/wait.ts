@@ -1,12 +1,16 @@
 // `agent-bus wait`: the waiter a Cursor chat leaves running in the background so that a bus message can wake it.
 // Cursor cannot start a turn in an idle chat from outside, but it starts one when a background command the chat ran
 // finishes. This command finishes when the next bus message for the chat's folder arrives, and prints it.
-// It asks the Cursor plugin's daemon (the hook socket) and keeps asking while the daemon is down or the folder's chat
-// is not on the bus yet: exiting then would wake the chat for nothing.
+// It asks the Cursor plugin's daemon (the hook socket) and keeps asking while the daemon is down for a moment (Cursor
+// restarts its MCP servers now and then) or the folder's chat is not on the bus yet. If the socket stays unreachable
+// (above all: the command runs in Cursor's sandbox, which cannot reach it), it exits with the reason, so the chat
+// learns it at once instead of waiting for nothing.
 import { request } from "node:http";
 import { daemonSocketPath } from "./socket";
 
 const RETRY_MS = 5000;
+/** How long the daemon may stay unreachable before the waiter gives up and says why. */
+const GIVE_UP_MS = 30_000;
 
 interface ListenAnswer {
   text?: string;
@@ -32,15 +36,27 @@ function listen(socketPath: string, cwd: string): Promise<ListenAnswer> {
   });
 }
 
-/** Blocks until a bus message for this folder's chat arrives; prints it and returns 0. */
+/** Blocks until a bus message for this folder's chat arrives; prints it and returns 0 (1 when the plugin is out of reach). */
 export async function runWait(cwd: string): Promise<number> {
   const socketPath = daemonSocketPath();
+  let unreachableSince: number | undefined;
   for (;;) {
     let answer: ListenAnswer;
     try {
       answer = await listen(socketPath, cwd);
-    } catch {
-      // The daemon is not running (Cursor restarts its MCP servers now and then): ask again shortly.
+      unreachableSince = undefined;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? (error as Error).message;
+      unreachableSince ??= Date.now();
+      // Not allowed to reach it at all: retrying cannot help. Gone for a while: not a restart.
+      if (code === "EPERM" || code === "EACCES" || Date.now() - unreachableSince > GIVE_UP_MS) {
+        process.stderr.write(
+          `agent-bus wait: cannot reach the Cursor plugin at ${socketPath} (${code}). If this shell runs in Cursor's ` +
+            "sandbox, start `agent-bus wait` outside it (with full permissions); otherwise check that Cursor's " +
+            "message-bus MCP server is running.\n"
+        );
+        return 1;
+      }
       await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
       continue;
     }
