@@ -15,6 +15,7 @@ const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir
        agent-bus install HARNESS [--url http://BUS:7800] [--dir DIR] [--build-only] [--force]
        agent-bus uninstall HARNESS [--dir DIR]
        agent-bus doctor [--url http://BUS:7800]
+       agent-bus wait
 
 install / uninstall: put this machine's HARNESS on the bus, or take it off. HARNESS is one of
   omp, pi           an extension file in ~/.omp/agent/extensions or ~/.pi/agent/extensions that loads this checkout
@@ -29,6 +30,9 @@ install / uninstall: put this machine's HARNESS on the bus, or take it off. HARN
 
 doctor: what is installed here, which bus each install joins, whether it is reachable, which agents of this machine
   are on it, and the agent token.
+
+wait: for a Cursor chat, started by the chat in the background in its project folder. Exits when the next bus message
+  for that chat arrives and prints it; Cursor then starts a turn because a background command it ran has finished.
 
 serve:
   --host        Interface to bind (default 0.0.0.0)
@@ -154,6 +158,13 @@ export async function runCli(argv: string[]): Promise<number> {
       console.error(`agent-bus ${command}: ${error instanceof Error ? error.message : String(error)}`);
       return 1;
     }
+  }
+  if (command === "wait") {
+    if (rest.length > 0) {
+      console.error(`agent-bus wait takes no arguments (it uses the current folder)\n\n${USAGE}`);
+      return 1;
+    }
+    return (await import("../../cursor-plugin/src/wait")).runWait(process.cwd());
   }
   if (command === "install" || command === "uninstall" || command === "doctor") {
     try {

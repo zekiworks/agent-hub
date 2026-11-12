@@ -1,5 +1,7 @@
 // One Cursor workspace on the bus (the same identity rule as omp: the folder names the agent). Cursor has no call that
-// submits into an already-idle chat, so a delivery waits for a hook of the folder's latest chat:
+// submits into an already-idle chat, so a delivery waits for a hook of the folder's latest chat, or for its waiter:
+// - an idle chat that left `agent-bus wait` running in the background gets a wake as that command's output: the
+//   command exits, and Cursor starts a turn when a background command the chat started finishes;
 // - a turn parked in message-bus op=wait gets a wake as that tool's result;
 // - otherwise a running turn gets it after the current tool succeeds (postToolUse additional_context); a failed tool does not;
 // - a turn that ends first gets it as the next user message (stop followup_message), which starts another turn.
@@ -61,6 +63,8 @@ export class CursorFolder {
   /** The wait tool's own postToolUse must not take the queue: that turn was told to stop for the user. */
   private handoffPaused = false;
   private waiter?: (reason: ParkReason) => void;
+  /** The `agent-bus wait` command running in the background of this folder's chat, if any (one at a time). */
+  private listener?: (text: string) => void;
 
   constructor(
     readonly folder: string,
@@ -123,6 +127,36 @@ export class CursorFolder {
   /** A new chat, or the turn ended with nothing left that should start another. */
   setIdle(): void {
     this.status.setIdle();
+    this.wakeListener();
+  }
+
+  /**
+   * `agent-bus wait` (a command the chat leaves running in the background): resolves with the next wake once the
+   * chat is idle, taken from the queue (so it counts as seen when the command prints it). While a turn runs, its hooks
+   * hand messages over instead. Resolves undefined at once when another waiter already listens: the command then
+   * exits within the turn that started it, so a second waiter never stacks up. `signal` aborts when the command dies.
+   */
+  listen(signal: AbortSignal): Promise<string | undefined> {
+    if (this.listener) return Promise.resolve(undefined);
+    return new Promise((resolve) => {
+      const done = (text: string | undefined): void => {
+        if (this.listener === give) this.listener = undefined;
+        signal.removeEventListener("abort", aborted);
+        resolve(text);
+      };
+      const give = (text: string): void => done(text);
+      const aborted = (): void => done(undefined);
+      signal.addEventListener("abort", aborted);
+      this.listener = give;
+      this.wakeListener();
+    });
+  }
+
+  /** Hands the held messages to the background waiter when there is a wake among them and no turn is running. */
+  private wakeListener(): void {
+    if (!this.listener || this.status.busy || this.waiter || !this.held.hasWake()) return;
+    const text = this.held.take();
+    if (text) this.listener(text);
   }
 
   /** The user closed this chat. A different chat in the folder keeps the agent. */
@@ -251,7 +285,10 @@ export class CursorFolder {
     const text = await deliveryText(this.conn, delivery);
     this.unseen.add(delivery.message.seq);
     this.held.push({ text, seq: delivery.message.seq, wake: delivery.wake });
-    if (delivery.wake) this.waiter?.("wake");
+    if (delivery.wake) {
+      this.waiter?.("wake");
+      this.wakeListener();
+    }
   }
 
   private receipt(receipt: ReceiptFrame): void {

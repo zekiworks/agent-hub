@@ -150,6 +150,47 @@ test("a wake still held when the turn completes becomes the next message; an abo
   expect(await daemon.hook("stop", chat("c1", "alpha", { status: "completed" }))).toEqual({});
 });
 
+test("agent-bus wait: an idle chat's waiter gets the next wake and marks it seen; not during a turn; one at a time", async () => {
+  daemon = new Daemon();
+  await daemon.hook("sessionStart", chat("c1", "alpha"));
+  await daemon.hook("beforeSubmitPrompt", chat("c1", "alpha"));
+  await until(async () => (await participant("alpha"))?.online);
+  await daemon.hook("stop", chat("c1", "alpha", { status: "completed" }));
+  // The waiter runs in a subfolder of the project; a second one is told it is not needed.
+  const first = new AbortController();
+  const waiting = daemon.listen(path.join(folder("alpha"), "src"), first.signal);
+  expect(await daemon.listen(folder("alpha"), new AbortController().signal)).toEqual({ already: true });
+  expect(await daemon.listen(folder("nobody"), new AbortController().signal)).toEqual({ absent: true });
+
+  const { message: hello } = await post({ from: "carol", to: "@alpha", text: "wake up" });
+  expect((await waiting).text).toContain("wake up");
+  await until(async () => (await message(hello.seq)).receipts[0]?.seenAt);
+
+  // During a turn the waiter leaves messages to the turn's hooks.
+  await daemon.hook("beforeSubmitPrompt", chat("c1", "alpha"));
+  const second = daemon.listen(folder("alpha"), new AbortController().signal);
+  const { message: busy } = await post({ from: "carol", to: "@alpha", text: "while busy" });
+  await until(async () => (await message(busy.seq)).receipts[0]?.deliveredAt);
+  const answer = (await daemon.hook("postToolUse", chat("c1", "alpha", { tool_name: "Shell", tool_use_id: "t1" }))) as {
+    additional_context?: string;
+  };
+  expect(answer.additional_context).toContain("while busy");
+  const raced = await Promise.race([second.then(() => "returned"), Bun.sleep(80).then(() => "waiting")]);
+  expect(raced).toBe("waiting");
+
+  // A waiter whose command died is gone: the next one is not told "already".
+  const dying = new AbortController();
+  await daemon.hook("stop", chat("c1", "alpha", { status: "completed" }));
+  const { message: later } = await post({ from: "carol", to: "@alpha", text: "later" });
+  expect((await second).text).toContain("later");
+  await until(async () => (await message(later.seq)).receipts[0]?.seenAt);
+  const gone = daemon.listen(folder("alpha"), dying.signal);
+  dying.abort();
+  expect(await gone).toEqual({});
+  const next = daemon.listen(folder("alpha"), first.signal);
+  expect(await Promise.race([next.then((r) => JSON.stringify(r)), Bun.sleep(80).then(() => "waiting")])).toBe("waiting");
+});
+
 test("op=wait blocks until a bus message, which it returns and marks seen", async () => {
   daemon = new Daemon();
   await daemon.hook("sessionStart", chat("c1", "alpha"));

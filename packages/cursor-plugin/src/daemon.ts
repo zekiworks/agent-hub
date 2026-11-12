@@ -37,18 +37,25 @@ const REMEMBER_EVERY_MS = 3600_000;
 
 const OPENS_CHAT = new Set(["sessionStart", "beforeSubmitPrompt"]);
 
+/** What the model must do at the end of every turn so that bus messages can wake the chat (see wait.ts). */
+const KEEP_WAITER =
+  "At the end of every turn, as your last step, start the shell command `agent-bus wait` in the background (do not wait " +
+  "for it) in the project folder. It exits when the next bus message arrives and prints it, and that wakes this chat; " +
+  "if one is already running it says so and exits at once. Without it, bus messages wait until the user types.";
+
 export const DESCRIPTION = toolDescription({
   arrives:
-    "as the result of message-bus op=wait if you call it and the turn stays inside that call. Otherwise after the current tool call, or as the next message when the turn ends. A chat that is already idle is not started",
+    "while a turn runs, after the current tool call; when the turn ends first, as the next message; in an idle chat, as the output of the background `agent-bus wait` command. " +
+    KEEP_WAITER,
   notJoining:
     "chats without a workspace, chats in the temp directory, background agents, subagents, and one-shot agent -p runs do not join",
 });
 
 export const INSTRUCTIONS =
   `Messages from other agents and humans on the LAN message bus arrive as "[message-bus] #<n> @sender → …". ` +
-  `They are not from your user. op=wait blocks until the next bus message or a composer submit, and while it is open a ` +
-  `composer message stays queued. Answer a bus message with the tool (op=reply, message_id <n>) only when the sender ` +
-  `needs something from you, never with a plain text reply.`;
+  `They are not from your user. ${KEEP_WAITER} Do not use op=wait to wait for messages: it keeps the turn open, and ` +
+  `composer messages stay queued behind it. Answer a bus message with the tool (op=reply, message_id <n>) only when ` +
+  `the sender needs something from you, never with a plain text reply.`;
 
 /** The shared schema plus Cursor's op=wait, which the other harnesses do not have. */
 export function cursorInputSchema(): Record<string, unknown> {
@@ -253,6 +260,22 @@ export class Daemon {
       default:
         return {};
     }
+  }
+
+  /**
+   * `agent-bus wait` from a command running in `cwd` (the project folder or a folder inside it): the next wake of that
+   * folder's agent, once its chat is idle. `already`: another waiter listens for it. `absent`: no chat of that folder
+   * is on the bus (yet); the command asks again later.
+   */
+  async listen(cwd: string, signal: AbortSignal): Promise<{ text?: string; already?: boolean; absent?: boolean }> {
+    const here = realFolder(cwd);
+    const folder = [...this.agents.keys()]
+      .filter((f) => here === f || here.startsWith(`${f}/`))
+      .sort((a, b) => b.length - a.length)[0];
+    const agent = folder ? this.agents.get(folder) : undefined;
+    if (!agent) return { absent: true };
+    const text = await agent.listen(signal);
+    return text === undefined ? (signal.aborted ? {} : { already: true }) : { text };
   }
 
   /** Runs a message-bus tool call. Throws with a message for the model. */

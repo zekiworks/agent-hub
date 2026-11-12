@@ -13,16 +13,24 @@ export interface HookSocket {
   close(): void;
 }
 
-/** Listens on `socketPath`; `answer` gets each request body and returns the hook's answer (it handles its own errors). */
-export function serveHookSocket(socketPath: string, answer: (body: string) => Promise<unknown>): HookSocket {
+/**
+ * Listens on `socketPath`; `answer` gets each request body and returns the hook's answer (it handles its own errors).
+ * `signal` aborts when the caller goes away before the answer is sent (a long-poll whose process was killed).
+ */
+export function serveHookSocket(socketPath: string, answer: (body: string, signal: AbortSignal) => Promise<unknown>): HookSocket {
   mkdirSync(path.dirname(socketPath), { recursive: true });
   // Left by a server that did not shut down cleanly (Claude Code's sockets are named after pids, which are reused).
   if (existsSync(socketPath)) unlinkSync(socketPath);
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     let body = "";
+    const gone = new AbortController();
+    res.on("close", () => {
+      if (!res.writableFinished) gone.abort();
+    });
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
-      void answer(body).then((result) => {
+      void answer(body, gone.signal).then((result) => {
+        if (gone.signal.aborted) return;
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result));
       });

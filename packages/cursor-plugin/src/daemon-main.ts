@@ -16,12 +16,14 @@ async function waitForDaemon(socketPath: string): Promise<boolean> {
   return false;
 }
 
-async function answer(daemon: Daemon, body: string): Promise<unknown> {
+async function answer(daemon: Daemon, body: string, signal: AbortSignal): Promise<unknown> {
   let event = "";
   try {
-    const msg = JSON.parse(body) as { event?: string; input?: HookInput; args?: Record<string, unknown> };
+    const msg = JSON.parse(body) as { event?: string; input?: HookInput; args?: Record<string, unknown>; cwd?: string };
     event = msg.event ?? "";
     if (event === "ping") return { ok: true };
+    // `agent-bus wait`: a long-poll that ends with the next wake (or when the command goes away).
+    if (event === "listen") return typeof msg.cwd === "string" ? await daemon.listen(msg.cwd, signal) : { absent: true };
     if (event === "tool") {
       try {
         return { text: await daemon.callTool(msg.args ?? {}) };
@@ -65,7 +67,7 @@ export async function main(): Promise<void> {
   const daemon = new Daemon(stateFilePath(), log);
   let hooks: HookSocket | undefined;
   try {
-    hooks = serveHookSocket(socketPath, (body) => answer(daemon, body));
+    hooks = serveHookSocket(socketPath, (body, signal) => answer(daemon, body, signal));
   } catch (err) {
     releaseDaemon(lockFile);
     daemon.close();
