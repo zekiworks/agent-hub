@@ -87,7 +87,10 @@ function busCall(items: Item[], tools: ToolSpec[]): BusCall | undefined {
     };
   }
   const write = tools.find((t) => t.name === "write");
-  if (!write || !items.some((i) => i.role !== "assistant" && i.text.includes("xd://message-bus"))) return undefined;
+  // omp's system prompt lists its tool devices: "xd://message-bus — …" (up to 18.18), "- message-bus — …" under
+  // "# xd:// Tool Devices" (18.19).
+  const listed = /xd:\/\/message-bus|^- message-bus — /m;
+  if (!write || !items.some((i) => i.role !== "assistant" && listed.test(i.text))) return undefined;
   return {
     make: (args) => ({ name: "write", args: { path: "xd://message-bus", content: JSON.stringify(args) } }),
     read: (c) => (c.name === "write" && c.args.path === "xd://message-bus" ? parseArgs(c.args.content) : undefined),

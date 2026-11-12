@@ -159,10 +159,15 @@ def provenance_mark(verified: bool | None) -> str:
     return " (verified)" if verified else " (NOT verified: anyone on the LAN could have written this)"
 
 
+def sender_label(message: dict) -> str:
+    """Same as senderLabel in packages/protocol/src/address.ts: `id`, or `id-n` for session n of an agent with several."""
+    return message["from"] if message.get("fromSession") is None else f"{message['from']}-{message['fromSession']}"
+
+
 def format_read_message(message: dict, conversations: dict, max_text: int, saved: list[str] | None = None) -> str:
     """Same text as formatReadMessage in packages/client/src/tool.ts (not a delivery header, on purpose)."""
     mark = provenance_mark(message.get("verified"))
-    lines = [f"#{message['seq']} @{message['from']}{mark} → {_where(message, conversations)} · {_utc(message['createdAt'])}"]
+    lines = [f"#{message['seq']} @{sender_label(message)}{mark} → {_where(message, conversations)} · {_utc(message['createdAt'])}"]
     if message.get("quote"):
         lines.append(quote_line(message["quote"]))
     text = message.get("text") or ""
@@ -181,7 +186,7 @@ def format_search_hit(message: dict, conversations: dict, query: str) -> str:
     start = max(0, at - 80)
     snippet = ("…" if start > 0 else "") + flat[start:start + 200] + ("…" if start + 200 < len(flat) else "")
     files = f" [{', '.join(f['name'] for f in message['files'])}]" if message.get("files") else ""
-    return (f"#{message['seq']} · {_utc(message['createdAt'])} · @{message['from']} → {_where(message, conversations)}: "
+    return (f"#{message['seq']} · {_utc(message['createdAt'])} · @{sender_label(message)} → {_where(message, conversations)}: "
             f"{defang_headers(snippet) or '(no text)'}{files}")
 
 
@@ -221,7 +226,7 @@ def format_delivery(frame: dict, saved_files: list[str]) -> str:
     where = "@all" if conversation["kind"] == "all" else _format_address(conversation["addressed"])
     # Header format shared with deliveryHeader in packages/protocol/src/address.ts; pre_llm_call finds it again.
     sent = time.strftime("%Y-%m-%d %H:%M", time.localtime(message["createdAt"] / 1000))
-    lines = [f"[message-bus] #{message['seq']} @{message['from']}{provenance_mark(message.get('verified'))} → {where} · {sent}"]
+    lines = [f"[message-bus] #{message['seq']} @{sender_label(message)}{provenance_mark(message.get('verified'))} → {where} · {sent}"]
     if message.get("quote"):
         lines.append(quote_line(message["quote"]))
     if message.get("text"):

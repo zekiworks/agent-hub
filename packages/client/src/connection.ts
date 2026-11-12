@@ -95,6 +95,13 @@ export class BusConnection {
   private unsentSeen = new Set<number>();
   private readonly baseUrl: string;
   private readonly token: string;
+  /**
+   * This session (window, task) among the agent's sessions; the same across reconnects so it keeps its number. The
+   * bus sends messages that name no session to the session that was active most recently.
+   */
+  private readonly sessionKey = crypto.randomUUID();
+  /** This session's number within the agent, from the latest join. */
+  session: number | undefined;
 
   constructor(private readonly options: BusConnectionOptions) {
     this.baseUrl = options.url.replace(/\/+$/, "");
@@ -113,6 +120,7 @@ export class BusConnection {
     if (this.options.path) wsUrl.searchParams.set("path", this.options.path);
     if (this.options.name) wsUrl.searchParams.set("name", this.options.name);
     wsUrl.searchParams.set("token", this.token);
+    wsUrl.searchParams.set("session", this.sessionKey);
 
     const socket = new WebSocket(wsUrl.toString());
     this.socket = socket;
@@ -164,6 +172,7 @@ export class BusConnection {
     switch (frame.type) {
       case "joined":
         this.id = frame.id;
+        this.session = frame.session;
         this.participants = frame.participants;
         this.reconnectDelay = RECONNECT_MIN_MS;
         for (const seq of this.unsentSeen) this.markSeen(seq);
@@ -243,6 +252,7 @@ export class BusConnection {
   private async request<T>(pathname: string, init: RequestInit): Promise<T> {
     const headers = new Headers(init.headers);
     headers.set("X-Agent-Token", this.token);
+    headers.set("X-Agent-Session", this.sessionKey);
     const res = await fetch(`${this.baseUrl}${pathname}`, { ...init, headers });
     const body = (await res.json().catch(() => ({}))) as T & { error?: string };
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status} from ${pathname}`);

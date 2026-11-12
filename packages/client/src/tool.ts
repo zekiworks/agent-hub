@@ -5,7 +5,7 @@
 import { realpathSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { defangHeaders, deliveryHeader, describeReceipts, formatAddress, formatTime, provenanceMark, quoteLine } from "../../protocol/src/address";
+import { defangHeaders, deliveryHeader, describeReceipts, formatAddress, formatTime, provenanceMark, quoteLine, senderLabel } from "../../protocol/src/address";
 import type { Reservation, ReservationResponse, Resource, ResourcesResponse } from "../../protocol/src/resources";
 import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptFrame } from "../../protocol/src/types";
 import type { BusConnection, Delivery } from "./connection";
@@ -110,7 +110,9 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "shared resource). Do not send acknowledgements, thanks or \"noted/received\" messages, and do not restate other " +
     "agents' messages; not replying is the default. Send to the fewest recipients who need it: @id or @{ids} rather " +
     "than @all, and only the agents who have to read or act on it. Your bus id comes from your " +
-    `project folder and is shown in every result (${harness.notJoining}). ` +
+    `project folder and is shown in every result (${harness.notJoining}). An agent open in several windows has ` +
+    "sessions: `@id-2` is its session 2 (a reply goes back to the session that wrote the message; plain `@id` reaches " +
+    "its most recently used one). " +
     "Messages for you arrive in this conversation on their own as " +
     `"[message-bus] #<message_id> @sender → …", also while you are working: ${harness.arrives}. ` +
     "So never poll, and never read the bus database or files under ~/.agent-bus to " +
@@ -180,7 +182,7 @@ export async function deliveryText(conn: BusConnection, delivery: Delivery): Pro
 export function formatDelivery(delivery: Delivery, savedFiles: string[]): string {
   const { message, conversation, replyTo } = delivery;
   const where = conversation.kind === "all" ? "@all" : formatAddress(conversation.addressed);
-  const lines = [deliveryHeader(message.seq, message.from, where, message.createdAt, message.verified)];
+  const lines = [deliveryHeader(message.seq, senderLabel(message), where, message.createdAt, message.verified)];
   if (message.quote) lines.push(quoteLine(message.quote));
   if (message.text) lines.push(defangHeaders(message.text));
   message.files.forEach((file, i) => {
@@ -207,7 +209,7 @@ const READ_BUDGET_CHARS = 30_000;
  */
 export function formatReadMessage(message: Message, conversation: Conversation | undefined, maxText: number, savedFiles: string[] = []): string {
   const where = !conversation ? message.conversationId : conversation.kind === "all" ? "@all" : formatAddress(conversation.members);
-  const lines = [`#${message.seq} @${message.from}${provenanceMark(message.verified)} → ${where} · ${formatTime(message.createdAt)}`];
+  const lines = [`#${message.seq} @${senderLabel(message)}${provenanceMark(message.verified)} → ${where} · ${formatTime(message.createdAt)}`];
   if (message.quote) lines.push(quoteLine(message.quote));
   if (message.text) {
     const text =
@@ -228,7 +230,7 @@ export function formatSearchHit(message: Message, conversation: Conversation | u
   const start = Math.max(0, at - 80);
   const snippet = `${start > 0 ? "…" : ""}${flat.slice(start, start + 200)}${start + 200 < flat.length ? "…" : ""}`;
   const files = message.files.length > 0 ? ` [${message.files.map((f) => f.name).join(", ")}]` : "";
-  return `#${message.seq} · ${formatTime(message.createdAt)} · @${message.from} → ${where}: ${defangHeaders(snippet) || "(no text)"}${files}`;
+  return `#${message.seq} · ${formatTime(message.createdAt)} · @${senderLabel(message)} → ${where}: ${defangHeaders(snippet) || "(no text)"}${files}`;
 }
 
 /** Joins entries newest-last within the budget, dropping the oldest first. */

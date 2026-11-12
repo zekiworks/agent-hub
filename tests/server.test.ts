@@ -63,6 +63,11 @@ class Client {
     return promise as Promise<Extract<Frame, { type: T }>>;
   }
 
+  /** Frames of `type` received and not taken yet. */
+  queued(type: Frame["type"]): number {
+    return this.queue.filter((frame) => frame.type === type).length;
+  }
+
   send(frame: unknown): void {
     this.ws.send(JSON.stringify(frame));
   }
@@ -199,22 +204,134 @@ describe("agent ids", () => {
   });
 });
 
-describe("delivery", () => {
-  test("every live socket of an id receives; @all from a human wakes", async () => {
-    const one = await joinPath("/tmp/x/alpha");
-    const two = await joinPath("/tmp/x/alpha");
-    expect(two.id).toBe(one.id);
-    const participant = (await state()).participants.find((p) => p.id === "alpha");
-    expect(participant?.connections).toBe(2);
+describe("sessions and harnesses", () => {
+  const session = (path: string, key: string, harness = "omp") => joinAgent({ host: "h1", harness, path, session: key });
+  const settle = () => Bun.sleep(80);
 
+  test("two windows of one agent are sessions 1 and 2; a message goes to the most recently active one only", async () => {
+    const one = await session("/tmp/x/alpha", "k1");
+    const two = await session("/tmp/x/alpha", "k2");
+    expect(two.id).toBe(one.id);
+    const alpha = (await state()).participants.find((p) => p.id === "alpha");
+    expect(alpha?.sessions?.map((s) => s.n)).toEqual([1, 2]);
+
+    // The later join is the most recent: only it gets the message.
+    const first = await send({ from: "carol", to: "@alpha", text: "first" });
+    expect((await two.client.take("deliver")).message.id).toBe(first.message.id);
+    await settle();
+    expect(one.client.queued("deliver")).toBe(0);
+
+    // Session 1 starts working: it is the one in use now.
+    one.client.send({ type: "status", status: { state: "busy", since: Date.now() } });
+    await settle();
+    const second = await send({ from: "carol", conversationId: first.conversation.id, text: "second" });
+    expect((await one.client.take("deliver")).message.id).toBe(second.message.id);
+
+    // Naming a session reaches that one, in the same conversation; so does the website's picker.
+    const named = await send({ from: "carol", to: "@alpha-2", text: "to two" });
+    expect(named.conversation.id).toBe(first.conversation.id);
+    expect(named.message.receipts).toEqual([{ to: "alpha", session: 2, deliveredAt: null, seenAt: null }]);
+    expect((await two.client.take("deliver")).message.text).toBe("to two");
+    await send({ from: "carol", conversationId: first.conversation.id, text: "picked", toSession: 2 });
+    expect((await two.client.take("deliver")).message.text).toBe("picked");
+    await settle();
+    expect(one.client.queued("deliver")).toBe(0);
+  });
+
+  test("a session keeps its number across a reconnect; a new session takes the lowest free one", async () => {
+    const one = await session("/tmp/x/alpha", "k1");
+    const two = await session("/tmp/x/alpha", "k2");
+    await leave(one.client);
+    const back = await joinAgent({ host: "h1", harness: "omp", path: "/tmp/x/alpha", session: "k1" });
+    expect(((await back.client.take("participants")) && (await state())).participants.find((p) => p.id === "alpha")?.sessions?.map((s) => s.n)).toEqual([1, 2]);
+    const third = await Client.connect(agentSocketUrl(bus, { host: "h1", harness: "omp", path: "/tmp/x/alpha", session: "k3" }));
+    clients.push(third);
+    expect((await third.take("joined")).session).toBe(3);
+    await leave(two.client);
+    const fourth = await Client.connect(agentSocketUrl(bus, { host: "h1", harness: "omp", path: "/tmp/x/alpha", session: "k4" }));
+    clients.push(fourth);
+    // Session 2's number is held a minute for its own reconnect, so a new session does not take it.
+    expect((await fourth.take("joined")).session).toBe(4);
+  });
+
+  test("a delivery not acked by a session that goes away is handed to the next one", async () => {
+    const one = await session("/tmp/x/alpha", "k1");
+    const two = await session("/tmp/x/alpha", "k2");
+    const { message } = await send({ from: "carol", to: "@alpha", text: "do this" });
+    expect((await two.client.take("deliver")).message.id).toBe(message.id);
+    await leave(two.client);
+    const handed = await one.client.take("deliver");
+    expect(handed.message.id).toBe(message.id);
+    one.client.send({ type: "ack", seq: message.seq });
+    await settle();
+    // Acked by now: a new session gets no backlog of it.
+    const three = await session("/tmp/x/alpha", "k3");
+    await settle();
+    expect(three.client.queued("deliver")).toBe(0);
+  });
+
+  test("an agent's message names its session while it has several; a reply goes back to that session", async () => {
+    const one = await session("/tmp/x/alpha", "k1");
+    const two = await session("/tmp/x/alpha", "k2");
+    const asked = (await (
+      await busFetch(bus, "/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Agent-Session": "k1" },
+        body: JSON.stringify({ from: "alpha", to: "@carol", text: "a question from window 1" }),
+      })
+    ).json()) as PostMessageResponse;
+    expect(asked.message.fromSession).toBe(1);
+    await send({ from: "carol", replyToSeq: asked.message.seq, text: "the answer" });
+    expect((await one.client.take("deliver")).message.text).toBe("the answer");
+    await settle();
+    expect(two.client.queued("deliver")).toBe(0);
+  });
+
+  test("another harness in the same folder is a separate agent, named after its harness", async () => {
+    const omp = await joinAgent({ host: "h1", harness: "omp", path: "/tmp/x/alpha" });
+    const codex = await joinAgent({ host: "h1", harness: "codex", path: "/tmp/x/alpha" });
+    expect(omp.id).toBe("alpha");
+    expect(codex.id).toBe("alpha-codex");
+    await send({ from: "carol", to: "@alpha", text: "for omp" });
+    expect((await omp.client.take("deliver")).message.text).toBe("for omp");
+    await settle();
+    expect(codex.client.queued("deliver")).toBe(0);
+    // The same harness again is the same agent.
+    const again = await joinAgent({ host: "h1", harness: "codex", path: "/tmp/x/alpha" });
+    expect(again.id).toBe("alpha-codex");
+  });
+
+  test("a viewer gets the live output of the most recently active session, or the one it names", async () => {
+    const one = await session("/tmp/x/alpha", "k1");
+    const two = await session("/tmp/x/alpha", "k2");
+    const viewer = await connectViewer();
+    await viewer.take("participants");
+    viewer.send({ type: "watch", agentId: "alpha" });
+    await one.client.take("watch");
+    await two.client.take("watch");
+    const entry = (text: string) => ({ type: "activity", events: [{ id: text, at: Date.now(), kind: "user", text }] });
+    one.client.send(entry("from one"));
+    two.client.send(entry("from two"));
+    const got = await viewer.take("activity");
+    expect(got.events.map((e) => (e.kind === "user" ? e.text : ""))).toEqual(["from two"]);
+    viewer.send({ type: "watch", agentId: "alpha", session: 1 });
+    await one.client.take("watch");
+    one.client.send(entry("one again"));
+    two.client.send(entry("two again"));
+    const named = await viewer.take("activity");
+    expect(named.events.map((e) => (e.kind === "user" ? e.text : ""))).toEqual(["one again"]);
+  });
+});
+
+describe("delivery", () => {
+  test("@all from a human wakes", async () => {
+    const one = await joinPath("/tmp/x/alpha");
     const { message } = await send({ from: "carol", to: "@all", text: "hello" });
-    for (const client of [one.client, two.client]) {
-      const frame = await client.take("deliver");
-      expect(frame.message.id).toBe(message.id);
-      expect(frame.conversation.id).toBe("all");
-      expect(frame.replyTo).toBe("@all");
-      expect(frame.wake).toBe(true);
-    }
+    const frame = await one.client.take("deliver");
+    expect(frame.message.id).toBe(message.id);
+    expect(frame.conversation.id).toBe("all");
+    expect(frame.replyTo).toBe("@all");
+    expect(frame.wake).toBe(true);
   });
 
   test("@all from an agent is quiet by default and wakes after the setting", async () => {

@@ -95,11 +95,16 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
     ctx.tokens.noteAgent(data.tokenHash, data.path ?? data.name ?? participant.id);
     ctx.tokens.touch(data.tokenHash);
     data.id = participant.id;
+    // Another session of this agent is already live: it got the unacked messages (or gets them handed over when it
+    // goes away), so this one starts without backlog.
+    const othersLive = hub.sessionsOf(participant.id).length > 0 && hub.liveSessionNumber(participant.id, data.sessionKey) === undefined;
+    data.sessionNo = hub.sessionNumber(participant.id, data.sessionKey);
+    data.activeAt = hub.activityStamp();
     hub.addAgentSocket(participant.id, ws);
 
-    sendFrame(ws, { type: "joined", id: participant.id, participants: hub.listParticipants() });
+    sendFrame(ws, { type: "joined", id: participant.id, session: data.sessionNo, participants: hub.listParticipants() });
     if (hub.isWatched(participant.id)) sendFrame(ws, { type: "watch", on: true });
-    if (!isNew) {
+    if (!isNew && !othersLive) {
       const conversations = new Map<string, Conversation>();
       for (const message of db.backlogFor(participant.id, participant.deliveredSeq, BACKLOG_LIMIT)) {
         let conversation = conversations.get(message.conversationId);
@@ -108,7 +113,7 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
           if (!conversation) continue;
           conversations.set(conversation.id, conversation);
         }
-        sendFrame(ws, hub.deliverFrame(message, conversation, participant));
+        hub.deliver([ws], message, conversation, participant);
       }
     }
     hub.broadcastParticipants();
@@ -144,12 +149,15 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
       frame.seq >= 0
     ) {
       if (frame.type === "ack") db.ackDelivered(data.id, frame.seq);
+      data.inflight.delete(frame.seq);
       hub.recordReceipt(data.id, frame.seq, frame.type);
       return;
     }
     if (isJsonObject(frame) && frame.type === "status") {
       const status = parseStatus(frame.status);
       if (status) {
+        // A session that starts working is the one the person is using: it gets messages that name no session.
+        if (status.state === "busy" && data.status?.state !== "busy") data.activeAt = hub.activityStamp();
         data.status = status;
         data.statusAt = Date.now();
         data.reportingSince ??= data.statusAt;
@@ -159,12 +167,15 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
     }
     if (isJsonObject(frame) && frame.type === "activity" && Array.isArray(frame.events)) {
       // Relayed as is (never stored) to the viewers watching this agent; the website renders it as text only.
-      hub.relayActivity({
-        type: "activity",
-        agentId: data.id,
-        events: frame.events as ActivityEvent[],
-        ...(frame.replay === true ? { replay: true } : {}),
-      });
+      hub.relayActivity(
+        {
+          type: "activity",
+          agentId: data.id,
+          events: frame.events as ActivityEvent[],
+          ...(frame.replay === true ? { replay: true } : {}),
+        },
+        data.sessionNo
+      );
       return;
     }
     sendFrame(ws, {
@@ -198,7 +209,8 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
     }
     if (frame.type !== "watch") return;
     const agentId = typeof frame.agentId === "string" && frame.agentId !== "" ? frame.agentId : undefined;
-    hub.setWatching(ws, agentId);
+    const session = typeof frame.session === "number" && Number.isSafeInteger(frame.session) && frame.session > 0 ? frame.session : undefined;
+    hub.setWatching(ws, agentId, session);
   };
 
   const handleClose = (ws: Socket): void => {

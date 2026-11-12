@@ -5,7 +5,7 @@ import { showError } from "./composer";
 import { dom, nearBottom, scrollToBottom } from "./dom";
 import { errorText } from "./format";
 import { notify } from "./notify";
-import { renderHeader, renderMessages, showEmpty } from "./render";
+import { applyEarlyReceipts, renderHeader, renderMessages, showEmpty } from "./render";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
 import { findGroup, isCurrent, mergeMessages, PAGE_SIZE, state } from "./state";
@@ -78,6 +78,7 @@ export function receive(message: Message, conversation: Conversation): void {
   const pending = state.loading.get(conversation.id);
   const known = (cache?.messages ?? pending ?? []).some((m) => m.seq === message.seq);
   if (!known) {
+    applyEarlyReceipts(message);
     if (cache) cache.messages = mergeMessages(cache.messages, [message]);
     else pending?.push(message);
   }

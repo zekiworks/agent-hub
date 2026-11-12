@@ -1,5 +1,5 @@
 // The main pane: header and messages (with quotes, receipts, attachments), and renderAll.
-import type { Message, Quote, ReceiptFrame } from "@agent-bus/protocol";
+import { senderLabel, type Message, type Quote, type ReceiptFrame } from "@agent-bus/protocol";
 import { renderFile } from "./attachments";
 import { setReplyTo, updateComposerState } from "./composer";
 import { dom } from "./dom";
@@ -111,7 +111,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   li.dataset.seq = String(message.seq);
 
   const head = h("div", "msg-head");
-  const sender = h("button", "msg-sender", message.from);
+  const sender = h("button", "msg-sender", senderLabel(message));
   sender.type = "button";
   sender.title = human ? "Human" : "Agent — click to open a direct conversation";
   if (!human) sender.addEventListener("click", () => navigate({ kind: "draft", to: [message.from] }));
@@ -162,9 +162,11 @@ function renderReceipts(message: Message): HTMLDivElement | null {
   const status = pending.length > 0 ? "receipts-pending" : delivered.length > 0 ? "receipts-delivered" : "receipts-seen";
   const el = h("div", `msg-receipts ${status}`);
   el.dataset.receipts = String(message.seq);
-  const names = (list: typeof receipts) => list.map((r) => r.to).join(", ");
+  // A message sent to one session of an agent names it (`alpha-2`).
+  const label = (r: (typeof receipts)[number]) => (r.session === undefined ? r.to : `${r.to}-${r.session}`);
+  const names = (list: typeof receipts) => list.map(label).join(", ");
   if (receipts.length === 1) {
-    const to = receipts[0]?.to ?? "";
+    const to = receipts[0] ? label(receipts[0]) : "";
     el.textContent = seen.length ? `✓✓ seen by ${to}` : delivered.length ? `✓ delivered to ${to} · not seen yet` : `○ not delivered yet to ${to}`;
   } else if (seen.length === receipts.length) {
     el.textContent = `✓✓ seen by all ${receipts.length}`;
@@ -180,20 +182,46 @@ function renderReceipts(message: Message): HTMLDivElement | null {
   el.title = receipts
     .map((r) =>
       r.seenAt !== null
-        ? `${r.to}: seen ${fullFormat.format(r.seenAt)}`
+        ? `${label(r)}: seen ${fullFormat.format(r.seenAt)}`
         : r.deliveredAt !== null
-          ? `${r.to}: delivered ${fullFormat.format(r.deliveredAt)}, not seen yet`
-          : `${r.to}: not delivered yet`
+          ? `${label(r)}: delivered ${fullFormat.format(r.deliveredAt)}, not seen yet`
+          : `${label(r)}: not delivered yet`
     )
     .join("\n");
   return el;
 }
 
+/**
+ * Receipts for messages this page does not hold yet: an agent can ack a first message before the page has the new
+ * conversation (the POST answer, the socket's message frame and the ack race). `receive` applies them.
+ */
+const earlyReceipts = new Map<number, ReceiptFrame[]>();
+
+/** Applies receipts that arrived before `message` did. */
+export function applyEarlyReceipts(message: Message): void {
+  for (const receipt of earlyReceipts.get(message.seq) ?? []) {
+    const entry = message.receipts.find((r) => r.to === receipt.to);
+    if (!entry) continue;
+    entry.deliveredAt = receipt.deliveredAt;
+    entry.seenAt = receipt.seenAt;
+  }
+  earlyReceipts.delete(message.seq);
+}
+
 /** Updates the cached message and, if it is on screen, its receipt line. */
 export function applyReceipt(receipt: ReceiptFrame): void {
-  const message = state.caches.get(receipt.conversationId)?.messages.find((m) => m.seq === receipt.seq);
+  const message =
+    state.caches.get(receipt.conversationId)?.messages.find((m) => m.seq === receipt.seq) ??
+    state.loading.get(receipt.conversationId)?.find((m) => m.seq === receipt.seq);
   const entry = message?.receipts.find((r) => r.to === receipt.to);
-  if (!message || !entry) return;
+  if (!message || !entry) {
+    const list = earlyReceipts.get(receipt.seq) ?? [];
+    list.push(receipt);
+    earlyReceipts.set(receipt.seq, list);
+    // Only the last few matter (first messages of new conversations); never let this grow.
+    if (earlyReceipts.size > 50) earlyReceipts.delete(earlyReceipts.keys().next().value ?? 0);
+    return;
+  }
   entry.deliveredAt = receipt.deliveredAt;
   entry.seenAt = receipt.seenAt;
   const shown = dom.messageList.querySelector(`[data-receipts="${receipt.seq}"]`);

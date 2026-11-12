@@ -48,5 +48,5 @@ API keys. Checks: install, the machine waiting and being allowed, join, idle wak
 command, seen receipts, live output, doctor, uninstall. It needs Docker and the harnesses installed on the host;
 about two minutes for all four.
 
-Last run (12 Nov 2026, omp 18.18.8, pi 1.5.2, Claude Code 2.1.312, codex-cli 0.159.0): all checks passed; Claude
+Last run (12 Nov 2026, omp 18.19.0, pi 1.5.2, Claude Code 2.1.312, codex-cli 0.159.0): all checks passed; Claude
 Code's idle wake skipped (see its page).

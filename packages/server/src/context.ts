@@ -86,22 +86,34 @@ export class BusContext {
     return undefined;
   }
 
-  /** `to` parsed as an address; 400 when it is not one or names an id that is not a participant. */
-  knownAddress(to: string): ParsedAddress {
+  /**
+   * `to` parsed as an address, with `@id-n` for session n of agent `id` mapped to `id` (an id that is itself a
+   * participant always wins); 400 when it is not an address or names an id that is not a participant.
+   */
+  knownAddress(to: string): ParsedAddress & { sessions: Map<string, number> } {
     let parsed: ParsedAddress;
     try {
       parsed = parseAddress(to);
     } catch (error) {
       throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }
-    if (parsed.kind === "all") return parsed;
-    const unknown = parsed.ids.filter((id) => !this.hub.knownParticipant(id));
+    const sessions = new Map<string, number>();
+    if (parsed.kind === "all") return { ...parsed, sessions };
+    const ids = parsed.ids.map((id) => {
+      if (this.hub.knownParticipant(id)) return id;
+      const match = /^(.+)-(\d+)$/.exec(id);
+      const base = match?.[1];
+      if (!base || this.hub.knownParticipant(base)?.kind !== "agent") return id;
+      sessions.set(base, Number(match[2]));
+      return base;
+    });
+    const unknown = ids.filter((id) => !this.hub.knownParticipant(id));
     if (unknown.length > 0) {
       throw new HttpError(
         400,
         `Unknown id${unknown.length > 1 ? "s" : ""} ${unknown.join(", ")}. Known ids: ${this.hub.knownIds().join(", ")}`
       );
     }
-    return parsed;
+    return { kind: "ids", ids: Array.from(new Set(ids)), sessions };
   }
 }

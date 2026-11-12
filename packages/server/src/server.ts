@@ -183,6 +183,11 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
             harness: nonEmptyParam(url, "harness"),
             tokenHash: token ? tokenHash(token) : null,
             addr: srv.requestIP(req)?.address ?? null,
+            // One key per window or task, kept across reconnects; harnesses that send none get one per connection.
+            sessionKey: nonEmptyParam(url, "session") ?? `connection:${crypto.randomUUID()}`,
+            sessionNo: 0,
+            activeAt: 0,
+            inflight: new Set(),
             id: "",
           };
           if (srv.upgrade(req, { data })) return undefined;

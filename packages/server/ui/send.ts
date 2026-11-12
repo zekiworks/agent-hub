@@ -11,10 +11,11 @@ import { autosize, hideError, renderStaged, setReplyTo, showError, updateCompose
 import { dom, PHONE } from "./dom";
 import { saveDraft } from "./drafts";
 import { errorText } from "./format";
+import { chosenSession } from "./live";
 import { loadMessages, receive } from "./loading";
 import { closeMention, handleMentionKey, updateMention } from "./mentions";
 import { navigate } from "./routing";
-import { state } from "./state";
+import { currentDirectAgent, state } from "./state";
 
 async function uploadFile(file: File): Promise<FileRef> {
   const params = new URLSearchParams({ from: state.me, name: file.name });
@@ -51,6 +52,10 @@ async function send(): Promise<void> {
     } else if (view.kind === "draft") request.to = formatAddress(view.to);
     else if (view.id === ALL_CONVERSATION_ID) request.to = "@all";
     else request.conversationId = view.id;
+    // On an agent's page with a session picked, the message goes to that session.
+    const agent = currentDirectAgent();
+    const session = agent ? chosenSession(agent) : undefined;
+    if (session !== undefined) request.toSession = session;
 
     const res = await postJson<PostMessageResponse>("/api/messages", request);
     dom.input.value = "";

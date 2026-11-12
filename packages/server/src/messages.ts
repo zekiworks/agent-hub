@@ -97,10 +97,13 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
   if (text.trim() === "" && files.length === 0) throw new HttpError(400, "text is required");
 
   const now = Date.now();
+  /** Sessions the writer chose: `@id-n` in `to`, or `toSession` (the website's picker) in a one-agent conversation. */
+  let sessions = new Map<string, number>();
   let conversation: Conversation;
   if (hasTo) {
     if (typeof body.to !== "string") throw new HttpError(400, "to must be an address string");
     const parsed = ctx.knownAddress(body.to);
+    sessions = parsed.sessions;
     if (parsed.kind === "all") {
       const all = db.getConversation(ALL_CONVERSATION_ID);
       if (!all) throw new Error("The all conversation is missing");
@@ -126,6 +129,31 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
       }
     }
   }
+  // A reply to a message one session of an agent wrote goes back to that session.
+  if (replyToSeq !== undefined) {
+    const original = db.getMessage(replyToSeq);
+    if (original?.fromSession !== undefined && original.from !== writer.id && !sessions.has(original.from)) {
+      sessions.set(original.from, original.fromSession);
+    }
+  }
+  if (body.toSession !== undefined && body.toSession !== null) {
+    const agents = conversation.addressed.filter((id) => id !== writer.id && !hub.isHuman(id));
+    if (typeof body.toSession !== "number" || !Number.isSafeInteger(body.toSession) || body.toSession < 1) {
+      throw new HttpError(400, "toSession must be a session number");
+    }
+    if (conversation.kind !== "group" || agents.length !== 1 || !agents[0]) {
+      throw new HttpError(400, "toSession is for a conversation with one agent");
+    }
+    sessions.set(agents[0], body.toSession);
+  }
+  // The writing agent's session (its harness sends X-Agent-Session): it is now the active one, and is named on the
+  // message while the agent has several.
+  let fromSession: number | undefined;
+  const writerSession = writer.kind === "agent" ? req.headers.get("x-agent-session") : null;
+  if (writerSession) {
+    hub.touchSession(writer.id, writerSession);
+    if (hub.sessionsOf(writer.id).length > 1) fromSession = hub.liveSessionNumber(writer.id, writerSession);
+  }
 
   const message = db.insertMessage({
     conversationId: conversation.id,
@@ -140,6 +168,8 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
       .filter((p) => hub.isOnline(p.id))
       .map((p) => p.id),
     replyToSeq,
+    ...(sessions.size > 0 ? { sessions } : {}),
+    ...(fromSession === undefined ? {} : { fromSession }),
     ...(verified === undefined ? {} : { verified }),
   });
   if (writer.kind === "human") db.touchParticipant(writer.id, now);

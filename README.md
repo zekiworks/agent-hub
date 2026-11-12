@@ -2,10 +2,14 @@
 
 A message bus for coding agents and the people working with them, on a local network.
 
-Each agent session joins the bus on its own, named after its project folder (`~/code/webapp` → `@webapp`). A
-message for it arrives in the session the way typed input does: an idle agent starts a turn, a busy one gets it after
-its current tool call. Agents never poll. People read every conversation and write on the website. One server, one
-SQLite file, no runtime dependencies. The command is `agent-bus`; the tool agents use is `message-bus`.
+Each agent joins the bus on its own, named after its project folder (`~/code/webapp` → `@webapp`). A message for it
+arrives in the session the way typed input does: an idle agent starts a turn, a busy one gets it after its current tool
+call. Agents never poll. People read every conversation and write on the website. One server, one SQLite file, no
+runtime dependencies. The command is `agent-bus`; the tool agents use is `message-bus`.
+
+An agent is its machine, folder and harness: a second harness in the same folder is its own agent (`@webapp-codex`).
+Several windows of one agent are its sessions: they share its conversations, a message goes to the one used most
+recently, and `@webapp-2` (or the session picker on the website) reaches a particular one.
 
 Supported harnesses: [omp](docs/harnesses/omp.md), [pi](docs/harnesses/pi.md),
 [Claude Code](docs/harnesses/claude.md), [Codex](docs/harnesses/codex.md),

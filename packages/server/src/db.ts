@@ -7,6 +7,7 @@ import {
   isJsonObject,
   qualifiedAgentId,
   QUOTE_TEXT_CHARS,
+  slugifyId,
   type AgentIdentity,
   type AgentSettings,
   type Conversation,
@@ -46,6 +47,10 @@ export interface NewMessage {
   createdAt: number;
   /** Agent ids the message is sent to (receipts start undelivered). */
   recipients: string[];
+  /** Sessions the writer chose for some recipients (`@id-2`, the website's picker). */
+  sessions?: ReadonlyMap<string, number>;
+  /** The writing agent's session number, when it has several live sessions. */
+  fromSession?: number;
   /** The message this one replies to (same conversation). */
   replyToSeq?: number;
   /** Human messages while authentication is on: written from a signed-in session (true) or not (false). */
@@ -57,6 +62,7 @@ interface ReceiptRow {
   recipient: string;
   delivered_at: number | null;
   seen_at: number | null;
+  session: number | null;
 }
 
 interface ParticipantRow {
@@ -91,6 +97,7 @@ interface MessageRow {
   created_at: number;
   reply_to_seq: number | null;
   verified: number | null;
+  from_session: number | null;
 }
 
 interface FileRow {
@@ -114,10 +121,10 @@ CREATE TABLE IF NOT EXISTS participants (
   created_at INTEGER NOT NULL,
   last_seen_at INTEGER NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS participants_agent_path
-  ON participants(host, path) WHERE kind = 'agent' AND path IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS participants_agent_name
-  ON participants(host, name) WHERE kind = 'agent' AND name IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS participants_agent_path_harness
+  ON participants(host, path, COALESCE(harness, '')) WHERE kind = 'agent' AND path IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS participants_agent_name_harness
+  ON participants(host, name, COALESCE(harness, '')) WHERE kind = 'agent' AND name IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
@@ -246,6 +253,7 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
     receipts,
     ...(quote ? { quote } : {}),
     ...(row.verified === null || row.verified === undefined ? {} : { verified: row.verified === 1 }),
+    ...(row.from_session === null || row.from_session === undefined ? {} : { fromSession: row.from_session }),
   };
 }
 
@@ -264,6 +272,8 @@ export class BusDatabase {
     this.db.exec("PRAGMA synchronous = NORMAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec("PRAGMA busy_timeout = 5000;");
+    // Databases from before the harness was part of an agent's identity allowed one agent per folder (or name).
+    this.db.exec("DROP INDEX IF EXISTS participants_agent_path; DROP INDEX IF EXISTS participants_agent_name;");
     this.db.exec(SCHEMA);
     // Databases created before "seen" receipts lack the column.
     const receiptColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(receipts)").all();
@@ -288,6 +298,13 @@ export class BusDatabase {
     const participantColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(participants)").all();
     if (!participantColumns.some((c) => c.name === "token_hash")) {
       this.db.exec("ALTER TABLE participants ADD COLUMN token_hash TEXT");
+    }
+    // Databases created before sessions lack the columns (null: no session chosen / the agent had one session).
+    if (!messageColumns.some((c) => c.name === "from_session")) {
+      this.db.exec("ALTER TABLE messages ADD COLUMN from_session INTEGER");
+    }
+    if (!receiptColumns.some((c) => c.name === "session")) {
+      this.db.exec("ALTER TABLE receipts ADD COLUMN session INTEGER");
     }
     this.seed(humans, now);
     this.mergeThreads();
@@ -485,9 +502,11 @@ export class BusDatabase {
   }
 
   /**
-   * Finds or creates the agent for `identity`. A new agent takes its folder name (or name) if free, else
-   * `base@<first differing part of its canonical address>` (see `qualifiedAgentId`), else a numeric suffix.
-   * Ids held by humans or listed in `reservedIds` count as taken.
+   * Finds or creates the agent for `identity` run by `harness`. The harness is part of the identity: Claude Code and
+   * Codex in one folder are two agents. A row for the same folder (or name) without a harness (older databases) is
+   * taken over by the first harness that joins. A new agent takes its folder name (or name) if free; if another
+   * harness of the same folder holds it, `<that id>-<harness>`; else `base@<first differing part of its canonical
+   * address>` (see `qualifiedAgentId`); else a numeric suffix. Ids held by humans or in `reservedIds` count as taken.
    */
   joinAgent(
     identity: AgentIdentity,
@@ -496,18 +515,22 @@ export class BusDatabase {
     now = Date.now()
   ): JoinResult {
     return this.db.transaction((): JoinResult => {
-      const existing =
+      const sameFolder =
         "path" in identity
           ? this.db
               .query<ParticipantRow, [string, string]>(
-                "SELECT * FROM participants WHERE kind = 'agent' AND host = ?1 AND path = ?2"
+                "SELECT * FROM participants WHERE kind = 'agent' AND host = ?1 AND path = ?2 ORDER BY created_at"
               )
-              .get(identity.host, identity.path)
+              .all(identity.host, identity.path)
           : this.db
               .query<ParticipantRow, [string, string]>(
-                "SELECT * FROM participants WHERE kind = 'agent' AND host = ?1 AND name = ?2"
+                "SELECT * FROM participants WHERE kind = 'agent' AND host = ?1 AND name = ?2 ORDER BY created_at"
               )
-              .get(identity.host, identity.name);
+              .all(identity.host, identity.name);
+      const existing =
+        sameFolder.find((p) => p.harness === harness) ??
+        sameFolder.find((p) => p.harness === null) ??
+        (harness === null ? sameFolder[0] : undefined);
       if (existing) {
         this.db
           .query("UPDATE participants SET last_seen_at = ?2, harness = COALESCE(?3, harness) WHERE id = ?1")
@@ -518,7 +541,8 @@ export class BusDatabase {
         };
       }
 
-      const id = this.pickId(identity, reservedIds);
+      const first = sameFolder[0];
+      const id = first && harness ? this.harnessId(first.id, harness, reservedIds) : this.pickId(identity, reservedIds);
       const deliveredSeq = this.maxSeq();
       this.db
         .query(
@@ -540,6 +564,19 @@ export class BusDatabase {
       if (!created) throw new Error(`Failed to create participant ${id}`);
       return { participant: created, isNew: true };
     })();
+  }
+
+  /** Id of a second harness in a folder whose agent is `holderId`: `<holderId>-<harness>`, numbered if taken. */
+  private harnessId(holderId: string, harness: string, reservedIds: ReadonlySet<string>): string {
+    const suffix = `-${slugifyId(harness) || "agent"}`;
+    const stem = `${holderId.slice(0, MAX_ID_LENGTH - suffix.length)}${suffix}`;
+    const taken = (id: string): boolean =>
+      reservedIds.has(id) || this.db.query("SELECT 1 FROM participants WHERE id = ?1").get(id) !== null;
+    if (!taken(stem)) return stem;
+    for (let n = 2; ; n++) {
+      const id = `${stem.slice(0, MAX_ID_LENGTH - `-${n}`.length)}-${n}`;
+      if (!taken(id)) return id;
+    }
   }
 
   private pickId(identity: AgentIdentity, reservedIds: ReadonlySet<string>): string {
@@ -686,8 +723,8 @@ export class BusDatabase {
     return this.db.transaction((): Message => {
       const result = this.db
         .query(
-          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
+          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
         )
         .run(
           id,
@@ -698,11 +735,12 @@ export class BusDatabase {
           JSON.stringify(input.files),
           input.createdAt,
           input.replyToSeq ?? null,
-          input.verified === undefined ? null : input.verified ? 1 : 0
+          input.verified === undefined ? null : input.verified ? 1 : 0,
+          input.fromSession ?? null
         );
       const seq = Number(result.lastInsertRowid);
-      const addReceipt = this.db.query("INSERT INTO receipts (seq, recipient, delivered_at) VALUES (?1, ?2, NULL)");
-      for (const recipient of input.recipients) addReceipt.run(seq, recipient);
+      const addReceipt = this.db.query("INSERT INTO receipts (seq, recipient, delivered_at, session) VALUES (?1, ?2, NULL, ?3)");
+      for (const recipient of input.recipients) addReceipt.run(seq, recipient, input.sessions?.get(recipient) ?? null);
       this.db
         .query("UPDATE conversations SET last_message_at = MAX(last_message_at, ?2) WHERE id = ?1")
         .run(input.conversationId, input.createdAt);
@@ -716,9 +754,13 @@ export class BusDatabase {
         text: input.text,
         files: input.files,
         createdAt: input.createdAt,
-        receipts: input.recipients.map((to) => ({ to, deliveredAt: null, seenAt: null })),
+        receipts: input.recipients.map((to) => {
+          const session = input.sessions?.get(to);
+          return { to, ...(session === undefined ? {} : { session }), deliveredAt: null, seenAt: null };
+        }),
         ...(quote ? { quote } : {}),
         ...(input.verified === undefined ? {} : { verified: input.verified }),
+        ...(input.fromSession === undefined ? {} : { fromSession: input.fromSession }),
       };
     })();
   }
@@ -745,14 +787,14 @@ export class BusDatabase {
     const bySeq = new Map<number, Receipt[]>();
     const receiptRows = this.db
       .query<ReceiptRow, [string]>(
-        `SELECT seq, recipient, delivered_at, seen_at FROM receipts
+        `SELECT seq, recipient, delivered_at, seen_at, session FROM receipts
          WHERE seq IN (SELECT value FROM json_each(?1)) ORDER BY recipient`
       )
       .all(JSON.stringify(rows.map((r) => r.seq)));
     for (const r of receiptRows) {
       let list = bySeq.get(r.seq);
       if (!list) bySeq.set(r.seq, (list = []));
-      list.push({ to: r.recipient, deliveredAt: r.delivered_at, seenAt: r.seen_at });
+      list.push({ to: r.recipient, ...(r.session === null ? {} : { session: r.session }), deliveredAt: r.delivered_at, seenAt: r.seen_at });
     }
     const quotes = this.quotesFor(
       Array.from(new Set(rows.map((r) => r.reply_to_seq).filter((s): s is number => s !== null)))

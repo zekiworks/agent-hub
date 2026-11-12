@@ -1818,3 +1818,25 @@ ul.md-list ul.md-list { list-style: circle; }
   color: var(--warning);
   font-size: 13px;
 }
+
+/* An agent's live sessions on its page; the picked (or latest) one gets messages and shows its live output. */
+.session-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.session-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.session-chip.on {
+  border-color: var(--accent);
+  color: var(--text);
+}

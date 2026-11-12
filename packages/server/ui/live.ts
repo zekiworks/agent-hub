@@ -1,5 +1,5 @@
 // The status panel and live output of the agent whose page is open (output streamed only while watched).
-import type { ActivityEvent, ViewerServerFrame } from "@agent-bus/protocol";
+import type { ActivityEvent, AgentSession, ViewerServerFrame } from "@agent-bus/protocol";
 import { dom } from "./dom";
 import { elapsed, relativeTime, shortPath } from "./format";
 import { h } from "./html";
@@ -22,6 +22,42 @@ const live = {
   silentTimer: undefined as Timer | undefined,
   silent: false,
 };
+
+/** The session picked on an agent's page: its live output is shown and messages go to it (else: the latest). */
+const chosen = new Map<string, number>();
+
+/** The session of `agentId` picked on its page, while that session is live. */
+export function chosenSession(agentId: string): number | undefined {
+  const n = chosen.get(agentId);
+  const agent = state.participants.find((p) => p.id === agentId);
+  return n !== undefined && agent?.sessions?.some((s) => s.n === n) ? n : undefined;
+}
+
+/** "Sessions" row: one chip per live session; picking one sends messages there and shows its live output. */
+function sessionChips(agentId: string, sessions: AgentSession[]): HTMLElement {
+  const latest = sessions.reduce((a, b) => (b.activeAt > a.activeAt ? b : a));
+  const picked = chosenSession(agentId);
+  const row = h("span", "session-chips");
+  for (const s of sessions) {
+    const label = `${agentId}-${s.n} · ${s.status?.state ?? "online"}${s.n === latest.n ? " · latest" : ""}`;
+    const chip = h("button", `session-chip${(picked ?? latest.n) === s.n ? " on" : ""}`, label);
+    chip.type = "button";
+    chip.title =
+      picked === s.n
+        ? "Messages go to this session; click again to follow the latest one"
+        : "Send messages to this session and show its live output";
+    chip.addEventListener("click", () => {
+      if (picked === s.n) chosen.delete(agentId);
+      else chosen.set(agentId, s.n);
+      live.entries.clear();
+      live.replayed = false;
+      renderAgentPanel();
+      syncWatch(true);
+    });
+    row.append(chip);
+  }
+  return row;
+}
 
 /** Status panel at the top of an agent's own page (its one-to-one conversation or draft). */
 export function renderAgentPanel(): void {
@@ -55,7 +91,7 @@ export function renderAgentPanel(): void {
   }
   const where = [agent.path ? shortPath(agent.path) : "", agent.host ?? "", agent.harness ?? ""].filter(Boolean).join(" · ");
   if (where) rows.push(["Where", where]);
-  if (agent.connections > 1) rows.push(["Sessions", `${agent.connections} connected (same folder open twice)`]);
+  if (agent.sessions && agent.sessions.length > 1) rows.push(["Sessions", sessionChips(agent.id, agent.sessions)]);
   rows.push(["To all", agent.settings.all === "wake" ? "starts a turn" : "quiet (read at its next turn)"]);
   const list = h("dl", "agent-panel-list");
   for (const [label, value] of rows) {
@@ -89,7 +125,8 @@ export function syncWatch(force = false): void {
     live.silentTimer = undefined;
   }
   if (!force && wanted === live.sent) return;
-  if (!sendViewer({ type: "watch", agentId: wanted })) return;
+  const session = wanted ? chosenSession(wanted) : undefined;
+  if (!sendViewer({ type: "watch", agentId: wanted, ...(session === undefined ? {} : { session }) })) return;
   live.sent = wanted;
   if (wanted !== null && !live.replayed) {
     clearTimeout(live.silentTimer);

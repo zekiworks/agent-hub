@@ -18,10 +18,14 @@ export interface AgentSettings {
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = { all: "quiet" };
 
 export interface Participant {
-  /** Stable id: omp agents derive it from their project folder, harnesses without one (Hermes) join by name; tied to host+path or host+name, not to the session. Humans are configured ("carol", "uma"). */
+  /**
+   * Stable id. Agents: machine + project folder (or name, for harnesses without a folder, like Hermes) + harness; the
+   * id is the folder name, with `-<harness>` added only when another harness already holds that name for the same
+   * folder. Humans are configured ("carol", "uma").
+   */
   id: string;
   kind: ParticipantKind;
-  /** Agents: harness that joined ("omp", "hermes", …), for display. */
+  /** Agents: the harness ("omp", "codex", "hermes", …); part of its identity. */
   harness?: string;
   /** Agents that joined by project folder: absolute project path. */
   path?: string;
@@ -29,14 +33,27 @@ export interface Participant {
   host?: string;
   /** Agents: at least one live connection. Humans: always false. */
   online: boolean;
-  /** Live agent connections; the same folder open in two omp sessions counts 2. */
+  /** Live agent connections (one per session, more while a session reconnects). */
   connections: number;
+  /**
+   * Agents: the live sessions (windows, tasks) of this agent, numbered from 1. They share the agent's conversations;
+   * a message reaches one of them: the one it names (`@id-2`), else the most recently active.
+   */
+  sessions?: AgentSession[];
   lastSeenAt: number;
   settings: AgentSettings;
   /** Agents: what the harness reports about itself, while connected (omp only today). */
   status?: AgentStatus;
   /** Agents: messages delivered to its session but not yet seen by its model. */
   waiting?: number;
+}
+
+/** One live session of an agent. */
+export interface AgentSession {
+  n: number;
+  status?: AgentStatus;
+  /** Last time it joined or started working: the most recent one gets messages that name no session. */
+  activeAt: number;
 }
 
 /** An agent's own report of what it is doing; sent by the harness, never costs a model turn. */
@@ -88,6 +105,8 @@ export interface Message {
   receipts: Receipt[];
   /** Set when the message was written as a reply to message `quote.seq` (same conversation). */
   quote?: Quote;
+  /** The writing agent's session number, when it had several live sessions. */
+  fromSession?: number;
   /**
    * Only on human messages written while the bus checks who humans are (auth optional/required): true when written
    * from a signed-in session (passkey), false when not. Absent: authentication was off.
@@ -108,6 +127,8 @@ export const QUOTE_TEXT_CHARS = 280;
 
 export interface Receipt {
   to: string;
+  /** The session of `to` the writer chose (`@to-2`, or the website's picker); absent: its most recently active one. */
+  session?: number;
   /** The recipient's harness accepted the message into its session (queued, or started a turn). */
   deliveredAt: number | null;
   /** The message was in a request to the recipient's model, i.e. the agent has it in front of it. Implies delivered. */
@@ -127,7 +148,8 @@ export interface ReceiptFrame {
 // ---- Agent connection: WS /ws/agent?host=<hostname>&harness=<omp|hermes|…>&path=<abs project path>  (or &name=<id> instead of path) ----
 
 export type AgentServerFrame =
-  | { type: "joined"; id: string; participants: Participant[] }
+  /** `session`: this connection's session number within the agent (shown as `@id-<n>` while it has several). */
+  | { type: "joined"; id: string; session: number; participants: Participant[] }
   | {
       type: "deliver";
       message: Message;
@@ -197,9 +219,11 @@ export type ViewerServerFrame =
 /**
  * `auth`: the first frame from a browser, which cannot set headers on a WebSocket (a passkey session; scripts may send
  * an agent token instead, or the headers at upgrade). Then the viewer watches one agent's live output at a time
- * (`agentId: null` stops).
+ * (`agentId: null` stops): the session it names, else the agent's most recently active session.
  */
-export type ViewerClientFrame = { type: "auth"; session?: string; agentToken?: string } | { type: "watch"; agentId: string | null };
+export type ViewerClientFrame =
+  | { type: "auth"; session?: string; agentToken?: string }
+  | { type: "watch"; agentId: string | null; session?: number };
 
 /** A machine account's agent token as people see it: the hub stores its hash; `id` is the hash's first 12 characters. */
 export interface AgentTokenInfo {
@@ -250,6 +274,8 @@ export interface PostMessageRequest {
   replyToSeq?: number;
   text: string;
   fileIds?: string[];
+  /** For a conversation with one agent: the session of that agent to reach (else its most recently active one). */
+  toSession?: number;
 }
 
 export interface PostMessageResponse {

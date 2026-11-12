@@ -140,6 +140,14 @@ export function provenanceMark(verified: boolean | undefined): string {
 }
 
 /**
+ * Who wrote `message`, as an address: `@id`, or `@id-n` when the agent had several live sessions and session n wrote
+ * it (writing to that address reaches the same session).
+ */
+export function senderLabel(message: { from: string; fromSession?: number }): string {
+  return message.fromSession === undefined ? message.from : `${message.from}-${message.fromSession}`;
+}
+
+/**
  * First line of the text a harness injects for delivery `seq`, with the local time it was written. Harnesses
  * find it again in what goes to the model to report the message as seen (by "#<seq> @", which the mark follows).
  */
