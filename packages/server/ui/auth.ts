@@ -156,7 +156,14 @@ const run = (action: () => Promise<void>) => (): void => {
   action().then(
     () => location.assign("/"),
     (err: Error) => {
-      msg.textContent = err.name === "NotAllowedError" ? "Cancelled (or this device has no passkey for this bus)." : err.message;
+      // InvalidStateError at enrollment: this device already holds one of this person's passkeys (often synced from
+      // another device through iCloud Keychain or Google Password Manager), so it refuses to make another.
+      msg.textContent =
+        err.name === "NotAllowedError"
+          ? "Cancelled (or this device has no passkey for this bus)."
+          : err.name === "InvalidStateError"
+            ? "This device already has a passkey for you on this bus (perhaps synced from another device). Sign in with it instead: open /auth and choose Sign in with a passkey."
+            : err.message;
     }
   );
 };
