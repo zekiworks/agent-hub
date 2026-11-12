@@ -15,6 +15,13 @@ import type { ParticipantRecord } from "./db";
 import { HttpError, readJsonObject } from "./http";
 
 const MAX_TEXT_LENGTH = 100_000;
+
+/** `text` without a leading "<id>:" / "@<id> –" naming the writer itself (any case, `:`, `-` or `–`). */
+export function withoutOwnName(text: string, id: string): string {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`^\\s*@?${escaped}\\s*[:\\-–—]\\s+`, "i"), "");
+}
+
 export const MAX_RECEIPT_WAIT_MS = 30_000;
 const DEFAULT_PAGE = 100;
 const MAX_PAGE = 500;
@@ -71,8 +78,9 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
   const hasConversation = body.conversationId !== undefined && body.conversationId !== null;
   if (hasTo === hasConversation) throw new HttpError(400, "Give exactly one of to, conversationId or replyToSeq");
 
-  const text = body.text ?? "";
-  if (typeof text !== "string") throw new HttpError(400, "text must be a string");
+  if (body.text !== undefined && typeof body.text !== "string") throw new HttpError(400, "text must be a string");
+  // The bus shows every message's sender; agents that start with their own name ("logic: …") only repeat it.
+  const text = writer.kind === "agent" ? withoutOwnName(body.text ?? "", writer.id) : (body.text ?? "");
   if (text.length > MAX_TEXT_LENGTH) {
     throw new HttpError(400, `text is longer than ${MAX_TEXT_LENGTH} characters`);
   }

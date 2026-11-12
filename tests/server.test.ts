@@ -254,6 +254,15 @@ describe("delivery", () => {
     expect((await alpha.client.take("deliver")).message.id).toBe(sentinel.message.id);
   });
 
+  test("an agent's own name at the start of its message is dropped (the bus shows the sender); others' names stay", async () => {
+    await joinPath("/tmp/x/alpha");
+    expect((await send({ from: "alpha", to: "@carol", text: "alpha: run 7 is done" })).message.text).toBe("run 7 is done");
+    expect((await send({ from: "alpha", to: "@carol", text: "@Alpha – again" })).message.text).toBe("again");
+    expect((await send({ from: "alpha", to: "@carol", text: "beta: said hi" })).message.text).toBe("beta: said hi");
+    expect((await send({ from: "alpha", to: "@carol", text: "alpha is idle" })).message.text).toBe("alpha is idle");
+    expect((await send({ from: "carol", to: "@alpha", text: "carol: from a human, kept" })).message.text).toBe("carol: from a human, kept");
+  });
+
   test("groups are reused for the same set regardless of order", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
