@@ -30,7 +30,6 @@ logger = logging.getLogger("plugins.message-bus")
 
 TOOL_NAME = "message-bus"
 STATE_DIR = Path.home() / ".agent-bus"
-ID_FILE = STATE_DIR / "hermes-id"  # bus id assigned at join; read by the tool in other processes
 
 
 def agent_token() -> str:
@@ -242,9 +241,15 @@ class BusClient:
         self.url = url.rstrip("/")
         self.name = name
 
+    @property
+    def id_file(self) -> Path:
+        """Bus id assigned at join, per configured name: several Hermes profiles of one account (zeki, toolbench) must
+        not read each other's id."""
+        return STATE_DIR / f"hermes-id-{re.sub(r'[^a-z0-9_-]', '-', self.name.lower())}"
+
     def my_id(self) -> str:
         try:
-            return ID_FILE.read_text().strip() or self.name
+            return self.id_file.read_text().strip() or self.name
         except OSError:
             return self.name
 
@@ -383,7 +388,7 @@ class GatewayBridge:
         kind = frame.get("type")
         if kind == "joined":
             STATE_DIR.mkdir(parents=True, exist_ok=True)
-            ID_FILE.write_text(frame["id"])
+            self.client.id_file.write_text(frame["id"])
             logger.info("message-bus: joined as @%s", frame["id"])
         elif kind == "deliver":
             await self._deliver(ws, frame)
