@@ -3,11 +3,12 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ActivityEvent, AgentServerFrame, Message, Participant, PostMessageResponse } from "@agent-bus/protocol";
-import { createBusServer, type BusServerHandle } from "@agent-bus/server";
+import type { BusServerHandle } from "@agent-bus/server";
 import { ActivityLog } from "../packages/client/src/activity";
 import { McpServer } from "../packages/claude-plugin/src/server";
 import { ClaudeSession, type HookInput } from "../packages/claude-plugin/src/session";
 import { TranscriptFollower } from "../packages/claude-plugin/src/transcript";
+import { agentSocketUrl, getJson, postJson, startBus } from "./helpers";
 
 let dataDir = "";
 let bus: BusServerHandle;
@@ -34,22 +35,22 @@ function folder(name: string): string {
 }
 
 async function participant(id: string): Promise<Participant | undefined> {
-  const state = (await (await fetch(`${bus.url}/api/state`)).json()) as { participants: Participant[] };
+  const state = await getJson<{ participants: Participant[] }>(bus, "/api/state");
   return state.participants.find((p) => p.id === id);
 }
 
 async function message(seq: number): Promise<Message> {
-  return ((await (await fetch(`${bus.url}/api/messages/${seq}`)).json()) as { message: Message }).message;
+  return (await getJson<{ message: Message }>(bus, `/api/messages/${seq}`)).message;
 }
 
 async function post(body: object): Promise<PostMessageResponse> {
-  const res = await fetch(`${bus.url}/api/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await postJson(bus, "/api/messages", body);
   expect(res.status).toBe(200);
   return (await res.json()) as PostMessageResponse;
 }
 
 async function rawAgent(name: string): Promise<void> {
-  const ws = new WebSocket(`${bus.url.replace(/^http/, "ws")}/ws/agent?host=test&harness=raw&path=${encodeURIComponent(folder(name))}`);
+  const ws = new WebSocket(agentSocketUrl(bus, { host: "test", harness: "raw", path: folder(name) }));
   sockets.push(ws);
   const joined = Promise.withResolvers<void>();
   ws.addEventListener("message", (e) => {
@@ -75,6 +76,8 @@ function input(extra: Partial<HookInput> = {}): HookInput {
 }
 
 async function startSession(name = "alpha", channelWorks = true): Promise<ClaudeSession> {
+  // The bus lists the agent online before the session has processed its `joined` frame (which it logs).
+  const joined = Promise.withResolvers<void>();
   session = new ClaudeSession({
     folder: folder(name),
     busUrl: bus.url,
@@ -82,9 +85,12 @@ async function startSession(name = "alpha", channelWorks = true): Promise<Claude
       channel.push({ content, meta });
       if (channelWorks) channelArrived(content);
     },
-    log: () => {},
+    log: (line) => {
+      if (line.startsWith(`on the bus as @${name} `)) joined.resolve();
+    },
   });
   session.hook("SessionStart", input({ source: "startup" }));
+  await joined.promise;
   await until(async () => (await participant(name))?.online);
   return session;
 }
@@ -94,7 +100,7 @@ const deliveredTo = async (seq: number, id = "alpha") => (await message(seq)).re
 
 beforeEach(() => {
   dataDir = mkdtempSync(path.join(tmpdir(), "mb-claude-test-"));
-  bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
   process.env.AGENT_BUS_RECEIPT_WAIT_MS = "300";
   channel = [];
   transcript = path.join(dataDir, "transcript.jsonl");

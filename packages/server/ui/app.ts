@@ -1,6 +1,6 @@
 // The conversations page (index.html): wires the modules together, routes between views and boots.
 import type { ViewerServerFrame } from "@agent-bus/protocol";
-import { api, PROFILE_KEY } from "./api";
+import { api, PROFILE_KEY, setFileKey } from "./api";
 import { hideError, setReplyTo, showError } from "./composer";
 import { dom, PHONE, scrollToBottom } from "./dom";
 import { loadDraft } from "./drafts";
@@ -9,6 +9,7 @@ import "./group";
 import { hooks } from "./hooks";
 import { applyActivity, syncWatch } from "./live";
 import { loadEarlier, loadMessages, loadState, receive } from "./loading";
+import { loadAgentRequests } from "./machines";
 import { closeMention, updateMention } from "./mentions";
 import { setDetails, setPhoneList } from "./phones";
 import { askProfile } from "./profile";
@@ -106,11 +107,20 @@ function handleFrame(frame: ViewerServerFrame): void {
     case "activity":
       applyActivity(frame);
       break;
+    case "agent-tokens":
+      void loadAgentRequests();
+      break;
+    case "error":
+      // The session ended (signed out elsewhere, passkey removed): sign in again.
+      location.assign("/auth");
+      break;
   }
 }
 
 /** After a reconnect: refresh state and drop message caches (they may have gaps). */
 async function resync(): Promise<void> {
+  await loadAuth().catch(() => undefined);
+  void loadAgentRequests();
   try {
     await loadState();
   } catch (err) {
@@ -124,38 +134,42 @@ async function resync(): Promise<void> {
 
 // ---- Boot ----
 
-/** Authentication state for the topbar link; the signed-in human, if any. */
+/**
+ * The signed-in human (GET /api/auth/state), or undefined; also renews the key file links carry. Everyone on the
+ * bus is signed in, so without a session the page goes to the sign-in page.
+ */
 async function loadAuth(): Promise<string | undefined> {
-  try {
-    const auth = await api<{ mode: string; me: string | null }>("/api/auth/state");
-    if (auth.mode === "off") return undefined;
-    dom.authLink.hidden = false;
-    dom.authLink.textContent = auth.me ? `✓ ${auth.me}` : auth.mode === "required" ? "Sign in to write" : "Sign in";
-    dom.authLink.title = auth.me ? "Signed in with a passkey (manage passkeys, sign out)" : "Sign in with a passkey so your messages count as verified";
-    return auth.me ?? undefined;
-  } catch {
-    return undefined;
-  }
+  const auth = await api<{ me: string | null; fileKey?: string }>("/api/auth/state");
+  if (!auth.me) return undefined;
+  setFileKey(auth.fileKey ?? "");
+  dom.authLink.hidden = false;
+  dom.authLink.textContent = `✓ ${auth.me}`;
+  dom.authLink.title = "Signed in with a passkey (passkeys, machines on the bus, sign out)";
+  return auth.me;
 }
 
 async function boot(): Promise<void> {
+  let signedIn: string | undefined;
   try {
+    signedIn = await loadAuth();
+    if (!signedIn) {
+      location.replace("/auth");
+      return;
+    }
     await loadState();
   } catch (err) {
     setLinkStatus("offline", "server unreachable");
     showEmpty(`Could not reach the bus: ${errorText(err)}. Reload to retry.`);
     return;
   }
-  const saved = localStorage.getItem(PROFILE_KEY);
-  state.me = saved && state.humans.includes(saved) ? saved : "";
-  // With passkeys on, a signed-in browser is that human (the server refuses any other `from`).
-  const signedIn = await loadAuth();
-  if (signedIn && state.humans.includes(signedIn)) {
-    state.me = signedIn;
-    localStorage.setItem(PROFILE_KEY, signedIn);
-    dom.profileSelect.disabled = true;
-    dom.profileSelect.title = `Signed in as ${signedIn} with a passkey`;
-  }
+  // A signed-in browser is that human (the server refuses any other `from`).
+  state.me = state.humans.includes(signedIn) ? signedIn : "";
+  localStorage.setItem(PROFILE_KEY, signedIn);
+  dom.profileSelect.disabled = true;
+  dom.profileSelect.title = `Signed in as ${signedIn} with a passkey`;
+  void loadAgentRequests();
+  // File keys last a day; pages stay open longer.
+  setInterval(() => void loadAuth().catch(() => undefined), 3600_000);
   if (state.me) loadReadMarkers();
   connectViewer({
     onOpen: (reconnected) => {

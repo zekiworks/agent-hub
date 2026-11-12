@@ -15,7 +15,8 @@ import type {
   StateResponse,
   ViewerServerFrame,
 } from "@agent-bus/protocol";
-import { createBusServer, groupConversationId, type BusServerHandle } from "@agent-bus/server";
+import { groupConversationId, type BusServerHandle } from "@agent-bus/server";
+import { agentSocketUrl, busFetch, getJson, identity, postJson, startBus } from "./helpers";
 
 type Frame = AgentServerFrame | ViewerServerFrame;
 type DeliverFrame = Extract<AgentServerFrame, { type: "deliver" }>;
@@ -40,8 +41,8 @@ class Client {
     ws.addEventListener("close", () => this.closed.resolve());
   }
 
-  static async connect(url: string): Promise<Client> {
-    const ws = new WebSocket(url);
+  static async connect(url: string, headers?: Record<string, string>): Promise<Client> {
+    const ws = new WebSocket(url, headers ? ({ headers } as never) : undefined);
     const client = new Client(ws);
     const opened = Promise.withResolvers<void>();
     ws.addEventListener("open", () => opened.resolve(), { once: true });
@@ -82,7 +83,7 @@ const clients: Client[] = [];
 
 beforeEach(() => {
   dataDir = mkdtempSync(path.join(tmpdir(), "mb-server-test-"));
-  bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
 });
 
 afterEach(async () => {
@@ -94,7 +95,7 @@ afterEach(async () => {
 const wsUrl = (route: string): string => `${bus.url.replace(/^http/, "ws")}${route}`;
 
 async function joinAgent(query: Record<string, string>): Promise<{ client: Client; id: string }> {
-  const client = await Client.connect(wsUrl(`/ws/agent?${new URLSearchParams(query)}`));
+  const client = await Client.connect(agentSocketUrl(bus, query));
   clients.push(client);
   const joined = await client.take("joined");
   return { client, id: joined.id };
@@ -107,12 +108,8 @@ async function leave(client: Client): Promise<void> {
   await client.close();
 }
 
-async function post(body: Record<string, unknown>): Promise<Response> {
-  return fetch(`${bus.url}/api/messages`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+function post(body: Record<string, unknown>): Promise<Response> {
+  return postJson(bus, "/api/messages", body);
 }
 
 async function send(body: Record<string, unknown>): Promise<PostMessageResponse> {
@@ -121,16 +118,19 @@ async function send(body: Record<string, unknown>): Promise<PostMessageResponse>
   return (await res.json()) as PostMessageResponse;
 }
 
-async function setSetting(from: string, key: string, value: unknown): Promise<Response> {
-  return fetch(`${bus.url}/api/settings`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ from, key, value }),
-  });
+function setSetting(from: string, key: string, value: unknown): Promise<Response> {
+  return postJson(bus, "/api/settings", { from, key, value });
 }
 
-async function state(): Promise<StateResponse> {
-  return (await (await fetch(`${bus.url}/api/state`)).json()) as StateResponse;
+function state(): Promise<StateResponse> {
+  return getJson<StateResponse>(bus, "/api/state");
+}
+
+/** A viewer signed in at upgrade with a human's session. */
+async function connectViewer(): Promise<Client> {
+  const viewer = await Client.connect(wsUrl("/ws/viewer"), identity(bus, "carol"));
+  clients.push(viewer);
+  return viewer;
 }
 
 async function errorOf(res: Response): Promise<string> {
@@ -317,11 +317,11 @@ describe("delivery", () => {
     raw.query("INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at) VALUES ('m_old', 'g_old', 'uma', 'human', 'old thread', '[]', 1)").run();
     raw.close();
 
-    bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+    bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
     const groups = (await state()).conversations.filter((c) => c.kind === "group");
     expect(groups.map((c) => c.id)).toEqual([kept.conversation.id]);
     expect(groups[0]?.members).toEqual(["alpha", "carol", "uma"]);
-    const page = (await (await fetch(`${bus.url}/api/conversations/g_old/messages`)).json()) as MessagesResponse;
+    const page = await getJson<MessagesResponse>(bus, "/api/conversations/g_old/messages");
     expect(page.messages.map((m) => m.text)).toEqual(["kept thread", "old thread"]);
     await joinPath("/tmp/x/alpha"); // only online agents get messages
     const byOldId = await send({ from: "uma", conversationId: "g_old", text: "still works" });
@@ -417,11 +417,11 @@ describe("http", () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const bytes = new Uint8Array(300_000);
     for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 31 + 7) % 256;
-    const upload = await fetch(`${bus.url}/api/files?from=carol&name=${encodeURIComponent("report ü.bin")}`, {
+    const upload = await busFetch(bus, `/api/files?from=carol&name=${encodeURIComponent("report ü.bin")}`, {
       method: "POST",
       headers: { "Content-Type": "application/x-test" },
       body: bytes,
-    });
+    }, "carol");
     expect(upload.status).toBe(200);
     const { file } = (await upload.json()) as { file: FileRef };
     expect(file.size).toBe(bytes.length);
@@ -429,7 +429,7 @@ describe("http", () => {
     expect(file.mimeType).toBe("application/x-test");
     expect(file.name).toBe("report ü.bin");
 
-    const download = await fetch(`${bus.url}/api/files/${file.id}`);
+    const download = await busFetch(bus, `/api/files/${file.id}`);
     expect(download.headers.get("content-type")).toBe("application/x-test");
     expect(download.headers.get("content-disposition")).toBe(
       `attachment; filename*=UTF-8''${encodeURIComponent("report ü.bin")}`
@@ -442,12 +442,11 @@ describe("http", () => {
     expect(frame.message.files).toEqual([file]);
 
     expect((await post({ from: "carol", to: "@alpha", text: "x", fileIds: ["f_missing"] })).status).toBe(400);
-    expect((await fetch(`${bus.url}/api/files/f_missing`)).status).toBe(404);
+    expect((await busFetch(bus, "/api/files/f_missing")).status).toBe(404);
   });
 
   test("viewers get participants and message frames", async () => {
-    const viewer = await Client.connect(wsUrl("/ws/viewer"));
-    clients.push(viewer);
+    const viewer = await connectViewer();
     const initial = await viewer.take("participants");
     expect(initial.participants.map((p) => p.id)).toEqual(["carol", "uma"]);
 
@@ -478,11 +477,9 @@ describe("http", () => {
     expect(snapshot.participants[0]?.id).toBe("alpha");
     expect(snapshot.conversations.map((c: Conversation) => c.id)).toEqual(["all", group.conversation.id]);
 
-    const page = (await (
-      await fetch(`${bus.url}/api/conversations/all/messages?beforeSeq=${sent[4]?.seq}&limit=2`)
-    ).json()) as MessagesResponse;
+    const page = await getJson<MessagesResponse>(bus, `/api/conversations/all/messages?beforeSeq=${sent[4]?.seq}&limit=2`);
     expect(page.messages.map((m) => m.text)).toEqual(["m2", "m3"]);
-    expect((await fetch(`${bus.url}/api/conversations/g_nope/messages`)).status).toBe(404);
+    expect((await busFetch(bus, "/api/conversations/g_nope/messages")).status).toBe(404);
 
     const health = await fetch(`${bus.url}/api/health`);
     expect(health.headers.get("access-control-allow-origin")).toBe("*");
@@ -492,11 +489,10 @@ describe("http", () => {
 
 describe("delivery receipts", () => {
   const getMessage = async (seq: number, waitMs = 0) =>
-    ((await (await fetch(`${bus.url}/api/messages/${seq}?waitMs=${waitMs}`)).json()) as { message: Message }).message;
+    (await getJson<{ message: Message }>(bus, `/api/messages/${seq}?waitMs=${waitMs}`)).message;
 
   test("each recipient's ack marks only that message delivered; viewers and the writer agent get receipt frames", async () => {
-    const viewer = await Client.connect(wsUrl("/ws/viewer"));
-    clients.push(viewer);
+    const viewer = await connectViewer();
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
 
@@ -521,8 +517,7 @@ describe("delivery receipts", () => {
   });
 
   test("seen marks the receipt seen (and delivered); repeats change nothing", async () => {
-    const viewer = await Client.connect(wsUrl("/ws/viewer"));
-    clients.push(viewer);
+    const viewer = await connectViewer();
     const beta = await joinPath("/tmp/x/beta");
     const { message } = await send({ from: "carol", to: "@beta", text: "look at this" });
     await beta.client.take("deliver");
@@ -569,7 +564,7 @@ describe("delivery receipts", () => {
     beta.client.send({ type: "ack", seq: (await beta.client.take("deliver")).message.seq });
     expect((await waiting).receipts.every((r) => r.deliveredAt !== null)).toBe(true);
 
-    expect((await fetch(`${bus.url}/api/messages/999`)).status).toBe(404);
+    expect((await busFetch(bus, "/api/messages/999")).status).toBe(404);
   });
 
   test("conversation pages carry receipts", async () => {
@@ -577,7 +572,7 @@ describe("delivery receipts", () => {
     const { message } = await send({ from: "uma", to: "@alpha", text: "dm" });
     alpha.client.send({ type: "ack", seq: (await alpha.client.take("deliver")).message.seq });
     await getMessage(message.seq, 10_000);
-    const page = (await (await fetch(`${bus.url}/api/conversations/${message.conversationId}/messages`)).json()) as MessagesResponse;
+    const page = await getJson<MessagesResponse>(bus, `/api/conversations/${message.conversationId}/messages`);
     expect(page.messages[0]?.receipts[0]).toMatchObject({ to: "alpha" });
     expect(page.messages[0]?.receipts[0]?.deliveredAt).toBeNumber();
   });
@@ -603,7 +598,7 @@ describe("agents that never took part", () => {
     await leave(addressed.client);
     // twice still has a connection; scratch is gone, with its receipt.
     expect(await ids()).toEqual(["twice", "addressed", "writer"]);
-    const after = (await (await fetch(`${bus.url}/api/messages/${all.message.seq}`)).json()) as { message: Message };
+    const after = await getJson<{ message: Message }>(bus, `/api/messages/${all.message.seq}`);
     expect(after.message.receipts.map((r) => r.to)).toEqual(["addressed", "twice", "writer"]);
 
     await leave(twiceAgain.client);
@@ -623,35 +618,35 @@ describe("agents that never took part", () => {
     clients.splice(clients.indexOf(idle.client), 1);
     clients.splice(clients.indexOf(active.client), 1);
     await bus.stop();
-    bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+    bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
     expect((await state()).participants.filter((p) => p.kind === "agent").map((p) => p.id)).toEqual(["active"]);
   });
 });
 
 describe("agent tokens", () => {
-  test("an id belongs to the first token that joins as it: another token cannot join or write as it; no token still works for unbound ids", async () => {
+  test("an id belongs to the first approved token that joins as it: another approved token cannot join or write as it", async () => {
+    bus.approveAgentToken("token-a");
+    bus.approveAgentToken("token-b");
     const owner = await joinAgent({ host: "h1", harness: "omp", path: "/tmp/x/alpha", token: "token-a" });
     expect(owner.id).toBe("alpha");
 
     // Same folder, another token: refused (4401), with how to free the id.
-    const thief = await Client.connect(wsUrl(`/ws/agent?${new URLSearchParams({ host: "h1", harness: "omp", path: "/tmp/x/alpha", token: "token-b" })}`));
+    const thief = await Client.connect(agentSocketUrl(bus, { host: "h1", harness: "omp", path: "/tmp/x/alpha", token: "token-b" }));
     expect((await thief.take("error")).error).toContain("agent-bus reset-agent alpha");
     await thief.closedPromise;
-    // No token at all: refused too, once the id is bound.
-    const anonymous = await Client.connect(wsUrl(`/ws/agent?${new URLSearchParams({ host: "h1", harness: "omp", path: "/tmp/x/alpha" })}`));
-    expect((await anonymous.take("error")).error).toContain("bound to another agent token");
+    // No token at all: refused whatever the id.
+    const anonymous = await Client.connect(wsUrl(`/ws/agent?${new URLSearchParams({ host: "h1", harness: "omp", path: "/tmp/x/other" })}`));
+    expect((await anonymous.take("error")).error).toContain("sends no agent token");
+    await anonymous.closedPromise;
 
     // HTTP writes as a bound agent need its token.
     const write = (headers: Record<string, string>) =>
       fetch(`${bus.url}/api/messages`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify({ from: "alpha", to: "@carol", text: "hi" }) });
     expect((await write({})).status).toBe(401);
     expect((await write({ "X-Agent-Token": "token-b" })).status).toBe(401);
+    expect((await write(identity(bus, "carol"))).status).toBe(403);
     expect((await write({ "X-Agent-Token": "token-a" })).status).toBe(200);
     expect((await setSetting("alpha", "all", "wake")).status).toBe(401);
-
-    // Agents that never sent a token (older harnesses) keep working until one claims the id.
-    const legacy = await joinPath("/tmp/x/legacy");
-    expect((await send({ from: legacy.id, to: "@carol", text: "no token" })).message.from).toBe("legacy");
 
     // Nobody writes as the bus's own @resources (403 once it exists; unknown before its first notice).
     expect([400, 403]).toContain((await post({ from: "resources", to: "@carol", text: "your GPU is mine" })).status);
@@ -675,13 +670,13 @@ describe("agents offline for a long time", () => {
     raw.close();
     const agentIds = async () => (await state()).participants.filter((p) => p.kind === "agent").map((p) => p.id);
 
-    bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"], forgetOfflineDays: 0 });
+    bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"], forgetOfflineDays: 0 });
     expect(await agentIds()).toEqual(["old", "recent"]);
     await bus.stop();
 
-    bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+    bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
     expect(await agentIds()).toEqual(["recent"]);
-    const kept = (await (await fetch(`${bus.url}/api/messages/${wrote.message.seq}`)).json()) as { message: Message };
+    const kept = await getJson<{ message: Message }>(bus, `/api/messages/${wrote.message.seq}`);
     expect(kept.message.text).toBe("my last words");
     expect(kept.message.receipts.map((r) => r.to)).toEqual([]);
     // Its conversation is still there, but nobody can write to the forgotten agent.
@@ -714,14 +709,14 @@ describe("reply quotes", () => {
     // Ordinary messages have no quote; pages carry quotes.
     const plain = await send({ from: "carol", to: "@alpha", text: "no quote" });
     expect(plain.message.quote).toBeUndefined();
-    const page = (await (await fetch(`${bus.url}/api/conversations/${original.conversationId}/messages`)).json()) as MessagesResponse;
+    const page = await getJson<MessagesResponse>(bus, `/api/conversations/${original.conversationId}/messages`);
     expect(page.messages.map((m) => m.quote?.seq ?? null)).toEqual([null, original.seq, reply.message.seq, null]);
 
     // The quote survives a restart (it is stored as the replied-to number and resolved on read).
     clients.splice(clients.indexOf(alpha.client), 1);
     await bus.stop();
-    bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
-    const after = (await (await fetch(`${bus.url}/api/messages/${human.message.seq}`)).json()) as { message: Message };
+    bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+    const after = await getJson<{ message: Message }>(bus, `/api/messages/${human.message.seq}`);
     expect(after.message.quote?.seq).toBe(reply.message.seq);
   });
 });

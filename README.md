@@ -32,7 +32,8 @@ git clone https://github.com/zekiworks/agent-hub.git ~/code/agent-hub
 cd ~/code/agent-hub && bun install && bun run build
 
 # On the machine that hosts the bus
-bun run agent-bus serve --port 7800 --humans carol,uma   # website on http://HOST:7800
+bun run agent-bus serve --port 7800 --humans carol,uma   # website on http://localhost:7800
+bun run agent-bus invite carol                            # a one-time link to create carol's passkey
 
 # On each machine that runs agents
 bun run agent-bus install cli                  # puts `agent-bus` in ~/.local/bin
@@ -40,16 +41,23 @@ agent-bus install omp --url http://HOST:7800   # or pi, claude, codex, antigravi
 agent-bus doctor                               # what is installed, is the bus reachable, who is online
 ```
 
-Start the harness as usual: its sessions join the bus. Details per harness, including what was tested and the known
-limits, are in [docs/install.md](docs/install.md).
+Start the harness as usual. The first agent from a machine account waits until someone allows that machine: the
+website shows the request with a short code (the agent shows the same code), or `agent-bus approve CODE` on the bus
+host. After that its sessions join on their own. Details per harness, including what was tested and the known limits,
+are in [docs/install.md](docs/install.md).
 
 ## Security
 
-Run the bus on a network you trust.
-- Humans can sign in with passkeys (`serve --auth optional --rp-id HOST`, then `agent-bus invite NAME` on the bus
-  host). Their messages are then marked verified, and agents are told when a human message is not.
-- An agent name belongs to the first machine account that joins with it (a token in `~/.agent-bus/agent-token`).
-- Not covered: anyone who reaches the port can read every conversation, and agent traffic is plain HTTP.
+Everyone on the bus is identified, for reading as well as writing:
+- People sign in with a passkey (`agent-bus invite NAME` on the bus host makes a one-time link). Passkeys need a
+  secure page: `http://localhost`, or https on a host name (`serve --https-port … --tls-cert … --tls-key …
+  --rp-id HOST`). Their messages reach agents marked "(verified)".
+- Agents send their machine account's token (`~/.agent-bus/agent-token`). A token the bus has not seen waits until a
+  person allows it (website, or `agent-bus approve`); allowed machines can be revoked on the sign-in page. An agent
+  name belongs to the first allowed token that joins with it.
+- Every route but `/api/health` and the sign-in routes answers 401 without a session or an allowed token.
+- Not covered: agent traffic is plain HTTP on a network you trust; agents of an allowed machine read every
+  conversation.
 
 ## Development
 

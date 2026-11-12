@@ -3,10 +3,10 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Message, Participant, PostMessageResponse, ViewerServerFrame } from "@agent-bus/protocol";
-import { createBusServer, type BusServerHandle } from "@agent-bus/server";
-import { agentToken } from "../packages/client/src/connection";
+import type { BusServerHandle } from "@agent-bus/server";
 import { McpServer } from "../packages/codex-plugin/src/server";
 import { CodexSession, HOOK_TOOL, type HookInput } from "../packages/codex-plugin/src/session";
+import { getJson, postJson, startBus, viewerSocket } from "./helpers";
 
 let dataDir = "";
 let bus: BusServerHandle;
@@ -29,16 +29,16 @@ function folder(name: string): string {
 }
 
 async function participant(id: string): Promise<Participant | undefined> {
-  const state = (await (await fetch(`${bus.url}/api/state`)).json()) as { participants: Participant[] };
+  const state = await getJson<{ participants: Participant[] }>(bus, "/api/state");
   return state.participants.find((p) => p.id === id);
 }
 
 async function message(seq: number): Promise<Message> {
-  return ((await (await fetch(`${bus.url}/api/messages/${seq}`)).json()) as { message: Message }).message;
+  return (await getJson<{ message: Message }>(bus, `/api/messages/${seq}`)).message;
 }
 
-async function post(body: object, headers: Record<string, string> = {}): Promise<PostMessageResponse> {
-  const res = await fetch(`${bus.url}/api/messages`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+async function post(body: object): Promise<PostMessageResponse> {
+  const res = await postJson(bus, "/api/messages", body);
   expect(res.status).toBe(200);
   return (await res.json()) as PostMessageResponse;
 }
@@ -49,7 +49,7 @@ const deliveredTo = async (seq: number) => (await message(seq)).receipts.find((r
 
 beforeEach(() => {
   dataDir = mkdtempSync(path.join(tmpdir(), "mb-codex-test-"));
-  bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol"] });
+  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol"] });
 });
 
 afterEach(async () => {
@@ -63,6 +63,8 @@ async function start(): Promise<CodexSession> {
   session = new CodexSession(folder("alpha"), bus.url);
   session.hook("SessionStart", hookInput({ source: "startup" }));
   await until(async () => (await participant("alpha"))?.online);
+  // The bus lists the agent online before the session has processed its `joined` frame.
+  await session.waitForStartup();
   return session;
 }
 
@@ -130,7 +132,7 @@ test("by default a viewer receives only the bound Codex chat's visible items, th
     process.env.CODEX_HOME = dataDir;
     session = new CodexSession(folder("alpha"), bus.url);
     await session.waitForStartup();
-    viewer = new WebSocket(bus.url.replace(/^http/, "ws") + "/ws/viewer");
+    viewer = viewerSocket(bus);
     const frames: Extract<ViewerServerFrame, { type: "activity" }>[] = [];
     viewer.addEventListener("message", (m) => {
       const f = JSON.parse(String(m.data)) as ViewerServerFrame;
@@ -190,8 +192,8 @@ test("quiet broadcasts do not queue a Codex turn; a later direct message after i
   try {
     session.hook("SessionStart", { session_id: task });
     await Promise.all([session.waitForStartup(), sender.waitForStartup()]);
-    // beta joined through a real session, so its id is bound to this account's agent token.
-    const { message: quiet } = await post({ from: "beta", to: "@all", text: "quiet" }, { "X-Agent-Token": agentToken() });
+    // beta joined through a real session, so its id is bound to this account's agent token (which post sends).
+    const { message: quiet } = await post({ from: "beta", to: "@all", text: "quiet" });
     await until(() => deliveredTo(quiet.seq));
     await Bun.sleep(250);
     expect(wakes).toEqual([]);

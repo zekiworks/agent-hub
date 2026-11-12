@@ -1771,3 +1771,50 @@ ul.md-list ul.md-list { list-style: circle; }
   color: var(--muted);
   font-size: 13px;
 }
+
+/* Machines asking to put agents on the bus (first contact with an agent token): over the page, top right. */
+.agent-requests {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(440px, calc(100vw - 32px));
+}
+
+.agent-request {
+  padding: 14px 16px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 10px 28px var(--shadow);
+}
+
+.agent-request-title {
+  font-weight: 600;
+}
+
+.agent-request-what {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.agent-request-code {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.agent-request-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.agent-request-error {
+  margin-top: 6px;
+  color: var(--warning);
+  font-size: 13px;
+}

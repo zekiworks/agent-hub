@@ -58,13 +58,13 @@ export class ScheduleService {
     }
   }
 
-  /** The writer of a schedule request. Humans who are not signed in (when auth is on) act without human powers. */
+  /** The writer of a schedule request (signed in as that person, or an agent with its approved token). */
   private actorOf(req: Request, body: Record<string, unknown>): Actor {
     if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
     const writer = this.ctx.hub.knownParticipant(body.from.trim().toLowerCase());
     if (!writer) throw new HttpError(400, `Unknown participant "${body.from}"`);
-    const verified = this.ctx.checkWriter(req, writer);
-    return { id: writer.id, kind: writer.kind === "human" && verified === false ? "agent" : writer.kind };
+    this.ctx.checkWriter(req, writer);
+    return { id: writer.id, kind: writer.kind };
   }
 
   /** /api/resources, /api/reservations… and /api/observations; undefined for any other request. */

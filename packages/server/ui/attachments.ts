@@ -1,12 +1,13 @@
 // Attachments of a message: download links, image previews with a viewer, markdown files in the side panel.
 import { formatBytes, type FileRef } from "@agent-bus/protocol";
+import { fileUrl } from "./api";
 import { dom, scrollToBottom } from "./dom";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
 import { mentionNodes } from "./text";
 
 export function renderFile(file: FileRef): HTMLLIElement {
-  const url = `/api/files/${encodeURIComponent(file.id)}`;
+  const url = fileUrl(file.id);
   const li = h("li", "msg-file");
   const row = h("span", "file-row");
   const link = h("a", "file-link");

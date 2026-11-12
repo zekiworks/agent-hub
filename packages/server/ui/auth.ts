@@ -1,5 +1,6 @@
-// The sign-in page (experimental): create a passkey from an invite link
-// (/auth#invite=<token>), sign in with one, list and remove your passkeys, sign out.
+// The sign-in page: create a passkey from an invite link (/auth#invite=<token>), sign in with one, list and remove
+// your passkeys, see and decide the machines whose agents are on the bus, sign out.
+import type { AgentTokenInfo } from "@agent-bus/protocol";
 import { api, postJson, PROFILE_KEY, SESSION_KEY } from "./api";
 import { el } from "./html";
 
@@ -114,12 +115,46 @@ async function renderMe(me: string): Promise<void> {
       return li;
     })
   );
+  await renderMachines();
 }
 
+/** The machine accounts' agent tokens, with Allow (waiting, denied) or Revoke (allowed). */
+async function renderMachines(): Promise<void> {
+  const { tokens } = await api<{ tokens: AgentTokenInfo[] }>("/api/agent-tokens");
+  const list = el<HTMLUListElement>("auth-machines");
+  if (tokens.length === 0) {
+    list.replaceChildren(Object.assign(document.createElement("li"), { textContent: "None yet." }));
+    return;
+  }
+  list.replaceChildren(
+    ...tokens.map((t) => {
+      const li = document.createElement("li");
+      const used = t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleString()}` : "not used yet";
+      const state = t.state === "approved" ? "allowed" : t.state === "denied" ? "denied" : `waiting, code ${t.code}`;
+      li.textContent = `${t.host ?? "?"}${t.addr ? ` (${t.addr})` : ""} · ${t.agents.join(", ") || "no agents yet"} · ${state} · ${used} `;
+      const action = t.state === "approved" ? "deny" : "approve";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "link-btn";
+      button.textContent = t.state === "approved" ? "Revoke" : "Allow";
+      button.addEventListener("click", () => {
+        if (action === "deny" && !confirm(`Revoke ${t.host ?? "this machine"}? Its agents leave the bus until someone allows it again.`)) return;
+        postJson(`/api/agent-tokens/${encodeURIComponent(t.id)}/${action}`, {}).then(
+          () => void renderMachines(),
+          (err: Error) => (msg.textContent = err.message)
+        );
+      });
+      li.append(button);
+      return li;
+    })
+  );
+}
+
+/** Runs a passkey ceremony; on success the conversations page opens (it needs the session this sets). */
 const run = (action: () => Promise<void>) => (): void => {
   msg.textContent = "";
   action().then(
-    () => location.reload(),
+    () => location.assign("/"),
     (err: Error) => {
       msg.textContent = err.name === "NotAllowedError" ? "Cancelled (or this device has no passkey for this bus)." : err.message;
     }
@@ -127,8 +162,7 @@ const run = (action: () => Promise<void>) => (): void => {
 };
 
 async function boot(): Promise<void> {
-  const state = await api<{ mode: string; rpId: string; httpsPort: number | null; me: string | null }>("/api/auth/state");
-  if (state.mode === "off") return show("auth-off");
+  const state = await api<{ rpId: string; httpsPort: number | null; me: string | null }>("/api/auth/state");
   if (!window.isSecureContext || !window.PublicKeyCredential) {
     show("auth-insecure");
     const link = el<HTMLAnchorElement>("auth-secure-link");
@@ -153,6 +187,9 @@ async function boot(): Promise<void> {
   show("auth-signin");
   el("auth-signin-btn").addEventListener("click", run(signIn));
 }
+
+// An invite link pasted into this page's address bar changes only the hash, which does not reload the page.
+window.addEventListener("hashchange", () => location.reload());
 
 el("auth-signout-btn").addEventListener("click", () => {
   void postJson("/api/auth/logout", {}).finally(() => {

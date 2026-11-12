@@ -1,15 +1,17 @@
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { homedir, hostname } from "node:os";
+import os, { homedir, hostname } from "node:os";
 import path from "node:path";
-import { createBusServer, createInvite, type BusServerOptions } from "@agent-bus/server";
+import { AgentTokens, createBusServer, createInvite, type BusServerOptions } from "@agent-bus/server";
 import { DEFAULT_BUS_PORT } from "@agent-bus/protocol";
 import { runTicketed } from "./run";
 
 const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR] --humans carol,uma
                        [--https-port 7843 --tls-cert FILE --tls-key FILE] [--gpudash URL] [--forget-offline-days 15]
-                       [--auth off|optional|required --rp-id HOST [--origin URL]…]
+                       [--rp-id HOST [--origin URL]…]
        agent-bus invite HUMAN [--data-dir DIR] [--url https://HOST:7843]
+       agent-bus agents [--data-dir DIR]
+       agent-bus approve|deny CODE [--data-dir DIR]
        agent-bus reset-agent AGENT [--data-dir DIR]
        agent-bus run [--bus URL] RESERVATION[,RESERVATION…] -- COMMAND [ARGS…]
        agent-bus install HARNESS [--url http://BUS:7800] [--dir DIR] [--build-only] [--force]
@@ -39,13 +41,17 @@ serve:
   --tls-key     PEM private key for --https-port
   --gpudash     gpudash's URL (e.g. http://127.0.0.1:3420): the resource schedule reads what runs on each GPU
   --forget-offline-days  Forget agents offline this many days (default 15; 0 keeps them forever)
-  --auth        Passkeys for humans (experimental): off (default), optional (sign-in marks messages verified),
-                required (writing as a human needs a session)
-  --rp-id       The host name humans open the website at (passkeys are bound to it); default localhost
+  --rp-id       The host name people open the website at (passkeys are bound to it); default localhost
   --origin      A website origin passkeys may be used from (repeat); default https://<rp-id>:<https port>
                 and http://localhost:<port>
+  Everyone reading or writing is identified: people sign in with a passkey, agents send their machine account's
+  agent token, which a person allows once (website, or agent-bus approve).
 
 invite: a one-time link (10 min) for HUMAN to create a passkey; needs the bus's database, so only the bus's host can.
+
+agents: the machine accounts' agent tokens, waiting or decided, with the agents that joined with them.
+approve / deny: decide a waiting token by the code its agents show (or a token id from agents); deny also revokes
+  an approved one. Both need the bus's database, as does reset-agent.
 
 reset-agent: unbind AGENT from its agent token (lost token file, agent moved to another machine); the next
   join claims it again. Needs the bus's database.
@@ -99,15 +105,11 @@ function parseServeArgs(args: string[]): BusServerOptions {
       case "--humans":
         options.humans = value.split(",");
         break;
-      case "--auth":
-        if (value !== "off" && value !== "optional" && value !== "required") throw new Error("--auth is off, optional or required");
-        options.auth = { ...options.auth, mode: value };
-        break;
       case "--rp-id":
-        options.auth = { mode: "off", ...options.auth, rpId: value };
+        options.auth = { ...options.auth, rpId: value };
         break;
       case "--origin":
-        options.auth = { mode: "off", ...options.auth, origins: [...(options.auth?.origins ?? []), value.replace(/\/+$/, "")] };
+        options.auth = { ...options.auth, origins: [...(options.auth?.origins ?? []), value.replace(/\/+$/, "")] };
         break;
       default:
         throw new Error(`Unknown option "${flag}"`);
@@ -129,6 +131,14 @@ export async function runCli(argv: string[]): Promise<number> {
   if (command === undefined || command === "help" || command === "--help" || command === "-h") {
     console.log(USAGE);
     return command === undefined ? 1 : 0;
+  }
+  if (command === "agents" || command === "approve" || command === "deny") {
+    try {
+      return runTokens(command, rest);
+    } catch (error) {
+      console.error(`agent-bus ${command}: ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
   }
   if (command === "reset-agent") {
     try {
@@ -179,11 +189,6 @@ export async function runCli(argv: string[]): Promise<number> {
   for (const lanUrl of bus.lanUrls) console.log(`  LAN: ${lanUrl}`);
   for (const httpsUrl of bus.httpsLanUrls ?? []) console.log(`  HTTPS: ${httpsUrl}`);
   console.log(`  data: ${bus.dataDir}`);
-  if ((options.auth?.mode ?? "off") === "off") {
-    console.warn(
-      "  WARNING: --auth off: anyone who can reach this port can write as any human. Use --auth optional (passkeys) and give each human an invite."
-    );
-  }
 
   const { promise, resolve } = Promise.withResolvers<number>();
   const shutdown = (): void => {
@@ -192,6 +197,47 @@ export async function runCli(argv: string[]): Promise<number> {
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   return promise;
+}
+
+/** The bus's database (`--data-dir`, $AGENT_BUS_DATA_DIR, ~/.agent-bus), for the commands that only the host can run. */
+function openBusDatabase(dataDir: string): Database {
+  const dbPath = path.join(dataDir, "message-bus.sqlite");
+  if (!existsSync(dbPath)) throw new Error(`No bus database at ${dbPath}`);
+  const db = new Database(dbPath, { strict: true });
+  db.exec("PRAGMA busy_timeout = 5000;");
+  return db;
+}
+
+function runTokens(command: "agents" | "approve" | "deny", args: string[]): number {
+  let dataDir = process.env.AGENT_BUS_DATA_DIR || path.join(homedir(), ".agent-bus");
+  let ref: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] ?? "";
+    if (arg === "--data-dir") dataDir = args[++i] ?? "";
+    else if (arg.startsWith("--")) throw new Error(`Unknown option "${arg}"`);
+    else ref = arg;
+  }
+  const db = openBusDatabase(dataDir);
+  try {
+    const tokens = new AgentTokens(db);
+    if (command === "agents") {
+      const list = tokens.list();
+      if (list.length === 0) console.log("No agent tokens yet.");
+      for (const t of list) {
+        const when = new Date(t.lastUsedAt ?? t.requestedAt).toISOString().slice(0, 16).replace("T", " ");
+        console.log(`${t.state.padEnd(8)} ${t.code}  ${t.id}  ${t.host ?? "?"}${t.addr ? ` (${t.addr})` : ""}  ${t.agents.join(", ")}  ${when}`);
+      }
+      return 0;
+    }
+    if (!ref) throw new Error(`Give the code the agent shows, e.g. agent-bus ${command} K7Q-2MX (agent-bus agents lists them)`);
+    const hash = tokens.resolve(ref);
+    if (!hash) throw new Error(`No agent token ${ref} (agent-bus agents lists them)`);
+    tokens.decide(hash, command === "approve" ? "approved" : "denied", `${os.userInfo().username} on the host`);
+    console.log(`${command === "approve" ? "Allowed" : "Denied"} ${ref}; the bus applies it within a few seconds.`);
+    return 0;
+  } finally {
+    db.close();
+  }
 }
 
 function runResetAgent(args: string[]): number {
@@ -204,10 +250,7 @@ function runResetAgent(args: string[]): number {
     else agent = arg.replace(/^@/, "").toLowerCase();
   }
   if (!agent) throw new Error("Give the agent's id, e.g. agent-bus reset-agent webapp");
-  const dbPath = path.join(dataDir, "message-bus.sqlite");
-  if (!existsSync(dbPath)) throw new Error(`No bus database at ${dbPath}`);
-  const db = new Database(dbPath, { strict: true });
-  db.exec("PRAGMA busy_timeout = 5000;");
+  const db = openBusDatabase(dataDir);
   const changed = db.query("UPDATE participants SET token_hash = NULL WHERE id = ?1 AND kind = 'agent'").run(agent).changes;
   db.close();
   if (changed === 0) throw new Error(`No agent @${agent}`);
@@ -227,10 +270,7 @@ function runInvite(args: string[]): number {
     else human = arg.replace(/^@/, "").toLowerCase();
   }
   if (!human) throw new Error("Give the human's id, e.g. agent-bus invite can");
-  const dbPath = path.join(dataDir, "message-bus.sqlite");
-  if (!existsSync(dbPath)) throw new Error(`No bus database at ${dbPath}`);
-  const db = new Database(dbPath, { strict: true });
-  db.exec("PRAGMA busy_timeout = 5000;");
+  const db = openBusDatabase(dataDir);
   const token = createInvite(db, human);
   db.close();
   console.log(`Open within 10 minutes, on the device that should hold ${human}'s passkey (works once):\n${url}/auth#invite=${token}`);

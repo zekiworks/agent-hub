@@ -60,6 +60,8 @@ export interface BusConnectionOptions {
   /** Someone started (true) or stopped (false) watching this agent's live output on the website. */
   onWatch?: (on: boolean) => void;
   onLog?: (line: string) => void;
+  /** This machine's token waits for a person's OK; `code` is what they approve (also logged). */
+  onPending?: (code: string) => void;
   /** The agent token; default this account's (`agentToken()`). */
   token?: string;
 }
@@ -126,10 +128,11 @@ export class BusConnection {
         this.socket = null;
         this.options.onWatch?.(false); // A new connection must receive its own watch request.
       }
-      // 4401: the id is bound to another token. Retrying cannot help; the error frame said how to free it.
-      if (event.code === 4401) {
+      // 4401: the id is bound to another token; 4403: this machine's token was denied or revoked. Retrying cannot help;
+      // the error frame said why.
+      if (event.code === 4401 || event.code === 4403) {
         this.closed = true;
-        this.log("not on the bus: this agent id belongs to another agent token");
+        this.log(event.code === 4401 ? "not on the bus: this agent id belongs to another agent token" : "not on the bus: this machine's agent token was refused");
         return;
       }
       this.scheduleReconnect();
@@ -189,6 +192,12 @@ export class BusConnection {
         return;
       case "watch":
         this.options.onWatch?.(frame.on);
+        return;
+      case "pending":
+        this.log(
+          `waiting for a person to allow this machine on the bus: code ${frame.code} (on the bus website, or \`agent-bus approve ${frame.code}\` on the bus's host)`
+        );
+        this.options.onPending?.(frame.code);
         return;
       case "error":
         this.log(`server: ${frame.error}`);
@@ -313,7 +322,7 @@ export class BusConnection {
   }
 
   async downloadFile(ref: FileRef, destDir: string): Promise<string> {
-    const res = await fetch(`${this.baseUrl}/api/files/${encodeURIComponent(ref.id)}`);
+    const res = await fetch(`${this.baseUrl}/api/files/${encodeURIComponent(ref.id)}`, { headers: { "X-Agent-Token": this.token } });
     if (!res.ok) throw new Error(`Download of ${ref.name} failed: HTTP ${res.status}`);
     const dest = path.join(destDir, `${ref.id}-${ref.name.replace(/[\\/]/g, "_")}`);
     await mkdir(destDir, { recursive: true });

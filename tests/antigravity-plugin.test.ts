@@ -3,10 +3,11 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFile
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ActivityEvent, AgentServerFrame, Message, Participant, PostMessageResponse } from "@agent-bus/protocol";
-import { createBusServer, type BusServerHandle } from "@agent-bus/server";
+import type { BusServerHandle } from "@agent-bus/server";
 import { ActivityLog } from "../packages/client/src/activity";
 import { Daemon, type HookPayload } from "../packages/antigravity-plugin/src/daemon";
 import { TranscriptActivity } from "../packages/antigravity-plugin/src/transcript";
+import { agentSocketUrl, getJson, postJson, startBus } from "./helpers";
 
 let dataDir = "";
 let bus: BusServerHandle;
@@ -43,23 +44,23 @@ function sent(): Array<[string, string]> {
 }
 
 async function participant(id: string): Promise<Participant | undefined> {
-  const state = (await (await fetch(`${bus.url}/api/state`)).json()) as { participants: Participant[] };
+  const state = await getJson<{ participants: Participant[] }>(bus, "/api/state");
   return state.participants.find((p) => p.id === id);
 }
 
 async function message(seq: number): Promise<Message> {
-  return ((await (await fetch(`${bus.url}/api/messages/${seq}`)).json()) as { message: Message }).message;
+  return (await getJson<{ message: Message }>(bus, `/api/messages/${seq}`)).message;
 }
 
 async function post(body: object): Promise<PostMessageResponse> {
-  const res = await fetch(`${bus.url}/api/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await postJson(bus, "/api/messages", body);
   expect(res.status).toBe(200);
   return (await res.json()) as PostMessageResponse;
 }
 
 /** Another agent on a raw socket (joined, acking), to write as an agent. */
 async function rawAgent(name: string): Promise<void> {
-  const ws = new WebSocket(`${bus.url.replace(/^http/, "ws")}/ws/agent?host=test&harness=raw&path=${encodeURIComponent(folder(name))}`);
+  const ws = new WebSocket(agentSocketUrl(bus, { host: "test", harness: "raw", path: folder(name) }));
   sockets.push(ws);
   const joined = Promise.withResolvers<void>();
   ws.addEventListener("message", (e) => {
@@ -72,7 +73,7 @@ async function rawAgent(name: string): Promise<void> {
 
 beforeEach(() => {
   dataDir = mkdtempSync(path.join(tmpdir(), "mb-ag-test-"));
-  bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
   process.env.AGENT_BUS_URL = bus.url;
   process.env.AGENT_BUS_JOIN_FROM_TMP = "1"; // test folders live under the temp dir
   process.env.AGENT_BUS_RECEIPT_WAIT_MS = "300";

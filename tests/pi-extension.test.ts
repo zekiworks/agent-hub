@@ -3,12 +3,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AgentServerFrame, Participant, PostMessageResponse, ViewerServerFrame } from "@agent-bus/protocol";
-import { createBusServer, type BusServerHandle } from "@agent-bus/server";
+import type { BusServerHandle } from "@agent-bus/server";
 import messageBus, {
   type MessageBusApi,
   type MessageBusContext,
   type MessageBusToolParams,
 } from "../packages/pi-extension/src/index";
+import { agentSocketUrl, getJson, postJson, startBus, viewerSocket } from "./helpers";
 
 interface Injected {
   content: string;
@@ -97,11 +98,7 @@ function participantsWhere(pred: (ps: Participant[]) => boolean): Promise<void> 
 }
 
 async function post(body: object): Promise<PostMessageResponse> {
-  const res = await fetch(`${bus.url}/api/messages`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await postJson(bus, "/api/messages", body);
   expect(res.status).toBe(200);
   return (await res.json()) as PostMessageResponse;
 }
@@ -118,8 +115,7 @@ async function startSession(folder: string): Promise<FakePi> {
 async function rawAgent(folder: string) {
   const frames: AgentServerFrame[] = [];
   let waiter: { until: () => boolean; resolve: () => void } | undefined;
-  const url = `${bus.url.replace(/^http/, "ws")}/ws/agent?host=test&harness=raw&path=${encodeURIComponent(path.join(dataDir, "projects", folder))}`;
-  const ws = new WebSocket(url);
+  const ws = new WebSocket(agentSocketUrl(bus, { host: "test", harness: "raw", path: path.join(dataDir, "projects", folder) }));
   sockets.push(ws);
   ws.addEventListener("message", (e) => {
     const frame = JSON.parse(String(e.data)) as AgentServerFrame;
@@ -144,10 +140,10 @@ async function rawAgent(folder: string) {
 
 beforeEach(async () => {
   dataDir = mkdtempSync(path.join(tmpdir(), "mb-pi-test-"));
-  bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
   process.env.AGENT_BUS_URL = bus.url;
   process.env.AGENT_BUS_JOIN_FROM_TMP = "1"; // fake projects live under the temp dir
-  viewer = new WebSocket(`${bus.url.replace(/^http/, "ws")}/ws/viewer`);
+  viewer = viewerSocket(bus);
   viewer.addEventListener("message", (e) => {
     const frame = JSON.parse(String(e.data)) as ViewerServerFrame;
     if (frame.type !== "participants") return;
@@ -183,7 +179,7 @@ test("joins as harness pi; wake messages steer and trigger a turn, agents' @all 
   const { message } = await post({ from: "carol", to: "@alpha", text: "check the logs" });
   const wake = await alpha.injectedWith("check the logs");
   expect(wake).toMatchObject({ customType: "message-bus", deliverAs: "steer", triggerTurn: true });
-  expect(wake.content).toStartWith(`[message-bus] #${message.seq} @carol → @{alpha,carol} · `);
+  expect(wake.content).toStartWith(`[message-bus] #${message.seq} @carol (verified) → @{alpha,carol} · `);
 
   await post({ from: "beta", to: "@all", text: "beta finished a run" });
   expect(await alpha.injectedWith("beta finished a run")).toMatchObject({ deliverAs: "nextTurn", triggerTurn: undefined });
@@ -210,9 +206,8 @@ test("a delivery is seen when its header reaches the model", async () => {
   const { message } = await post({ from: "carol", to: "@alpha", text: "seen check" });
   const injected = await alpha.injectedWith("seen check");
   const receipt = async (waitMs: number, until = "delivered") =>
-    ((await (await fetch(`${bus.url}/api/messages/${message.seq}?waitMs=${waitMs}&until=${until}`)).json()) as {
-      message: { receipts: Array<{ deliveredAt: number | null; seenAt: number | null }> };
-    }).message.receipts[0]!;
+    (await getJson<{ message: { receipts: Array<{ deliveredAt: number | null; seenAt: number | null }> } }>(bus, `/api/messages/${message.seq}?waitMs=${waitMs}&until=${until}`))
+      .message.receipts[0]!;
   expect((await receipt(5000)).deliveredAt).toBeNumber();
   alpha.modelRequest(["something else"]);
   expect((await receipt(0)).seenAt).toBeNull();
@@ -255,7 +250,7 @@ test("live output shows bus deliveries (custom messages) and model text while wa
   alpha.emit("message_start", { message: { role: "custom", customType: "other", content: "not ours", timestamp: 2 } });
   alpha.emit("message_end", { message: { role: "assistant", content: [{ type: "text", text: "hello" }], timestamp: 3 } });
 
-  const watcher = new WebSocket(`${bus.url.replace(/^http/, "ws")}/ws/viewer`);
+  const watcher = viewerSocket(bus);
   sockets.push(watcher);
   const replay = Promise.withResolvers<Extract<ViewerServerFrame, { type: "activity" }>>();
   watcher.addEventListener("message", (e) => {

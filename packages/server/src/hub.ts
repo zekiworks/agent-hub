@@ -21,8 +21,10 @@ export type SocketData =
       path: string | null;
       name: string | null;
       harness: string | null;
-      /** The agent's token (query `token`); binds or must match its id. */
-      token: string | null;
+      /** SHA-256 of the agent's token (query `token`): it must be approved, and binds or must match the id. */
+      tokenHash: string | null;
+      /** The network address the connection came from (shown when asking a person to allow the token). */
+      addr: string | null;
       /** Assigned on open; "" until joined. */
       id: string;
       /** Latest status this connection reported, when, and when its first report arrived. */
@@ -32,6 +34,8 @@ export type SocketData =
     }
   | {
       kind: "viewer";
+      /** Signed in (passkey session or approved agent token, at upgrade or by the first frame); before that it gets nothing. */
+      signedIn: boolean;
       /** Agent whose live output this viewer watches. */
       watching?: string;
     };
@@ -52,6 +56,8 @@ export class Hub {
   private readonly watchers = new Map<string, Set<Socket>>();
   /** GET /api/messages/:seq?waitMs= callers, resolved once `done` holds for every receipt of the message. */
   private readonly receiptWaiters = new Map<number, Set<ReceiptWaiter>>();
+  /** Agent sockets whose machine account's token waits for a person's decision, by token hash. */
+  private readonly pending = new Map<string, Set<Socket>>();
   private viewerParticipantsTimer: Timer | undefined;
   private resourcesTimer: Timer | undefined;
 
@@ -197,6 +203,54 @@ export class Hub {
     return sockets.size;
   }
 
+  addPending(hash: string, ws: Socket): void {
+    let sockets = this.pending.get(hash);
+    if (!sockets) this.pending.set(hash, (sockets = new Set()));
+    sockets.add(ws);
+  }
+
+  /** Removes and returns the sockets waiting on `hash`. */
+  takePending(hash: string): Socket[] {
+    const sockets = [...(this.pending.get(hash) ?? [])];
+    this.pending.delete(hash);
+    return sockets;
+  }
+
+  removePending(ws: Socket): void {
+    for (const [hash, sockets] of this.pending) {
+      if (!sockets.delete(ws)) continue;
+      if (sockets.size === 0) this.pending.delete(hash);
+      return;
+    }
+  }
+
+  pendingTokenHashes(): string[] {
+    return [...this.pending.keys()];
+  }
+
+  /** Token hashes of the agents connected now. */
+  connectedTokenHashes(): string[] {
+    const hashes = new Set<string>();
+    for (const sockets of this.agentSockets.values()) {
+      for (const ws of sockets) if (ws.data.kind === "agent" && ws.data.tokenHash) hashes.add(ws.data.tokenHash);
+    }
+    return [...hashes];
+  }
+
+  agentSocketsOfToken(hash: string): Socket[] {
+    const out: Socket[] = [];
+    for (const sockets of this.agentSockets.values()) {
+      for (const ws of sockets) if (ws.data.kind === "agent" && ws.data.tokenHash === hash) out.push(ws);
+    }
+    return out;
+  }
+
+  /** Viewers refetch GET /api/agent-tokens: a new request to join, or a decision. */
+  agentTokensChanged(): void {
+    const frame = JSON.stringify({ type: "agent-tokens" } satisfies ViewerServerFrame);
+    for (const ws of this.viewers) ws.send(frame);
+  }
+
   addViewer(ws: Socket): void {
     this.viewers.add(ws);
     sendFrame(ws, { type: "participants", participants: this.listParticipants() });
@@ -323,5 +377,6 @@ export class Hub {
   dropSockets(): void {
     this.agentSockets.clear();
     this.viewers.clear();
+    this.pending.clear();
   }
 }

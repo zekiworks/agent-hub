@@ -1,5 +1,6 @@
 // The viewer WebSocket (/ws/viewer): connects, reconnects with backoff, shows the link status.
 import { isJsonObject, type ViewerClientFrame, type ViewerServerFrame } from "@agent-bus/protocol";
+import { SESSION_KEY } from "./api";
 import { dom } from "./dom";
 
 const RECONNECT_MIN_MS = 1000;
@@ -42,6 +43,8 @@ function connect(): void {
   setLinkStatus("connecting", everConnected ? "reconnecting…" : "connecting…");
 
   ws.addEventListener("open", () => {
+    // The browser cannot send the session as a header here; the first frame signs in.
+    ws.send(JSON.stringify({ type: "auth", session: localStorage.getItem(SESSION_KEY) ?? "" } satisfies ViewerClientFrame));
     reconnectDelay = RECONNECT_MIN_MS;
     setLinkStatus("live", "live");
     const reconnected = everConnected;

@@ -141,6 +141,11 @@ export type AgentServerFrame =
   | ReceiptFrame
   /** Someone is (on) or is no longer (off) watching this agent's live output; stream `activity` only while on. */
   | { type: "watch"; on: boolean }
+  /**
+   * This machine's agent token is not approved yet: a person allows it on the website, or runs `agent-bus approve
+   * <code>` on the bus's host. The socket stays open and joins once allowed.
+   */
+  | { type: "pending"; code: string }
   | { type: "error"; error: string };
 
 /**
@@ -183,11 +188,35 @@ export type ViewerServerFrame =
   | ReceiptFrame
   /** Live output of the agent this viewer watches. */
   | { type: "activity"; agentId: string; events: ActivityEvent[]; replay?: boolean }
-  /** The resource schedule changed (GET /api/resources has the new state). */
-  | { type: "resources" };
+  /** The schedule changed (GET /api/resources has the new state). */
+  | { type: "resources" }
+  /** Agent tokens changed: a new request to join, or one allowed, denied or revoked (GET /api/agent-tokens). */
+  | { type: "agent-tokens" }
+  | { type: "error"; error: string };
 
-/** The viewer watches one agent's live output at a time (`agentId: null` stops). */
-export type ViewerClientFrame = { type: "watch"; agentId: string | null };
+/**
+ * `auth`: the first frame from a browser, which cannot set headers on a WebSocket (a passkey session; scripts may send
+ * an agent token instead, or the headers at upgrade). Then the viewer watches one agent's live output at a time
+ * (`agentId: null` stops).
+ */
+export type ViewerClientFrame = { type: "auth"; session?: string; agentToken?: string } | { type: "watch"; agentId: string | null };
+
+/** A machine account's agent token as people see it: the hub stores its hash; `id` is the hash's first 12 characters. */
+export interface AgentTokenInfo {
+  id: string;
+  state: "pending" | "approved" | "denied";
+  /** Short code shown to the agent while pending (also `agent-bus approve <code>`). */
+  code: string;
+  host: string | null;
+  /** Network address the latest request came from. */
+  addr: string | null;
+  /** Folders or names that asked to join with it (pending) or joined with it. */
+  agents: string[];
+  requestedAt: number;
+  decidedAt: number | null;
+  decidedBy: string | null;
+  lastUsedAt: number | null;
+}
 
 // ---- HTTP ----
 

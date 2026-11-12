@@ -4,17 +4,22 @@ import { existsSync, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Participant } from "@agent-bus/protocol";
+import { agentToken } from "../../client/src/connection";
 import { HARNESSES } from "./harnesses";
 
 const ok = (text: string): string => `  ✓ ${text}`;
 const bad = (text: string): string => `  ✗ ${text}`;
 const info = (text: string): string => `    ${text}`;
 
-async function reach(url: string): Promise<{ ms: number; participants: Participant[] } | { error: string }> {
+async function reach(url: string): Promise<{ ms: number; participants: Participant[] } | { error: string; status?: number }> {
   const started = Date.now();
   try {
-    const res = await fetch(`${url}/api/state`, { signal: AbortSignal.timeout(4000) });
-    if (!res.ok) return { error: `HTTP ${res.status}` };
+    // This machine account's token: the bus answers only approved ones (401 says when it still waits for a person).
+    const res = await fetch(`${url}/api/state`, { headers: { "X-Agent-Token": agentToken() }, signal: AbortSignal.timeout(4000) });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      return { status: res.status, error: body.error ?? `HTTP ${res.status}` };
+    }
     const state = (await res.json()) as { participants: Participant[] };
     return { ms: Date.now() - started, participants: state.participants };
   } catch (error) {
@@ -22,7 +27,7 @@ async function reach(url: string): Promise<{ ms: number; participants: Participa
   }
 }
 
-/** Prints the report; exit code 1 when an install's bus is unreachable. */
+/** Prints the report; exit code 1 when an install's bus is unreachable or does not allow this machine. */
 export async function runDoctor(urlOverride?: string): Promise<number> {
   const lines: string[] = [];
   const urls = new Set<string>();
@@ -60,7 +65,7 @@ export async function runDoctor(urlOverride?: string): Promise<number> {
     const result = await reach(url);
     if ("error" in result) {
       failed = true;
-      lines.push(bad(`bus ${url}: unreachable (${result.error})`));
+      lines.push(bad(result.status === 401 ? `bus ${url}: this machine is not allowed on it yet (${result.error})` : `bus ${url}: unreachable (${result.error})`));
       continue;
     }
     lines.push(ok(`bus ${url}: reachable (${result.ms} ms)`));

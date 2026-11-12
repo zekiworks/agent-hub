@@ -6,7 +6,9 @@
 // binaries mounted read-only; a scratch bus and the fake model (tests/e2e/fake-model.ts) on the host. In the container:
 // `agent-bus install cli`, then `agent-bus install <harness> --url <scratch bus>`, a model config pointing at the fake
 // model, the harness started interactively in tmux in a project folder. Then, over the bus's HTTP API:
-//   join      the session joins as its folder (`<harness>-e2e`, harness name right)
+//   approve   the session's first connection waits for a person (pending, with a code); the test allows it as a
+//             signed-in person would on the website
+//   join      the session then joins as its folder (`<harness>-e2e`, harness name right)
 //   idle      a message to the idle agent starts a turn; the reply comes back through the bus tool
 //   busy      a message sent while it runs `sleep 12` is answered in the same run, after the command
 //   seen      receipts of both messages are seen
@@ -19,7 +21,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import type { ActivityEvent, Participant } from "@agent-bus/protocol";
+import type { ActivityEvent, AgentTokenInfo, Participant } from "@agent-bus/protocol";
 import { createBusServer } from "@agent-bus/server";
 import { startFakeModel } from "./fake-model";
 
@@ -220,6 +222,10 @@ async function runHarness(name: string): Promise<Check[]> {
     if (to.startsWith(`${HOME}/`)) mkdirSync(path.join(home, to.slice(HOME.length + 1)), { recursive: true });
   }
   const bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir: path.join(scratch, "bus"), humans: ["tester"] });
+  // The test acts as a signed-in person: every read and write on the bus needs a session.
+  const session = bus.signIn("tester");
+  const api = (p: string, init?: RequestInit): Promise<Response> =>
+    fetch(`${bus.url}${p}`, { ...init, headers: { ...init?.headers, Authorization: `Bearer ${session}` } });
   const fake = startFakeModel(0, (line) => process.env.E2E_VERBOSE && console.log(`    model ${line}`));
   const box = new Box(`mb-e2e-${name}-${process.pid}`);
   const project = `${HOME}/work/${name}-e2e`;
@@ -268,7 +274,7 @@ async function runHarness(name: string): Promise<Check[]> {
     })();
 
     const participant = async (): Promise<Participant | undefined> =>
-      ((await (await fetch(`${bus.url}/api/state`)).json()) as { participants: Participant[] }).participants.find((p) => p.id === agentId);
+      ((await (await api("/api/state")).json()) as { participants: Participant[] }).participants.find((p) => p.id === agentId);
     const typePrompt = async (text: string) => {
       await box.keys("-l", text);
       await sleep(300);
@@ -277,6 +283,18 @@ async function runHarness(name: string): Promise<Check[]> {
     if (spec.kickoff) {
       await sleep(8000);
       await typePrompt(spec.kickoff);
+    }
+    // First contact from the container's machine account: its token waits for a person, who allows it.
+    try {
+      const request = await until("the machine's request to join", 90_000, async () => {
+        const { tokens } = (await (await api("/api/agent-tokens")).json()) as { tokens: AgentTokenInfo[] };
+        return tokens.find((t) => t.state === "pending");
+      });
+      const allowed = await api(`/api/agent-tokens/${request.code}/approve`, { method: "POST" });
+      check("approve", allowed.ok, `code ${request.code}, ${request.agents.join(", ")}`);
+    } catch (error) {
+      check("approve", false, `${(error as Error).message}\n${await box.screen()}`);
+      return checks;
     }
     try {
       const joined = await until("the agent to join", 90_000, async () => {
@@ -291,12 +309,12 @@ async function runHarness(name: string): Promise<Check[]> {
     await until("the agent to be idle", 60_000, async () => ((await participant())?.status?.state === "busy" ? undefined : true)).catch(() => true);
 
     const post = async (body: Record<string, unknown>) => {
-      const res = await fetch(`${bus.url}/api/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const res = await api("/api/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       return (await res.json()) as { message: { seq: number }; conversation: { id: string } };
     };
     const replyTo = (conversation: string, seq: number, timeoutMs: number) =>
       until(`a reply to #${seq}`, timeoutMs, async () => {
-        const page = (await (await fetch(`${bus.url}/api/conversations/${conversation}/messages`)).json()) as {
+        const page = (await (await api(`/api/conversations/${conversation}/messages`)).json()) as {
           messages: Array<{ from: string; text: string; quote?: { seq: number }; createdAt: number }>;
         };
         return page.messages.find((m) => m.from === agentId && m.quote?.seq === seq);
@@ -352,7 +370,7 @@ async function runHarness(name: string): Promise<Check[]> {
     // Seen receipts.
     const receipts = await Promise.all(
       [a, c].map(async (m) => {
-        const got = (await (await fetch(`${bus.url}/api/messages/${m.message.seq}?waitMs=5000&until=seen`)).json()) as {
+        const got = (await (await api(`/api/messages/${m.message.seq}?waitMs=5000&until=seen`)).json()) as {
           message: { receipts: Array<{ to: string; deliveredAt: number | null; seenAt: number | null }> };
         };
         return got.message.receipts.find((r) => r.to === agentId);
@@ -364,7 +382,10 @@ async function runHarness(name: string): Promise<Check[]> {
     const events = await new Promise<ActivityEvent[]>((resolve) => {
       const got: ActivityEvent[] = [];
       const ws = new WebSocket(`${bus.url.replace(/^http/, "ws")}/ws/viewer`);
-      ws.addEventListener("open", () => ws.send(JSON.stringify({ type: "watch", agentId })));
+      ws.addEventListener("open", () => {
+        ws.send(JSON.stringify({ type: "auth", session }));
+        ws.send(JSON.stringify({ type: "watch", agentId }));
+      });
       ws.addEventListener("message", (e) => {
         const frame = JSON.parse(String(e.data)) as { type: string; events?: ActivityEvent[] };
         if (frame.type === "activity") got.push(...(frame.events ?? []));

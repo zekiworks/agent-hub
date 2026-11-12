@@ -394,6 +394,9 @@ class GatewayBridge:
             await self._deliver(ws, frame)
         elif kind == "receipt":
             self._receipt(frame)
+        elif kind == "pending":
+            logger.warning("message-bus: waiting for a person to allow this machine on the bus: code %s "
+                           "(bus website, or `agent-bus approve %s` on the bus's host)", frame.get("code"), frame.get("code"))
         elif kind == "error":
             logger.warning("message-bus server error: %s", frame.get("error"))
 

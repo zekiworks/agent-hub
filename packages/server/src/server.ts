@@ -9,10 +9,11 @@ import {
   type HealthResponse,
   type StateResponse,
 } from "@agent-bus/protocol";
-import { forgetOfflineAgents, postSetting, socketHandlers } from "./agents";
-import { HumanAuth, type AuthMode } from "./auth";
+import { AgentTokens } from "./agent-tokens";
+import { forgetOfflineAgents, handleAgentTokens, postSetting, socketHandlers } from "./agents";
+import { HumanAuth } from "./auth";
 import { handleAuth } from "./auth-routes";
-import { BusContext } from "./context";
+import { BusContext, tokenHash } from "./context";
 import { BusDatabase } from "./db";
 import { getFile, MAX_FILE_BYTES, postFile } from "./files";
 import { CORS_HEADERS, errorResponse, json, nonEmptyParam } from "./http";
@@ -43,12 +44,11 @@ export interface BusServerOptions {
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
   forgetOfflineDays?: number;
   /**
-   * Human authentication with passkeys (experimental). `off` (default): `from` is trusted as today. `optional`:
-   * humans can sign in; their messages carry `verified`. `required`: writing as a human needs a session.
-   * `rpId` is the host name the website is opened at (passkeys are bound to it); `origins` defaults to
-   * https://<rpId>:<https port> and http://localhost:<port>.
+   * Passkeys for the people on the bus (every reader and writer is signed in). `rpId` is the host name the website
+   * is opened at (passkeys are bound to it; default localhost); `origins` defaults to https://<rpId>:<https port>
+   * and http://localhost:<port>.
    */
-  auth?: { mode: AuthMode; rpId?: string; origins?: string[] };
+  auth?: { rpId?: string; origins?: string[] };
 }
 
 export interface BusServerHandle {
@@ -61,6 +61,12 @@ export interface BusServerHandle {
   dataDir: string;
   dbPath: string;
   stop(): Promise<void>;
+  /**
+   * In-process only (tests, programs embedding the server; both hold the database anyway): a passkey-less session
+   * for `human`, and approving an agent token without asking a person.
+   */
+  signIn(human: string): string;
+  approveAgentToken(token: string): void;
 }
 
 const DEFAULT_HOST = "0.0.0.0";
@@ -91,13 +97,14 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
   let boundHttpsPort: number | undefined;
   const rpId = options.auth?.rpId ?? "localhost";
   const auth = new HumanAuth(db.db, {
-    mode: options.auth?.mode ?? "off",
     rpId,
     humans,
     origins: () =>
       options.auth?.origins ?? [...(boundHttpsPort ? [`https://${rpId}:${boundHttpsPort}`] : []), `http://localhost:${boundPort}`],
   });
-  const ctx = new BusContext(db, humans, auth, filesDir);
+  const tokens = new AgentTokens(db.db);
+  tokens.approveBound();
+  const ctx = new BusContext(db, humans, auth, tokens, filesDir);
   // Nobody is connected yet: apply the logoff rule to everyone (also cleans up after a crash).
   for (const agent of db.listAgents()) db.removeIfIdle(agent.id);
   const startedAt = Date.now();
@@ -109,7 +116,9 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
 
   const schedule = new ScheduleService(ctx, options.gpudash);
   const website = new Website();
-  const websocket = socketHandlers(ctx);
+  const sockets = socketHandlers(ctx);
+  // Decisions made on the host (`agent-bus approve`, `deny`) reach the waiting and connected agents within seconds.
+  const settleTimer = setInterval(() => sockets.settleAll(), 2000);
   let lanUrls: string[] = [];
 
   const handleApi = async (req: Request, url: URL): Promise<Response> => {
@@ -125,6 +134,13 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       };
       return json(health);
     }
+    if (pathname.startsWith("/api/auth/")) return handleAuth(auth, { rpId, httpsPort: boundHttpsPort }, req, url);
+    // File links on the website carry a key instead of the session header (an <img> cannot send one).
+    const fileMatch = /^\/api\/files\/([^/]+)$/.exec(pathname);
+    const fileKey = url.searchParams.get("k");
+    if (method === "GET" && fileMatch?.[1] && fileKey && auth.checkFileKey(fileKey)) return getFile(ctx, decodeURIComponent(fileMatch[1]));
+    ctx.requireReader(req);
+    if (pathname.startsWith("/api/agent-tokens")) return handleAgentTokens(ctx, sockets, req, url);
     if (method === "GET" && pathname === "/api/state") {
       const state: StateResponse = { participants: ctx.hub.listParticipants(), conversations: db.listConversations(), humans };
       return json(state);
@@ -140,10 +156,8 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     const messageMatch = /^\/api\/messages\/(\d+)$/.exec(pathname);
     if (method === "GET" && messageMatch?.[1]) return json(await getMessageReceipts(ctx, Number(messageMatch[1]), url));
     if (method === "POST" && pathname === "/api/files") return json(await postFile(ctx, req, url));
-    const fileMatch = /^\/api\/files\/([^/]+)$/.exec(pathname);
     if (method === "GET" && fileMatch?.[1]) return getFile(ctx, decodeURIComponent(fileMatch[1]));
     if (method === "POST" && pathname === "/api/settings") return json(await postSetting(ctx, req));
-    if (pathname.startsWith("/api/auth/")) return handleAuth(auth, { rpId, httpsPort: boundHttpsPort }, req, url);
     return (await schedule.handle(req, url)) ?? json({ error: `No route for ${method} ${pathname}` }, 404);
   };
 
@@ -160,20 +174,23 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
         const url = new URL(req.url);
         const { pathname } = url;
         if (pathname === "/ws/agent") {
+          const token = nonEmptyParam(url, "token");
           const data: SocketData = {
             kind: "agent",
             host: nonEmptyParam(url, "host"),
             path: nonEmptyParam(url, "path"),
             name: nonEmptyParam(url, "name"),
             harness: nonEmptyParam(url, "harness"),
-            token: nonEmptyParam(url, "token"),
+            tokenHash: token ? tokenHash(token) : null,
+            addr: srv.requestIP(req)?.address ?? null,
             id: "",
           };
           if (srv.upgrade(req, { data })) return undefined;
           return json({ error: "Expected a WebSocket upgrade" }, 400);
         }
         if (pathname === "/ws/viewer") {
-          if (srv.upgrade(req, { data: { kind: "viewer" } })) return undefined;
+          // Scripts may sign in with headers here; browsers cannot, and send an `auth` frame first.
+          if (srv.upgrade(req, { data: { kind: "viewer", signedIn: ctx.readerOf(req) !== undefined } })) return undefined;
           return json({ error: "Expected a WebSocket upgrade" }, 400);
         }
         if (pathname.startsWith("/api/")) {
@@ -186,7 +203,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
         const page = req.method === "GET" ? website.serve(pathname) : undefined;
         return page ?? new Response("Not found", { status: 404 });
       },
-      websocket,
+      websocket: sockets.handlers,
     });
 
   const server = listen(options.port ?? DEFAULT_BUS_PORT);
@@ -225,9 +242,17 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       ctx.hub.stop();
       schedule.stop();
       clearInterval(forgetTimer);
+      clearInterval(settleTimer);
       await Promise.all([server.stop(true), secure?.stop(true)]);
       ctx.hub.dropSockets();
       db.close();
+    },
+    signIn: (human) => auth.signIn(human, "in-process"),
+    approveAgentToken(token) {
+      const hash = tokenHash(token);
+      tokens.request(hash, { host: null, addr: null, agent: "(approved in-process)" });
+      tokens.decide(hash, "approved", "in-process");
+      sockets.settle(hash);
     },
   };
 }

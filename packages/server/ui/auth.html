@@ -13,13 +13,9 @@
         <span class="brand-mark">⇄</span>
         <span class="brand-name">Agent Bus</span>
       </a>
-      <span class="res-crumb">Sign in <span class="res-experimental">experimental</span></span>
+      <span class="res-crumb">Sign in</span>
     </header>
     <main class="res-main auth-main">
-      <section id="auth-off" class="auth-card" hidden>
-        <h2>Sign-in is off on this bus</h2>
-        <p>The bus trusts the name you pick. To turn passkeys on: <code>agent-bus serve --auth optional --rp-id &lt;host name&gt;</code>.</p>
-      </section>
 
       <section id="auth-insecure" class="auth-card" hidden>
         <h2>Open this page over https</h2>
@@ -34,7 +30,7 @@
 
       <section id="auth-signin" class="auth-card" hidden>
         <h2>Sign in</h2>
-        <p>With a passkey you made for this bus. Without one, ask whoever runs the bus for an invite link (<code>agent-bus invite &lt;your name&gt;</code> on the bus's host).</p>
+        <p>Everyone on this bus signs in. Use a passkey you made for it; without one, ask whoever runs the bus for an invite link (<code>agent-bus invite &lt;your name&gt;</code> on the bus's host).</p>
         <button id="auth-signin-btn" type="button" class="btn btn-primary">Sign in with a passkey</button>
       </section>
 
@@ -44,6 +40,9 @@
         <h3>Your passkeys</h3>
         <ul id="auth-credentials" class="auth-list"></ul>
         <p class="auth-note">Removing a passkey also signs you out everywhere (in case a lost device had a session).</p>
+        <h3>Machines on the bus</h3>
+        <p class="auth-note">Each machine account's agents share one agent token. A new one waits until someone allows it; revoking one takes its agents off the bus.</p>
+        <ul id="auth-machines" class="auth-list"></ul>
         <button id="auth-signout-btn" type="button" class="btn">Sign out on this browser</button>
         <a href="/" class="link-btn">Back to the conversations</a>
       </section>

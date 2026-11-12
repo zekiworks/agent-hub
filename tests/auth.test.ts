@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { deliveryHeaderSeqs, type Message } from "@agent-bus/protocol";
-import { createBusServer, createInvite, type AuthMode, type BusServerHandle } from "@agent-bus/server";
+import { createBusServer, createInvite, type BusServerHandle } from "@agent-bus/server";
 import { formatDelivery, formatReadMessage } from "../packages/client/src/tool";
 
 // ---- A minimal CBOR encoder (what authenticators emit) ----
@@ -111,9 +111,9 @@ afterEach(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-function start(mode: AuthMode) {
+function start() {
   dataDir = mkdtempSync(path.join(tmpdir(), "mb-auth-test-"));
-  bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"], auth: { mode, rpId: "localhost" } });
+  bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"], auth: { rpId: "localhost" } });
   const origin = `http://localhost:${bus.port}`;
   const base = bus.url;
   const invite = (human: string): string => {
@@ -151,22 +151,22 @@ function start(mode: AuthMode) {
   return { origin, invite, call, enroll, login };
 }
 
-test("enroll with an invite, then messages from the session are verified; other ids and no session are not", async () => {
-  const { call, enroll } = start("optional");
+test("enroll with an invite, then the session writes as that human (verified); another human's id and no session are refused", async () => {
+  const { call, enroll } = start();
   const { session } = await enroll("carol");
-  expect((await call("/api/auth/state", undefined, session)).body).toMatchObject({ mode: "optional", me: "carol", enrolled: ["carol"] });
+  const state = (await call("/api/auth/state", undefined, session)).body;
+  expect(state).toMatchObject({ me: "carol", enrolled: ["carol"] });
+  expect(state.fileKey).toBeString();
+  expect("mode" in state).toBe(false);
+  expect((await call("/api/auth/state")).body).toMatchObject({ me: null });
 
   const signed = await call("/api/messages", { from: "carol", to: "@uma", text: "really me" }, session);
   expect((signed.body.message as Message).verified).toBe(true);
-  const anon = await call("/api/messages", { from: "carol", to: "@uma", text: "anyone" });
-  expect((anon.body.message as Message).verified).toBe(false);
+  expect((await call("/api/messages", { from: "carol", to: "@uma", text: "anyone" })).status).toBe(401);
   const other = await call("/api/messages", { from: "uma", to: "@carol", text: "as uma" }, session);
   expect(other.status).toBe(403);
   expect(String(other.body.error)).toContain("signed in as carol");
-  expect((await call("/api/messages", { from: "carol", to: "@uma", text: "x" }, "made-up-session")).body.message).toMatchObject({ verified: false });
-  // Another human without a session: allowed while auth is optional, and marked as not verified.
-  const agent = await call("/api/messages", { from: "uma", to: "@carol", text: "hi" });
-  expect((agent.body.message as Message).verified).toBe(false);
+  expect((await call("/api/messages", { from: "carol", to: "@uma", text: "x" }, "made-up-session")).status).toBe(401);
 });
 
 test("agents see who is verified in the delivery header, and seen-detection still finds it", () => {
@@ -193,7 +193,7 @@ test("text that imitates a delivery (or a read entry) is marked as quoted: only 
 });
 
 test("an invite works once and only from the bus's own origin and site", async () => {
-  const { call, invite, origin } = start("optional");
+  const { call, invite, origin } = start();
   const token = invite("uma");
   const authenticator = new SoftAuthenticator(origin);
   const options = await call("/api/auth/register/options", { invite: token });
@@ -212,7 +212,7 @@ test("an invite works once and only from the bus's own origin and site", async (
 });
 
 test("sign-in with a discoverable passkey; a counter going backwards (a cloned key) is refused; synced passkeys (always 0) work", async () => {
-  const { call, enroll, login, origin } = start("optional");
+  const { call, enroll, login, origin } = start();
   const { authenticator } = await enroll("carol");
   const first = await login(authenticator);
   expect(first.status).toBe(200);
@@ -226,15 +226,15 @@ test("sign-in with a discoverable passkey; a counter going backwards (a cloned k
 });
 
 test("EdDSA and RS256 passkeys work too", async () => {
-  const { enroll, login, origin } = start("optional");
+  const { enroll, login, origin } = start();
   for (const alg of ["EdDSA", "RS256"] as const) {
     const { authenticator } = await enroll(alg === "EdDSA" ? "carol" : "uma", new SoftAuthenticator(origin, alg));
     expect((await login(authenticator)).status).toBe(200);
   }
 });
 
-test("required: writing as a human needs a session; removing a passkey signs out everywhere", async () => {
-  const { call, enroll, login } = start("required");
+test("writing as a human needs a session; removing a passkey signs out everywhere", async () => {
+  const { call, enroll, login } = start();
   expect((await call("/api/messages", { from: "carol", to: "@uma", text: "x" })).status).toBe(401);
   const { authenticator, session } = await enroll("carol");
   expect((await call("/api/messages", { from: "carol", to: "@uma", text: "x" }, session)).status).toBe(200);
@@ -246,19 +246,12 @@ test("required: writing as a human needs a session; removing a passkey signs out
   expect((await login(authenticator)).status).toBe(403);
 });
 
-test("schedule: a human who is not signed in has no human powers (no booking over capacity, no releasing others' holds)", async () => {
-  const { call, enroll } = start("optional");
-  await call("/api/resources", { from: "carol", kind: "service", host: "spark2", name: "deepseek" });
-  await call("/api/reservations", { from: "uma", resource: "spark2 deepseek", hours: 1, purpose: "eval" });
-  expect((await call("/api/reservations", { from: "carol", resource: "spark2 deepseek", hours: 1, purpose: "x", force: true })).status).toBe(409);
+test("schedule: human powers (booking over capacity) need that human's session", async () => {
+  const { call, enroll } = start();
+  const umaSession = bus!.signIn("uma");
+  expect((await call("/api/resources", { from: "uma", kind: "service", host: "spark2", name: "deepseek" }, umaSession)).status).toBe(200);
+  expect((await call("/api/reservations", { from: "uma", resource: "spark2 deepseek", hours: 1, purpose: "eval" }, umaSession)).status).toBe(200);
+  expect((await call("/api/reservations", { from: "carol", resource: "spark2 deepseek", hours: 1, purpose: "x", force: true })).status).toBe(401);
   const { session } = await enroll("carol");
   expect((await call("/api/reservations", { from: "carol", resource: "spark2 deepseek", hours: 1, purpose: "x", force: true }, session)).status).toBe(200);
-});
-
-test("off (the default): nothing changes, no verified field, no auth routes", async () => {
-  const { call } = start("off");
-  const sent = await call("/api/messages", { from: "carol", to: "@uma", text: "hi" });
-  expect("verified" in (sent.body.message as Message)).toBe(false);
-  expect((await call("/api/auth/state")).body.mode).toBe("off");
-  expect((await call("/api/auth/login/options", {})).status).toBe(404);
 });

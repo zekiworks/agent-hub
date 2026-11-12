@@ -1,4 +1,4 @@
-// Human authentication routes, /api/auth/* (experimental). The passkey
+// Human authentication routes, /api/auth/* (open without a session: the sign-in page needs them). The passkey
 // ceremonies and sessions are in auth.ts.
 import type { HumanAuth } from "./auth";
 import { HttpError, json, readJsonObject } from "./http";
@@ -21,10 +21,15 @@ export async function handleAuth(
   const { pathname } = url;
   const method = req.method;
   if (method === "GET" && pathname === "/api/auth/state") {
-    const me = auth.mode === "off" ? null : (auth.humanOf(req) ?? null);
-    return json({ mode: auth.mode, rpId: site.rpId, httpsPort: site.httpsPort ?? null, me, enrolled: auth.enrolled() });
+    const me = auth.humanOf(req) ?? null;
+    return json({
+      rpId: site.rpId,
+      httpsPort: site.httpsPort ?? null,
+      me,
+      enrolled: auth.enrolled(),
+      ...(me ? { fileKey: auth.fileKey(me) } : {}),
+    });
   }
-  if (auth.mode === "off") throw new HttpError(404, "Authentication is off on this bus (agent-bus serve --auth optional)");
   if (method !== "POST" && method !== "GET") throw new HttpError(405, "Method not allowed");
   if (method === "POST" && pathname === "/api/auth/register/options") {
     const body = await readJsonObject(req);
@@ -51,7 +56,6 @@ export async function handleAuth(
   if (method === "GET" && pathname === "/api/auth/credentials") return json({ human: me, credentials: auth.credentials(me) });
   const remove = /^\/api\/auth\/credentials\/([^/]+)\/remove$/.exec(pathname);
   if (method === "POST" && remove?.[1]) {
-    auth.checkWriter(req, me, "human");
     auth.removeCredential(me, decodeURIComponent(remove[1]));
     return json({ ok: true });
   }

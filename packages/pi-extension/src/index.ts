@@ -137,6 +137,7 @@ export default function messageBus(pi: MessageBusApi): void {
     }
     const url = envBusUrl();
     let announced = false;
+    let waitingForApproval = false;
     const conn = new BusConnection({
       url,
       host: os.hostname(),
@@ -151,13 +152,17 @@ export default function messageBus(pi: MessageBusApi): void {
         ctx.ui?.notify(`message-bus: on the bus as @${id}`, "info");
       },
       onLog: log,
+      onPending: (code) => {
+        waitingForApproval = true;
+        ctx.ui?.notify(`message-bus: waiting for a person to allow this machine (code ${code}, on the bus website)`, "warning");
+      },
     });
     connection = conn;
     tool = new BusTool(conn);
     conn.connect();
     status.attach(conn);
     const notice = setTimeout(() => {
-      if (connection !== conn || conn.connected) return;
+      if (connection !== conn || conn.connected || waitingForApproval) return;
       ctx.ui?.notify(
         `message-bus: cannot reach the bus at ${url} (still retrying). Check AGENT_BUS_URL and the network.`,
         "warning"

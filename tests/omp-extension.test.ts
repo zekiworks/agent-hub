@@ -3,12 +3,13 @@ import { mkdirSync, mkdtempSync, readdirSync, rmdirSync, rmSync, writeFileSync }
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import type { AgentServerFrame, Participant, PostMessageResponse, ViewerServerFrame } from "@agent-bus/protocol";
-import { createBusServer, type BusServerHandle } from "@agent-bus/server";
+import type { BusServerHandle } from "@agent-bus/server";
 import messageBus, {
   type MessageBusApi,
   type MessageBusContext,
   type MessageBusToolParams,
 } from "../packages/omp-extension/src/index";
+import { agentSocketUrl, busFetch, getJson, postJson, startBus, viewerSocket } from "./helpers";
 
 type Injected =
   | { via: "user"; content: string; deliverAs?: string }
@@ -100,11 +101,7 @@ function participantsWhere(pred: (ps: Participant[]) => boolean): Promise<void> 
 }
 
 async function post(body: object): Promise<PostMessageResponse> {
-  const res = await fetch(`${bus.url}/api/messages`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await postJson(bus, "/api/messages", body);
   expect(res.status).toBe(200);
   return (await res.json()) as PostMessageResponse;
 }
@@ -122,8 +119,7 @@ async function startSession(folder: string): Promise<FakeOmp> {
 async function rawAgent(folder: string) {
   const frames: AgentServerFrame[] = [];
   let waiter: { until: () => boolean; resolve: () => void } | undefined;
-  const url = `${bus.url.replace(/^http/, "ws")}/ws/agent?host=test&harness=raw&path=${encodeURIComponent(path.join(dataDir, "projects", folder))}`;
-  const ws = new WebSocket(url);
+  const ws = new WebSocket(agentSocketUrl(bus, { host: "test", harness: "raw", path: path.join(dataDir, "projects", folder) }));
   sockets.push(ws);
   ws.addEventListener("message", (e) => {
     const frame = JSON.parse(String(e.data)) as AgentServerFrame;
@@ -148,10 +144,10 @@ async function rawAgent(folder: string) {
 
 beforeEach(async () => {
   dataDir = mkdtempSync(path.join(tmpdir(), "mb-ext-test-"));
-  bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
   process.env.AGENT_BUS_URL = bus.url;
   process.env.AGENT_BUS_JOIN_FROM_TMP = "1"; // fake projects live under the temp dir
-  viewer = new WebSocket(`${bus.url.replace(/^http/, "ws")}/ws/viewer`);
+  viewer = viewerSocket(bus);
   viewer.addEventListener("message", (e) => {
     const frame = JSON.parse(String(e.data)) as ViewerServerFrame;
     if (frame.type !== "participants") return;
@@ -186,7 +182,7 @@ test("delivers like the composer: idle starts a turn, busy queues a follow-up, a
   const sent = new Date(standup.createdAt).toISOString().slice(0, 16).replace("T", " "); // tests run in UTC (setup.ts)
   expect(await alpha.injectedWith("standup in 5")).toEqual({
     via: "user",
-    content: `[message-bus] #1 @carol → @all · ${sent}\nstandup in 5\n(Reply only if they need something from you: message-bus reply, message_id 1 → @all.)`,
+    content: `[message-bus] #1 @carol (verified) → @all · ${sent}\nstandup in 5\n(Reply only if they need something from you: message-bus reply, message_id 1 → @all.)`,
     deliverAs: undefined,
   });
 
@@ -223,11 +219,11 @@ test("tool write/send reach other agents; received files are saved locally", asy
   expect(dm.conversation.addressed).toEqual(["alpha", "beta"]);
 
   // An argument outside the tool's set is an error and nothing is sent (it used to store an empty message).
-  const before = (await (await fetch(`${bus.url}/api/state`)).json()) as { conversations: Array<{ lastMessageAt: number }> };
+  const before = await getJson<{ conversations: Array<{ lastMessageAt: number }> }>(bus, "/api/state");
   await expect(
     alpha.run({ op: "reply", message_id: dm.message.seq, content: "wrong key" } as unknown as MessageBusToolParams)
   ).rejects.toThrow(/Unknown argument content; .* Nothing was sent/);
-  const after = (await (await fetch(`${bus.url}/api/state`)).json()) as { conversations: Array<{ lastMessageAt: number }> };
+  const after = await getJson<{ conversations: Array<{ lastMessageAt: number }> }>(bus, "/api/state");
   expect(after.conversations.map((c) => c.lastMessageAt)).toEqual(before.conversations.map((c) => c.lastMessageAt));
 
   const filePath = path.join(dataDir, "projects", "alpha", "report.txt");
@@ -246,11 +242,11 @@ test("tool write/send reach other agents; received files are saved locally", asy
   await expect(alpha.run({ op: "write", to: "@nobody", message: "x" })).rejects.toThrow(/nobody/);
 
   // Inbound file: downloaded under ~/.agent-bus/received/<id>/ and named in the injected text.
-  const upload = await fetch(`${bus.url}/api/files?from=carol&name=notes.md`, {
+  const upload = await busFetch(bus, "/api/files?from=carol&name=notes.md", {
     method: "POST",
     headers: { "Content-Type": "text/markdown" },
     body: "# notes\n",
-  });
+  }, "carol");
   const { file } = (await upload.json()) as { file: { id: string } };
   await post({ from: "carol", to: "@alpha", text: "see notes", fileIds: [file.id] });
   const injected = await alpha.injectedWith("see notes");
@@ -283,7 +279,7 @@ test("write to an offline agent is refused and nothing is stored", async () => {
   await participantsWhere((ps) => ps.some((p) => p.id === "gamma" && !p.online));
 
   await expect(alpha.run({ op: "write", to: "@gamma", message: "are you there" })).rejects.toThrow(/@gamma is offline.*Nothing was sent/);
-  const search = (await (await fetch(`${bus.url}/api/search?from=carol&q=are%20you%20there&scope=all`)).json()) as { messages: unknown[] };
+  const search = await getJson<{ messages: unknown[] }>(bus, "/api/search?from=carol&q=are%20you%20there&scope=all");
   expect(search.messages).toHaveLength(0);
 });
 
@@ -295,9 +291,8 @@ test("a delivery is reported seen when its text reaches the model, not when it i
   expect(queued.deliverAs).toBe("aside");
 
   const receiptOf = async (waitMs: number) =>
-    ((await (await fetch(`${bus.url}/api/messages/${message.seq}?waitMs=${waitMs}`)).json()) as {
-      message: { receipts: Array<{ deliveredAt: number | null; seenAt: number | null }> };
-    }).message.receipts[0]!;
+    (await getJson<{ message: { receipts: Array<{ deliveredAt: number | null; seenAt: number | null }> } }>(bus, `/api/messages/${message.seq}?waitMs=${waitMs}`))
+      .message.receipts[0]!;
   expect((await receiptOf(5000)).deliveredAt).toBeNumber();
 
   // A model request for the current turn does not contain it yet.
@@ -305,7 +300,7 @@ test("a delivery is reported seen when its text reaches the model, not when it i
   expect((await receiptOf(0)).seenAt).toBeNull();
 
   // The turn ends, the follow-up is dequeued into the next request: seen.
-  const viewer = new WebSocket(`${bus.url.replace(/^http/, "ws")}/ws/viewer`);
+  const viewer = viewerSocket(bus);
   sockets.push(viewer);
   const seenFrame = Promise.withResolvers<{ seenAt: number | null }>();
   viewer.addEventListener("message", (e) => {
@@ -394,7 +389,7 @@ test("live output streams only while someone watches the agent's page: replay fi
   alpha.emit("tool_execution_start", { toolCallId: "t1", toolName: "bash", args: { command: "tail -n 5 app.log" }, intent: "Reading the log" });
   alpha.emit("tool_execution_end", { toolCallId: "t1", result: { content: [{ type: "text", text: "all good" }] } });
 
-  const watcher = new WebSocket(`${bus.url.replace(/^http/, "ws")}/ws/viewer`);
+  const watcher = viewerSocket(bus);
   sockets.push(watcher);
   const frames: Array<Extract<ViewerServerFrame, { type: "activity" }>> = [];
   let waiter: { until: () => boolean; resolve: () => void } | undefined;
@@ -455,7 +450,7 @@ test("read ops: inbox, show, history and search, mine by default and all on requ
 
   const inbox = await text({ op: "inbox" });
   expect(inbox).toContain("2 messages sent to you");
-  expect(inbox).toContain(`#${first.seq} @carol → @{alpha,carol}`);
+  expect(inbox).toContain(`#${first.seq} @carol (verified) → @{alpha,carol}`);
   expect(inbox).not.toContain("[message-bus]"); // read results must not look like deliveries
   expect(await text({ op: "inbox", since: first.seq })).toContain("1 messages sent to you");
 

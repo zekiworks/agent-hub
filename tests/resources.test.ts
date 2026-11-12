@@ -4,10 +4,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Observation, ResourcesResponse } from "@agent-bus/protocol";
-import { createBusServer, type BusServerHandle } from "@agent-bus/server";
+import type { BusServerHandle } from "@agent-bus/server";
 import { checkTickets, ticketEnv } from "../packages/cli/src/run";
 import { formatServers } from "../packages/client/src/tool";
 import { ResourceSchedule, type Actor } from "../packages/server/src/resources";
+import { agentSocketUrl, getJson, postJson, startBus } from "./helpers";
 
 const HOUR = 3600_000;
 const MIN = 60_000;
@@ -262,9 +263,9 @@ afterEach(async () => {
 
 test("over HTTP: an observation, reservation, refusal, and a human's release reaching the holder from @resources", async () => {
   dataDir = mkdtempSync(path.join(tmpdir(), "mb-res-test-"));
-  bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
   const delivered: string[] = [];
-  const ws = new WebSocket(`${bus.url.replace(/^http/, "ws")}/ws/agent?host=host1&harness=raw&path=/home/x/code/alpha`);
+  const ws = new WebSocket(agentSocketUrl(bus, { host: "host1", harness: "raw", path: "/home/x/code/alpha" }));
   ws.onmessage = (e) => {
     const frame = JSON.parse(String(e.data)) as { type: string; message?: { seq: number; from: string; text: string } };
     if (frame.type === "deliver" && frame.message) {
@@ -274,7 +275,7 @@ test("over HTTP: an observation, reservation, refusal, and a human's release rea
   };
   await new Promise((resolve) => ws.addEventListener("open", resolve));
   const post = async (p: string, body: unknown): Promise<{ status: number; body: Record<string, unknown> }> => {
-    const res = await fetch(`${bus.url}${p}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const res = await postJson(bus, p, body);
     return { status: res.status, body: (await res.json()) as Record<string, unknown> };
   };
   expect((await post("/api/observations", observation([], Date.now()))).status).toBe(200);
@@ -289,7 +290,7 @@ test("over HTTP: an observation, reservation, refusal, and a human's release rea
   const deadline = Date.now() + 4000;
   while (!delivered.some((d) => d.startsWith("resources: @carol released")) && Date.now() < deadline) await Bun.sleep(25);
   expect(delivered.find((d) => d.startsWith("resources:"))).toContain(`@carol released your reservation ${id}`);
-  const listing = (await (await fetch(`${bus.url}/api/resources`)).json()) as ResourcesResponse;
+  const listing = await getJson<ResourcesResponse>(bus, "/api/resources");
   expect(listing.reservations.find((r) => r.id === id)?.state).toBe("released");
   ws.close();
 });
@@ -305,11 +306,11 @@ test("with --gpudash, the bus reads what runs from gpudash's /api/observations (
   });
   try {
     dataDir = mkdtempSync(path.join(tmpdir(), "mb-res-test-"));
-    bus = createBusServer({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol"], gpudash: `http://127.0.0.1:${gpudash.port}/` });
+    bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol"], gpudash: `http://127.0.0.1:${gpudash.port}/` });
     const deadline = Date.now() + 4000;
     let listing: ResourcesResponse | undefined;
     while (Date.now() < deadline) {
-      listing = (await (await fetch(`${bus.url}/api/resources`)).json()) as ResourcesResponse;
+      listing = await getJson<ResourcesResponse>(bus, "/api/resources");
       if (listing.resources.length > 0) break;
       await Bun.sleep(50);
     }

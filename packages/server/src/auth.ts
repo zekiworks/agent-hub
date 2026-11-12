@@ -1,10 +1,9 @@
-// Human authentication with passkeys (experimental): invites from the shell, passkey
-// enrollment and sign-in, and sessions (a random token the website keeps in localStorage and sends as
-// `Authorization: Bearer`, stored hashed here). Not a cookie: browsers send cookies to every port of a host, so a
-// cookie would also reach other services on the bus's host name. The bus then knows a human's message really comes
-// from that human: `verified` on the message, shown to agents and on the website.
+// Human authentication with passkeys: invites from the shell, passkey enrollment and sign-in, and sessions (a
+// random token the website keeps in localStorage and sends as `Authorization: Bearer`, stored hashed here). Not a
+// cookie: browsers send cookies to every port of a host, so a cookie would also reach other services on the bus's
+// host name. Every person reading or writing on the bus is signed in; their messages carry `verified`.
 import type { Database } from "bun:sqlite";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   b64url,
   SUPPORTED_ALGS,
@@ -14,8 +13,6 @@ import {
   type RelyingParty,
   type StoredCredential,
 } from "./webauthn";
-
-export type AuthMode = "off" | "optional" | "required";
 
 export class AuthError extends Error {
   constructor(
@@ -31,6 +28,8 @@ const DAY = 24 * 60 * MIN;
 const INVITE_MS = 10 * MIN;
 const CHALLENGE_MS = 5 * MIN;
 const SESSION_MS = 30 * DAY;
+/** File links on the website carry a key (an <img> cannot send the session header); it lasts this long. */
+const FILE_KEY_MS = DAY;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS auth_humans (
@@ -63,6 +62,9 @@ CREATE TABLE IF NOT EXISTS auth_invites (
   expires_at INTEGER NOT NULL,
   used_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS auth_secret (
+  secret TEXT NOT NULL
+);
 `;
 
 const hash = (token: string): string => createHash("sha256").update(token).digest("hex");
@@ -82,7 +84,6 @@ export function createInvite(db: Database, human: string, now = Date.now()): str
 }
 
 export interface AuthOptions {
-  mode: AuthMode;
   rpId: string;
   /** Exact website origins; a function because the port is known only once the server listens. */
   origins: () => string[];
@@ -112,17 +113,23 @@ export interface CredentialInfo {
 }
 
 export class HumanAuth {
-  readonly mode: AuthMode;
   private readonly challenges = new Map<string, Challenge>();
   private readonly now: () => number;
+  /** Signs file keys; made once per database. */
+  private readonly secret: Buffer;
 
   constructor(
     private readonly db: Database,
     private readonly options: AuthOptions
   ) {
-    this.mode = options.mode;
     this.now = options.now ?? Date.now;
     ensureAuthSchema(db);
+    let row = db.query<{ secret: string }, []>("SELECT secret FROM auth_secret").get();
+    if (!row) {
+      row = { secret: b64url(new Uint8Array(randomBytes(32))) };
+      db.query("INSERT INTO auth_secret (secret) VALUES (?1)").run(row.secret);
+    }
+    this.secret = Buffer.from(row.secret, "base64url");
   }
 
   private rp(): RelyingParty {
@@ -254,6 +261,15 @@ export class HumanAuth {
     return { human: row.human, token: this.newSession(row.human, label) };
   }
 
+  /**
+   * A session for `human` without a passkey ceremony. Not reachable over the network: for tests and for programs
+   * embedding the server, which hold the database anyway.
+   */
+  signIn(human: string, label: string): string {
+    if (!this.options.humans.includes(human)) throw new AuthError(400, `@${human} is not a human on this bus`);
+    return this.newSession(human, label);
+  }
+
   private newSession(human: string, label: string): string {
     const now = this.now();
     const t = token();
@@ -263,10 +279,14 @@ export class HumanAuth {
     return t;
   }
 
-  /** The signed-in human of a request (`Authorization: Bearer <session>`), if any. Sessions slide: each use extends them to 30 days. */
+  /** The signed-in human of a request (`Authorization: Bearer <session>`), if any. */
   humanOf(req: Request): string | undefined {
     const t = sessionToken(req);
-    if (!t) return undefined;
+    return t ? this.humanOfSession(t) : undefined;
+  }
+
+  /** The human a session token belongs to, if it is current. Sessions slide: each use extends them to 30 days. */
+  humanOfSession(t: string): string | undefined {
     const row = this.db.query<{ human: string; expires_at: number; last_seen_at: number }, [string]>("SELECT human, expires_at, last_seen_at FROM auth_sessions WHERE token_hash = ?1").get(hash(t));
     const now = this.now();
     if (!row || row.expires_at < now) return undefined;
@@ -276,20 +296,24 @@ export class HumanAuth {
     return row.human;
   }
 
-  /**
-   * The checks every write makes for its `from`: a signed-in browser may only write as its human; with `required`, a
-   * human id needs a session. Returns whether `from` is verified. (No Origin check: the session is not a cookie, so
-   * another site cannot make a browser send it.)
-   */
-  checkWriter(req: Request, from: string, kind: "agent" | "human"): boolean | undefined {
-    if (this.mode === "off") return undefined;
-    const signedIn = this.humanOf(req);
-    if (signedIn !== undefined) {
-      if (signedIn !== from) throw new AuthError(403, `You are signed in as ${signedIn}, not ${from}`);
-      return true;
-    }
-    if (kind === "human" && this.mode === "required") throw new AuthError(401, `Sign in to write as ${from} (passkey; see /auth)`);
-    return kind === "human" ? false : undefined;
+  /** A key for the website's file links, valid FILE_KEY_MS: `<expiry>.<human>.<signature>`. */
+  fileKey(human: string): string {
+    const expires = this.now() + FILE_KEY_MS;
+    return `${expires}.${human}.${this.sign(`${expires}.${human}`)}`;
+  }
+
+  /** Whether `key` is a file key this bus made, not expired, for a human who still has a session. */
+  checkFileKey(key: string): boolean {
+    const [expires, human, signature] = key.split(".");
+    if (!expires || !human || !signature || Number(expires) < this.now()) return false;
+    const expected = Buffer.from(this.sign(`${expires}.${human}`));
+    const given = Buffer.from(signature);
+    if (expected.length !== given.length || !timingSafeEqual(expected, given)) return false;
+    return this.db.query("SELECT 1 FROM auth_sessions WHERE human = ?1 AND expires_at > ?2").get(human, this.now()) !== null;
+  }
+
+  private sign(text: string): string {
+    return createHmac("sha256", this.secret).update(text).digest("base64url");
   }
 
   logout(req: Request): void {
