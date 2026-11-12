@@ -1,5 +1,5 @@
 // Deliveries the model has not been given yet, and messages held for a harness hook to hand over. Used by the bindings
-// whose harness has no "add this to the session" call of its own (Claude Code, Codex: hooks return the held texts as
+// whose harness has no "add this to the session" call of its own (Claude Code, Codex, Cursor: hooks return the held texts as
 // added context) and by those that see what goes to the model (omp and pi: the `context` event).
 import { deliveryHeaderSeqs } from "../../protocol/src/address";
 

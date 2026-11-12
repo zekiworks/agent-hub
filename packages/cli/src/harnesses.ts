@@ -1,11 +1,13 @@
 // `agent-bus install|uninstall <harness>` and the per-harness part of `agent-bus doctor`. omp and pi load a small
 // extension file that imports this checkout's extension source; Claude Code, Codex and Antigravity get a bundled
-// plugin copy (their packages' scripts/install.ts); `cli` puts an `agent-bus` command on PATH.
+// plugin the harness loads; Cursor gets a bundled server registered in ~/.cursor/hooks.json and ~/.cursor/mcp.json;
+// `cli` puts an `agent-bus` command on PATH.
 import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as antigravity from "../../antigravity-plugin/scripts/install";
 import * as claude from "../../claude-plugin/scripts/install";
+import * as cursor from "../../cursor-plugin/scripts/install";
 import {
   DEFAULT_INSTALL_URL,
   isOwnedFile,
@@ -140,6 +142,7 @@ export const HARNESSES: readonly Harness[] = [
   loaderHarness("pi", "pi (pi-coding-agent)", path.join(os.homedir(), ".pi", "agent", "extensions")),
   pluginHarness("claude", "Claude Code", "claude", claude),
   pluginHarness("codex", "Codex", "codex", codex),
+  pluginHarness("cursor", "Cursor", undefined, cursor),
   pluginHarness("antigravity", "Antigravity", undefined, antigravity),
   cliHarness,
 ];

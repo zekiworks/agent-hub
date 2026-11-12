@@ -1,5 +1,5 @@
 // Process-level helpers for the harness bindings: which bus to join, logging, the project folder. Runs on Node (the
-// Antigravity, Claude Code and Codex plugins are bundled for it): `node:*` only.
+// Antigravity, Claude Code, Codex and Cursor plugins are bundled for it): `node:*` only.
 import { appendFileSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import * as path from "node:path";
 import { DEFAULT_BUS_PORT } from "../../protocol/src/types";

@@ -38,6 +38,10 @@
       "name": "@agent-bus/codex-plugin",
       "version": "1.5.0",
     },
+    "packages/cursor-plugin": {
+      "name": "@agent-bus/cursor-plugin",
+      "version": "1.0.0",
+    },
     "packages/omp-extension": {
       "name": "@agent-bus/omp-extension",
       "version": "0.1.0",
@@ -68,6 +72,8 @@
     "@agent-bus/client": ["@agent-bus/client@workspace:packages/client"],
 
     "@agent-bus/codex-plugin": ["@agent-bus/codex-plugin@workspace:packages/codex-plugin"],
+
+    "@agent-bus/cursor-plugin": ["@agent-bus/cursor-plugin@workspace:packages/cursor-plugin"],
 
     "@agent-bus/omp-extension": ["@agent-bus/omp-extension@workspace:packages/omp-extension"],
 

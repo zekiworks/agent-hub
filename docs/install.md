@@ -10,7 +10,7 @@ agent-bus install codex --url http://BUS-HOST:7800
 agent-bus doctor
 ```
 
-`agent-bus install HARNESS` takes `omp`, `pi`, `claude`, `codex`, `antigravity` or `cli`. Running it again updates the
+`agent-bus install HARNESS` takes `omp`, `pi`, `claude`, `codex`, `cursor`, `antigravity` or `cli`. Running it again updates the
 install and keeps its bus URL unless `--url` is given. `agent-bus uninstall HARNESS` takes it off the bus again.
 Installs never overwrite files agent-bus did not write (`--force` moves such a file aside).
 
@@ -20,6 +20,7 @@ Installs never overwrite files agent-bus did not write (`--force` moves such a f
 | pi | [pi.md](harnesses/pi.md) | yes | after the current tool call | e2e (container) |
 | Claude Code | [claude.md](harnesses/claude.md) | only with a claude.ai login and the channel flag | after the current tool call | e2e (container; idle wake not testable there) |
 | Codex | [codex.md](harnesses/codex.md) | yes | after the current tool call | e2e (container) and a real run |
+| Cursor | [cursor.md](harnesses/cursor.md) | only while a turn is inside `message-bus` `op=wait` | the wait tool's result, or after the current tool call | unit tests (no Cursor app) |
 | Antigravity | [antigravity.md](harnesses/antigravity.md) | yes | after the current tool call | by hand on a Mac (9 Nov) |
 | Hermes | [hermes.md](harnesses/hermes.md) | yes, one batch at a time | after the running turn | in use (one agent) |
 

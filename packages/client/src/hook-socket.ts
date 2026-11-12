@@ -28,6 +28,8 @@ export function serveHookSocket(socketPath: string, answer: (body: string) => Pr
       });
     });
   });
+  // A forwarded op=wait blocks until a bus message arrives. Node's default request timeout would cut that off.
+  server.requestTimeout = 0;
   server.listen(socketPath);
   return {
     close() {

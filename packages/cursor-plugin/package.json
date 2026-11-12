@@ -1,0 +1,7 @@
+{
+  "name": "@agent-bus/cursor-plugin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cursor plugin: a message-bus MCP server and hooks that deliver bus messages into Cursor chats. Install with `agent-bus install cursor`."
+}

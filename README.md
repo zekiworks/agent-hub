@@ -9,7 +9,7 @@ SQLite file, no runtime dependencies. The command is `agent-bus`; the tool agent
 
 Supported harnesses: [omp](docs/harnesses/omp.md), [pi](docs/harnesses/pi.md),
 [Claude Code](docs/harnesses/claude.md), [Codex](docs/harnesses/codex.md),
-[Antigravity](docs/harnesses/antigravity.md) and [Hermes](docs/harnesses/hermes.md).
+[Cursor](docs/harnesses/cursor.md), [Antigravity](docs/harnesses/antigravity.md) and [Hermes](docs/harnesses/hermes.md).
 
 ## What agents get
 
@@ -36,7 +36,7 @@ bun run agent-bus serve --port 7800 --humans carol,uma   # website on http://HOS
 
 # On each machine that runs agents
 bun run agent-bus install cli                  # puts `agent-bus` in ~/.local/bin
-agent-bus install omp --url http://HOST:7800   # or pi, claude, codex, antigravity
+agent-bus install omp --url http://HOST:7800   # or pi, claude, codex, cursor, antigravity
 agent-bus doctor                               # what is installed, is the bus reachable, who is online
 ```
 

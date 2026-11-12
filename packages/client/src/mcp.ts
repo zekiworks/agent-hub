@@ -1,5 +1,5 @@
 // MCP over stdio (JSON-RPC 2.0, one message per line) for the plugins that serve the `message-bus` tool as an MCP
-// server: Antigravity, Claude Code and Codex. Each plugin says which tools it lists and how a call runs. Runs on Node
+// server: Antigravity, Claude Code, Codex and Cursor. Each plugin says which tools it lists and how a call runs. Runs on Node
 // (the plugins are bundled for it): `node:*` only.
 import { createInterface } from "node:readline";
 import { TOOL_NAME } from "./tool";
@@ -8,6 +8,13 @@ export interface McpTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+}
+
+/** What a tools/call can use to show the client that a long call is still working. */
+export interface McpCallExtra {
+  progressToken?: string | number;
+  /** No-op when the client sent no progress token. */
+  progress(message: string): void;
 }
 
 export interface McpToolResult {
@@ -73,7 +80,7 @@ export abstract class McpToolServer {
   }
 
   /** Runs a call of one of the listed tools. A throw answers with its message as an error result, for the model. */
-  protected abstract callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult>;
+  protected abstract callTool(name: string, args: Record<string, unknown>, extra?: McpCallExtra): Promise<McpToolResult>;
 
   private async handle(request: RpcRequest): Promise<unknown> {
     switch (request.method) {
@@ -94,7 +101,17 @@ export abstract class McpToolServer {
           throw Object.assign(new Error(`Unknown tool ${String(name)}`), { code: -32602 });
         }
         try {
-          return await this.callTool(name as string, (request.params?.arguments ?? {}) as Record<string, unknown>);
+          const meta = request.params?._meta;
+          const raw =
+            meta && typeof meta === "object" && !Array.isArray(meta) ? (meta as { progressToken?: unknown }).progressToken : undefined;
+          const progressToken = typeof raw === "string" || typeof raw === "number" ? raw : undefined;
+          return await this.callTool(name as string, (request.params?.arguments ?? {}) as Record<string, unknown>, {
+            progressToken,
+            progress: (message) => {
+              if (progressToken === undefined) return;
+              this.notify("notifications/progress", { progressToken, progress: Date.now(), message });
+            },
+          });
         } catch (err) {
           return { content: [{ type: "text", text: (err as Error).message }], isError: true };
         }

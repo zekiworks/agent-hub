@@ -20,6 +20,7 @@ install / uninstall: put this machine's HARNESS on the bus, or take it off. HARN
   omp, pi           an extension file in ~/.omp/agent/extensions or ~/.pi/agent/extensions that loads this checkout
   claude            a plugin in a local marketplace (~/.agent-bus/claude-marketplace), installed with the claude CLI
   codex             a plugin in a local marketplace (~/.agent-bus/codex-marketplace), registered with the codex CLI
+  cursor            hooks and an MCP server in ~/.cursor, serving ~/.agent-bus/cursor-plugin
   antigravity       a plugin folder in ~/.gemini/config/plugins/message-bus
   cli               this command, as ~/.local/bin/agent-bus
   --url defaults to the URL of the install being replaced, then $AGENT_BUS_URL, then http://127.0.0.1:7800.
