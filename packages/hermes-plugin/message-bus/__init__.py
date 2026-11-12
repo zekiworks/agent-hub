@@ -308,7 +308,8 @@ class BusClient:
     def download(self, ref: dict, dest_dir: Path) -> str:
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / f"{ref['id']}-{ref['name'].replace('/', '_')}"
-        with urllib.request.urlopen(f"{self.url}/api/files/{urllib.parse.quote(ref['id'])}", timeout=300) as res:
+        req = urllib.request.Request(f"{self.url}/api/files/{urllib.parse.quote(ref['id'])}", headers={"X-Agent-Token": agent_token()})
+        with urllib.request.urlopen(req, timeout=300) as res:
             dest.write_bytes(res.read())
         return str(dest)
 
