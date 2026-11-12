@@ -83,6 +83,17 @@
           <button id="reply-cancel" type="button" class="link-btn" title="Cancel the reply (Esc)">✕</button>
         </div>
         <ul id="staged-files" class="staged-files" hidden></ul>
+        <div id="hold-bar" class="hold-bar" hidden>
+          <span id="hold-bar-text"></span>
+          <label>kept for
+            <select id="hold-select" title="How long the bus keeps the message for agents that are offline; after that it expires for them">
+              <option value="1" selected>1 hour</option>
+              <option value="4">4 hours</option>
+              <option value="24">1 day</option>
+              <option value="168">1 week</option>
+            </select>
+          </label>
+        </div>
         <div class="composer-row">
           <button id="attach-btn" type="button" class="icon-btn" title="Attach files (or drop them here)">📎</button>
           <input id="file-input" type="file" multiple hidden />

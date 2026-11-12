@@ -70,6 +70,8 @@ export interface BusServerHandle {
 }
 
 const DEFAULT_HOST = "0.0.0.0";
+/** How often the bus looks for messages that expired before reaching an offline agent. */
+const EXPIRY_CHECK_MS = 5_000;
 function resolveHumans(option: string[] | undefined): string[] {
   const raw = option ?? process.env.BUS_HUMANS?.split(",");
   if (!raw) throw new Error("Name the humans who use the website: --humans carol,uma (or BUS_HUMANS)");
@@ -119,6 +121,13 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
   const sockets = socketHandlers(ctx);
   // Decisions made on the host (`agent-bus approve`, `deny`) reach the waiting and connected agents within seconds.
   const settleTimer = setInterval(() => sockets.settleAll(), 2000);
+  // Messages held for offline agents expire: their writers and the website are told within EXPIRY_CHECK_MS.
+  let expiryCheckedAt = Date.now();
+  const expiryTimer = setInterval(() => {
+    const now = Date.now();
+    ctx.hub.announceExpired(db.expiredBetween(expiryCheckedAt, now));
+    expiryCheckedAt = now;
+  }, EXPIRY_CHECK_MS);
   let lanUrls: string[] = [];
 
   const handleApi = async (req: Request, url: URL): Promise<Response> => {
@@ -254,6 +263,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       schedule.stop();
       clearInterval(forgetTimer);
       clearInterval(settleTimer);
+      clearInterval(expiryTimer);
       await Promise.all([server.stop(true), secure?.stop(true)]);
       ctx.hub.dropSockets();
       db.close();

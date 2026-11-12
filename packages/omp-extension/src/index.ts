@@ -22,7 +22,7 @@ import {
   type MessageBusToolParams,
   type ToolParam,
 } from "../../client/src/tool";
-import type { ReceiptFrame } from "../../protocol/src/types";
+import type { ReceiptEvent } from "../../protocol/src/types";
 
 export { TOOL_NAME, type MessageBusToolParams };
 
@@ -126,7 +126,7 @@ export default function messageBus(pi: MessageBusApi): void {
   const quietly = (content: string): void =>
     pi.sendMessage({ customType: TOOL_NAME, content, display: true, attribution: "agent" }, { deliverAs: "nextTurn" });
 
-  const onReceipt = (receipt: ReceiptFrame): void => {
+  const onReceipt = (receipt: ReceiptEvent): void => {
     const notice = tool?.receiptNotice(receipt);
     if (notice) quietly(notice);
   };

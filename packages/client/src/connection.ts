@@ -16,7 +16,7 @@ import type {
   Message,
   Participant,
   PostMessageResponse,
-  ReceiptFrame,
+  ReceiptEvent,
 } from "../../protocol/src/types";
 import type { ReservationResponse, ResourcesResponse } from "../../protocol/src/resources";
 
@@ -55,8 +55,8 @@ export interface BusConnectionOptions {
   /** Called for every delivery, one at a time in seq order; the seq is acked after it resolves. */
   onDeliver: (delivery: Delivery) => Promise<void>;
   onJoined?: (id: string) => void;
-  /** A recipient's harness accepted a message this agent wrote. */
-  onReceipt?: (receipt: ReceiptFrame) => void;
+  /** A recipient's harness accepted a message this agent wrote, or the message expired for a recipient that stayed offline. */
+  onReceipt?: (receipt: ReceiptEvent) => void;
   /** Someone started (true) or stopped (false) watching this agent's live output on the website. */
   onWatch?: (on: boolean) => void;
   onLog?: (line: string) => void;
@@ -197,6 +197,7 @@ export class BusConnection {
         return;
       }
       case "receipt":
+      case "expired":
         this.options.onReceipt?.(frame);
         return;
       case "watch":
@@ -259,13 +260,16 @@ export class BusConnection {
     return body;
   }
 
-  /** Posts to an address (`{ to: "@x" }`) or into the conversation of a message being answered (`{ replyToSeq }`). */
-  write(target: { to: string } | { replyToSeq: number }, text: string, fileIds?: string[]): Promise<PostMessageResponse> {
+  /**
+   * Posts to an address (`{ to: "@x" }`) or into the conversation of a message being answered (`{ replyToSeq }`).
+   * `holdHours`: how long the bus holds it for recipients that are offline (default 1).
+   */
+  write(target: { to: string } | { replyToSeq: number }, text: string, fileIds?: string[], holdHours?: number): Promise<PostMessageResponse> {
     const from = this.requireId();
     return this.request<PostMessageResponse>("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from, ...target, text, fileIds }),
+      body: JSON.stringify({ from, ...target, text, fileIds, ...(holdHours === undefined ? {} : { holdHours }) }),
     });
   }
 

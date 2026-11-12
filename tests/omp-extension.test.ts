@@ -271,16 +271,19 @@ test("subagent sessions do not join and cannot use the tool", async () => {
   await expect(sub.run({ op: "write", to: "@alpha", message: "x" })).rejects.toThrow(/not on the message bus/);
 });
 
-test("write to an offline agent is refused and nothing is stored", async () => {
+test("write to an offline agent is held for it; the result says so", async () => {
   const alpha = await startSession("alpha");
   const gamma = await rawAgent("gamma");
   await post({ from: "gamma", to: "@carol", text: "taking part" }); // agents that never took part are forgotten on logoff
   gamma.ws.close();
   await participantsWhere((ps) => ps.some((p) => p.id === "gamma" && !p.online));
 
-  await expect(alpha.run({ op: "write", to: "@gamma", message: "are you there" })).rejects.toThrow(/@gamma is offline.*Nothing was sent/);
-  const search = await getJson<{ messages: unknown[] }>(bus, "/api/search?from=carol&q=are%20you%20there&scope=all");
-  expect(search.messages).toHaveLength(0);
+  const result = (await alpha.run({ op: "write", to: "@gamma", message: "are you there", hold_hours: 4 })).content[0]!.text;
+  expect(result).toContain("held for @gamma until it is back");
+  expect(result).toContain("You will be told when they receive it, or if it expires first");
+  const search = await getJson<{ messages: Array<{ expiresAt: number; createdAt: number }> }>(bus, "/api/search?from=carol&q=are%20you%20there&scope=all");
+  expect(search.messages).toHaveLength(1);
+  expect(search.messages[0]!.expiresAt - search.messages[0]!.createdAt).toBe(4 * 3600_000);
 });
 
 test("a delivery is reported seen when its text reaches the model, not when it is queued", async () => {

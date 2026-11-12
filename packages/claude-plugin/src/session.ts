@@ -19,7 +19,7 @@ import { HeldQueue, UnseenSeqs } from "../../client/src/held";
 import { StatusTracker } from "../../client/src/status";
 import { BusTool, deliveryText, type MessageBusToolParams } from "../../client/src/tool";
 import { deliveryHeaderSeqs } from "../../protocol/src/address";
-import type { ReceiptFrame } from "../../protocol/src/types";
+import type { ReceiptEvent } from "../../protocol/src/types";
 import { TranscriptFollower, transcriptPathFor } from "./transcript";
 
 /** A channel event not in the transcript after this long did not reach the session. */
@@ -143,7 +143,7 @@ export class ClaudeSession {
     else this.held.push({ text, seq, wake: delivery.wake });
   }
 
-  private receipt(receipt: ReceiptFrame): void {
+  private receipt(receipt: ReceiptEvent): void {
     const notice = this.tool.receiptNotice(receipt);
     if (notice) this.held.push({ text: notice, wake: false });
   }

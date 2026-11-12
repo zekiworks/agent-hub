@@ -35,7 +35,7 @@ function renderOfflineToggle(): void {
   dom.offlineBtn.setAttribute("aria-pressed", String(state.includeOffline));
   dom.offlineBtn.title = state.includeOffline
     ? "Showing offline agents and their conversations — click to hide them"
-    : "Also show offline agents and the conversations with them (you cannot write to them)";
+    : "Also show offline agents and the conversations with them (a message to an offline agent waits until it is back)";
 }
 
 dom.offlineBtn.addEventListener("click", () => {

@@ -1840,3 +1840,26 @@ ul.md-list ul.md-list { list-style: circle; }
   border-color: var(--accent);
   color: var(--text);
 }
+
+.msg-receipts.receipts-expired {
+  color: var(--muted);
+}
+
+/* Under the message box when an agent of the conversation is offline: how long the bus keeps the message for it. */
+.hold-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--warning);
+  border-radius: 0 4px 4px 0;
+  background: var(--panel-raised);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.hold-bar select {
+  font-size: 13px;
+}

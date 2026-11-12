@@ -7,7 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { defangHeaders, deliveryHeader, describeReceipts, formatAddress, formatTime, provenanceMark, quoteLine, senderLabel } from "../../protocol/src/address";
 import type { Reservation, ReservationResponse, Resource, ResourcesResponse } from "../../protocol/src/resources";
-import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptFrame } from "../../protocol/src/types";
+import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptEvent } from "../../protocol/src/types";
 import type { BusConnection, Delivery } from "./connection";
 
 export const TOOL_NAME = "message-bus";
@@ -39,6 +39,7 @@ export interface MessageBusToolParams {
   since?: number;
   limit?: number;
   scope?: "mine" | "all";
+  hold_hours?: number;
   resource?: string;
   reservation?: string;
   hours?: number;
@@ -75,6 +76,11 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   { name: "since", type: "number", description: "only messages after this #number (inbox)" },
   { name: "limit", type: "number", description: "how many messages, default 20, at most 100 (inbox, history, search)" },
   { name: "scope", type: "string", enum: ["mine", "all"], description: '"mine" (default): your conversations and @all; "all": every conversation' },
+  {
+    name: "hold_hours",
+    type: "number",
+    description: "reply/write/send: how long the bus keeps it for recipients that are offline, in hours (default 1, at most 168); after that it expires for them",
+  },
   { name: "resource", type: "string", description: 'a resource: its label ("host1 GPU 2"), GPU uuid prefix or id (resources, reserve, release)' },
   { name: "reservation", type: "string", description: "a reservation id, r_… (release, extend, mode)" },
   { name: "hours", type: "number", description: "how long (reserve) or how much longer from now (extend), at most 48" },
@@ -113,6 +119,8 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     `project folder and is shown in every result (${harness.notJoining}). An agent open in several windows has ` +
     "sessions: `@id-2` is its session 2 (a reply goes back to the session that wrote the message; plain `@id` reaches " +
     "its most recently used one). " +
+    "An agent that is offline gets your message when it is back, if within an hour (`hold_hours` for longer); a " +
+    "message held for you says how old it is. " +
     "Messages for you arrive in this conversation on their own as " +
     `"[message-bus] #<message_id> @sender → …", also while you are working: ${harness.arrives}. ` +
     "So never poll, and never read the bus database or files under ~/.agent-bus to " +
@@ -183,6 +191,9 @@ export function formatDelivery(delivery: Delivery, savedFiles: string[]): string
   const { message, conversation, replyTo } = delivery;
   const where = conversation.kind === "all" ? "@all" : formatAddress(conversation.addressed);
   const lines = [deliveryHeader(message.seq, senderLabel(message), where, message.createdAt, message.verified)];
+  // Held while this agent was offline: say how old it is, so an old instruction is not taken as current.
+  const age = Math.round((Date.now() - message.createdAt) / 60_000);
+  if (delivery.held && age >= 1) lines.push(`(Held while you were offline: written ${age} min ago, it may be out of date.)`);
   if (message.quote) lines.push(quoteLine(message.quote));
   if (message.text) lines.push(defangHeaders(message.text));
   message.files.forEach((file, i) => {
@@ -192,9 +203,11 @@ export function formatDelivery(delivery: Delivery, savedFiles: string[]): string
   return lines.join("\n");
 }
 
-/** Text the session gets when a late group recipient has now received one of its messages. */
-export function receiptNoticeText(receipt: ReceiptFrame): string {
-  return `[message-bus] @${receipt.to} has now received your message #${receipt.seq} (conversation ${receipt.conversationId}).`;
+/** Text the session gets when a late recipient has now received one of its messages, or the message expired for it. */
+export function receiptNoticeText(receipt: ReceiptEvent): string {
+  return receipt.type === "expired"
+    ? `[message-bus] Your message #${receipt.seq} expired for @${receipt.to}: it stayed offline until the bus stopped holding it (conversation ${receipt.conversationId}). Write again if it still matters.`
+    : `[message-bus] @${receipt.to} has now received your message #${receipt.seq} (conversation ${receipt.conversationId}).`;
 }
 
 /** Per-message text shown by inbox and history; `show` gives all of it. */
@@ -350,8 +363,8 @@ export class BusTool {
 
   constructor(private readonly conn: BusConnection) {}
 
-  /** The text for a receipt the agent was promised ("You will be told when they receive it"), else undefined. */
-  receiptNotice(receipt: ReceiptFrame): string | undefined {
+  /** The text for a receipt (or an expiry) the agent was promised ("You will be told…"), else undefined. */
+  receiptNotice(receipt: ReceiptEvent): string | undefined {
     const pending = this.awaitingReceipts.get(receipt.seq);
     if (!pending?.delete(receipt.to)) return undefined;
     if (pending.size === 0) this.awaitingReceipts.delete(receipt.seq);
@@ -392,18 +405,18 @@ export class BusTool {
           throw new Error("reply needs `message_id` and `message` (or `files`).");
         }
         const refs = await upload(params.files ?? []);
-        const res = await conn.write({ replyToSeq: params.message_id }, params.message ?? "", refs.map((r) => r.id));
+        const res = await conn.write({ replyToSeq: params.message_id }, params.message ?? "", refs.map((r) => r.id), params.hold_hours);
         return sent(`Replied to #${params.message_id}`, res);
       }
       case "write": {
         if (!params.to || (!params.message && !params.files?.length)) throw new Error("write needs `to` and `message` (or `files`).");
         const refs = await upload(params.files ?? []);
-        return sent(`Sent to ${params.to}`, await conn.write({ to: params.to }, params.message ?? "", refs.map((r) => r.id)));
+        return sent(`Sent to ${params.to}`, await conn.write({ to: params.to }, params.message ?? "", refs.map((r) => r.id), params.hold_hours));
       }
       case "send": {
         if (!params.to || !params.files?.length) throw new Error("send needs `to` and `files`.");
         const refs = await upload(params.files);
-        const res = await conn.write({ to: params.to }, params.message ?? "", refs.map((r) => r.id));
+        const res = await conn.write({ to: params.to }, params.message ?? "", refs.map((r) => r.id), params.hold_hours);
         return sent(`Sent to ${params.to}`, res);
       }
       case "set": {
@@ -498,6 +511,6 @@ export class BusTool {
     const pending = message.receipts.filter((r) => r.deliveredAt === null).map((r) => r.to);
     const late = pending.length > 0 && sent.conversation.kind === "group";
     if (late) this.awaitingReceipts.set(message.seq, new Set(pending));
-    return `${describeReceipts(message.receipts)}${late ? ". You will be told when they receive it" : ""}`;
+    return `${describeReceipts(message.receipts)}${late ? ". You will be told when they receive it, or if it expires first" : ""}`;
   }
 }

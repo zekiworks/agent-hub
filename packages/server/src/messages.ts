@@ -1,5 +1,5 @@
-// Writing messages (recipients, online-only delivery, replies that quote, the @resources notices) and the website's
-// message reads: conversation pages and a message with its receipts.
+// Writing messages (recipients, holding for offline agents, replies that quote, the @resources notices) and the
+// website's message reads: conversation pages and a message with its receipts.
 import {
   ALL_CONVERSATION_ID,
   RESOURCES_AGENT_ID,
@@ -11,10 +11,14 @@ import {
   type Receipt,
 } from "@agent-bus/protocol";
 import type { BusContext } from "./context";
-import type { ParticipantRecord } from "./db";
+import { DEFAULT_HOLD_MS, type ParticipantRecord } from "./db";
 import { HttpError, readJsonObject } from "./http";
 
 const MAX_TEXT_LENGTH = 100_000;
+/** The longest a writer may have a message held for offline recipients. */
+const MAX_HOLD_HOURS = 168;
+/** @resources notices wait longer: a holder offline for an hour still needs to hear that its hold expired. */
+const NOTICE_HOLD_MS = 24 * 3600_000;
 
 /** `text` without a leading "<id>:" / "@<id> –" naming the writer itself (any case, `:`, `-` or `–`). */
 export function withoutOwnName(text: string, id: string): string {
@@ -38,19 +42,9 @@ function recipientsFor(ctx: BusContext, conversation: Conversation, writerId: st
 }
 
 /**
- * Messages go only to agents that are online now: a group with an offline agent is refused, also one
- * whose agent was forgotten after a long time offline.
+ * POST /api/messages {from, to | conversationId | replyToSeq, text, fileIds?, toSession?, holdHours?}. Agents that
+ * are offline get it when they come back, within `holdHours` (default 1); after that it expires for them.
  */
-function refuseOffline(ctx: BusContext, ids: readonly string[], writerId: string): void {
-  const offline = ids.filter((id) => id !== writerId && !ctx.hub.isHuman(id) && !ctx.hub.isOnline(id));
-  if (offline.length === 0) return;
-  throw new HttpError(
-    409,
-    `${offline.map((id) => `@${id}`).join(", ")} ${offline.length > 1 ? "are" : "is"} offline; messages go only to agents that are online. Nothing was sent.`
-  );
-}
-
-/** POST /api/messages {from, to | conversationId | replyToSeq, text, fileIds?}. */
 export async function postMessage(ctx: BusContext, req: Request): Promise<PostMessageResponse> {
   const { db, hub } = ctx;
   const body = await readJsonObject(req);
@@ -111,7 +105,6 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     } else {
       const addressed = Array.from(new Set([writer.id, ...parsed.ids])).sort();
       if (addressed.length < 2) throw new HttpError(400, "Cannot write only to yourself");
-      refuseOffline(ctx, addressed, writer.id);
       conversation = db.getOrCreateGroup(addressed, now);
     }
   } else {
@@ -120,7 +113,11 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     if (!existing) throw new HttpError(404, `Unknown conversation "${body.conversationId}"`);
     conversation = existing;
     if (conversation.kind === "group") {
-      refuseOffline(ctx, conversation.addressed, writer.id);
+      // Agents forgotten after a long time offline cannot be held for: they have no record to come back to.
+      const gone = conversation.addressed.filter((id) => !hub.knownParticipant(id));
+      if (gone.length > 0) {
+        throw new HttpError(409, `${gone.map((id) => `@${id}`).join(", ")} ${gone.length > 1 ? "are" : "is"} no longer on the bus (forgotten after a long time offline). Nothing was sent.`);
+      }
       if (writer.kind === "agent" && !conversation.members.includes(writer.id)) {
         throw new HttpError(403, `${writer.id} is not in conversation ${conversation.id}`);
       }
@@ -154,6 +151,13 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     hub.touchSession(writer.id, writerSession);
     if (hub.sessionsOf(writer.id).length > 1) fromSession = hub.liveSessionNumber(writer.id, writerSession);
   }
+  let holdMs = DEFAULT_HOLD_MS;
+  if (body.holdHours !== undefined && body.holdHours !== null) {
+    if (typeof body.holdHours !== "number" || !(body.holdHours > 0) || body.holdHours > MAX_HOLD_HOURS) {
+      throw new HttpError(400, `holdHours must be a number of hours above 0 and at most ${MAX_HOLD_HOURS}`);
+    }
+    holdMs = body.holdHours * 3600_000;
+  }
 
   const message = db.insertMessage({
     conversationId: conversation.id,
@@ -162,11 +166,10 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     text,
     files,
     createdAt: now,
-    // Only agents connected now: @all skips offline ones (they would wait for it forever, e.g. a test agent
-    // that never comes back), and group posts with an offline agent were refused above.
-    recipients: recipientsFor(ctx, conversation, writer.id)
-      .filter((p) => hub.isOnline(p.id))
-      .map((p) => p.id),
+    // Every agent of the conversation (for @all, every agent): the online ones get it now, the offline ones when they
+    // are back, until it expires.
+    recipients: recipientsFor(ctx, conversation, writer.id).map((p) => p.id),
+    expiresAt: now + holdMs,
     replyToSeq,
     ...(sessions.size > 0 ? { sessions } : {}),
     ...(fromSession === undefined ? {} : { fromSession }),
@@ -195,6 +198,7 @@ export function postResourcesNotice(ctx: BusContext, holder: string, text: strin
     files: [],
     createdAt: now,
     recipients: recipientsFor(ctx, conversation, writer.id).map((p) => p.id),
+    expiresAt: now + NOTICE_HOLD_MS,
   });
   ctx.hub.publishMessage(message, db.getConversation(conversation.id) ?? conversation);
 }

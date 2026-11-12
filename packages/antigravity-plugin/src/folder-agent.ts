@@ -6,7 +6,7 @@ import { ActivityLog } from "../../client/src/activity";
 import { BusConnection, type Delivery } from "../../client/src/connection";
 import { StatusTracker } from "../../client/src/status";
 import { BusTool, deliveryText } from "../../client/src/tool";
-import type { ReceiptFrame } from "../../protocol/src/types";
+import type { ReceiptEvent } from "../../protocol/src/types";
 import type { AgentApi } from "./antigravity";
 import { fullTranscriptPath, TranscriptActivity } from "./transcript";
 
@@ -96,7 +96,7 @@ export class FolderAgent {
     }
   }
 
-  private receipt(receipt: ReceiptFrame): void {
+  private receipt(receipt: ReceiptEvent): void {
     const notice = this.tool.receiptNotice(receipt);
     if (notice) this.queued.push({ text: notice });
   }

@@ -1,5 +1,5 @@
 // The client modules the plugins share whose behaviour their own tests do not pin down: the held-message budget, the
-// plugin bus URL and the hook socket between hook processes and their server.
+// plugin bus URL, the hook socket between hook processes and their server, and how held deliveries read.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,6 +7,7 @@ import path from "node:path";
 import { HeldQueue, UnseenSeqs } from "../packages/client/src/held";
 import { serveHookSocket } from "../packages/client/src/hook-socket";
 import { pluginBusUrl, realFolder } from "../packages/client/src/runtime";
+import { formatDelivery } from "../packages/client/src/tool";
 
 let dir = "";
 
@@ -16,6 +17,17 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("a delivery held while the agent was offline says how old it is; a fresh one does not", () => {
+  const conversation = { id: "g_1", kind: "group", addressed: ["alpha", "carol"], members: ["alpha", "carol"] } as never;
+  const at = (minutesAgo: number) => ({ seq: 3, id: "m", conversationId: "g_1", from: "carol", fromKind: "human", text: "stop the run", files: [], createdAt: Date.now() - minutesAgo * 60_000, expiresAt: Date.now() + 60_000, receipts: [] });
+  const text = (minutesAgo: number, held: boolean) =>
+    formatDelivery({ type: "deliver", message: at(minutesAgo), conversation, replyTo: "@carol", wake: true, ...(held ? { held } : {}) } as never, []);
+  expect(text(40, true).split("\n")[1]).toBe("(Held while you were offline: written 40 min ago, it may be out of date.)");
+  expect(text(40, false)).not.toContain("Held while");
+  // Held only across a short reconnect: nothing to warn about.
+  expect(text(0, true)).not.toContain("Held while");
 });
 
 test("held texts go out oldest first within the budget, each delivery seen once; a long one is cut", () => {

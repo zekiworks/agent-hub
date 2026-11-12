@@ -108,6 +108,9 @@ SCHEMA = {
             "limit": {"type": "integer", "description": "how many messages, default 20, at most 100 (inbox, history, search)"},
             "scope": {"type": "string", "enum": ["mine", "all"],
                       "description": "\"mine\" (default): your conversations and @all; \"all\": every conversation"},
+            "hold_hours": {"type": "number",
+                           "description": "reply/write: how long the bus keeps it for recipients that are offline, in hours "
+                                          "(default 1, at most 168); after that it expires for them"},
         },
         "required": ["op"],
     },
@@ -211,11 +214,13 @@ def describe_receipts(receipts: list[dict]) -> str:
 
     seen = ids(lambda r: r.get("seenAt") is not None)
     delivered = ids(lambda r: r.get("seenAt") is None and r.get("deliveredAt") is not None)
-    pending = ids(lambda r: r.get("deliveredAt") is None)
+    held = ids(lambda r: r.get("deliveredAt") is None and not r.get("expired"))
+    expired = ids(lambda r: r.get("deliveredAt") is None and r.get("expired"))
     parts = [
         seen and f"seen by {seen}",
         delivered and f"delivered to {delivered} (not seen yet)",
-        pending and f"not delivered yet (offline or reconnecting): {pending}",
+        held and f"held for {held} until it is back (offline or reconnecting)",
+        expired and f"expired for {expired} (stayed offline)",
     ]
     return "; ".join(p for p in parts if p)
 
@@ -227,6 +232,10 @@ def format_delivery(frame: dict, saved_files: list[str]) -> str:
     # Header format shared with deliveryHeader in packages/protocol/src/address.ts; pre_llm_call finds it again.
     sent = time.strftime("%Y-%m-%d %H:%M", time.localtime(message["createdAt"] / 1000))
     lines = [f"[message-bus] #{message['seq']} @{sender_label(message)}{provenance_mark(message.get('verified'))} → {where} · {sent}"]
+    # Same as formatDelivery: a message held while this agent was offline says how old it is.
+    age = round((time.time() * 1000 - message["createdAt"]) / 60000)
+    if frame.get("held") and age >= 1:
+        lines.append(f"(Held while you were offline: written {age} min ago, it may be out of date.)")
     if message.get("quote"):
         lines.append(quote_line(message["quote"]))
     if message.get("text"):
@@ -275,11 +284,13 @@ class BusClient:
         except urllib.error.URLError as err:
             raise RuntimeError(f"message bus at {self.url} unreachable: {err.reason}") from None
 
-    def write(self, target: dict, text: str, file_ids: list[str] | None = None) -> dict:
+    def write(self, target: dict, text: str, file_ids: list[str] | None = None, hold_hours: float | None = None) -> dict:
         """`target` is {"to": "@x"} or {"replyToSeq": n} (answer message n in its conversation)."""
         body = {"from": self.my_id(), **target, "text": text}
         if file_ids:
             body["fileIds"] = file_ids
+        if hold_hours is not None:
+            body["holdHours"] = hold_hours
         return self._request("POST", "/api/messages", json.dumps(body).encode())
 
     def upload(self, path: str) -> dict:
@@ -308,7 +319,7 @@ class BusClient:
         if late:
             with _awaiting_lock:
                 _awaiting_receipts[seq] = pending
-        return describe_receipts(message["receipts"]) + (". You will be told when they receive it" if late else "")
+        return describe_receipts(message["receipts"]) + (". You will be told when they receive it, or if it expires first" if late else "")
 
     def download(self, ref: dict, dest_dir: Path) -> str:
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -398,7 +409,7 @@ class GatewayBridge:
             logger.info("message-bus: joined as @%s", frame["id"])
         elif kind == "deliver":
             await self._deliver(ws, frame)
-        elif kind == "receipt":
+        elif kind in ("receipt", "expired"):
             self._receipt(frame)
         elif kind == "pending":
             logger.warning("message-bus: waiting for a person to allow this machine on the bus: code %s "
@@ -415,8 +426,12 @@ class GatewayBridge:
             if not pending:
                 del _awaiting_receipts[frame["seq"]]
         with self.quiet_lock:
-            self.quiet.append(f"[message-bus] @{frame['to']} has now received your message #{frame['seq']} "
-                              f"(conversation {frame['conversationId']}).")
+            if frame.get("type") == "expired":
+                self.quiet.append(f"[message-bus] Your message #{frame['seq']} expired for @{frame['to']}: it stayed offline until "
+                                  f"the bus stopped holding it (conversation {frame['conversationId']}). Write again if it still matters.")
+            else:
+                self.quiet.append(f"[message-bus] @{frame['to']} has now received your message #{frame['seq']} "
+                                  f"(conversation {frame['conversationId']}).")
 
     async def _deliver(self, ws: Any, frame: dict) -> None:
         files = frame["message"].get("files") or []
@@ -531,13 +546,13 @@ def register(ctx: Any) -> None:
             if args.get("message_id") is None or not (args.get("message") or args.get("files")):
                 raise ValueError("reply needs `message_id` and `message` (or `files`).")
             refs = [client.upload(p) for p in args.get("files") or []]
-            res = client.write({"replyToSeq": int(args["message_id"])}, args.get("message") or "", [r["id"] for r in refs])
+            res = client.write({"replyToSeq": int(args["message_id"])}, args.get("message") or "", [r["id"] for r in refs], args.get("hold_hours"))
             return sent(f"Replied to #{args['message_id']}", res)
         if op in ("write", "send"):
             if not args.get("to") or not (args.get("files") if op == "send" else args.get("message") or args.get("files")):
                 raise ValueError("send needs `to` and `files`." if op == "send" else "write needs `to` and `message` (or `files`).")
             refs = [client.upload(p) for p in args.get("files") or []]
-            res = client.write({"to": args["to"]}, args.get("message") or "", [r["id"] for r in refs])
+            res = client.write({"to": args["to"]}, args.get("message") or "", [r["id"] for r in refs], args.get("hold_hours"))
             return sent(f"Sent to {args['to']}", res)
         if op == "set":
             if not args.get("key") or args.get("value") is None:

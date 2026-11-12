@@ -113,7 +113,7 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
           if (!conversation) continue;
           conversations.set(conversation.id, conversation);
         }
-        hub.deliver([ws], message, conversation, participant);
+        hub.deliver([ws], message, conversation, participant, true);
       }
     }
     hub.broadcastParticipants();

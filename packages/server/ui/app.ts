@@ -1,7 +1,7 @@
 // The conversations page (index.html): wires the modules together, routes between views and boots.
 import type { ViewerServerFrame } from "@agent-bus/protocol";
 import { api, PROFILE_KEY, setFileKey } from "./api";
-import { hideError, setReplyTo, showError } from "./composer";
+import { hideError, setReplyTo, showError, updateComposerState } from "./composer";
 import { dom, PHONE, scrollToBottom } from "./dom";
 import { loadDraft } from "./drafts";
 import { errorText } from "./format";
@@ -97,11 +97,14 @@ function handleFrame(frame: ViewerServerFrame): void {
       state.participants = frame.participants;
       renderSidebar();
       if (state.mention.open) updateMention();
+      // Who is offline changes the "kept for" choice under the box.
+      updateComposerState();
       break;
     case "message":
       receive(frame.message, frame.conversation);
       break;
     case "receipt":
+    case "expired":
       applyReceipt(frame);
       break;
     case "activity":

@@ -103,19 +103,21 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
- * One-line delivery status for tool results, e.g.
- * "seen by @a; delivered to @b (not seen yet); not delivered yet (offline or reconnecting): @c".
+ * One-line delivery status for tool results, e.g. "seen by @a; delivered to @b (not seen yet); held for @c until it
+ * is back (offline or reconnecting); expired for @d (stayed offline)".
  */
 export function describeReceipts(receipts: readonly Receipt[]): string {
   if (receipts.length === 0) return "no agent recipients (humans read it on the website)";
   const ids = (pred: (r: Receipt) => boolean) => receipts.filter(pred).map((r) => `@${r.to}`).join(", ");
   const seen = ids((r) => r.seenAt !== null);
   const delivered = ids((r) => r.seenAt === null && r.deliveredAt !== null);
-  const pending = ids((r) => r.deliveredAt === null);
+  const held = ids((r) => r.deliveredAt === null && !r.expired);
+  const expired = ids((r) => r.deliveredAt === null && r.expired === true);
   return [
     seen && `seen by ${seen}`,
     delivered && `delivered to ${delivered} (not seen yet)`,
-    pending && `not delivered yet (offline or reconnecting): ${pending}`,
+    held && `held for ${held} until it is back (offline or reconnecting)`,
+    expired && `expired for ${expired} (stayed offline)`,
   ]
     .filter(Boolean)
     .join("; ");

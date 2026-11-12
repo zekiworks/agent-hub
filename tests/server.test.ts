@@ -493,7 +493,7 @@ describe("delivery", () => {
 });
 
 describe("backlog", () => {
-  test("only online agents get messages: @all skips an offline agent, a message to it is refused; unacked ones come back on rejoin", async () => {
+  test("messages for an offline agent are held and handed over, marked held, when it comes back", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     await joinPath("/tmp/x/beta");
     await send({ from: "alpha", to: "@carol", text: "taking part" }); // agents that never took part are forgotten on logoff
@@ -507,16 +507,45 @@ describe("backlog", () => {
     expect((await alpha.client.take("deliver")).message.id).toBe(unacked.message.id);
     await leave(alpha.client);
 
+    // While it is offline, messages for it are accepted and held (an hour unless the writer chose otherwise).
     const whileAway = await send({ from: "uma", to: "@all", text: "while away" });
-    expect(whileAway.message.receipts.map((r) => r.to)).toEqual(["beta"]);
-    const refused = await post({ from: "beta", to: "@alpha", text: "dm while away" });
-    expect(refused.status).toBe(409);
-    expect(await errorOf(refused)).toContain("@alpha is offline");
-    expect((await post({ from: "uma", conversationId: unacked.conversation.id, text: "reply while away" })).status).toBe(409);
+    expect(whileAway.message.receipts.map((r) => r.to)).toEqual(["alpha", "beta"]);
+    const dm = await send({ from: "beta", to: "@alpha", text: "dm while away" });
+    expect(dm.message.receipts).toEqual([{ to: "alpha", deliveredAt: null, seenAt: null }]);
+    expect(dm.message.expiresAt - dm.message.createdAt).toBe(3600_000);
 
     const back = await joinPath("/tmp/x/alpha");
-    expect((await back.client.take("deliver")).message.id).toBe(unacked.message.id);
+    const handed: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const frame = await back.client.take("deliver");
+      expect(frame.held).toBe(true);
+      handed.push(frame.message.text);
+    }
+    expect(handed).toEqual(["not acked", "while away", "dm while away"]);
     const sentinel = await send({ from: "carol", to: "@all", text: "live again" });
+    const live = await back.client.take("deliver");
+    expect(live.message.id).toBe(sentinel.message.id);
+    expect(live.held).toBeUndefined();
+  });
+
+  test("a held message expires: it is never handed over, its receipt says so, and the writer and viewers are told", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    await send({ from: "alpha", to: "@carol", text: "taking part" });
+    await leave(alpha.client);
+    const viewer = await connectViewer();
+    const tooLong = await post({ from: "beta", to: "@alpha", text: "x", holdHours: 200 });
+    expect(tooLong.status).toBe(400);
+    // Held for 0.36 s only.
+    const short = await send({ from: "beta", to: "@alpha", text: "brief", holdHours: 0.0001 });
+    await Bun.sleep(500);
+    const after = await getJson<{ message: Message }>(bus, `/api/messages/${short.message.seq}`);
+    expect(after.message.receipts).toEqual([{ to: "alpha", deliveredAt: null, seenAt: null, expired: true }]);
+    // The bus looks for expired messages every few seconds and tells the writer's agent and the website.
+    expect(await beta.client.take("expired")).toEqual({ type: "expired", seq: short.message.seq, conversationId: short.conversation.id, to: "alpha" });
+    expect((await viewer.take("expired")).seq).toBe(short.message.seq);
+    const back = await joinPath("/tmp/x/alpha");
+    const sentinel = await send({ from: "carol", to: "@alpha", text: "fresh" });
     expect((await back.client.take("deliver")).message.id).toBe(sentinel.message.id);
   });
 
@@ -662,7 +691,7 @@ describe("delivery receipts", () => {
     expect((await viewer.take("receipt")).seq).toBe(third.seq); // the repeated seen produced nothing in between
   });
 
-  test("@all receipts list every online agent but the writer; waitMs returns once all are delivered", async () => {
+  test("@all receipts list every agent but the writer, offline ones too; waitMs returns once all are delivered", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
     const gone = await joinPath("/tmp/x/gone");
@@ -670,15 +699,17 @@ describe("delivery receipts", () => {
     await leave(gone.client);
 
     const { message } = await send({ from: "carol", to: "@all", text: "hello all" });
-    expect(message.receipts.map((r) => r.to)).toEqual(["alpha", "beta"]);
+    expect(message.receipts.map((r) => r.to)).toEqual(["alpha", "beta", "gone"]);
     alpha.client.send({ type: "ack", seq: (await alpha.client.take("deliver")).message.seq });
 
-    // Not everyone has it yet: the wait times out and reports beta pending.
+    // Not everyone has it yet: the wait times out and reports beta and the offline gone pending.
     const partial = await getMessage(message.seq, 50);
-    expect(partial.receipts.map((r) => [r.to, r.deliveredAt !== null])).toEqual([["alpha", true], ["beta", false]]);
+    expect(partial.receipts.map((r) => [r.to, r.deliveredAt !== null])).toEqual([["alpha", true], ["beta", false], ["gone", false]]);
 
     const waiting = getMessage(message.seq, 10_000);
     beta.client.send({ type: "ack", seq: (await beta.client.take("deliver")).message.seq });
+    const back = await joinPath("/tmp/x/gone");
+    back.client.send({ type: "ack", seq: (await back.client.take("deliver")).message.seq });
     expect((await waiting).receipts.every((r) => r.deliveredAt !== null)).toBe(true);
 
     expect((await busFetch(bus, "/api/messages/999")).status).toBe(404);
@@ -799,7 +830,7 @@ describe("agents offline for a long time", () => {
     // Its conversation is still there, but nobody can write to the forgotten agent.
     const reply = await post({ from: "carol", conversationId: wrote.conversation.id, text: "hello?" });
     expect(reply.status).toBe(409);
-    expect(await errorOf(reply)).toContain("@old is offline");
+    expect(await errorOf(reply)).toContain("@old is no longer on the bus");
   });
 });
 

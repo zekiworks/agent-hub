@@ -55,6 +55,8 @@ export interface NewMessage {
   replyToSeq?: number;
   /** Human messages while authentication is on: written from a signed-in session (true) or not (false). */
   verified?: boolean;
+  /** Until when it is held for offline recipients. */
+  expiresAt: number;
 }
 
 interface ReceiptRow {
@@ -98,6 +100,7 @@ interface MessageRow {
   reply_to_seq: number | null;
   verified: number | null;
   from_session: number | null;
+  expires_at: number | null;
 }
 
 interface FileRow {
@@ -240,6 +243,14 @@ function toParticipant(row: ParticipantRow): ParticipantRecord {
   };
 }
 
+/** How long a message is held for offline recipients unless its writer chose otherwise. */
+export const DEFAULT_HOLD_MS = 3600_000;
+
+/** Until when `row` is held for offline recipients (messages from before holding: an hour after they were written). */
+function expiresAt(row: MessageRow): number {
+  return row.expires_at ?? row.created_at + DEFAULT_HOLD_MS;
+}
+
 function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefined): Message {
   return {
     seq: row.seq,
@@ -254,6 +265,7 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
     ...(quote ? { quote } : {}),
     ...(row.verified === null || row.verified === undefined ? {} : { verified: row.verified === 1 }),
     ...(row.from_session === null || row.from_session === undefined ? {} : { fromSession: row.from_session }),
+    expiresAt: expiresAt(row),
   };
 }
 
@@ -305,6 +317,10 @@ export class BusDatabase {
     }
     if (!receiptColumns.some((c) => c.name === "session")) {
       this.db.exec("ALTER TABLE receipts ADD COLUMN session INTEGER");
+    }
+    // Databases created before holding for offline agents lack the column (null: an hour after created_at).
+    if (!messageColumns.some((c) => c.name === "expires_at")) {
+      this.db.exec("ALTER TABLE messages ADD COLUMN expires_at INTEGER");
     }
     this.seed(humans, now);
     this.mergeThreads();
@@ -723,8 +739,8 @@ export class BusDatabase {
     return this.db.transaction((): Message => {
       const result = this.db
         .query(
-          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
+          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
         )
         .run(
           id,
@@ -736,7 +752,8 @@ export class BusDatabase {
           input.createdAt,
           input.replyToSeq ?? null,
           input.verified === undefined ? null : input.verified ? 1 : 0,
-          input.fromSession ?? null
+          input.fromSession ?? null,
+          input.expiresAt
         );
       const seq = Number(result.lastInsertRowid);
       const addReceipt = this.db.query("INSERT INTO receipts (seq, recipient, delivered_at, session) VALUES (?1, ?2, NULL, ?3)");
@@ -761,6 +778,7 @@ export class BusDatabase {
         ...(quote ? { quote } : {}),
         ...(input.verified === undefined ? {} : { verified: input.verified }),
         ...(input.fromSession === undefined ? {} : { fromSession: input.fromSession }),
+        expiresAt: input.expiresAt,
       };
     })();
   }
@@ -791,10 +809,19 @@ export class BusDatabase {
          WHERE seq IN (SELECT value FROM json_each(?1)) ORDER BY recipient`
       )
       .all(JSON.stringify(rows.map((r) => r.seq)));
+    const now = Date.now();
+    const expiry = new Map(rows.map((r) => [r.seq, expiresAt(r)]));
     for (const r of receiptRows) {
       let list = bySeq.get(r.seq);
       if (!list) bySeq.set(r.seq, (list = []));
-      list.push({ to: r.recipient, ...(r.session === null ? {} : { session: r.session }), deliveredAt: r.delivered_at, seenAt: r.seen_at });
+      const expired = r.delivered_at === null && (expiry.get(r.seq) ?? Infinity) <= now;
+      list.push({
+        to: r.recipient,
+        ...(r.session === null ? {} : { session: r.session }),
+        deliveredAt: r.delivered_at,
+        seenAt: r.seen_at,
+        ...(expired ? { expired } : {}),
+      });
     }
     const quotes = this.quotesFor(
       Array.from(new Set(rows.map((r) => r.reply_to_seq).filter((s): s is number => s !== null)))
@@ -890,18 +917,31 @@ export class BusDatabase {
    */
   backlogFor(agentId: string, afterSeq: number, limit: number): Message[] {
     const rows = this.db
-      .query<MessageRow, [number, string, string, number]>(
+      .query<MessageRow, [number, string, string, number, number]>(
         `SELECT * FROM messages
          WHERE from_id != ?2 AND (
            seq IN (SELECT seq FROM receipts WHERE recipient = ?2 AND delivered_at IS NULL)
+           AND COALESCE(expires_at, created_at + ${DEFAULT_HOLD_MS}) > ?5
            OR (seq > ?1
              AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.seq = messages.seq)
              AND (conversation_id = ?3 OR conversation_id IN (
                SELECT conversation_id FROM conversation_members WHERE participant_id = ?2))))
          ORDER BY seq DESC LIMIT ?4`
       )
-      .all(afterSeq, agentId, ALL_CONVERSATION_ID, limit);
+      .all(afterSeq, agentId, ALL_CONVERSATION_ID, limit, Date.now());
     return this.withReceipts(rows.reverse());
+  }
+
+  /** Receipts whose message expired in (`after`, `upTo`] before reaching the recipient: who wrote it, and to whom. */
+  expiredBetween(after: number, upTo: number): Array<{ seq: number; conversationId: string; from: string; to: string }> {
+    return this.db
+      .query<{ seq: number; conversation_id: string; from_id: string; recipient: string }, [number, number]>(
+        `SELECT m.seq, m.conversation_id, m.from_id, r.recipient FROM receipts r JOIN messages m ON m.seq = r.seq
+         WHERE r.delivered_at IS NULL AND COALESCE(m.expires_at, m.created_at + ${DEFAULT_HOLD_MS}) > ?1
+           AND COALESCE(m.expires_at, m.created_at + ${DEFAULT_HOLD_MS}) <= ?2`
+      )
+      .all(after, upTo)
+      .map((r) => ({ seq: r.seq, conversationId: r.conversation_id, from: r.from_id, to: r.recipient }));
   }
 
   insertFile(file: FileRef, uploadedBy: string, now = Date.now()): void {

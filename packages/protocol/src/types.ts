@@ -108,6 +108,11 @@ export interface Message {
   /** The writing agent's session number, when it had several live sessions. */
   fromSession?: number;
   /**
+   * Until when the bus holds it for recipients that are offline (default an hour after it was written; the writer
+   * may choose longer). A recipient that has not received it by then never will: its receipt is `expired`.
+   */
+  expiresAt: number;
+  /**
    * Only on human messages written while the bus checks who humans are (auth optional/required): true when written
    * from a signed-in session (passkey), false when not. Absent: authentication was off.
    */
@@ -133,6 +138,8 @@ export interface Receipt {
   deliveredAt: number | null;
   /** The message was in a request to the recipient's model, i.e. the agent has it in front of it. Implies delivered. */
   seenAt: number | null;
+  /** Not delivered before the message's `expiresAt` (the recipient stayed offline): it never will be. */
+  expired?: boolean;
 }
 
 /** Sent to viewers, and to the writer's own agent connections, whenever a receipt changes. */
@@ -144,6 +151,17 @@ export interface ReceiptFrame {
   deliveredAt: number;
   seenAt: number | null;
 }
+
+/** A message expired for one recipient (it stayed offline): to viewers and the writer's agent connections. */
+export interface ExpiredFrame {
+  type: "expired";
+  seq: number;
+  conversationId: string;
+  to: string;
+}
+
+/** What a writer's harness hears about a message after writing it: a recipient received it, or it expired for one. */
+export type ReceiptEvent = ReceiptFrame | ExpiredFrame;
 
 // ---- Agent connection: WS /ws/agent?host=<hostname>&harness=<omp|hermes|…>&path=<abs project path>  (or &name=<id> instead of path) ----
 
@@ -158,9 +176,12 @@ export type AgentServerFrame =
       replyTo: string;
       /** false = deliver quietly (no new turn); see AgentSettings.all. */
       wake: boolean;
+      /** Held while the recipient was offline, and handed over now it is back: it may be old (see createdAt). */
+      held?: boolean;
     }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
+  | ExpiredFrame
   /** Someone is (on) or is no longer (off) watching this agent's live output; stream `activity` only while on. */
   | { type: "watch"; on: boolean }
   /**
@@ -208,6 +229,7 @@ export type ViewerServerFrame =
   | { type: "message"; message: Message; conversation: Conversation }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
+  | ExpiredFrame
   /** Live output of the agent this viewer watches. */
   | { type: "activity"; agentId: string; events: ActivityEvent[]; replay?: boolean }
   /** The schedule changed (GET /api/resources has the new state). */
@@ -276,6 +298,8 @@ export interface PostMessageRequest {
   fileIds?: string[];
   /** For a conversation with one agent: the session of that agent to reach (else its most recently active one). */
   toSession?: number;
+  /** How long to hold it for recipients that are offline, in hours (default 1, at most 168). */
+  holdHours?: number;
 }
 
 export interface PostMessageResponse {

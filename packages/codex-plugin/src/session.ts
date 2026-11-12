@@ -6,7 +6,7 @@ import { HeldQueue, UnseenSeqs } from "../../client/src/held";
 import { StatusTracker } from "../../client/src/status";
 import { BusTool, deliveryText, type MessageBusToolParams } from "../../client/src/tool";
 import { replyAddress, shouldWake } from "../../protocol/src/address";
-import { DEFAULT_AGENT_SETTINGS, type ReceiptFrame } from "../../protocol/src/types";
+import { DEFAULT_AGENT_SETTINGS, type ReceiptEvent } from "../../protocol/src/types";
 import { isThreadId, LiveOutput } from "./live-output";
 import { queueWake } from "./wake";
 
@@ -150,7 +150,7 @@ export class CodexSession {
     }, WAKE_DELAY_MS);
   }
 
-  private receipt(receipt: ReceiptFrame): void {
+  private receipt(receipt: ReceiptEvent): void {
     const text = this.tool.receiptNotice(receipt);
     if (text) this.held.push({ text, wake: false });
   }

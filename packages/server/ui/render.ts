@@ -1,5 +1,5 @@
 // The main pane: header and messages (with quotes, receipts, attachments), and renderAll.
-import { senderLabel, type Message, type Quote, type ReceiptFrame } from "@agent-bus/protocol";
+import { senderLabel, type Message, type Quote, type ReceiptEvent } from "@agent-bus/protocol";
 import { renderFile } from "./attachments";
 import { setReplyTo, updateComposerState } from "./composer";
 import { dom } from "./dom";
@@ -150,16 +150,21 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
 }
 
 /**
- * "✓✓ seen by @a" / "✓ delivered to @a · not seen yet" / "○ not delivered yet to @a"; with several recipients
- * "✓✓ seen by all 3" or "✓✓ seen: @a · ✓ delivered: @b · ○ waiting: @c". Null when there are no agent recipients.
+ * "✓✓ seen by @a" / "✓ delivered to @a · not seen yet" / "○ held for @a (offline)" / "✕ expired for @a"; with several
+ * recipients "✓✓ seen by all 3" or "✓✓ seen: @a · ✓ delivered: @b · ○ held: @c · ✕ expired: @d". Null when there are
+ * no agent recipients. A receipt not delivered yet is "held" while its agent is offline, "waiting" while it is online.
  */
 function renderReceipts(message: Message): HTMLDivElement | null {
   const { receipts } = message;
   if (receipts.length === 0) return null;
+  const offline = (to: string) => state.participants.find((p) => p.id === to)?.online !== true;
   const seen = receipts.filter((r) => r.seenAt !== null);
   const delivered = receipts.filter((r) => r.seenAt === null && r.deliveredAt !== null);
-  const pending = receipts.filter((r) => r.deliveredAt === null);
-  const status = pending.length > 0 ? "receipts-pending" : delivered.length > 0 ? "receipts-delivered" : "receipts-seen";
+  const expired = receipts.filter((r) => r.deliveredAt === null && r.expired === true);
+  const held = receipts.filter((r) => r.deliveredAt === null && r.expired !== true && offline(r.to));
+  const waiting = receipts.filter((r) => r.deliveredAt === null && r.expired !== true && !offline(r.to));
+  const status =
+    waiting.length + held.length > 0 ? "receipts-pending" : expired.length > 0 ? "receipts-expired" : delivered.length > 0 ? "receipts-delivered" : "receipts-seen";
   const el = h("div", `msg-receipts ${status}`);
   el.dataset.receipts = String(message.seq);
   // A message sent to one session of an agent names it (`alpha-2`).
@@ -167,14 +172,24 @@ function renderReceipts(message: Message): HTMLDivElement | null {
   const names = (list: typeof receipts) => list.map(label).join(", ");
   if (receipts.length === 1) {
     const to = receipts[0] ? label(receipts[0]) : "";
-    el.textContent = seen.length ? `✓✓ seen by ${to}` : delivered.length ? `✓ delivered to ${to} · not seen yet` : `○ not delivered yet to ${to}`;
+    el.textContent = seen.length
+      ? `✓✓ seen by ${to}`
+      : delivered.length
+        ? `✓ delivered to ${to} · not seen yet`
+        : expired.length
+          ? `✕ expired for ${to} (it stayed offline)`
+          : held.length
+            ? `○ held for ${to} (offline; delivered when it is back)`
+            : `○ not delivered yet to ${to}`;
   } else if (seen.length === receipts.length) {
     el.textContent = `✓✓ seen by all ${receipts.length}`;
   } else {
     el.textContent = [
       seen.length ? `✓✓ seen: ${names(seen)}` : "",
       delivered.length ? `✓ delivered: ${names(delivered)}` : "",
-      pending.length ? `○ waiting: ${names(pending)}` : "",
+      waiting.length ? `○ waiting: ${names(waiting)}` : "",
+      held.length ? `○ held: ${names(held)}` : "",
+      expired.length ? `✕ expired: ${names(expired)}` : "",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -185,7 +200,9 @@ function renderReceipts(message: Message): HTMLDivElement | null {
         ? `${label(r)}: seen ${fullFormat.format(r.seenAt)}`
         : r.deliveredAt !== null
           ? `${label(r)}: delivered ${fullFormat.format(r.deliveredAt)}, not seen yet`
-          : `${label(r)}: not delivered yet`
+          : r.expired
+            ? `${label(r)}: expired ${fullFormat.format(message.expiresAt)} (it stayed offline)`
+            : `${label(r)}: not delivered yet; held until ${fullFormat.format(message.expiresAt)}`
     )
     .join("\n");
   return el;
@@ -195,21 +212,29 @@ function renderReceipts(message: Message): HTMLDivElement | null {
  * Receipts for messages this page does not hold yet: an agent can ack a first message before the page has the new
  * conversation (the POST answer, the socket's message frame and the ack race). `receive` applies them.
  */
-const earlyReceipts = new Map<number, ReceiptFrame[]>();
+const earlyReceipts = new Map<number, ReceiptEvent[]>();
+
+/** Copies a receipt (or an expiry) into the message's entry for its recipient. */
+function applyTo(entry: Message["receipts"][number], receipt: ReceiptEvent): void {
+  if (receipt.type === "expired") {
+    entry.expired = true;
+    return;
+  }
+  entry.deliveredAt = receipt.deliveredAt;
+  entry.seenAt = receipt.seenAt;
+}
 
 /** Applies receipts that arrived before `message` did. */
 export function applyEarlyReceipts(message: Message): void {
   for (const receipt of earlyReceipts.get(message.seq) ?? []) {
     const entry = message.receipts.find((r) => r.to === receipt.to);
-    if (!entry) continue;
-    entry.deliveredAt = receipt.deliveredAt;
-    entry.seenAt = receipt.seenAt;
+    if (entry) applyTo(entry, receipt);
   }
   earlyReceipts.delete(message.seq);
 }
 
 /** Updates the cached message and, if it is on screen, its receipt line. */
-export function applyReceipt(receipt: ReceiptFrame): void {
+export function applyReceipt(receipt: ReceiptEvent): void {
   const message =
     state.caches.get(receipt.conversationId)?.messages.find((m) => m.seq === receipt.seq) ??
     state.loading.get(receipt.conversationId)?.find((m) => m.seq === receipt.seq);
@@ -222,8 +247,7 @@ export function applyReceipt(receipt: ReceiptFrame): void {
     if (earlyReceipts.size > 50) earlyReceipts.delete(earlyReceipts.keys().next().value ?? 0);
     return;
   }
-  entry.deliveredAt = receipt.deliveredAt;
-  entry.seenAt = receipt.seenAt;
+  applyTo(entry, receipt);
   const shown = dom.messageList.querySelector(`[data-receipts="${receipt.seq}"]`);
   const updated = renderReceipts(message);
   if (shown && updated) shown.replaceWith(updated);

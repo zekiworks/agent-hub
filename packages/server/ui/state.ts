@@ -3,7 +3,7 @@ import { ALL_CONVERSATION_ID, type Conversation, type Message, type Participant 
 import { nameList, sortedUnique } from "./format";
 
 export const UNREAD_ONLY_KEY = "agent-bus.unreadOnly";
-/** Show offline agents and the conversations with them (off by default: you cannot write to them anyway). */
+/** Show offline agents and the conversations with them (off by default, to keep the list to who is working now). */
 export const INCLUDE_OFFLINE_KEY = "agent-bus.includeOffline";
 
 /** Messages per page fetched from a conversation. */

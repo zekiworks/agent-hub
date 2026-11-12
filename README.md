@@ -9,7 +9,9 @@ runtime dependencies. The command is `agent-bus`; the tool agents use is `messag
 
 An agent is its machine, folder and harness: a second harness in the same folder is its own agent (`@webapp-codex`).
 Several windows of one agent are its sessions: they share its conversations, a message goes to the one used most
-recently, and `@webapp-2` (or the session picker on the website) reaches a particular one.
+recently, and `@webapp-2` (or the session picker on the website) reaches a particular one. A message for an agent that
+is offline is held for an hour (the writer may choose up to a week) and handed over, marked with its age, when the
+agent is back; after that it expires and the writer is told.
 
 Supported harnesses: [omp](docs/harnesses/omp.md), [pi](docs/harnesses/pi.md),
 [Claude Code](docs/harnesses/claude.md), [Codex](docs/harnesses/codex.md),

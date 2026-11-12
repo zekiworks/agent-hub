@@ -7,6 +7,7 @@ import {
   type AgentSession,
   type AgentStatus,
   type Conversation,
+  type ExpiredFrame,
   type Message,
   type Participant,
   type Receipt,
@@ -108,10 +109,6 @@ export class Hub {
 
   isHuman(id: string): boolean {
     return this.humans.has(id);
-  }
-
-  isOnline(id: string): boolean {
-    return (this.agentSockets.get(id)?.size ?? 0) > 0;
   }
 
   /** Ids of the agents connected now. */
@@ -342,12 +339,21 @@ export class Hub {
     }
   }
 
-  /** Sends a delivery to `sockets` and remembers it there until acked. */
-  deliver(sockets: Socket[], message: Message, conversation: Conversation, recipient: ParticipantRecord): void {
-    const frame = JSON.stringify(this.deliverFrame(message, conversation, recipient));
+  /** Sends a delivery to `sockets` and remembers it there until acked; `held`: it waited while the agent was offline. */
+  deliver(sockets: Socket[], message: Message, conversation: Conversation, recipient: ParticipantRecord, held = false): void {
+    const frame = JSON.stringify(this.deliverFrame(message, conversation, recipient, held));
     for (const ws of sockets) {
       if (ws.data.kind === "agent") ws.data.inflight.add(message.seq);
       ws.send(frame);
+    }
+  }
+
+  /** Tells the viewers and each writer's agent connections that a message expired for a recipient that stayed offline. */
+  announceExpired(expired: ReadonlyArray<{ seq: number; conversationId: string; from: string; to: string }>): void {
+    for (const e of expired) {
+      const frame = JSON.stringify({ type: "expired", seq: e.seq, conversationId: e.conversationId, to: e.to } satisfies ExpiredFrame);
+      for (const ws of this.viewers) ws.send(frame);
+      for (const ws of this.agentSockets.get(e.from) ?? []) ws.send(frame);
     }
   }
 
@@ -411,13 +417,14 @@ export class Hub {
 
   // ---- Messages and receipts ----
 
-  deliverFrame(message: Message, conversation: Conversation, recipient: ParticipantRecord): AgentServerFrame {
+  deliverFrame(message: Message, conversation: Conversation, recipient: ParticipantRecord, held = false): AgentServerFrame {
     return {
       type: "deliver",
       message,
       conversation,
       replyTo: replyAddress(conversation, recipient.id),
       wake: shouldWake(conversation.kind, message.fromKind, recipient.settings),
+      ...(held ? { held } : {}),
     };
   }
 

@@ -7,7 +7,7 @@ import {
   type PostMessageResponse,
 } from "@agent-bus/protocol";
 import { api, postJson } from "./api";
-import { autosize, hideError, renderStaged, setReplyTo, showError, updateComposerState } from "./composer";
+import { autosize, hideError, holdHours, renderStaged, setReplyTo, showError, updateComposerState } from "./composer";
 import { dom, PHONE } from "./dom";
 import { saveDraft } from "./drafts";
 import { errorText } from "./format";
@@ -56,6 +56,8 @@ async function send(): Promise<void> {
     const agent = currentDirectAgent();
     const session = agent ? chosenSession(agent) : undefined;
     if (session !== undefined) request.toSession = session;
+    const hold = holdHours();
+    if (hold !== undefined) request.holdHours = hold;
 
     const res = await postJson<PostMessageResponse>("/api/messages", request);
     dom.input.value = "";

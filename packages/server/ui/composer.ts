@@ -15,7 +15,29 @@ export function hideError(): void {
   dom.composerError.textContent = "";
 }
 
+/** Agents of the open conversation (or draft) that are offline now: a message for them is held until they are back. */
+function offlineRecipients(): string[] {
+  const view = state.view;
+  const ids = view.kind === "draft" ? view.to : (state.conversations.get(view.id)?.addressed ?? []);
+  return ids.filter((id) => {
+    const p = state.participants.find((x) => x.id === id);
+    return p?.kind === "agent" && !p.online;
+  });
+}
+
+/** Hours to hold the next message for offline agents (the box's "kept for" choice), or undefined for the default. */
+export function holdHours(): number | undefined {
+  if (dom.holdBar.hidden) return undefined;
+  const hours = Number(dom.holdSelect.value);
+  return hours === 1 ? undefined : hours;
+}
+
 export function updateComposerState(): void {
+  const offline = offlineRecipients();
+  dom.holdBar.hidden = offline.length === 0;
+  if (offline.length > 0) {
+    dom.holdBarText.textContent = `${offline.map((id) => `@${id}`).join(", ")} ${offline.length > 1 ? "are" : "is"} offline: your message waits for ${offline.length > 1 ? "them" : "it"},`;
+  }
   const hasContent = dom.input.value.trim().length > 0 || state.staged.length > 0;
   dom.sendBtn.disabled = state.sending || !state.me || !hasContent;
   dom.sendBtn.textContent = state.sending ? "Sending…" : "Send";
