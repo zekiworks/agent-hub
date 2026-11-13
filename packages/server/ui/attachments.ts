@@ -9,6 +9,17 @@ import { mentionNodes } from "./text";
 export function renderFile(file: FileRef): HTMLLIElement {
   const url = fileUrl(file.id);
   const li = h("li", "msg-file");
+  // Voice messages (and other audio): a player, not a file to download.
+  if (file.mimeType.startsWith("audio/")) {
+    li.classList.add("msg-audio");
+    const audio = h("audio");
+    audio.controls = true;
+    audio.preload = "metadata";
+    audio.src = url;
+    audio.title = file.name;
+    li.append(audio);
+    return li;
+  }
   const row = h("span", "file-row");
   const link = h("a", "file-link");
   link.href = url;

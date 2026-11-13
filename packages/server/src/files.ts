@@ -1,7 +1,7 @@
 // File upload (POST /api/files, streamed to `<dataDir>/files/<id>`) and download (GET /api/files/:id).
 import { existsSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
-import type { FileRef } from "@agent-bus/protocol";
+import type { FileRef, TranscriptResponse } from "@agent-bus/protocol";
 import type { BusContext } from "./context";
 import { CORS_HEADERS, HttpError, nonEmptyParam } from "./http";
 
@@ -69,4 +69,25 @@ export function getFile(ctx: BusContext, fileId: string): Response {
       "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
     },
   });
+}
+
+/**
+ * POST /api/files/:id/transcript: the text of an uploaded voice message, from the speech-to-text service at `sttUrl`
+ * (packages/stt). 503 when the bus has none, 502 when it fails or cannot decode the audio.
+ */
+export async function transcribeFile(ctx: BusContext, fileId: string, sttUrl: string | undefined): Promise<TranscriptResponse> {
+  if (!sttUrl) throw new HttpError(503, "This bus has no speech-to-text service (serve --stt-url)");
+  const file = ctx.db.getFile(fileId);
+  const blobPath = path.join(ctx.filesDir, fileId);
+  if (!file || !existsSync(blobPath)) throw new HttpError(404, `Unknown file "${fileId}"`);
+  if (!file.mimeType.startsWith("audio/")) throw new HttpError(400, `${file.name} is not audio (${file.mimeType})`);
+  let res: Response;
+  try {
+    res = await fetch(`${sttUrl.replace(/\/+$/, "")}/transcribe`, { method: "POST", body: Bun.file(blobPath) });
+  } catch (error) {
+    throw new HttpError(502, `Speech-to-text service unreachable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const body = (await res.json().catch(() => ({}))) as Partial<TranscriptResponse> & { error?: string };
+  if (!res.ok || typeof body.text !== "string") throw new HttpError(502, `Speech to text failed: ${body.error ?? `HTTP ${res.status}`}`);
+  return { text: body.text, language: body.language ?? "", duration: body.duration ?? 0 };
 }

@@ -319,6 +319,15 @@ export interface SetSettingRequest {
   value: unknown;
 }
 
+/** POST /api/files/:id/transcript: what was said in an audio file (voice messages). */
+export interface TranscriptResponse {
+  text: string;
+  /** Detected language code ("tr", "en", …). */
+  language: string;
+  /** Seconds of audio. */
+  duration: number;
+}
+
 export interface HealthResponse {
   ok: true;
   version: string;

@@ -1905,6 +1905,50 @@ ul.md-list ul.md-list { list-style: circle; }
   font-size: 13px;
 }
 
+/* Voice messages: the 🎤 button (red while recording), the bar above the box, and the player in a message. */
+.voice-btn {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.voice-btn.recording {
+  border-color: #e5484d;
+  background: #e5484d;
+  color: #fff;
+  transform: scale(1.15);
+}
+
+.voice-bar {
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  background: var(--panel-raised);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.voice-bar.recording {
+  border-left-color: #e5484d;
+  color: var(--text);
+}
+
+.voice-bar[hidden] {
+  display: none;
+}
+
+.msg-audio {
+  width: min(320px, 100%);
+}
+
+.msg-audio audio {
+  display: block;
+  width: 100%;
+  height: 40px;
+}
+
 /* "Add a device": the one-time QR code on the sign-in page */
 .auth-link {
   margin: 10px 0 14px;

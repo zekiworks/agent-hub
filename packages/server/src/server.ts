@@ -15,7 +15,7 @@ import { HumanAuth } from "./auth";
 import { handleAuth } from "./auth-routes";
 import { BusContext, tokenHash } from "./context";
 import { BusDatabase } from "./db";
-import { getFile, MAX_FILE_BYTES, postFile } from "./files";
+import { getFile, MAX_FILE_BYTES, postFile, transcribeFile } from "./files";
 import { CORS_HEADERS, errorResponse, json, nonEmptyParam } from "./http";
 import type { SocketData } from "./hub";
 import { resolveLanAddresses } from "./lan";
@@ -41,6 +41,8 @@ export interface BusServerOptions {
    * still books, but cannot see use: no idle flags, no unclaimed-use warnings, and no GPUs until registered.
    */
   gpudash?: string;
+  /** The speech-to-text service (packages/stt, e.g. http://127.0.0.1:7810) that turns voice messages into text. */
+  sttUrl?: string;
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
   forgetOfflineDays?: number;
   /**
@@ -171,6 +173,8 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     if (method === "GET" && messageMatch?.[1]) return json(await getMessageReceipts(ctx, Number(messageMatch[1]), url));
     if (method === "POST" && pathname === "/api/files") return json(await postFile(ctx, req, url));
     if (method === "GET" && fileMatch?.[1]) return getFile(ctx, decodeURIComponent(fileMatch[1]));
+    const transcriptMatch = /^\/api\/files\/([^/]+)\/transcript$/.exec(pathname);
+    if (method === "POST" && transcriptMatch?.[1]) return json(await transcribeFile(ctx, decodeURIComponent(transcriptMatch[1]), options.sttUrl));
     if (method === "POST" && pathname === "/api/settings") return json(await postSetting(ctx, req));
     return (await schedule.handle(req, url)) ?? json({ error: `No route for ${method} ${pathname}` }, 404);
   };

@@ -63,6 +63,8 @@ export const dom = {
   holdBar: el<HTMLDivElement>("hold-bar"),
   holdBarText: el<HTMLSpanElement>("hold-bar-text"),
   holdSelect: el<HTMLSelectElement>("hold-select"),
+  voiceBtn: el<HTMLButtonElement>("voice-btn"),
+  voiceBar: el<HTMLDivElement>("voice-bar"),
 };
 
 /** The phone layout of styles.css (one screen at a time: the conversation list or a conversation). */

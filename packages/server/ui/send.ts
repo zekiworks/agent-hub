@@ -15,9 +15,9 @@ import { chosenSession } from "./live";
 import { loadMessages, receive } from "./loading";
 import { closeMention, handleMentionKey, updateMention } from "./mentions";
 import { navigate } from "./routing";
-import { currentDirectAgent, state } from "./state";
+import { currentDirectAgent, state, type View } from "./state";
 
-async function uploadFile(file: File): Promise<FileRef> {
+export async function uploadFile(file: File): Promise<FileRef> {
   const params = new URLSearchParams({ from: state.me, name: file.name });
   const res = await api<{ file: FileRef }>(`/api/files?${params}`, {
     method: "POST",
@@ -25,6 +25,33 @@ async function uploadFile(file: File): Promise<FileRef> {
     body: file,
   });
   return res.file;
+}
+
+/**
+ * Posts `text` and `fileIds` to `view` (as a reply when one is picked there, to the session picked on an agent's
+ * page, kept for the chosen hours), shows it, and clears the reply. Typed text and staged files are the caller's.
+ */
+export async function postToView(view: View, text: string, fileIds: string[]): Promise<void> {
+  const request: PostMessageRequest = { from: state.me, text };
+  if (fileIds.length > 0) request.fileIds = fileIds;
+  if (state.replyTo && view.kind === "conversation" && state.replyTo.conversationId === view.id) {
+    request.replyToSeq = state.replyTo.seq;
+  } else if (view.kind === "draft") request.to = formatAddress(view.to);
+  else if (view.id === ALL_CONVERSATION_ID) request.to = "@all";
+  else request.conversationId = view.id;
+  // On an agent's page with a session picked, the message goes to that session.
+  const agent = currentDirectAgent();
+  const session = agent ? chosenSession(agent) : undefined;
+  if (session !== undefined) request.toSession = session;
+  const hold = holdHours();
+  if (hold !== undefined) request.holdHours = hold;
+
+  const res = await postJson<PostMessageResponse>("/api/messages", request);
+  setReplyTo(undefined);
+  // Groups not loaded yet (e.g. a draft that just became a group) get their history fetched.
+  if (!state.caches.has(res.conversation.id)) void loadMessages(res.conversation.id);
+  receive(res.message, res.conversation);
+  if (view.kind === "draft") navigate({ kind: "conversation", id: res.conversation.id });
 }
 
 async function send(): Promise<void> {
@@ -45,30 +72,11 @@ async function send(): Promise<void> {
         throw new Error(`Upload of ${file.name} failed: ${errorText(err)}`);
       }
     }
-    const request: PostMessageRequest = { from: state.me, text };
-    if (fileIds.length > 0) request.fileIds = fileIds;
-    if (state.replyTo && view.kind === "conversation" && state.replyTo.conversationId === view.id) {
-      request.replyToSeq = state.replyTo.seq;
-    } else if (view.kind === "draft") request.to = formatAddress(view.to);
-    else if (view.id === ALL_CONVERSATION_ID) request.to = "@all";
-    else request.conversationId = view.id;
-    // On an agent's page with a session picked, the message goes to that session.
-    const agent = currentDirectAgent();
-    const session = agent ? chosenSession(agent) : undefined;
-    if (session !== undefined) request.toSession = session;
-    const hold = holdHours();
-    if (hold !== undefined) request.holdHours = hold;
-
-    const res = await postJson<PostMessageResponse>("/api/messages", request);
+    await postToView(view, text, fileIds);
     dom.input.value = "";
     saveDraft(view, "");
     state.staged = [];
-    setReplyTo(undefined);
     autosize();
-    // Groups not loaded yet (e.g. a draft that just became a group) get their history fetched.
-    if (!state.caches.has(res.conversation.id)) void loadMessages(res.conversation.id);
-    receive(res.message, res.conversation);
-    if (view.kind === "draft") navigate({ kind: "conversation", id: res.conversation.id });
   } catch (err) {
     showError(errorText(err));
   } finally {
