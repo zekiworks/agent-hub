@@ -28,6 +28,19 @@ MAX_BYTES = 50 * 1024 * 1024
 # Empty: any language, Whisper's guess.
 LANGUAGES = [code for code in os.environ.get("STT_LANGUAGES", "tr,en").split(",") if code]
 OTHER_LANGUAGE_MIN = 0.85
+# What Whisper writes for a moment of noise or silence (learned from subtitled videos), with full confidence, so
+# segment scores cannot catch it. A transcript that is only one of these is no speech.
+SILENCE_PHRASES = {
+    "altyazı m.k.",
+    "altyazı m.k",
+    "izlediğiniz için teşekkür ederim.",
+    "izlediğiniz için teşekkürler.",
+    "abone olmayı unutmayın.",
+    "thank you for watching.",
+    "thanks for watching!",
+    "thank you.",
+    "subtitles by the amara.org community",
+}
 
 model = WhisperModel(MODEL, device="cpu", compute_type="int8", cpu_threads=THREADS)
 # One transcription at a time: the model uses all its threads for each.
@@ -84,6 +97,8 @@ class Handler(BaseHTTPRequestHandler):
                     language = other if other and scores.get(other, 0.0) >= OTHER_LANGUAGE_MIN else LANGUAGES[0]
                 segments, info = model.transcribe(samples, language=language, vad_filter=True, beam_size=5)
                 text = " ".join(s.text.strip() for s in segments).strip()
+                if text.lower() in SILENCE_PHRASES:
+                    text = ""
         except Exception as error:  # undecodable audio and the like: the caller sends the voice message without text
             return self.reply(422, {"error": f"could not transcribe: {error}"})
         print(f"transcribed {info.duration:.1f}s ({info.language}) in {time.monotonic() - started:.1f}s", file=sys.stderr, flush=True)
