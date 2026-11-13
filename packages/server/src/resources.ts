@@ -48,6 +48,8 @@ const USE_MIN_MIB = 256;
 const UNUSED_UTIL_PCT = 5;
 /** Computing nothing for this long is worth telling: the next owner, and subscribers when it has no booking. */
 export const UNUSED_AFTER_MS = 15 * MIN;
+/** A GPU is announced at most this often (shared servers go quiet between requests many times a day). */
+const UNUSED_REPEAT_MS = HOUR;
 /** Memory in use above this on an unused GPU means a model is loaded (not empty). */
 const LOADED_MIN_MIB = 2048;
 
@@ -196,6 +198,8 @@ export class ResourceSchedule {
   private readonly now: () => number;
   /** Per GPU: since when it computes nothing, and whether that idle spell was announced. */
   private readonly unused = new Map<string, { since: number; noticed: boolean }>();
+  /** Per GPU: when its last idle spell was announced. */
+  private readonly announcedAt = new Map<string, number>();
 
   constructor(
     private readonly db: Database,
@@ -389,8 +393,9 @@ export class ResourceSchedule {
    * A GPU has computed nothing for UNUSED_AFTER_MS (once per idle spell). Held: its next owner (queued, or the next
    * planned booking) and the holder are told, so they can hand it over early; nobody next, nobody is told (the
    * holder's own idle rule still applies). Not held: the next planned owner and the subscribers it suits are told.
+   * Returns whether anyone was told.
    */
-  private announceUnused(resource: Resource, gpu: ObservedGpu, since: number, now: number): void {
+  private announceUnused(resource: Resource, gpu: ObservedGpu, since: number, now: number): boolean {
     const loaded = gpu.memoryUsed >= LOADED_MIN_MIB;
     const free = resource.unit === "MiB" ? resource.capacity - gpu.memoryUsed : undefined;
     const what = `${resource.label} has computed nothing since ${formatTime(since)} (${loaded ? `a model is loaded: ${amountText(gpu.memoryUsed, "MiB")}` : "empty"})`;
@@ -401,7 +406,7 @@ export class ResourceSchedule {
       .sort((a, b) => (a.start_at ?? now) - (b.start_at ?? now))[0];
     const told = new Set<string>();
     if (holding.length > 0) {
-      if (!next) return;
+      if (!next) return false;
       const holders = holding.map((r) => `@${r.holder} (${r.id}, until ${formatTime(r.end_at ?? now)})`).join(", ");
       const when = next.start_at === null ? "waiting in the queue" : `booked from ${formatTime(next.start_at)}`;
       this.options.notify(next.holder, `${what}. It is held by ${holders}; you are next (${next.id}, ${when}). Ask them on the bus if you want to start earlier.`);
@@ -410,7 +415,7 @@ export class ResourceSchedule {
         told.add(r.holder);
         this.options.notify(r.holder, `${what}, while you hold it (${r.id}). @${next.holder} is next (${when}): release it if you are done, so they can start.`);
       }
-      return;
+      return true;
     }
     if (next) {
       told.add(next.holder);
@@ -423,6 +428,7 @@ export class ResourceSchedule {
       told.add(sub.subscriber);
       this.options.notify(sub.subscriber, `${what} and has no booking${free === undefined ? "" : `: ${amountText(free, "MiB")} free`}. Book it with the reserve op (or the website's GPUs button) if you want it.`);
     }
+    return told.size > 0;
   }
 
   // ---- Capacity ----
@@ -741,7 +747,8 @@ export class ResourceSchedule {
       const gpu = observed.get(resourceId);
       if (!resource || !gpu || now - gpu.at > OBSERVATION_FRESH_MS) continue;
       spell.noticed = true;
-      this.announceUnused(resource, gpu, spell.since, now);
+      if (now - (this.announcedAt.get(resourceId) ?? -Infinity) < UNUSED_REPEAT_MS) continue;
+      if (this.announceUnused(resource, gpu, spell.since, now)) this.announcedAt.set(resourceId, now);
     }
     if (changed) this.options.changed();
   }

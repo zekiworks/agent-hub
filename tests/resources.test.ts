@@ -181,14 +181,18 @@ test("a free GPU computing nothing for 15 min is announced once to its subscribe
   // Once per idle spell; carol wanted 90 GB free and 40 GB are loaded.
   expect(notices.map((n) => n.to)).toEqual(["beta"]);
   expect(notices[0]?.text).toMatch(/host1 GPU 2 has computed nothing since .* \(a model is loaded: 39 GB\) and has no booking: 57 GB free/);
-  // Compute ends the spell; the next empty spell is announced again, and now suits carol too.
+  // A spell right after is not announced again within the hour (servers go quiet between requests)…
   run(5, () => load(80));
+  run(20, () => load(0));
+  expect(notices).toHaveLength(1);
+  // …a later one is, and an empty GPU now suits carol too.
+  run(30, () => load(80));
   run(20, () => load(0));
   expect(notices.slice(1).map((n) => n.to).sort()).toEqual(["beta", "carol"]);
   expect(notices[1]?.text).toMatch(/\(empty\)/);
   // Unsubscribed: not told.
   expect(schedule.unsubscribe(BETA)).toBe(true);
-  run(5, () => load(80));
+  run(60, () => load(80));
   run(20, () => load(0));
   expect(notices.slice(3).map((n) => n.to)).toEqual(["carol"]);
   expect(schedule.listing().subscriptions.map((s) => s.subscriber)).toEqual(["carol"]);
