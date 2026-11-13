@@ -141,10 +141,11 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
       }
     }
   }
-  // Mentioning someone who is not in a group invites them: they join it (agents change its thread; a group that
-  // already had the new set is merged into this one) and new agents first get the last messages as context.
+  // A person mentioning someone who is not in a group invites them: they join it (agents change its thread; a group
+  // that already had the new set is merged into this one) and new agents first get the last messages as context.
+  // Only people: agents name each other in passing all the time, and that must not pull anyone in.
   let merged: string | undefined;
-  if (conversation.kind === "group") {
+  if (conversation.kind === "group" && writer.kind === "human") {
     const newcomers = mentionedParticipants(ctx, text).filter((id) => id !== writer.id && !conversation.addressed.includes(id));
     if (newcomers.length > 0) {
       const invited = db.inviteToGroup(conversation.id, newcomers);

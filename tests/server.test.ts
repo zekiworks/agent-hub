@@ -460,6 +460,13 @@ describe("delivery", () => {
     for (let i = 0; i < 6; i++) toBeta.push((await beta.client.take("deliver")).message.text);
     expect(toBeta).toEqual(["m2", "m3", "m4", "m5", "m6", "@beta can you look at this?"]);
 
+    // An agent naming someone in passing invites nobody.
+    await joinPath("/tmp/x/gamma");
+    const byAgent = await send({ from: alpha.id, conversationId: first.conversation.id, text: "@gamma could do this" });
+    expect(byAgent.conversation.addressed).toEqual(["alpha", "beta", "carol"]);
+    expect(byAgent.message.receipts.map((r) => r.to)).toEqual(["beta"]);
+    expect((await beta.client.take("deliver")).message.id).toBe(byAgent.message.id);
+
     // Already a member: mentioning again invites nobody and sends no context.
     const again = await send({ from: "carol", conversationId: first.conversation.id, text: "@beta and @nobody, thanks" });
     expect(again.conversation.addressed).toEqual(["alpha", "beta", "carol"]);
