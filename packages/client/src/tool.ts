@@ -181,11 +181,21 @@ export function receivedDir(agentId: string): string {
   return path.join(os.homedir(), ".agent-bus", "received", agentId);
 }
 
-/** Downloads a delivery's attachments and returns the text the session gets for it. */
+/**
+ * Downloads a delivery's attachments and returns the text the session gets for it. An attachment that cannot be
+ * downloaded is named with the reason, and the message still arrives (unacked, it would only come back on the next
+ * join and never reach the model).
+ */
 export async function deliveryText(conn: BusConnection, delivery: Delivery): Promise<string> {
   const saved: string[] = [];
   if (delivery.message.files.length > 0 && conn.id) {
-    for (const file of delivery.message.files) saved.push(await conn.downloadFile(file, receivedDir(conn.id)));
+    for (const file of delivery.message.files) {
+      try {
+        saved.push(await conn.downloadFile(file, receivedDir(conn.id)));
+      } catch (err) {
+        saved.push(`${file.name} not downloaded (${(err as Error).message}); ${TOOL_NAME} op=show message_id ${delivery.message.seq} tries again`);
+      }
+    }
   }
   return formatDelivery(delivery, saved);
 }

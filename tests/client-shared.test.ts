@@ -7,7 +7,7 @@ import path from "node:path";
 import { HeldQueue, UnseenSeqs } from "../packages/client/src/held";
 import { serveHookSocket } from "../packages/client/src/hook-socket";
 import { pluginBusUrl, realFolder } from "../packages/client/src/runtime";
-import { formatDelivery } from "../packages/client/src/tool";
+import { deliveryText, formatDelivery } from "../packages/client/src/tool";
 
 let dir = "";
 
@@ -116,4 +116,14 @@ test("a hook relays its input to the server's socket and prints the answer; with
     hooks.close();
   }
   expect(existsSync(socketPath)).toBe(false);
+});
+
+test("an attachment that cannot be downloaded still delivers the message, naming the file and the reason", async () => {
+  const conversation = { id: "g_1", kind: "group", addressed: ["alpha", "carol"], members: ["alpha", "carol"] } as never;
+  const file = { id: "f_1", name: "report.tar.gz", size: 10, mimeType: "application/gzip", sha256: "ab".repeat(32) };
+  const message = { seq: 7, id: "m", conversationId: "g_1", from: "carol", fromKind: "human", text: "see the file", files: [file], createdAt: Date.now(), expiresAt: Date.now() + 60_000, receipts: [] };
+  const conn = { id: "alpha", downloadFile: async () => Promise.reject(new Error("Download of report.tar.gz failed: HTTP 401")) } as never;
+  const text = await deliveryText(conn, { type: "deliver", message, conversation, replyTo: "@carol", wake: true } as never);
+  expect(text).toContain("see the file");
+  expect(text).toContain("File: report.tar.gz not downloaded (Download of report.tar.gz failed: HTTP 401); message-bus op=show message_id 7 tries again");
 });

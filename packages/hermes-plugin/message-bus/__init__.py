@@ -53,6 +53,7 @@ def agent_token() -> str:
 
 
 RECONNECT_MAX_S = 30.0
+STABLE_CONNECTION_S = 30.0  # a connection that lasted this long resets the reconnect backoff
 RECEIPT_WAIT_MS = 5000  # how long write/send wait for recipients' harnesses to accept the message
 HOLD_MAX_S = 900  # inject held messages anyway when the previous injection has not been seen for this long
 
@@ -381,14 +382,23 @@ class GatewayBridge:
         delay = 1.0
         asyncio.get_running_loop().create_task(self._watchdog())
         while True:
+            connected_at = time.monotonic()
             try:
                 async with websockets.connect(f"{ws_base}/ws/agent?{qs}", max_size=None) as ws:
-                    delay = 1.0
+                    connected_at = time.monotonic()
                     self.loop, self.ws = asyncio.get_running_loop(), ws
                     async for raw in ws:
-                        await self._handle(ws, json.loads(raw))
+                        # One frame that cannot be handled must not drop the connection: the server would re-send
+                        # the same unacked delivery on every reconnect, and the agent would reconnect forever.
+                        try:
+                            await self._handle(ws, json.loads(raw))
+                        except Exception as err:
+                            logger.warning("message-bus: could not handle a frame: %s", err)
             except Exception as err:  # reconnect on any transport failure
                 logger.warning("message-bus connection lost: %s (retrying in %.0fs)", err, delay)
+            # Back off unless the connection had stayed up a while (a join that drops at once is not a recovery).
+            if time.monotonic() - connected_at >= STABLE_CONNECTION_S:
+                delay = 1.0
             await asyncio.sleep(delay)
             delay = min(delay * 2, RECONNECT_MAX_S)
 
@@ -417,6 +427,14 @@ class GatewayBridge:
         elif kind == "error":
             logger.warning("message-bus server error: %s", frame.get("error"))
 
+    async def _download(self, ref: dict, dest: Path, seq: int) -> str:
+        """The local path of an attachment, or why it is not there: the message still reaches the agent."""
+        try:
+            return await asyncio.to_thread(self.client.download, ref, dest)
+        except Exception as err:
+            logger.warning("message-bus: download of %s (#%s) failed: %s", ref.get("id"), seq, err)
+            return f"{ref['name']} not downloaded ({err}); {TOOL_NAME} op=show message_id {seq} tries again"
+
     def _receipt(self, frame: dict) -> None:
         with _awaiting_lock:
             pending = _awaiting_receipts.get(frame["seq"])
@@ -436,7 +454,7 @@ class GatewayBridge:
     async def _deliver(self, ws: Any, frame: dict) -> None:
         files = frame["message"].get("files") or []
         dest = STATE_DIR / "received" / self.client.my_id()
-        saved = [await asyncio.to_thread(self.client.download, f, dest) for f in files]
+        saved = [await self._download(f, dest, frame["message"]["seq"]) for f in files]
         text = format_delivery(frame, saved)
         seq = frame["message"]["seq"]
         if not frame.get("wake"):
