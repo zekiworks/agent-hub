@@ -1,6 +1,6 @@
-// Voice messages, as in WhatsApp: hold 🎤 to record, release to send, slide away (or Esc) to cancel. The recording
-// goes up as an audio file; the bus's speech-to-text turns it into the message text, so agents (which cannot listen)
-// read what was said. People see a player (attachments.ts).
+// Voice messages: click 🎤 once to record and again to send, or hold it and let go to send (as in WhatsApp); Esc, or
+// letting go far from the button, cancels. The recording goes up as an audio file; the bus's speech-to-text turns it
+// into the message text, so agents (which cannot listen) read what was said. People see a player (attachments.ts).
 import type { TranscriptResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { hideError, showError } from "./composer";
@@ -9,7 +9,7 @@ import { errorText } from "./format";
 import { postToView, uploadFile } from "./send";
 import { state } from "./state";
 
-/** Shorter recordings are taken for a tap: the bar says to hold instead. */
+/** A press shorter than this is a click: recording goes on until the next click. Longer: hold to talk. */
 const MIN_RECORDING_MS = 600;
 /** Recordings stop (and send) by themselves after this long. */
 const MAX_RECORDING_MS = 5 * 60_000;
@@ -29,8 +29,13 @@ interface Recording {
 let recording: Recording | undefined;
 /** The microphone is being opened (the permission prompt may be up). */
 let opening = false;
-/** The 🎤 button is pressed right now. Let go before the microphone was ready: that was a tap. */
+/** The 🎤 button is pressed right now. */
 let held = false;
+/** Recording after a click (not a hold): the next click on 🎤 sends. */
+let latched = false;
+
+const RECORDING_HINT_HOLD = "Recording — let go to send, slide away or Esc to cancel";
+const RECORDING_HINT_CLICK = "Recording — click 🎤 again to send, Esc to cancel";
 
 function showBar(text: string, recordingNow = false): void {
   dom.voiceBar.textContent = text;
@@ -76,7 +81,7 @@ async function start(): Promise<void> {
     ticker: setInterval(() => {
       const elapsed = Date.now() - startedAt;
       if (elapsed >= MAX_RECORDING_MS) return void stop(false);
-      showBar(`● ${clock(elapsed)}  Recording — release to send, slide away or Esc to cancel`, true);
+      showBar(`● ${clock(elapsed)}  ${latched ? RECORDING_HINT_CLICK : RECORDING_HINT_HOLD}`, true);
     }, 250),
   };
   recorder.addEventListener("dataavailable", (event) => {
@@ -85,15 +90,17 @@ async function start(): Promise<void> {
   recording = rec;
   recorder.start();
   dom.voiceBtn.classList.add("recording");
-  showBar("● 0:00  Recording — release to send, slide away or Esc to cancel", true);
-  if (!held) void stop(false);
+  // Let go while the microphone was opening: that was a click, so keep recording until the next one.
+  latched = !held;
+  showBar(`● 0:00  ${latched ? RECORDING_HINT_CLICK : RECORDING_HINT_HOLD}`, true);
 }
 
-/** Ends the recording; sends it unless `cancel` or it was only a tap. */
+/** Ends the recording; sends it unless `cancel` or it was too short to hold anything. */
 async function stop(cancel: boolean): Promise<void> {
   const rec = recording;
   if (!rec) return;
   recording = undefined;
+  latched = false;
   clearInterval(rec.ticker);
   dom.voiceBtn.classList.remove("recording");
   const stopped = new Promise<void>((resolve) => rec.recorder.addEventListener("stop", () => resolve(), { once: true }));
@@ -102,7 +109,7 @@ async function stop(cancel: boolean): Promise<void> {
   for (const track of rec.stream.getTracks()) track.stop();
   const duration = Date.now() - rec.startedAt;
   if (cancel) return hideBar();
-  if (duration < MIN_RECORDING_MS) return showBar("Hold 🎤 while you speak, then let go to send.");
+  if (duration < MIN_RECORDING_MS) return showBar("Too short: click 🎤, speak, and click it again to send.");
   const type = rec.recorder.mimeType || rec.chunks[0]?.type || "audio/webm";
   const ext = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
   const stamp = new Date(rec.startedAt).toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
@@ -139,6 +146,8 @@ async function send(file: File, duration: number): Promise<void> {
 dom.voiceBtn.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
   event.preventDefault(); // no text selection or long-press menu on phones
+  // The second click of a click-started recording sends it.
+  if (recording && latched) return void stop(false);
   dom.voiceBtn.setPointerCapture(event.pointerId);
   held = true;
   void start();
@@ -146,7 +155,13 @@ dom.voiceBtn.addEventListener("pointerdown", (event) => {
 
 dom.voiceBtn.addEventListener("pointerup", (event) => {
   held = false;
-  if (!recording) return;
+  if (!recording || latched) return;
+  // A short press was a click: keep recording until the next click.
+  if (Date.now() - recording.startedAt < MIN_RECORDING_MS) {
+    latched = true;
+    showBar(`● 0:00  ${RECORDING_HINT_CLICK}`, true);
+    return;
+  }
   const box = dom.voiceBtn.getBoundingClientRect();
   const away =
     event.clientX < box.left - CANCEL_DISTANCE_PX ||
@@ -158,7 +173,7 @@ dom.voiceBtn.addEventListener("pointerup", (event) => {
 
 dom.voiceBtn.addEventListener("pointercancel", () => {
   held = false;
-  void stop(true);
+  if (!latched) void stop(true);
 });
 dom.voiceBtn.addEventListener("contextmenu", (event) => event.preventDefault());
 
