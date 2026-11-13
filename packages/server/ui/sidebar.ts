@@ -190,7 +190,12 @@ function renderAgentList(): void {
       const dot = h("span", `dot ${agent.online ? "dot-on" : "dot-off"}`);
       const text = h("span", "side-item-text");
       const name = h("span", "side-item-title", agent.id);
-      if (agent.connections > 1) name.append(h("span", "conn-count", ` ×${agent.connections}`));
+      if (agent.connections > 1 && agent.online) name.append(h("span", "conn-count", ` ×${agent.connections}`));
+      if (agent.connectionError) {
+        const err = h("span", "agent-err", "ERR");
+        err.title = agent.connectionError;
+        name.append(" ", err);
+      }
       text.append(name);
       const detail = agentDetail(agent, showHost);
       if (detail) text.append(h("span", "side-item-detail", detail));
@@ -202,6 +207,7 @@ function renderAgentList(): void {
         agent.harness ? `harness: ${agent.harness}` : "",
         agent.path ? `path: ${agent.path}` : "",
         agent.host ? `host: ${agent.host}` : "",
+        agent.connectionError ?? "",
         agent.online
           ? `online (${agent.connections} connection${agent.connections === 1 ? "" : "s"})`
           : `last seen ${relativeTime(agent.lastSeenAt)}`,

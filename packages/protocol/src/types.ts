@@ -46,6 +46,11 @@ export interface Participant {
   status?: AgentStatus;
   /** Agents: messages delivered to its session but not yet seen by its model. */
   waiting?: number;
+  /**
+   * Agents whose connections keep dropping (FLAP_DROPS disconnects within FLAP_WINDOW_MS): why, shown as a red ERR.
+   * Such an agent is reported offline (`online: false`) until it has stayed connected for that window.
+   */
+  connectionError?: string;
 }
 
 /** One live session of an agent. */

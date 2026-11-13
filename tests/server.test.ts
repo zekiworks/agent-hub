@@ -611,6 +611,26 @@ describe("http", () => {
     expect(left.participants.find((p) => p.id === "alpha")).toMatchObject({ online: false, connections: 0 });
   });
 
+  test("an agent whose connections keep dropping is reported offline with a connection error", async () => {
+    const first = await joinPath("/tmp/x/alpha");
+    await send({ from: "alpha", to: "@carol", text: "taking part" }); // kept when it logs off
+    await leave(first.client);
+    const participant = async () => (await state()).participants.find((p) => p.id === "alpha");
+    // One reconnect is normal.
+    const again = await joinPath("/tmp/x/alpha");
+    expect(await participant()).toMatchObject({ online: true, connections: 1 });
+    expect((await participant())?.connectionError).toBeUndefined();
+    await leave(again.client);
+
+    // FLAP_DROPS (4) drops within two minutes: offline with an error even while a connection is up.
+    for (let i = 0; i < 2; i++) await leave((await joinPath("/tmp/x/alpha")).client);
+    const live = await joinPath("/tmp/x/alpha");
+    const flapping = await participant();
+    expect(flapping).toMatchObject({ online: false, connections: 1 });
+    expect(flapping?.connectionError).toContain("Keeps reconnecting: 4 dropped connections");
+    await leave(live.client);
+  });
+
   test("state, paging and health", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const sent: Message[] = [];

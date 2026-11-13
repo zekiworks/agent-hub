@@ -580,6 +580,17 @@ button:disabled {
   color: var(--sidebar-muted);
 }
 
+/* An agent whose connections keep dropping: shown offline with this, its reason in the tooltip. */
+.agent-err {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
 .badge {
   flex: none;
   min-width: 20px;

@@ -18,6 +18,9 @@ import type { BusDatabase, ParticipantRecord } from "./db";
 
 /** How long a session keeps its number after its last connection closed (a reconnect after a short drop). */
 const SESSION_HOLD_MS = 60_000;
+/** An agent whose connections dropped this many times within FLAP_WINDOW_MS is reported offline with an error. */
+export const FLAP_DROPS = 4;
+export const FLAP_WINDOW_MS = 2 * 60_000;
 
 export type SocketData =
   | {
@@ -83,6 +86,10 @@ export class Hub {
   private lastStamp = 0;
   private viewerParticipantsTimer: Timer | undefined;
   private resourcesTimer: Timer | undefined;
+  /** When each agent's connections dropped, within the last FLAP_WINDOW_MS (see `connectionError`). */
+  private readonly drops = new Map<string, number[]>();
+  /** Per flapping agent: the broadcast that clears its error once the window has passed without drops. */
+  private readonly flapTimers = new Map<string, Timer>();
 
   constructor(
     private readonly db: BusDatabase,
@@ -236,16 +243,27 @@ export class Hub {
     return since === undefined ? undefined : this.db.waitingCount(id, since);
   }
 
+  /** Why `id` counts as offline although it may be connected right now: its connections keep dropping. */
+  private connectionError(id: string, now = Date.now()): string | undefined {
+    const recent = (this.drops.get(id) ?? []).filter((t) => t > now - FLAP_WINDOW_MS);
+    if (recent.length === 0) this.drops.delete(id);
+    else this.drops.set(id, recent);
+    if (recent.length < FLAP_DROPS) return undefined;
+    return `Keeps reconnecting: ${recent.length} dropped connections in the last ${FLAP_WINDOW_MS / 60_000} minutes`;
+  }
+
   toParticipant(record: ParticipantRecord): Participant {
     const connections = record.kind === "agent" ? (this.agentSockets.get(record.id)?.size ?? 0) : 0;
+    const connectionError = record.kind === "agent" ? this.connectionError(record.id) : undefined;
     const participant: Participant = {
       id: record.id,
       kind: record.kind,
-      online: connections > 0,
+      online: connections > 0 && connectionError === undefined,
       connections,
       lastSeenAt: record.lastSeenAt,
       settings: record.settings,
     };
+    if (connectionError !== undefined) participant.connectionError = connectionError;
     if (record.harness !== null) participant.harness = record.harness;
     if (record.path !== null) participant.path = record.path;
     if (record.host !== null) participant.host = record.host;
@@ -315,6 +333,7 @@ export class Hub {
     if (!sockets) return undefined;
     sockets.delete(ws);
     if (sockets.size === 0) this.agentSockets.delete(id);
+    this.noteDrop(id, now);
     const data = ws.data;
     if (data.kind !== "agent") return sockets.size;
     if (!this.liveSessionNumber(id, data.sessionKey)) {
@@ -324,6 +343,20 @@ export class Hub {
     }
     if (sockets.size > 0 && data.inflight.size > 0) this.handOver(id, [...data.inflight]);
     return sockets.size;
+  }
+
+  /** Records a dropped connection; a flapping agent's error clears by itself (one broadcast) after a quiet window. */
+  private noteDrop(id: string, now: number): void {
+    const drops = this.drops.get(id) ?? [];
+    drops.push(now);
+    this.drops.set(id, drops);
+    clearTimeout(this.flapTimers.get(id));
+    const timer = setTimeout(() => {
+      this.flapTimers.delete(id);
+      this.broadcastParticipants();
+    }, FLAP_WINDOW_MS + 1000);
+    timer.unref();
+    this.flapTimers.set(id, timer);
   }
 
   /** Re-delivers `seqs` (not acked by the session that got them) to `id`'s current target session. */
@@ -533,6 +566,8 @@ export class Hub {
     this.receiptWaiters.clear();
     clearTimeout(this.viewerParticipantsTimer);
     clearTimeout(this.resourcesTimer);
+    for (const timer of this.flapTimers.values()) clearTimeout(timer);
+    this.flapTimers.clear();
   }
 
   /** After the servers stopped. */
