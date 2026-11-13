@@ -129,7 +129,10 @@ function setComposerHeight(height: number | undefined): void {
 export function setReplyTo(message: Message | undefined): void {
   state.replyTo = message;
   dom.replyBar.hidden = !message;
+  // The message being replied to stays framed until the reply is sent or cancelled (✕, Esc, Reply again).
+  for (const li of dom.messageList.querySelectorAll<HTMLLIElement>(".msg-replying")) li.classList.remove("msg-replying");
   if (message) {
+    dom.messageList.querySelector<HTMLLIElement>(`.msg[data-seq="${message.seq}"]`)?.classList.add("msg-replying");
     const text = message.text.replace(/\s+/g, " ").trim();
     dom.replyBarText.textContent = `Replying to ${message.from}: ${text.length > 120 ? `${text.slice(0, 119)}…` : text || "(file)"}`;
     dom.input.focus();

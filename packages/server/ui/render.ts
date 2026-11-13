@@ -109,6 +109,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   else if (message.text && mentionsMe(message.text)) li.classList.add("msg-mentions-me");
   if (continued) li.classList.add("msg-continued");
   li.dataset.seq = String(message.seq);
+  if (state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq) li.classList.add("msg-replying");
 
   const head = h("div", "msg-head");
   const sender = h("button", "msg-sender", senderLabel(message));
@@ -130,12 +131,15 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   time.dateTime = new Date(message.createdAt).toISOString();
   time.title = fullFormat.format(message.createdAt);
   head.append(h("span", "msg-seq", `#${message.seq}`), time);
+  li.append(head);
+  // Outside the head so grouped messages (whose head is hidden) can be replied to too. Clicking it again cancels.
   const replyBtn = h("button", "msg-reply-btn", "↩ Reply");
   replyBtn.type = "button";
-  replyBtn.title = "Reply to this message (quotes it)";
-  replyBtn.addEventListener("click", () => setReplyTo(message));
-  head.append(replyBtn);
-  li.append(head);
+  replyBtn.title = "Reply to this message (quotes it); click again to cancel";
+  replyBtn.addEventListener("click", () =>
+    setReplyTo(state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq ? undefined : message)
+  );
+  li.append(replyBtn);
 
   if (message.quote) li.append(renderQuote(message.quote));
   if (message.text) li.append(renderText(message.text));
