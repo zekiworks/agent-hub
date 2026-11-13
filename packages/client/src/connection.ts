@@ -18,7 +18,7 @@ import type {
   PostMessageResponse,
   ReceiptEvent,
 } from "../../protocol/src/types";
-import type { ReservationResponse, ResourcesResponse } from "../../protocol/src/resources";
+import type { GpuSubscription, ReservationResponse, ResourcesResponse } from "../../protocol/src/resources";
 
 /**
  * This machine account's agent token (`~/.agent-bus/agent-token`, mode 0600; `AGENT_BUS_TOKEN_FILE` overrides),
@@ -310,6 +310,27 @@ export class BusConnection {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ from, ...body }),
     });
+  }
+
+  /** Be told when a GPU (on `host`, with at least `minFreeGb` free) has no booking and computes nothing. */
+  subscribe(filter: { host?: string; minFreeGb?: number }): Promise<{ subscription: GpuSubscription }> {
+    const from = this.requireId();
+    return this.request<{ subscription: GpuSubscription }>("/api/subscriptions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, ...filter }),
+    });
+  }
+
+  /** Stops `subscribe`; false when there was none. */
+  async unsubscribe(): Promise<boolean> {
+    const from = this.requireId();
+    const res = await this.request<{ removed: boolean }>("/api/subscriptions/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from }),
+    });
+    return res.removed;
   }
 
   /** The message with its receipts, after waiting up to `waitMs` for every recipient to have seen it. */

@@ -135,6 +135,19 @@ export interface ResourcesResponse {
   observed: Record<string, ObservedGpu & { at: number }>;
   warnings: ResourceWarning[];
   rules: ScheduleRules;
+  /** Who asked to be told when a GPU is free and unused (see `GpuSubscription`). */
+  subscriptions: GpuSubscription[];
+}
+
+/**
+ * A request to be told when a GPU has no booking and has computed nothing for 15 minutes (POST /api/subscriptions).
+ * `host` and `minFreeMib` narrow it; absent: any GPU.
+ */
+export interface GpuSubscription {
+  subscriber: string;
+  host?: string;
+  minFreeMib?: number;
+  createdAt: number;
 }
 
 /** The anti-greed rules in force (all in ms). */

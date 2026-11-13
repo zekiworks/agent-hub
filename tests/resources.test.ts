@@ -155,6 +155,60 @@ test("use clears the idle flag; no probe report means no idle verdict at all", (
   expect(listing.warnings.map((w) => w.kind)).toContain("stale-probe");
 });
 
+/** The test GPU reporting `utilization` percent with `memoryUsed` MiB in use (no processes). */
+function load(utilization: number, memoryUsed = 0): Observation {
+  const obs = observation();
+  obs.gpus[0] = { ...obs.gpus[0]!, utilization, memoryUsed };
+  return obs;
+}
+
+/** Advances `minutes` in 5-minute probe reports of `obs`, ticking after each. */
+function run(minutes: number, obs: () => Observation): void {
+  for (let m = 0; m < minutes; m += 5) {
+    t += 5 * MIN;
+    schedule.observe(obs());
+    schedule.tick();
+  }
+}
+
+test("a free GPU computing nothing for 15 min is announced once to its subscribers (filtered), as loaded or empty", () => {
+  schedule.subscribe(BETA, {});
+  schedule.subscribe(CAROL, { minFreeMib: 90_000 });
+  expect(() => schedule.subscribe(ALPHA, { host: "nohost" })).toThrow(/No GPUs on host "nohost"/);
+  run(10, () => load(0, 40_000));
+  expect(notices).toHaveLength(0);
+  run(30, () => load(0, 40_000));
+  // Once per idle spell; carol wanted 90 GB free and 40 GB are loaded.
+  expect(notices.map((n) => n.to)).toEqual(["beta"]);
+  expect(notices[0]?.text).toMatch(/host1 GPU 2 has computed nothing since .* \(a model is loaded: 39 GB\) and has no booking: 57 GB free/);
+  // Compute ends the spell; the next empty spell is announced again, and now suits carol too.
+  run(5, () => load(80));
+  run(20, () => load(0));
+  expect(notices.slice(1).map((n) => n.to).sort()).toEqual(["beta", "carol"]);
+  expect(notices[1]?.text).toMatch(/\(empty\)/);
+  // Unsubscribed: not told.
+  expect(schedule.unsubscribe(BETA)).toBe(true);
+  run(5, () => load(80));
+  run(20, () => load(0));
+  expect(notices.slice(3).map((n) => n.to)).toEqual(["carol"]);
+  expect(schedule.listing().subscriptions.map((s) => s.subscriber)).toEqual(["carol"]);
+});
+
+test("a held GPU computing nothing tells the next owner and the holder, not the subscribers; with nobody next, nobody", () => {
+  schedule.subscribe(CAROL, {});
+  const a = schedule.reserve({ from: "alpha", resource: "host1 GPU 2", hours: 8, purpose: "serving" }, ALPHA);
+  // Alpha's server is loaded but idle: nobody next, so no message (the holder's own idle rule sees the process).
+  run(20, () => ({ ...load(0, 40_000), processes: [process({ cwd: "/home/x/code/alpha" })] }));
+  expect(notices).toHaveLength(0);
+  // Beta books after alpha: the next idle spell tells beta and alpha.
+  schedule.reserve({ from: "beta", resource: "host1 GPU 2", hours: 2, start: t + 9 * HOUR, purpose: "eval" }, BETA);
+  run(5, () => ({ ...load(90, 40_000), processes: [process({ cwd: "/home/x/code/alpha" })] }));
+  run(20, () => ({ ...load(0, 40_000), processes: [process({ cwd: "/home/x/code/alpha" })] }));
+  expect(notices.map((n) => n.to)).toEqual(["beta", "alpha"]);
+  expect(notices[0]?.text).toMatch(new RegExp(`held by @alpha \\(${a.id}, until .*\\); you are next`));
+  expect(notices[1]?.text).toMatch(/@beta is next .*release it if you are done/);
+});
+
 test("processes are attributed by reservation, label or folder; the rest of real use is unclaimed", () => {
   const a = schedule.reserve({ from: "alpha", resource: "host1 GPU 2", hours: 2, amount: 30_000, purpose: "run" }, ALPHA);
   schedule.observe(

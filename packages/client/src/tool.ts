@@ -27,7 +27,9 @@ export interface MessageBusToolParams {
     | "reserve"
     | "release"
     | "extend"
-    | "mode";
+    | "mode"
+    | "subscribe"
+    | "unsubscribe";
   message_id?: number;
   to?: string;
   message?: string;
@@ -61,9 +63,9 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   {
     name: "op",
     type: "string",
-    enum: ["reply", "write", "send", "set", "inbox", "show", "history", "search", "resources", "servers", "reserve", "release", "extend", "mode"],
+    enum: ["reply", "write", "send", "set", "inbox", "show", "history", "search", "resources", "servers", "reserve", "release", "extend", "mode", "subscribe", "unsubscribe"],
     description:
-      "reply/write/send a message, set a setting, read (inbox, show, history, search), or shared GPUs (resources, servers, reserve, release, extend, mode)",
+      "reply/write/send a message, set a setting, read (inbox, show, history, search), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
   },
   { name: "message_id", type: "number", description: "a message's #number (reply, show, history)" },
   { name: "to", type: "string", description: '"@all", "@id" or "@{id1,id2}" (write/send, history)' },
@@ -81,10 +83,10 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     type: "number",
     description: "reply/write/send: how long the bus keeps it for recipients that are offline, in hours (default 1, at most 168); after that it expires for them",
   },
-  { name: "resource", type: "string", description: 'a resource: its label ("host1 GPU 2"), GPU uuid prefix or id (resources, reserve, release)' },
+  { name: "resource", type: "string", description: 'a resource: its label ("host1 GPU 2"), GPU uuid prefix or id (resources, reserve, release); subscribe: a host name, to hear only about its GPUs' },
   { name: "reservation", type: "string", description: "a reservation id, r_… (release, extend, mode)" },
   { name: "hours", type: "number", description: "how long (reserve) or how much longer from now (extend), at most 48" },
-  { name: "amount", type: "number", description: "part of the resource (GPUs: GB of memory; services: slots); omit for all of it (reserve)" },
+  { name: "amount", type: "number", description: "part of the resource (GPUs: GB of memory; services: slots); omit for all of it (reserve); subscribe: at least this many GB free" },
   { name: "start", type: "string", description: 'reserve: omit for now, a time ("2026-11-10 14:00"), or "next" to queue until it is free' },
   { name: "purpose", type: "string", description: "one line: what it is for (reserve)" },
   { name: "mode", type: "string", enum: ["shared", "private"], description: '"shared" (default: others may send requests to your servers) or "private" (reserve, mode)' },
@@ -152,7 +154,9 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "private when nobody else should send requests (timing, scored runs; say so on the bus if others were using it). " +
     "Start GPU jobs with `agent-bus run <reservation> -- <command>` so they run on exactly those GPUs and count as yours; " +
     "op=release (`reservation` or `resource`) as soon as you are done; op=extend (`reservation`, `hours`) while you still " +
-    "use it. @resources writes to you when a hold is over, idle, or yours after a wait."
+    "use it. @resources writes to you when a hold is over, idle, or yours after a wait, and when a GPU you hold or " +
+    "are next for has computed nothing for 15 min. op=subscribe (optional `resource` = a host, `amount` = GB free) " +
+    "asks @resources to tell you when a GPU has no booking and has computed nothing for 15 min; op=unsubscribe stops it."
   );
 }
 
@@ -499,6 +503,18 @@ export class BusTool {
         if (!params.reservation || params.hours === undefined) throw new Error("extend needs `reservation` and `hours`.");
         const res = await conn.schedule(`/api/reservations/${encodeURIComponent(params.reservation)}/extend`, { hours: params.hours });
         return result(`Extended: ${formatReservation(res.reservation, res.resource)}.`);
+      }
+      case "subscribe": {
+        const res = await conn.subscribe({
+          ...(params.resource ? { host: params.resource } : {}),
+          ...(params.amount !== undefined ? { minFreeGb: params.amount } : {}),
+        });
+        const sub = res.subscription;
+        const where = `${sub.host ? `a GPU on ${sub.host}` : "any GPU"}${sub.minFreeMib ? ` with at least ${Math.round(sub.minFreeMib / 1024)} GB free` : ""}`;
+        return result(`Subscribed: @resources tells you when ${where} has no booking and has computed nothing for 15 min. op=unsubscribe stops it.`);
+      }
+      case "unsubscribe": {
+        return result((await conn.unsubscribe()) ? "Unsubscribed: no more free-GPU notices." : "You were not subscribed.");
       }
       default:
         throw new Error(`Unknown op ${JSON.stringify((params as { op?: unknown }).op)}; the ops are ${TOOL_PARAMS[0]?.enum?.join(", ")}.`);

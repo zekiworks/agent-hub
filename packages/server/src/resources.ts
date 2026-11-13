@@ -5,6 +5,7 @@
 import type { Database } from "bun:sqlite";
 import {
   formatTime,
+  type GpuSubscription,
   type Observation,
   type ObservedGpu,
   type ObservedProcess,
@@ -43,6 +44,12 @@ const OBSERVATION_FRESH_MS = 3 * MIN;
 const LIST_ENDED_MS = 24 * HOUR;
 /** A process using more GPU memory than this counts as use. */
 const USE_MIN_MIB = 256;
+/** A GPU below this utilization (percent) computes nothing. */
+const UNUSED_UTIL_PCT = 5;
+/** Computing nothing for this long is worth telling: the next owner, and subscribers when it has no booking. */
+export const UNUSED_AFTER_MS = 15 * MIN;
+/** Memory in use above this on an unused GPU means a model is loaded (not empty). */
+const LOADED_MIN_MIB = 2048;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS resources (
@@ -84,6 +91,12 @@ CREATE TABLE IF NOT EXISTS observations (
   host TEXT PRIMARY KEY,
   at INTEGER NOT NULL,
   observed_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gpu_subscriptions (
+  subscriber TEXT PRIMARY KEY,
+  host TEXT,
+  min_free_mib INTEGER,
+  created_at INTEGER NOT NULL
 );
 `;
 
@@ -181,6 +194,8 @@ function amountText(amount: number, unit: string): string {
 export class ResourceSchedule {
   readonly rules: ScheduleRules;
   private readonly now: () => number;
+  /** Per GPU: since when it computes nothing, and whether that idle spell was announced. */
+  private readonly unused = new Map<string, { since: number; noticed: boolean }>();
 
   constructor(
     private readonly db: Database,
@@ -327,7 +342,87 @@ export class ResourceSchedule {
         });
       }
     }
-    return { now, resources, reservations, observed: Object.fromEntries(observed), warnings, rules: this.rules };
+    return { now, resources, reservations, observed: Object.fromEntries(observed), warnings, rules: this.rules, subscriptions: this.subscriptions() };
+  }
+
+  // ---- Subscriptions: "tell me when a GPU is free" ----
+
+  subscriptions(): GpuSubscription[] {
+    return this.db
+      .query<{ subscriber: string; host: string | null; min_free_mib: number | null; created_at: number }, []>(
+        "SELECT * FROM gpu_subscriptions ORDER BY created_at"
+      )
+      .all()
+      .map((row) => ({
+        subscriber: row.subscriber,
+        ...(row.host ? { host: row.host } : {}),
+        ...(row.min_free_mib ? { minFreeMib: row.min_free_mib } : {}),
+        createdAt: row.created_at,
+      }));
+  }
+
+  /** `actor` is told when a GPU (on `host`, with at least `minFreeMib` free) has no booking and computes nothing. */
+  subscribe(actor: Actor, filter: { host?: string; minFreeMib?: number }): GpuSubscription {
+    const host = filter.host?.trim() ? shortHost(filter.host.trim()) : null;
+    if (host && !this.resourceRows().some((r) => r.kind === "gpu" && r.host === host)) {
+      throw new ScheduleError(400, `No GPUs on host "${host}"; hosts with GPUs: ${[...new Set(this.resourceRows().filter((r) => r.kind === "gpu").map((r) => r.host))].join(", ")}`);
+    }
+    const minFree = filter.minFreeMib === undefined ? null : Math.round(filter.minFreeMib);
+    if (minFree !== null && !(minFree > 0)) throw new ScheduleError(400, "minFreeGb must be more than 0");
+    this.db
+      .query(
+        `INSERT INTO gpu_subscriptions (subscriber, host, min_free_mib, created_at) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(subscriber) DO UPDATE SET host = ?2, min_free_mib = ?3`
+      )
+      .run(actor.id, host, minFree, this.now());
+    this.options.changed();
+    return this.subscriptions().find((s) => s.subscriber === actor.id) as GpuSubscription;
+  }
+
+  unsubscribe(actor: Actor): boolean {
+    const removed = this.db.query("DELETE FROM gpu_subscriptions WHERE subscriber = ?1").run(actor.id).changes > 0;
+    if (removed) this.options.changed();
+    return removed;
+  }
+
+  /**
+   * A GPU has computed nothing for UNUSED_AFTER_MS (once per idle spell). Held: its next owner (queued, or the next
+   * planned booking) and the holder are told, so they can hand it over early; nobody next, nobody is told (the
+   * holder's own idle rule still applies). Not held: the next planned owner and the subscribers it suits are told.
+   */
+  private announceUnused(resource: Resource, gpu: ObservedGpu, since: number, now: number): void {
+    const loaded = gpu.memoryUsed >= LOADED_MIN_MIB;
+    const free = resource.unit === "MiB" ? resource.capacity - gpu.memoryUsed : undefined;
+    const what = `${resource.label} has computed nothing since ${formatTime(since)} (${loaded ? `a model is loaded: ${amountText(gpu.memoryUsed, "MiB")}` : "empty"})`;
+    const open = this.openRows(resource.id);
+    const holding = open.filter((r) => r.start_at !== null && r.start_at <= now);
+    const next = open
+      .filter((r) => r.start_at === null || r.start_at > now)
+      .sort((a, b) => (a.start_at ?? now) - (b.start_at ?? now))[0];
+    const told = new Set<string>();
+    if (holding.length > 0) {
+      if (!next) return;
+      const holders = holding.map((r) => `@${r.holder} (${r.id}, until ${formatTime(r.end_at ?? now)})`).join(", ");
+      const when = next.start_at === null ? "waiting in the queue" : `booked from ${formatTime(next.start_at)}`;
+      this.options.notify(next.holder, `${what}. It is held by ${holders}; you are next (${next.id}, ${when}). Ask them on the bus if you want to start earlier.`);
+      for (const r of holding) {
+        if (r.holder === next.holder || told.has(r.holder)) continue;
+        told.add(r.holder);
+        this.options.notify(r.holder, `${what}, while you hold it (${r.id}). @${next.holder} is next (${when}): release it if you are done, so they can start.`);
+      }
+      return;
+    }
+    if (next) {
+      told.add(next.holder);
+      this.options.notify(next.holder, `${what} and has no booking now. Yours (${next.id}) starts ${next.start_at === null ? "when it fits" : `at ${formatTime(next.start_at)}`}; book it now if you want to start earlier.`);
+    }
+    for (const sub of this.subscriptions()) {
+      if (told.has(sub.subscriber)) continue;
+      if (sub.host && sub.host !== resource.host) continue;
+      if (sub.minFreeMib && (free === undefined || free < sub.minFreeMib)) continue;
+      told.add(sub.subscriber);
+      this.options.notify(sub.subscriber, `${what} and has no booking${free === undefined ? "" : `: ${amountText(free, "MiB")} free`}. Book it with the reserve op (or the website's GPUs button) if you want it.`);
+    }
   }
 
   // ---- Capacity ----
@@ -572,6 +667,10 @@ export class ResourceSchedule {
         }
       }
       gpus.push({ resourceId: id, memoryUsed: gpu.memoryUsed, utilization: gpu.utilization, processes });
+      // An idle spell starts at the first report of no compute and ends at the first report of some.
+      if (gpu.utilization < UNUSED_UTIL_PCT) {
+        if (!this.unused.has(id)) this.unused.set(id, { since: now, noticed: false });
+      } else this.unused.delete(id);
       // Who is using it: a reservation named by its processes, or a holder whose folder they run in.
       for (const row of open.values()) {
         if (row.resource_id !== id || row.start_at === null || row.start_at > now) continue;
@@ -634,6 +733,15 @@ export class ResourceSchedule {
         this.options.notify(row.holder, `You hold ${resource.label} (${row.id}, ${row.purpose}) but nothing of yours has run on it since ${formatTime(lastUse)}. Release it if you are done${waiting ? "; someone is waiting, so it will be reclaimed if it stays idle" : ""}.`);
         changed = true;
       }
+    }
+    const observed = this.observed();
+    for (const [resourceId, spell] of this.unused) {
+      if (spell.noticed || now - spell.since < UNUSED_AFTER_MS) continue;
+      const resource = this.getResource(resourceId);
+      const gpu = observed.get(resourceId);
+      if (!resource || !gpu || now - gpu.at > OBSERVATION_FRESH_MS) continue;
+      spell.noticed = true;
+      this.announceUnused(resource, gpu, spell.since, now);
     }
     if (changed) this.options.changed();
   }

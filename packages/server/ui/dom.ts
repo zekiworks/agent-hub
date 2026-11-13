@@ -77,6 +77,7 @@ export const dom = {
   gpuClose: el<HTMLButtonElement>("gpu-close"),
   gpuList: el<HTMLUListElement>("gpu-list"),
   gpuMine: el<HTMLUListElement>("gpu-mine"),
+  gpuSubscribe: el<HTMLInputElement>("gpu-subscribe"),
   gpuForm: el<HTMLFormElement>("gpu-form"),
   gpuResource: el<HTMLSelectElement>("gpu-resource"),
   gpuStart: el<HTMLSelectElement>("gpu-start"),

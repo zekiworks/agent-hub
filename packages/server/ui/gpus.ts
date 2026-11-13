@@ -79,6 +79,8 @@ function render(): void {
         })),
   );
 
+  dom.gpuSubscribe.checked = listing.subscriptions.some((sub) => sub.subscriber === state.me);
+
   const picked = dom.gpuResource.value;
   dom.gpuResource.replaceChildren(
     ...resources.map((resource) => {
@@ -135,6 +137,20 @@ dom.gpuBtn.addEventListener("click", () => {
   void load().catch((err) => showError(errorText(err)));
 });
 dom.gpuClose.addEventListener("click", () => dom.gpuDialog.close());
+dom.gpuSubscribe.addEventListener("change", async () => {
+  hideError();
+  dom.gpuSubscribe.disabled = true;
+  try {
+    await postJson(dom.gpuSubscribe.checked ? "/api/subscriptions" : "/api/subscriptions/remove", { from: state.me });
+    await load();
+  } catch (err) {
+    showError(errorText(err));
+    dom.gpuSubscribe.checked = !dom.gpuSubscribe.checked;
+  } finally {
+    dom.gpuSubscribe.disabled = false;
+  }
+});
+
 dom.gpuStart.addEventListener("change", () => {
   dom.gpuAtLabel.hidden = dom.gpuStart.value !== "at";
   dom.gpuAt.required = dom.gpuStart.value === "at";

@@ -97,6 +97,22 @@ export class ScheduleService {
       const reservation = schedule.reserve(body as unknown as ReserveRequest, actor);
       return json({ reservation, resource: schedule.resolve(reservation.resourceId) });
     }
+    // "Tell me when a GPU is free": {from, host?, minFreeGb?} subscribes (again: replaces); /remove {from} stops it.
+    if (method === "POST" && pathname === "/api/subscriptions") {
+      const body = await readJsonObject(req);
+      const actor = this.actorOf(req, body);
+      if (body.host !== undefined && typeof body.host !== "string") throw new HttpError(400, "host must be a host name");
+      if (body.minFreeGb !== undefined && typeof body.minFreeGb !== "number") throw new HttpError(400, "minFreeGb must be a number");
+      const subscription = schedule.subscribe(actor, {
+        ...(typeof body.host === "string" ? { host: body.host } : {}),
+        ...(typeof body.minFreeGb === "number" ? { minFreeMib: body.minFreeGb * 1024 } : {}),
+      });
+      return json({ subscription });
+    }
+    if (method === "POST" && pathname === "/api/subscriptions/remove") {
+      const body = await readJsonObject(req);
+      return json({ removed: schedule.unsubscribe(this.actorOf(req, body)) });
+    }
     const reservationMatch = /^\/api\/reservations\/([^/]+)\/(release|extend|mode)$/.exec(pathname);
     if (method === "POST" && reservationMatch?.[1]) {
       const body = await readJsonObject(req);

@@ -25,7 +25,9 @@ A `message-bus` tool with:
 - delivery and "seen" receipts for what they wrote;
 - `@all` messages from other agents arrive quietly, with the next turn, instead of waking everyone;
 - optional GPU booking (`resources`, `servers`, `reserve`, `release`, `extend`, `mode`) when the server is given a
-  feed of what runs on each GPU (`serve --gpudash URL`, `GET <URL>/api/observations`).
+  feed of what runs on each GPU (`serve --gpudash URL`, `GET <URL>/api/observations`). A GPU that computes nothing
+  for 15 minutes is announced by @resources: to its next owner and its holder while it is booked, else to whoever
+  asked (`subscribe`, optionally for one host or a minimum of free GB; the website's GPUs dialog has a checkbox).
 
 The website shows conversations, unread counts and notifications, who is busy with what, and an agent's live output
 (prompts, tool calls, replies) while you watch it. Its GPUs button shows who holds each GPU now and next and what runs
