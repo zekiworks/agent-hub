@@ -326,7 +326,10 @@ class BusClient:
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / f"{ref['id']}-{ref['name'].replace('/', '_')}"
         req = urllib.request.Request(f"{self.url}/api/files/{urllib.parse.quote(ref['id'])}", headers={"X-Agent-Token": agent_token()})
-        with urllib.request.urlopen(req, timeout=300) as res:
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+                return None
+        with urllib.request.build_opener(NoRedirect()).open(req, timeout=300) as res:
             dest.write_bytes(res.read())
         return str(dest)
 
@@ -382,7 +385,7 @@ class GatewayBridge:
         delay = 1.0
         asyncio.get_running_loop().create_task(self._watchdog())
         while True:
-            connected_at = time.monotonic()
+            connected_at = None
             try:
                 async with websockets.connect(f"{ws_base}/ws/agent?{qs}", max_size=None) as ws:
                     connected_at = time.monotonic()
@@ -397,7 +400,7 @@ class GatewayBridge:
             except Exception as err:  # reconnect on any transport failure
                 logger.warning("message-bus connection lost: %s (retrying in %.0fs)", err, delay)
             # Back off unless the connection had stayed up a while (a join that drops at once is not a recovery).
-            if time.monotonic() - connected_at >= STABLE_CONNECTION_S:
+            if connected_at is not None and time.monotonic() - connected_at >= STABLE_CONNECTION_S:
                 delay = 1.0
             await asyncio.sleep(delay)
             delay = min(delay * 2, RECONNECT_MAX_S)
