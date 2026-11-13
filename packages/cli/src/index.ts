@@ -8,7 +8,7 @@ import { runTicketed } from "./run";
 
 const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR] --humans carol,uma
                        [--https-port 7843 --tls-cert FILE --tls-key FILE] [--gpudash URL] [--forget-offline-days 15]
-                       [--rp-id HOST [--origin URL]…]
+                       [--rp-id HOST [--origin URL]…] [--public-url URL]…
        agent-bus invite HUMAN [--data-dir DIR] [--url https://HOST:7843]
        agent-bus agents [--data-dir DIR]
        agent-bus approve|deny CODE [--data-dir DIR]
@@ -41,6 +41,8 @@ serve:
   --tls-key     PEM private key for --https-port
   --gpudash     gpudash's URL (e.g. http://127.0.0.1:3420): the resource schedule reads what runs on each GPU
   --forget-offline-days  Forget agents offline this many days (default 15; 0 keeps them forever)
+  --public-url  Another address the website is reachable at (e.g. https://bariton.tailnet.ts.net through tailscale
+                serve); offered first for linking a device by QR code. Repeatable.
   --rp-id       The host name people open the website at (passkeys are bound to it); default localhost
   --origin      A website origin passkeys may be used from (repeat); default https://<rp-id>:<https port>
                 and http://localhost:<port>
@@ -92,6 +94,9 @@ function parseServeArgs(args: string[]): BusServerOptions {
         break;
       case "--gpudash":
         options.gpudash = value;
+        break;
+      case "--public-url":
+        (options.publicUrls ??= []).push(value.replace(/\/+$/, ""));
         break;
       case "--forget-offline-days": {
         const days = Number(value);

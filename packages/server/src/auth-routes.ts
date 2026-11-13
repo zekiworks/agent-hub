@@ -14,7 +14,7 @@ function deviceLabel(req: Request): string {
 /** Answers a request under /api/auth/; `site` is what the website needs to know to offer passkeys. */
 export async function handleAuth(
   auth: HumanAuth,
-  site: { rpId: string; httpsPort: number | undefined },
+  site: { rpId: string; httpsPort: number | undefined; publicUrls: string[] },
   req: Request,
   url: URL
 ): Promise<Response> {
@@ -24,6 +24,7 @@ export async function handleAuth(
     const me = auth.humanOf(req) ?? null;
     return json({
       rpId: site.rpId,
+      publicUrls: site.publicUrls,
       httpsPort: site.httpsPort ?? null,
       me,
       enrolled: auth.enrolled(),

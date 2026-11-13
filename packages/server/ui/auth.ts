@@ -152,21 +152,26 @@ async function renderDevices(): Promise<string[]> {
   return sessions.map((s) => s.id);
 }
 
+/** What GET /api/auth/state says about where the website is. */
+type Site = { rpId: string; httpsPort: number | null; publicUrls: string[] };
+
 /**
- * Addresses the bus answers on that a device could open: this page's own first, then the bus's network addresses
- * (plain http works for a linked device; passkeys need the https host name).
+ * Addresses the bus answers on that a device could open: its public addresses first (they work from anywhere, with a
+ * certificate every phone trusts), then this page's own, then the network addresses (plain http works for a linked
+ * device; passkeys need the https host name). Loopback and link-local addresses are useless on another device.
  */
-async function busAddresses(state: { rpId: string; httpsPort: number | null }): Promise<string[]> {
+async function busAddresses(site: Site): Promise<string[]> {
   const health = await api<HealthResponse>("/api/health");
-  const https = state.httpsPort ? health.lanUrls.map((u) => u.replace(/^http:(.*):\d+$/, `https:$1:${state.httpsPort}`)) : [];
-  const named = state.httpsPort ? [`https://${state.rpId}:${state.httpsPort}`] : [];
-  return [...new Set([location.origin, ...named, ...https, ...health.lanUrls])];
+  const lan = health.lanUrls.filter((u) => !/^http:\/\/(127\.|169\.254\.|\[)/.test(u));
+  const https = site.httpsPort ? lan.map((u) => u.replace(/^http:(.*):\d+$/, `https:$1:${site.httpsPort}`)) : [];
+  const named = site.httpsPort ? [`https://${site.rpId}:${site.httpsPort}`] : [];
+  return [...new Set([...site.publicUrls, location.origin, ...named, ...https, ...lan])];
 }
 
 let linkTimer: ReturnType<typeof setInterval> | undefined;
 
 /** "Add a device": a one-time code as a QR code; the list of devices refreshes when it is used. */
-async function showLink(state: { rpId: string; httpsPort: number | null }): Promise<void> {
+async function showLink(site: Site): Promise<void> {
   clearInterval(linkTimer);
   const before = new Set(await renderDevices());
   const { code, expiresAt } = await postJson<{ code: string; expiresAt: number }>("/api/auth/link", {});
@@ -276,7 +281,7 @@ async function boot(): Promise<void> {
     }
     return;
   }
-  const state = await api<{ rpId: string; httpsPort: number | null; me: string | null }>("/api/auth/state");
+  const state = await api<Site & { me: string | null }>("/api/auth/state");
   const secure = window.isSecureContext && window.PublicKeyCredential !== undefined;
   const invite = new URLSearchParams(location.hash.slice(1)).get("invite");
   if (invite && secure) {

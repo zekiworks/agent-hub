@@ -44,6 +44,11 @@ export interface BusServerOptions {
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
   forgetOfflineDays?: number;
   /**
+   * Other addresses the website is reachable at (e.g. https://host.tailnet.ts.net through `tailscale serve`); offered
+   * first when a person adds a device by QR code.
+   */
+  publicUrls?: string[];
+  /**
    * Passkeys for the people on the bus (every reader and writer is signed in). `rpId` is the host name the website
    * is opened at (passkeys are bound to it; default localhost); `origins` defaults to https://<rpId>:<https port>
    * and http://localhost:<port>.
@@ -143,7 +148,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       };
       return json(health);
     }
-    if (pathname.startsWith("/api/auth/")) return handleAuth(auth, { rpId, httpsPort: boundHttpsPort }, req, url);
+    if (pathname.startsWith("/api/auth/")) return handleAuth(auth, { rpId, httpsPort: boundHttpsPort, publicUrls: options.publicUrls ?? [] }, req, url);
     // File links on the website carry a key instead of the session header (an <img> cannot send one).
     const fileMatch = /^\/api\/files\/([^/]+)$/.exec(pathname);
     const fileKey = url.searchParams.get("k");
