@@ -808,13 +808,15 @@ button:disabled {
   background: var(--human-soft-hover);
 }
 
-/* Messages from others that mention the viewer (@me, @{…,me}): a slightly lighter background. */
+/* Messages from others that mention the viewer (@me, @{…,me}): a gold bar on the left and a warm background, as in
+   Discord, so they stand out in a busy conversation. */
 .msg-mentions-me {
-  background: #1d2330;
+  background: rgba(240, 178, 50, 0.2);
+  box-shadow: inset 4px 0 0 #f0b232;
 }
 
 .msg-mentions-me:hover {
-  background: #232a38;
+  background: rgba(240, 178, 50, 0.28);
 }
 
 .msg-head {
