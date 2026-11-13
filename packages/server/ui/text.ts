@@ -1,5 +1,5 @@
 // Inline nodes of message text: @mentions highlighted, #n message references linked.
-import type { Conversation, Message } from "@agent-bus/protocol";
+import { mentionedIds, mentionSpans, type Conversation, type Message } from "@agent-bus/protocol";
 import { api } from "./api";
 import { dom } from "./dom";
 import { errorText } from "./format";
@@ -7,34 +7,23 @@ import { hooks } from "./hooks";
 import { h } from "./html";
 import { conversationTitle, state } from "./state";
 
-const MENTION_RE = /(^|[\s({,])(@(?:\{[^}\n]*\}|[a-z0-9][a-z0-9_-]*(?:@[a-z0-9][a-z0-9_-]*)?))/gi;
-
 /** `text` mentions me as `@me` or inside `@{…}`. */
 export function mentionsMe(text: string): boolean {
-  for (const match of text.matchAll(MENTION_RE)) {
-    const ids = (match[2] ?? "")
-      .replace(/^@\{?|\}$/g, "")
-      .split(",")
-      .map((s) => s.trim().replace(/^@/, "").toLowerCase());
-    if (ids.includes(state.me)) return true;
-  }
-  return false;
+  return mentionedIds(text).includes(state.me);
 }
 
 /** Plain text with @mentions highlighted and #n message references linked. */
 export function mentionNodes(text: string): Node[] {
   const out: Node[] = [];
   let last = 0;
-  for (const match of text.matchAll(MENTION_RE)) {
-    const lead = match[1] ?? "";
-    const mention = match[2] ?? "";
-    const start = (match.index ?? 0) + lead.length;
+  for (const { start, end } of mentionSpans(text)) {
+    const mention = text.slice(start, end);
     if (start > last) out.push(...refNodes(text.slice(last, start)));
     const span = h("span", "mention", mention);
     const id = mention.slice(1).toLowerCase();
     if (id === state.me || id === "all") span.classList.add("mention-me");
     out.push(span);
-    last = start + mention.length;
+    last = end;
   }
   if (last < text.length) out.push(...refNodes(text.slice(last)));
   return out;

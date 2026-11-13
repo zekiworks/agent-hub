@@ -15,7 +15,7 @@ import { closeMention, updateMention } from "./mentions";
 import { setDetails, setPhoneList } from "./phones";
 import { askProfile } from "./profile";
 import { applyReceipt, renderAll, showEmpty } from "./render";
-import { parseHash, viewHash } from "./routing";
+import { navigate, parseHash, viewHash } from "./routing";
 import "./send";
 import "./voice";
 import { renderSidebar } from "./sidebar";
@@ -93,6 +93,23 @@ hooks.showMessage = showMessage;
 
 // ---- Viewer socket ----
 
+/**
+ * A mention merged group `from` into `into` (its messages moved there): forget `from`, add its unread counts to
+ * `into`, reload `into` (its cache lacks the moved messages) and follow if `from` is open.
+ */
+function forgetMerged(from: string, into: string): void {
+  state.conversations.delete(from);
+  state.caches.delete(from);
+  state.caches.delete(into);
+  for (const counts of [state.unread, state.attention, state.urgent]) {
+    const moved = counts.get(from) ?? 0;
+    counts.delete(from);
+    if (moved > 0) counts.set(into, (counts.get(into) ?? 0) + moved);
+  }
+  if (state.view.kind === "conversation" && state.view.id === from) navigate({ kind: "conversation", id: into });
+  else if (state.view.kind === "conversation" && state.view.id === into) void loadMessages(into);
+}
+
 function handleFrame(frame: ViewerServerFrame): void {
   switch (frame.type) {
     case "participants":
@@ -103,6 +120,7 @@ function handleFrame(frame: ViewerServerFrame): void {
       updateComposerState();
       break;
     case "message":
+      if (frame.merged) forgetMerged(frame.merged, frame.conversation.id);
       receive(frame.message, frame.conversation);
       break;
     case "receipt":

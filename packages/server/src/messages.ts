@@ -2,6 +2,7 @@
 // website's message reads: conversation pages and a message with its receipts.
 import {
   ALL_CONVERSATION_ID,
+  mentionedIds,
   RESOURCES_AGENT_ID,
   type Conversation,
   type FileRef,
@@ -29,6 +30,20 @@ export function withoutOwnName(text: string, id: string): string {
 export const MAX_RECEIPT_WAIT_MS = 30_000;
 const DEFAULT_PAGE = 100;
 const MAX_PAGE = 500;
+
+/** Earlier messages a newly invited agent gets before the message that mentions it. */
+const INVITE_CONTEXT_MESSAGES = 5;
+
+/** Participants @mentioned in `text` (`@id-n` counts as agent `id`); unknown names and "@all" are left out. */
+function mentionedParticipants(ctx: BusContext, text: string): string[] {
+  const ids: string[] = [];
+  for (const mention of mentionedIds(text)) {
+    const session = /^(.+)-(\d+)$/.exec(mention)?.[1];
+    const id = ctx.hub.knownParticipant(mention) ? mention : session && ctx.hub.knownParticipant(session)?.kind === "agent" ? session : undefined;
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
 
 /** Agents a new message goes to: every agent for `all`, the addressed agents of a group; never the writer. */
 function recipientsFor(ctx: BusContext, conversation: Conversation, writerId: string): ParticipantRecord[] {
@@ -126,6 +141,24 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
       }
     }
   }
+  // Mentioning someone who is not in a group invites them: they join it (agents change its thread; a group that
+  // already had the new set is merged into this one) and new agents first get the last messages as context.
+  let merged: string | undefined;
+  if (conversation.kind === "group") {
+    const newcomers = mentionedParticipants(ctx, text).filter((id) => id !== writer.id && !conversation.addressed.includes(id));
+    if (newcomers.length > 0) {
+      const invited = db.inviteToGroup(conversation.id, newcomers);
+      conversation = invited.conversation;
+      merged = invited.merged;
+      for (const id of newcomers) {
+        const agent = db.getParticipant(id);
+        if (agent?.kind !== "agent") continue;
+        for (const earlier of db.addContextReceipts(conversation.id, id, INVITE_CONTEXT_MESSAGES)) {
+          hub.deliver(hub.deliveryTargets(id), earlier, conversation, agent);
+        }
+      }
+    }
+  }
   // A reply to a message one session of an agent wrote goes back to that session.
   if (replyToSeq !== undefined) {
     const original = db.getMessage(replyToSeq);
@@ -178,7 +211,7 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
   if (writer.kind === "human") db.touchParticipant(writer.id, now);
   const updated = db.getConversation(conversation.id);
   if (!updated) throw new Error(`Conversation ${conversation.id} vanished`);
-  hub.publishMessage(message, updated);
+  hub.publishMessage(message, updated, merged);
   return { message, conversation: updated };
 }
 

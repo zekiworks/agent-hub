@@ -734,6 +734,53 @@ export class BusDatabase {
       .run(conversationId, participantId);
   }
 
+  /**
+   * Adds `ids` to group `conversationId`: they join its address set and members. Agents change the thread key; when
+   * another group already has the new key, that group is merged into this one (its messages move here, its id
+   * becomes an alias), so this conversation keeps its id and history. Returns the updated conversation and the id
+   * that was merged in, if any.
+   */
+  inviteToGroup(conversationId: string, ids: readonly string[]): { conversation: Conversation; merged?: string } {
+    return this.db.transaction((): { conversation: Conversation; merged?: string } => {
+      const current = this.getConversation(conversationId);
+      if (!current || current.kind !== "group") throw new Error(`${conversationId} is not a group`);
+      const addressed = Array.from(new Set([...current.addressed, ...ids])).sort();
+      const key = this.threadKey(addressed);
+      const other = this.db
+        .query<{ id: string }, [string, string]>("SELECT id FROM conversations WHERE kind = 'group' AND thread_key = ?1 AND id != ?2")
+        .get(key, current.id);
+      if (other) this.mergeConversation(other.id, current.id);
+      const merged = this.getConversation(current.id) as Conversation;
+      const finalAddressed = Array.from(new Set([...merged.addressed, ...addressed])).sort();
+      this.db
+        .query("UPDATE conversations SET addressed_json = ?2, thread_key = ?3 WHERE id = ?1")
+        .run(current.id, JSON.stringify(finalAddressed), key);
+      for (const id of ids) this.addMember(current.id, id);
+      const conversation = this.getConversation(current.id) as Conversation;
+      return other ? { conversation, merged: other.id } : { conversation };
+    })();
+  }
+
+  /**
+   * The last `limit` messages of `conversationId` (before the next one is written) that `recipient` has no receipt
+   * for and did not write, ascending; each gets an undelivered receipt for it, so they reach it as context.
+   */
+  addContextReceipts(conversationId: string, recipient: string, limit: number): Message[] {
+    return this.db.transaction((): Message[] => {
+      const rows = this.db
+        .query<MessageRow, [string, string, number]>(
+          `SELECT * FROM messages WHERE conversation_id = ?1 AND from_id != ?2
+             AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.seq = messages.seq AND r.recipient = ?2)
+           ORDER BY seq DESC LIMIT ?3`
+        )
+        .all(conversationId, recipient, limit)
+        .reverse();
+      const addReceipt = this.db.query("INSERT INTO receipts (seq, recipient, delivered_at, session) VALUES (?1, ?2, NULL, NULL)");
+      for (const row of rows) addReceipt.run(row.seq, recipient);
+      return this.withReceipts(rows);
+    })();
+  }
+
   insertMessage(input: NewMessage): Message {
     const id = `m_${crypto.randomUUID().replaceAll("-", "")}`;
     return this.db.transaction((): Message => {

@@ -461,14 +461,14 @@ export class Hub {
     };
   }
 
-  /** Delivers a new message to its connected recipients and shows it to the viewers. */
-  publishMessage(message: Message, conversation: Conversation): void {
+  /** Delivers a new message to its connected recipients and shows it to the viewers (`merged`: see the frame). */
+  publishMessage(message: Message, conversation: Conversation, merged?: string): void {
     for (const { to, session } of message.receipts) {
       const recipient = this.db.getParticipant(to);
       if (!recipient) continue;
       this.deliver(this.deliveryTargets(to, session), message, conversation, recipient);
     }
-    const viewerFrame = JSON.stringify({ type: "message", message, conversation });
+    const viewerFrame = JSON.stringify({ type: "message", message, conversation, ...(merged ? { merged } : {}) } satisfies ViewerServerFrame);
     for (const ws of this.viewers) ws.send(viewerFrame);
   }
 

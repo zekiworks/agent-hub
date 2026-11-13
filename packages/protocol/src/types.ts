@@ -231,7 +231,8 @@ export type AgentClientFrame =
 // ---- Website: WS /ws/viewer ----
 
 export type ViewerServerFrame =
-  | { type: "message"; message: Message; conversation: Conversation }
+  /** `merged`: a group that this message's mention merged into `conversation` (its id is now an alias). */
+  | { type: "message"; message: Message; conversation: Conversation; merged?: string }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
   | ExpiredFrame

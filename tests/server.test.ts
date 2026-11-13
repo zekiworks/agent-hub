@@ -445,6 +445,49 @@ describe("delivery", () => {
     expect(byOldId.conversation.id).toBe(kept.conversation.id);
   });
 
+  test("@mentioning a non-member invites them: they join, and a new agent gets the last 5 messages first", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const first = await send({ from: "carol", to: "@alpha", text: "m1" });
+    for (const text of ["m2", "m3", "m4", "m5", "m6"]) await send({ from: "carol", conversationId: first.conversation.id, text });
+    for (let i = 0; i < 6; i++) await alpha.client.take("deliver");
+    const beta = await joinPath("/tmp/x/beta");
+
+    const invite = await send({ from: "carol", conversationId: first.conversation.id, text: "@beta can you look at this?" });
+    expect(invite.conversation.id).toBe(first.conversation.id);
+    expect(invite.conversation.addressed).toEqual(["alpha", "beta", "carol"]);
+    expect(invite.message.receipts.map((r) => r.to).sort()).toEqual(["alpha", "beta"]);
+    const toBeta: string[] = [];
+    for (let i = 0; i < 6; i++) toBeta.push((await beta.client.take("deliver")).message.text);
+    expect(toBeta).toEqual(["m2", "m3", "m4", "m5", "m6", "@beta can you look at this?"]);
+
+    // Already a member: mentioning again invites nobody and sends no context.
+    const again = await send({ from: "carol", conversationId: first.conversation.id, text: "@beta and @nobody, thanks" });
+    expect(again.conversation.addressed).toEqual(["alpha", "beta", "carol"]);
+    expect((await beta.client.take("deliver")).message.id).toBe(again.message.id);
+  });
+
+  test("an invite that gives a group the agents of another merges that one in; this id and both histories stay", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    await joinPath("/tmp/x/beta");
+    const kept = await send({ from: "carol", to: "@alpha", text: "alpha thread" });
+    const other = await send({ from: "carol", to: "@{alpha,beta}", text: "alpha and beta thread" });
+    expect(other.conversation.id).not.toBe(kept.conversation.id);
+    const viewer = await connectViewer();
+    await viewer.take("participants");
+
+    const invite = await send({ from: "carol", conversationId: kept.conversation.id, text: "@beta joining here" });
+    expect(invite.conversation.id).toBe(kept.conversation.id);
+    const frame = await viewer.take("message");
+    expect(frame.merged).toBe(other.conversation.id);
+    const groups = (await state()).conversations.filter((c) => c.kind === "group");
+    expect(groups.map((c) => c.id)).toEqual([kept.conversation.id]);
+    const page = await getJson<MessagesResponse>(bus, `/api/conversations/${kept.conversation.id}/messages`);
+    expect(page.messages.map((m) => m.text)).toEqual(["alpha thread", "alpha and beta thread", "@beta joining here"]);
+    // The merged id keeps working, and the set alpha+beta now lands here.
+    expect((await send({ from: "uma", conversationId: other.conversation.id, text: "old id" })).conversation.id).toBe(kept.conversation.id);
+    expect((await send({ from: alpha.id, to: "@beta", text: "same set" })).conversation.id).toBe(kept.conversation.id);
+  });
+
   test("a human who joins an agents' group by writing is in every reply address, and replies stay in that group", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");

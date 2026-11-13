@@ -30,6 +30,34 @@ export function parseAddress(input: string): ParsedAddress {
   return { kind: "ids", ids: Array.from(new Set(ids)) };
 }
 
+/** An @mention in message text: "@id", "@id@host" or "@{a,b}", after a start, space or opening bracket. */
+const MENTION_RE = /(^|[\s({,])(@(?:\{[^}\n]*\}|[a-z0-9][a-z0-9_-]*(?:@[a-z0-9][a-z0-9_-]*)?))/gi;
+
+/**
+ * Ids @mentioned in `text`, lowercased, in order, once each; `@{a,b}` gives both. Not checked against the
+ * participants (an email address or "@all" comes through as written).
+ */
+export function mentionedIds(text: string): string[] {
+  const ids: string[] = [];
+  for (const match of text.matchAll(MENTION_RE)) {
+    for (const part of (match[2] ?? "").replace(/^@\{?|\}$/g, "").split(",")) {
+      const id = part.trim().replace(/^@/, "").toLowerCase();
+      if (id && !ids.includes(id)) ids.push(id);
+    }
+  }
+  return ids;
+}
+
+/** The text spans of @mentions in `text` (for highlighting): [start, end) of each "@…". */
+export function mentionSpans(text: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  for (const match of text.matchAll(MENTION_RE)) {
+    const start = (match.index ?? 0) + (match[1] ?? "").length;
+    spans.push({ start, end: start + (match[2] ?? "").length });
+  }
+  return spans;
+}
+
 /** "@id" for one id, "@{a,b}" for several, "@all" for none. */
 export function formatAddress(ids: readonly string[]): string {
   if (ids.length === 0) return "@all";
