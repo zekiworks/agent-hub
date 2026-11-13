@@ -88,6 +88,9 @@ async function signIn(): Promise<void> {
   localStorage.setItem(SESSION_KEY, done.session);
 }
 
+/** Times on this page, in the viewer's local time: "Nov 13, 2026, 11:20 AM". */
+const shortTime = (ms: number): string => new Date(ms).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
 async function renderMe(me: string): Promise<void> {
   show("auth-me");
   el("auth-me-name").textContent = me;
@@ -97,8 +100,8 @@ async function renderMe(me: string): Promise<void> {
   list.replaceChildren(
     ...credentials.map((c) => {
       const li = document.createElement("li");
-      const when = c.lastUsedAt ? `last used ${new Date(c.lastUsedAt).toISOString().slice(0, 16).replace("T", " ")}Z` : "not used to sign in yet";
-      li.textContent = `${c.label} · made ${new Date(c.createdAt).toISOString().slice(0, 10)} · ${when} `;
+      const when = c.lastUsedAt ? `last used ${shortTime(c.lastUsedAt)}` : "not used to sign in yet";
+      li.textContent = `${c.label} · made ${shortTime(c.createdAt)} · ${when} `;
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "link-btn";
@@ -120,8 +123,6 @@ async function renderMe(me: string): Promise<void> {
   await renderDevices();
   await renderMachines();
 }
-
-const shortTime = (ms: number): string => new Date(ms).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 /** The browsers this person is signed in on, each with Sign out (this one: "this browser"). */
 async function renderDevices(): Promise<string[]> {
@@ -230,9 +231,11 @@ async function renderMachines(): Promise<void> {
   list.replaceChildren(
     ...tokens.map((t) => {
       const li = document.createElement("li");
-      const used = t.lastUsedAt ? `last used ${new Date(t.lastUsedAt).toLocaleString()}` : "not used yet";
+      const used = t.lastUsedAt ? `last used ${shortTime(t.lastUsedAt)}` : "not used yet";
       const state = t.state === "approved" ? "allowed" : t.state === "denied" ? "denied" : `waiting, code ${t.code}`;
-      li.textContent = `${t.host ?? "?"}${t.addr ? ` (${t.addr})` : ""} · ${t.agents.join(", ") || "no agents yet"} · ${state} · ${used} `;
+      // The bus notes the folders (and older entries, agent ids) that asked; one name per folder is enough here.
+      const agents = [...new Set(t.agents.map((a) => a.split("/").filter(Boolean).pop() ?? a))];
+      li.textContent = `${t.host ?? "?"}${t.addr ? ` (${t.addr})` : ""} · ${agents.join(", ") || "no agents yet"} · ${state} · ${used} `;
       const action = t.state === "approved" ? "deny" : "approve";
       const button = document.createElement("button");
       button.type = "button";
