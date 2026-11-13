@@ -23,6 +23,9 @@ HOST = os.environ.get("STT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("STT_PORT", "7810"))
 THREADS = int(os.environ.get("STT_THREADS", "16"))
 MAX_BYTES = 50 * 1024 * 1024
+# The languages people speak on this bus. Whisper picks the likeliest of these; left free, short clips in Turkish are
+# sometimes heard as another language entirely. Empty: any language.
+LANGUAGES = [code for code in os.environ.get("STT_LANGUAGES", "tr,en").split(",") if code]
 
 model = WhisperModel(MODEL, device="cpu", compute_type="int8", cpu_threads=THREADS)
 # One transcription at a time: the model uses all its threads for each.
@@ -71,7 +74,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             samples = decode(audio)
             with lock:
-                segments, info = model.transcribe(samples, vad_filter=True, beam_size=5)
+                language = None
+                if LANGUAGES:
+                    _, _, probabilities = model.detect_language(samples, vad_filter=True)
+                    scores = dict(probabilities)
+                    language = max(LANGUAGES, key=lambda code: scores.get(code, 0.0))
+                segments, info = model.transcribe(samples, language=language, vad_filter=True, beam_size=5)
                 text = " ".join(s.text.strip() for s in segments).strip()
         except Exception as error:  # undecodable audio and the like: the caller sends the voice message without text
             return self.reply(422, {"error": f"could not transcribe: {error}"})
