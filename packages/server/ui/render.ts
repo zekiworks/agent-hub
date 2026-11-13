@@ -133,7 +133,8 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   head.append(h("span", "msg-seq", `#${message.seq}`), time);
   li.append(head);
   // Outside the head so grouped messages (whose head is hidden) can be replied to too. Clicking it again cancels.
-  const replyBtn = h("button", "msg-reply-btn", "↩ Reply");
+  const replyBtn = h("button", "msg-reply-btn", "↩ ");
+  replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";
   replyBtn.title = "Reply to this message (quotes it); click again to cancel";
   replyBtn.addEventListener("click", () =>

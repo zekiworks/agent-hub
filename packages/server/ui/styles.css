@@ -1838,6 +1838,52 @@ ul.md-list ul.md-list { list-style: circle; }
   #composer-input {
     font-size: 16px;
   }
+
+  /* Finger-sized icons: 📎 🎤 ➤ under the messages, 🗑 ⏸ while recording, and Reply on a message. */
+  .composer .icon-btn {
+    width: 48px;
+    height: 48px;
+    font-size: 24px;
+  }
+
+  .composer .send-btn {
+    height: 48px;
+    min-width: 56px;
+  }
+
+  .composer .send-btn::before {
+    font-size: 24px;
+  }
+
+  .composer .voice-rec {
+    height: 48px;
+    gap: 8px;
+  }
+
+  .composer .voice-rec-btn {
+    width: 42px;
+    height: 42px;
+    font-size: 24px;
+  }
+
+  .composer .voice-time {
+    font-size: 16px;
+  }
+
+  /* No hover on phones: ↩ stays visible on every message, in room kept free for it on the right. */
+  .msg .msg-reply-btn {
+    padding: 4px 12px;
+    font-size: 20px;
+    opacity: 0.75;
+  }
+
+  .msg-reply-label {
+    display: none;
+  }
+
+  .msg {
+    padding-right: 60px;
+  }
 }
 
 /* ---- Sign-in page (auth.html) and verified marks (experimental) ---- */
