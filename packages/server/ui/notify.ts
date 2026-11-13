@@ -1,4 +1,5 @@
-// Browser notifications for messages for me, and the tab title and icon that show how many are unread.
+// Browser notifications for the ●● messages (mentions of me, conversations of two), and the tab title and icon that
+// show how many are unread.
 import type { Conversation, Message } from "@agent-bus/protocol";
 import { dom } from "./dom";
 import { el } from "./html";
@@ -19,7 +20,7 @@ export function renderNotifyButton(): void {
   btn.hidden = s === "granted" || s === "unsupported";
   if (s === "default") {
     btn.textContent = "🔔 Enable notifications";
-    btn.title = "Get a browser notification for messages that mention you or are in your conversations";
+    btn.title = "Get a browser notification for messages that mention you, and in your conversations of two (the ●● ones)";
   } else if (s === "denied") {
     btn.textContent = "🔕 Notifications blocked";
     btn.title = "Allow notifications for this site in the browser's site settings (icon left of the address bar), then reload.";

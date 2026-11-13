@@ -36,13 +36,14 @@ export function markRead(conversationId: string): void {
   saveReadMarkers();
 }
 
-/** Messages that get the red dot and a notification: they mention me, or I am a member of their conversation. */
+/** Messages that get the red dot: they mention me, or I am a member of their conversation. */
 export function isForMe(message: Message, conv: Conversation): boolean {
   if (!state.me || message.from === state.me) return false;
   return mentionsMe(message.text) || (conv.kind === "group" && conv.members.includes(state.me));
 }
 
-/** Messages that get two red dots: they mention me, or their conversation has exactly two members, me included. */
+/** Messages that get two red dots and a browser notification: they mention me, or their conversation has exactly two
+ * members, me included. */
 export function isUrgent(message: Message, conv: Conversation): boolean {
   if (!state.me || message.from === state.me) return false;
   return mentionsMe(message.text) || (conv.kind === "group" && conv.members.length === 2 && conv.members.includes(state.me));

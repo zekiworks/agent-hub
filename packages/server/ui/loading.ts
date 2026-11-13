@@ -95,7 +95,8 @@ export function receive(message: Message, conversation: Conversation): void {
         state.urgent.set(conversation.id, (state.urgent.get(conversation.id) ?? 0) + 1);
       }
     }
-    if (isForMe(message, conversation)) notify(message, conversation);
+    // A browser notification only for the two-red-dot messages: they mention me, or it is a conversation of two.
+    if (isUrgent(message, conversation)) notify(message, conversation);
   } else if (message.from === state.me && isCurrent(conversation.id)) {
     markRead(conversation.id);
   }
