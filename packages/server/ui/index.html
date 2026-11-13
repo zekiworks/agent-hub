@@ -99,11 +99,19 @@
         <div class="composer-row">
           <button id="attach-btn" type="button" class="icon-btn" title="Attach files (or drop them here)">📎</button>
           <input id="file-input" type="file" multiple hidden />
-          <div class="composer-input-wrap">
+          <div id="composer-input-wrap" class="composer-input-wrap">
             <ul id="mention-menu" class="mention-menu" role="listbox" hidden></ul>
             <textarea id="composer-input" rows="1" placeholder="Message…  (Enter to send, Shift+Enter for a new line, @ to mention)"></textarea>
           </div>
-          <button id="voice-btn" type="button" class="icon-btn voice-btn" title="Voice message: click to record and click again to send, or hold and let go to send">🎤</button>
+          <div id="voice-rec" class="voice-rec" hidden>
+            <button id="voice-delete" type="button" class="voice-rec-btn" title="Delete the recording (Esc)">🗑</button>
+            <span class="voice-dot" aria-hidden="true"></span>
+            <span id="voice-time" class="voice-time">0:00</span>
+            <canvas id="voice-wave" class="voice-wave" aria-label="Recording level"></canvas>
+            <span id="voice-hint" class="voice-hint"></span>
+            <button id="voice-pause" type="button" class="voice-rec-btn" title="Pause">⏸</button>
+          </div>
+          <button id="voice-btn" type="button" class="icon-btn voice-btn" title="Voice message: click to record, then Send; or hold and let go to send">🎤</button>
           <button id="send-btn" type="submit" class="send-btn">Send</button>
         </div>
       </form>

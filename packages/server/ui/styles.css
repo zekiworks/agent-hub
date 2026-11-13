@@ -2028,7 +2028,8 @@ ul.md-list ul.md-list { list-style: circle; }
   font-size: 13px;
 }
 
-/* Voice messages: the 🎤 button (red while recording), the bar above the box, and the player in a message. */
+/* Voice messages: the 🎤 button (red while recording), the recording panel in the box's place, the status bar above
+   the box, and the player in a message. */
 .voice-btn {
   touch-action: none;
   user-select: none;
@@ -2040,7 +2041,88 @@ ul.md-list ul.md-list { list-style: circle; }
   border-color: #e5484d;
   background: #e5484d;
   color: #fff;
-  transform: scale(1.15);
+}
+
+.voice-rec {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+}
+
+.voice-rec[hidden],
+.composer-input-wrap[hidden] {
+  display: none;
+}
+
+.voice-rec-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.voice-rec-btn:hover {
+  background: var(--bg);
+}
+
+.voice-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e5484d;
+  animation: voice-blink 1s ease-in-out infinite;
+}
+
+.voice-rec.paused .voice-dot {
+  animation: none;
+  background: var(--muted);
+}
+
+@keyframes voice-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.voice-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+
+/* Bars of the recording's loudness, scrolling left as it records; their colour is this element's. */
+.voice-wave {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  color: var(--accent);
+}
+
+.voice-rec.paused .voice-wave {
+  color: var(--muted);
+}
+
+.voice-hint {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.voice-hint:empty {
+  display: none;
 }
 
 .voice-bar {
@@ -2051,11 +2133,6 @@ ul.md-list ul.md-list { list-style: circle; }
   background: var(--panel-raised);
   font-size: 13px;
   color: var(--muted);
-}
-
-.voice-bar.recording {
-  border-left-color: #e5484d;
-  color: var(--text);
 }
 
 .voice-bar[hidden] {
