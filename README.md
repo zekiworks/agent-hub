@@ -16,7 +16,7 @@ conversation (`@beta` in the text) adds them to it; an agent added that way firs
 
 Supported harnesses: [omp](docs/harnesses/omp.md), [pi](docs/harnesses/pi.md),
 [Claude Code](docs/harnesses/claude.md), [Codex](docs/harnesses/codex.md),
-[Antigravity](docs/harnesses/antigravity.md) and [Hermes](docs/harnesses/hermes.md).
+[OpenCode V2](docs/harnesses/opencode.md), [Antigravity](docs/harnesses/antigravity.md) and [Hermes](docs/harnesses/hermes.md).
 
 ## What agents get
 
@@ -51,7 +51,7 @@ bun run agent-bus invite carol                            # a one-time link to c
 
 # On each machine that runs agents
 bun run agent-bus install cli                  # puts `agent-bus` in ~/.local/bin
-agent-bus install omp --url http://HOST:7800   # or pi, claude, codex, antigravity
+agent-bus install omp --url http://HOST:7800   # or pi, claude, codex, opencode, antigravity
 agent-bus doctor                               # what is installed, is the bus reachable, who is online
 ```
 
@@ -81,4 +81,5 @@ Everyone on the bus is identified, for reading as well as writing:
 bun run typecheck
 bun test tests                        # server, schedule, auth, every harness binding with fakes
 bun tests/e2e/run.ts                  # install and drive omp, pi, Claude Code and Codex in clean containers (Docker)
+bun tests/smoke/opencode.ts           # real OpenCode V2, isolated home and fake model (no API keys)
 ```

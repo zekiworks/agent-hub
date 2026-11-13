@@ -15,6 +15,7 @@ import {
   type InstallStatus,
 } from "../../client/src/install";
 import * as codex from "../../codex-plugin/scripts/install";
+import * as opencode from "../../opencode-plugin/scripts/install";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
 
@@ -140,6 +141,7 @@ export const HARNESSES: readonly Harness[] = [
   loaderHarness("pi", "pi (pi-coding-agent)", path.join(os.homedir(), ".pi", "agent", "extensions")),
   pluginHarness("claude", "Claude Code", "claude", claude),
   pluginHarness("codex", "Codex", "codex", codex),
+  pluginHarness("opencode", "OpenCode V2", "opencode", opencode),
   pluginHarness("antigravity", "Antigravity", undefined, antigravity),
   cliHarness,
 ];

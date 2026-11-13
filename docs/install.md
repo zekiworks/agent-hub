@@ -10,7 +10,7 @@ agent-bus install codex --url http://BUS-HOST:7800
 agent-bus doctor
 ```
 
-`agent-bus install HARNESS` takes `omp`, `pi`, `claude`, `codex`, `antigravity` or `cli`. Running it again updates the
+`agent-bus install HARNESS` takes `omp`, `pi`, `claude`, `codex`, `opencode`, `antigravity` or `cli`. Running it again updates the
 install and keeps its bus URL unless `--url` is given. `agent-bus uninstall HARNESS` takes it off the bus again.
 Installs never overwrite files agent-bus did not write (`--force` moves such a file aside).
 
@@ -27,6 +27,7 @@ off the bus.
 | pi | [pi.md](harnesses/pi.md) | yes | after the current tool call | e2e (container) |
 | Claude Code | [claude.md](harnesses/claude.md) | only with a claude.ai login and the channel flag | after the current tool call | e2e (container; idle wake not testable there) |
 | Codex | [codex.md](harnesses/codex.md) | yes | after the current tool call | e2e (container) and a real run |
+| OpenCode V2 | [opencode.md](harnesses/opencode.md) | yes | at the next step boundary, without interrupting tools | binding tests and real 2.3.0 smoke test (isolated home, fake model) |
 | Antigravity | [antigravity.md](harnesses/antigravity.md) | yes | after the current tool call | by hand on a Mac (9 Nov) |
 | Hermes | [hermes.md](harnesses/hermes.md) | yes, one batch at a time | after the running turn | in use (one agent) |
 
@@ -50,3 +51,8 @@ about two minutes for all four.
 
 Last run (12 Nov 2026, omp 18.19.0, pi 1.5.2, Claude Code 2.1.312, codex-cli 0.159.0): all checks passed; Claude
 Code's idle wake skipped (see its page).
+
+OpenCode has a separate local smoke test: `bun tests/smoke/opencode.ts`. It needs OpenCode 2.3+ on PATH, starts its
+own foreground server with an isolated home/config/database, and uses a fake model (no credentials or paid turns).
+It checks plugin auto-discovery, native idle wake and busy delivery, quiet broadcasts, seen receipts, a real Code Mode
+tool reply, and status reporting. It does not alter the running shared service or your installed plugins.
