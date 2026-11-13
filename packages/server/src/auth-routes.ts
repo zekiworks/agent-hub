@@ -51,12 +51,25 @@ export async function handleAuth(
     auth.logout(req);
     return json({ ok: true });
   }
+  if (method === "POST" && pathname === "/api/auth/link/redeem") {
+    const body = await readJsonObject(req);
+    if (typeof body.code !== "string") throw new HttpError(400, "code must be a string");
+    const result = auth.redeemLink(body.code.trim(), deviceLabel(req));
+    return json({ human: result.human, session: result.token });
+  }
   const me = auth.humanOf(req);
   if (!me) throw new HttpError(401, "Sign in first");
   if (method === "GET" && pathname === "/api/auth/credentials") return json({ human: me, credentials: auth.credentials(me) });
   const remove = /^\/api\/auth\/credentials\/([^/]+)\/remove$/.exec(pathname);
   if (method === "POST" && remove?.[1]) {
     auth.removeCredential(me, decodeURIComponent(remove[1]));
+    return json({ ok: true });
+  }
+  if (method === "POST" && pathname === "/api/auth/link") return json(auth.createLink(me));
+  if (method === "GET" && pathname === "/api/auth/sessions") return json({ sessions: auth.sessions(me, req) });
+  const end = /^\/api\/auth\/sessions\/([^/]+)\/end$/.exec(pathname);
+  if (method === "POST" && end?.[1]) {
+    auth.endSession(me, decodeURIComponent(end[1]));
     return json({ ok: true });
   }
   throw new HttpError(404, `No route for ${method} ${pathname}`);

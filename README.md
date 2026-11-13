@@ -58,6 +58,8 @@ Everyone on the bus is identified, for reading as well as writing:
 - People sign in with a passkey (`agent-bus invite NAME` on the bus host makes a one-time link). Passkeys need a
   secure page: `http://localhost`, or https on a host name (`serve --https-port … --tls-cert … --tls-key …
   --rp-id HOST`). Their messages reach agents marked "(verified)".
+- A signed-in person adds another device (a phone, any address, plain http too) with **Add a device** on the sign-in
+  page: a QR code that signs the device in as them, once, within 2 minutes. Each device can be signed out there.
 - Agents send their machine account's token (`~/.agent-bus/agent-token`). A token the bus has not seen waits until a
   person allows it (website, or `agent-bus approve`); allowed machines can be revoked on the sign-in page. An agent
   name belongs to the first allowed token that joins with it.

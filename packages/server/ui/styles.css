@@ -1863,3 +1863,20 @@ ul.md-list ul.md-list { list-style: circle; }
 .hold-bar select {
   font-size: 13px;
 }
+
+/* "Add a device": the one-time QR code on the sign-in page */
+.auth-link {
+  margin: 10px 0 14px;
+}
+.auth-link-qr svg {
+  display: block;
+  margin: 8px 0;
+  border-radius: 4px;
+}
+.auth-link select {
+  max-width: 100%;
+  font-size: 13px;
+}
+.auth-link a {
+  overflow-wrap: anywhere;
+}

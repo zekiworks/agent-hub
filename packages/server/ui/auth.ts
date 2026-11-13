@@ -1,8 +1,10 @@
-// The sign-in page: create a passkey from an invite link (/auth#invite=<token>), sign in with one, list and remove
-// your passkeys, see and decide the machines whose agents are on the bus, sign out.
-import type { AgentTokenInfo } from "@agent-bus/protocol";
+// The sign-in page: create a passkey from an invite link (/auth#invite=<token>), sign in with one, sign a device in
+// from another one's QR code (/auth#link=<code>), list and remove your passkeys and devices, see and decide the
+// machines whose agents are on the bus, sign out.
+import type { AgentTokenInfo, HealthResponse } from "@agent-bus/protocol";
 import { api, postJson, PROFILE_KEY, SESSION_KEY } from "./api";
 import { el } from "./html";
+import { qrSvg } from "./qr";
 
 const show = (id: string): void => {
   el(id).hidden = false;
@@ -115,7 +117,101 @@ async function renderMe(me: string): Promise<void> {
       return li;
     })
   );
+  await renderDevices();
   await renderMachines();
+}
+
+const shortTime = (ms: number): string => new Date(ms).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
+/** The browsers this person is signed in on, each with Sign out (this one: "this browser"). */
+async function renderDevices(): Promise<string[]> {
+  const { sessions } = await api<{ sessions: Array<{ id: string; label: string; createdAt: number; lastSeenAt: number; current: boolean }> }>(
+    "/api/auth/sessions"
+  );
+  el<HTMLUListElement>("auth-devices").replaceChildren(
+    ...sessions.map((s) => {
+      const li = document.createElement("li");
+      li.textContent = `${s.label}${s.current ? " (this browser)" : ""} · signed in ${shortTime(s.createdAt)} · last seen ${shortTime(s.lastSeenAt)} `;
+      if (!s.current) {
+        const end = document.createElement("button");
+        end.type = "button";
+        end.className = "link-btn";
+        end.textContent = "Sign out";
+        end.addEventListener("click", () => {
+          if (!confirm(`Sign out ${s.label}?`)) return;
+          postJson(`/api/auth/sessions/${encodeURIComponent(s.id)}/end`, {}).then(
+            () => void renderDevices(),
+            (err: Error) => (msg.textContent = err.message)
+          );
+        });
+        li.append(end);
+      }
+      return li;
+    })
+  );
+  return sessions.map((s) => s.id);
+}
+
+/**
+ * Addresses the bus answers on that a device could open: this page's own first, then the bus's network addresses
+ * (plain http works for a linked device; passkeys need the https host name).
+ */
+async function busAddresses(state: { rpId: string; httpsPort: number | null }): Promise<string[]> {
+  const health = await api<HealthResponse>("/api/health");
+  const https = state.httpsPort ? health.lanUrls.map((u) => u.replace(/^http:(.*):\d+$/, `https:$1:${state.httpsPort}`)) : [];
+  const named = state.httpsPort ? [`https://${state.rpId}:${state.httpsPort}`] : [];
+  return [...new Set([location.origin, ...named, ...https, ...health.lanUrls])];
+}
+
+let linkTimer: ReturnType<typeof setInterval> | undefined;
+
+/** "Add a device": a one-time code as a QR code; the list of devices refreshes when it is used. */
+async function showLink(state: { rpId: string; httpsPort: number | null }): Promise<void> {
+  clearInterval(linkTimer);
+  const before = new Set(await renderDevices());
+  const { code, expiresAt } = await postJson<{ code: string; expiresAt: number }>("/api/auth/link", {});
+  const select = el<HTMLSelectElement>("auth-link-origin");
+  if (select.options.length === 0) {
+    for (const address of await busAddresses(state)) select.append(new Option(address, address));
+  }
+  const status = el("auth-link-status");
+  const draw = (): void => {
+    const url = `${select.value}/auth#link=${code}`;
+    el("auth-link-qr").replaceChildren(qrSvg(url, 240));
+    const a = el<HTMLAnchorElement>("auth-link-url");
+    a.href = url;
+    a.textContent = url;
+  };
+  select.onchange = draw;
+  draw();
+  el("auth-link").hidden = false;
+  linkTimer = setInterval(() => {
+    const left = Math.round((expiresAt - Date.now()) / 1000);
+    if (left <= 0) {
+      clearInterval(linkTimer);
+      el("auth-link").hidden = true;
+      msg.textContent = "The code expired; choose Add a device for a new one.";
+      return;
+    }
+    status.textContent = `Valid for ${left} s more.`;
+    if (left % 3 === 0) {
+      void renderDevices().then((ids) => {
+        if (!ids.some((id) => !before.has(id))) return;
+        clearInterval(linkTimer);
+        el("auth-link").hidden = true;
+        msg.textContent = "The new device is signed in.";
+      });
+    }
+  }, 1000);
+}
+
+/** Signs this device in with a code from another device's "Add a device", then opens the conversations. */
+async function redeemLink(code: string): Promise<void> {
+  const done = await postJson<{ human: string; session: string }>("/api/auth/link/redeem", { code });
+  localStorage.setItem(SESSION_KEY, done.session);
+  localStorage.setItem(PROFILE_KEY, done.human);
+  history.replaceState(null, "", "/auth");
+  location.assign("/");
 }
 
 /** The machine accounts' agent tokens, with Allow (waiting, denied) or Revoke (allowed). */
@@ -169,17 +265,21 @@ const run = (action: () => Promise<void>) => (): void => {
 };
 
 async function boot(): Promise<void> {
-  const state = await api<{ rpId: string; httpsPort: number | null; me: string | null }>("/api/auth/state");
-  if (!window.isSecureContext || !window.PublicKeyCredential) {
-    show("auth-insecure");
-    const link = el<HTMLAnchorElement>("auth-secure-link");
-    const base = state.httpsPort ? `https://${state.rpId}:${state.httpsPort}` : `https://${state.rpId}`;
-    link.href = `${base}/auth${location.hash}`;
-    link.textContent = `${base}/auth`;
+  // A device link needs no passkey, so it works on a plain-http page too.
+  const link = new URLSearchParams(location.hash.slice(1)).get("link");
+  if (link) {
+    try {
+      await redeemLink(link);
+    } catch (err) {
+      history.replaceState(null, "", "/auth");
+      msg.textContent = (err as Error).message;
+    }
     return;
   }
+  const state = await api<{ rpId: string; httpsPort: number | null; me: string | null }>("/api/auth/state");
+  const secure = window.isSecureContext && window.PublicKeyCredential !== undefined;
   const invite = new URLSearchParams(location.hash.slice(1)).get("invite");
-  if (invite) {
+  if (invite && secure) {
     try {
       const o = await postJson<CreationOptions>("/api/auth/register/options", { invite });
       show("auth-enroll");
@@ -190,7 +290,21 @@ async function boot(): Promise<void> {
     }
     return;
   }
-  if (state.me) return renderMe(state.me);
+  if (state.me) {
+    el("auth-link-btn").addEventListener("click", () => {
+      msg.textContent = "";
+      showLink(state).catch((err: Error) => (msg.textContent = err.message));
+    });
+    return renderMe(state.me);
+  }
+  if (!secure) {
+    show("auth-insecure");
+    const link = el<HTMLAnchorElement>("auth-secure-link");
+    const base = state.httpsPort ? `https://${state.rpId}:${state.httpsPort}` : `https://${state.rpId}`;
+    link.href = `${base}/auth${location.hash}`;
+    link.textContent = `${base}/auth`;
+    return;
+  }
   show("auth-signin");
   el("auth-signin-btn").addEventListener("click", run(signIn));
 }

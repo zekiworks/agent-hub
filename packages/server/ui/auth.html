@@ -20,6 +20,7 @@
       <section id="auth-insecure" class="auth-card" hidden>
         <h2>Open this page over https</h2>
         <p>Passkeys work only on a secure page. Use <a id="auth-secure-link" href="#"></a>.</p>
+        <p>Or sign this device in without a passkey: on a device where you are signed in, open this page and choose <strong>Add a device</strong>, then scan its code with this one.</p>
       </section>
 
       <section id="auth-enroll" class="auth-card" hidden>
@@ -31,6 +32,7 @@
       <section id="auth-signin" class="auth-card" hidden>
         <h2>Sign in</h2>
         <p>Everyone on this bus signs in. Use a passkey you made for it; without one, ask whoever runs the bus for an invite link (<code>agent-bus invite &lt;your name&gt;</code> on the bus's host).</p>
+        <p>No passkey on this device? On a device where you are signed in, open this page, choose <strong>Add a device</strong>, and scan its code with this one.</p>
         <button id="auth-signin-btn" type="button" class="btn btn-primary">Sign in with a passkey</button>
       </section>
 
@@ -40,6 +42,17 @@
         <h3>Your passkeys</h3>
         <ul id="auth-credentials" class="auth-list"></ul>
         <p class="auth-note">Removing a passkey also signs you out everywhere (in case a lost device had a session).</p>
+        <h3>Your devices</h3>
+        <p class="auth-note">Every browser you are signed in on. Signing one out ends its session at once.</p>
+        <ul id="auth-devices" class="auth-list"></ul>
+        <button id="auth-link-btn" type="button" class="btn">Add a device</button>
+        <div id="auth-link" class="auth-link" hidden>
+          <p>Scan this with the phone or computer to sign it in as you. The code works once, for 2 minutes; show it only to your own devices.</p>
+          <div id="auth-link-qr" class="auth-link-qr"></div>
+          <label class="auth-note">Address it opens <select id="auth-link-origin"></select></label>
+          <p class="auth-note"><a id="auth-link-url" href="#"></a></p>
+          <p id="auth-link-status" class="auth-note"></p>
+        </div>
         <h3>Machines on the bus</h3>
         <p class="auth-note">Each machine account's agents share one agent token. A new one waits until someone allows it; revoking one takes its agents off the bus.</p>
         <ul id="auth-machines" class="auth-list"></ul>

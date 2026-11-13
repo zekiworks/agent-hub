@@ -30,6 +30,8 @@ const CHALLENGE_MS = 5 * MIN;
 const SESSION_MS = 30 * DAY;
 /** File links on the website carry a key (an <img> cannot send the session header); it lasts this long. */
 const FILE_KEY_MS = DAY;
+/** A device link (QR code from a signed-in browser) works once, this soon. */
+const LINK_MS = 2 * MIN;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS auth_humans (
@@ -56,6 +58,13 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   last_seen_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS auth_invites (
+  token_hash TEXT PRIMARY KEY,
+  human TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS auth_links (
   token_hash TEXT PRIMARY KEY,
   human TEXT NOT NULL,
   created_at INTEGER NOT NULL,
@@ -333,6 +342,49 @@ export class HumanAuth {
     const result = this.db.query("DELETE FROM auth_credentials WHERE id = ?1 AND human = ?2").run(id, human);
     if (result.changes === 0) throw new AuthError(404, "No such passkey of yours");
     this.db.query("DELETE FROM auth_sessions WHERE human = ?1").run(human);
+  }
+
+  /**
+   * A one-time code that signs another device in as `human` (shown as a QR code by a browser where `human` is signed
+   * in), valid LINK_MS. Whoever holds it within that time becomes `human` on that device, like a pairing code.
+   */
+  createLink(human: string): { code: string; expiresAt: number } {
+    const now = this.now();
+    const code = token();
+    this.db.query("DELETE FROM auth_links WHERE expires_at < ?1").run(now);
+    this.db.query("INSERT INTO auth_links (token_hash, human, created_at, expires_at) VALUES (?1, ?2, ?3, ?4)").run(hash(code), human, now, now + LINK_MS);
+    return { code, expiresAt: now + LINK_MS };
+  }
+
+  /** Uses up a device link and signs this device in; returns the session token. */
+  redeemLink(code: string, label: string): { human: string; token: string } {
+    const now = this.now();
+    const row = this.db
+      .query<{ human: string; expires_at: number; used_at: number | null }, [string]>("SELECT human, expires_at, used_at FROM auth_links WHERE token_hash = ?1")
+      .get(hash(code));
+    if (!row || row.used_at !== null || row.expires_at < now) throw new AuthError(403, "This code is unknown, used or expired; show a new one on a signed-in device");
+    if (!this.options.humans.includes(row.human)) throw new AuthError(403, `@${row.human} is not a human on this bus`);
+    this.db.query("UPDATE auth_links SET used_at = ?2 WHERE token_hash = ?1").run(hash(code), now);
+    return { human: row.human, token: this.newSession(row.human, label) };
+  }
+
+  /** The devices `human` is signed in on (sessions), newest first; `current` is the one `req` comes from. */
+  sessions(human: string, req: Request): Array<{ id: string; label: string; createdAt: number; lastSeenAt: number; current: boolean }> {
+    const mine = sessionToken(req);
+    const own = mine ? hash(mine) : "";
+    return this.db
+      .query<{ token_hash: string; label: string; created_at: number; last_seen_at: number }, [string, number]>(
+        "SELECT token_hash, label, created_at, last_seen_at FROM auth_sessions WHERE human = ?1 AND expires_at > ?2 ORDER BY last_seen_at DESC"
+      )
+      .all(human, this.now())
+      .map((r) => ({ id: r.token_hash.slice(0, 12), label: r.label, createdAt: r.created_at, lastSeenAt: r.last_seen_at, current: r.token_hash === own }));
+  }
+
+  /** Signs one of `human`'s devices out (its session id is the hash prefix `sessions` lists). */
+  endSession(human: string, id: string): void {
+    if (!/^[0-9a-f]{12}$/.test(id)) throw new AuthError(400, "Not a session id");
+    const result = this.db.query("DELETE FROM auth_sessions WHERE human = ?1 AND substr(token_hash, 1, 12) = ?2").run(human, id);
+    if (result.changes === 0) throw new AuthError(404, "No such device of yours");
   }
 
   enrolled(): string[] {

@@ -297,3 +297,44 @@ test("tokens agents had bound to their ids before approval existed are approved 
   expect((await get("/api/state", { "X-Agent-Token": "legacy-machine" })).status).toBe(200);
   expect((await agent("legacy", "legacy-machine").take("joined")).id).toBe("legacy");
 });
+
+test("a device link signs another device in as its maker, once; the maker sees the device and can sign it out", async () => {
+  const post = (route: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> =>
+    fetch(`${bus.url}${route}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  // Only a signed-in person makes one (not an agent, not nobody).
+  expect((await post("/api/auth/link", {}, identity(bus))).status).toBe(401);
+  expect((await post("/api/auth/link", {})).status).toBe(401);
+  const made = await post("/api/auth/link", {}, identity(bus, "carol"));
+  expect(made.status).toBe(200);
+  const { code, expiresAt } = (await made.json()) as { code: string; expiresAt: number };
+  expect(expiresAt - Date.now()).toBeLessThanOrEqual(2 * 60_000);
+
+  // The new device has nothing yet; redeeming needs no identity and gives a session as carol.
+  const phone = { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile Safari/604.1" };
+  const redeemed = await post("/api/auth/link/redeem", { code }, phone);
+  expect(redeemed.status).toBe(200);
+  const { human, session } = (await redeemed.json()) as { human: string; session: string };
+  expect(human).toBe("carol");
+  const asPhone = { Authorization: `Bearer ${session}` };
+  expect((await get("/api/state", asPhone)).status).toBe(200);
+  const wrote = await post("/api/messages", { from: "carol", to: "@uma", text: "from my phone" }, asPhone);
+  expect(((await wrote.json()) as PostMessageResponse).message.verified).toBe(true);
+  expect((await post("/api/messages", { from: "uma", to: "@carol", text: "x" }, asPhone)).status).toBe(403);
+
+  // Once only; a made-up code is refused the same way.
+  expect((await post("/api/auth/link/redeem", { code }, phone)).status).toBe(403);
+  expect((await post("/api/auth/link/redeem", { code: "made-up" })).status).toBe(403);
+
+  // The maker sees the phone among her devices (uma does not) and signs it out.
+  type Device = { id: string; label: string; current: boolean };
+  const devicesOf = async (as: string): Promise<Device[]> =>
+    ((await (await get("/api/auth/sessions", identity(bus, as))).json()) as { sessions: Device[] }).sessions;
+  const device = (await devicesOf("carol")).find((d) => d.label === "Safari on iPhone");
+  expect(device?.current).toBe(false);
+  expect((await devicesOf("uma")).some((d) => d.label === "Safari on iPhone")).toBe(false);
+  expect((await post(`/api/auth/sessions/${device?.id}/end`, {}, identity(bus, "uma"))).status).toBe(404);
+  expect((await post(`/api/auth/sessions/${device?.id}/end`, {}, identity(bus, "carol"))).status).toBe(200);
+  expect((await get("/api/state", asPhone)).status).toBe(401);
+  // The browser that made the link stays signed in.
+  expect((await get("/api/state", identity(bus, "carol"))).status).toBe(200);
+});
