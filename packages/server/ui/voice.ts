@@ -3,7 +3,7 @@
 // into the message text, so agents (which cannot listen) read what was said. People see a player (attachments.ts).
 import type { TranscriptResponse } from "@agent-bus/protocol";
 import { api } from "./api";
-import { hideError, showError } from "./composer";
+import { hideError, showError, updateComposerState } from "./composer";
 import { dom } from "./dom";
 import { errorText } from "./format";
 import { postToView, uploadFile } from "./send";
@@ -31,11 +31,14 @@ let recording: Recording | undefined;
 let opening = false;
 /** The 🎤 button is pressed right now. */
 let held = false;
-/** Recording after a click (not a hold): the next click on 🎤 sends. */
-let latched = false;
-
 const RECORDING_HINT_HOLD = "Recording — let go to send, slide away or Esc to cancel";
-const RECORDING_HINT_CLICK = "Recording — click 🎤 again to send, Esc to cancel";
+const RECORDING_HINT_CLICK = "Recording — click Send (or 🎤 again) to send, Esc to cancel";
+
+/** Recording after a click (not a hold): the next click on 🎤, or Send, sends it. */
+function setLatched(on: boolean): void {
+  state.voiceLatched = on;
+  updateComposerState();
+}
 
 function showBar(text: string, recordingNow = false): void {
   dom.voiceBar.textContent = text;
@@ -81,7 +84,7 @@ async function start(): Promise<void> {
     ticker: setInterval(() => {
       const elapsed = Date.now() - startedAt;
       if (elapsed >= MAX_RECORDING_MS) return void stop(false);
-      showBar(`● ${clock(elapsed)}  ${latched ? RECORDING_HINT_CLICK : RECORDING_HINT_HOLD}`, true);
+      showBar(`● ${clock(elapsed)}  ${state.voiceLatched ? RECORDING_HINT_CLICK : RECORDING_HINT_HOLD}`, true);
     }, 250),
   };
   recorder.addEventListener("dataavailable", (event) => {
@@ -91,8 +94,8 @@ async function start(): Promise<void> {
   recorder.start();
   dom.voiceBtn.classList.add("recording");
   // Let go while the microphone was opening: that was a click, so keep recording until the next one.
-  latched = !held;
-  showBar(`● 0:00  ${latched ? RECORDING_HINT_CLICK : RECORDING_HINT_HOLD}`, true);
+  setLatched(!held);
+  showBar(`● 0:00  ${state.voiceLatched ? RECORDING_HINT_CLICK : RECORDING_HINT_HOLD}`, true);
 }
 
 /** Ends the recording; sends it unless `cancel` or it was too short to hold anything. */
@@ -100,7 +103,7 @@ async function stop(cancel: boolean): Promise<void> {
   const rec = recording;
   if (!rec) return;
   recording = undefined;
-  latched = false;
+  setLatched(false);
   clearInterval(rec.ticker);
   dom.voiceBtn.classList.remove("recording");
   const stopped = new Promise<void>((resolve) => rec.recorder.addEventListener("stop", () => resolve(), { once: true }));
@@ -140,6 +143,7 @@ async function send(file: File, duration: number): Promise<void> {
   } finally {
     state.sending = false;
     dom.voiceBtn.disabled = false;
+    updateComposerState();
   }
 }
 
@@ -147,7 +151,7 @@ dom.voiceBtn.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
   event.preventDefault(); // no text selection or long-press menu on phones
   // The second click of a click-started recording sends it.
-  if (recording && latched) return void stop(false);
+  if (recording && state.voiceLatched) return void stop(false);
   dom.voiceBtn.setPointerCapture(event.pointerId);
   held = true;
   void start();
@@ -155,10 +159,10 @@ dom.voiceBtn.addEventListener("pointerdown", (event) => {
 
 dom.voiceBtn.addEventListener("pointerup", (event) => {
   held = false;
-  if (!recording || latched) return;
+  if (!recording || state.voiceLatched) return;
   // A short press was a click: keep recording until the next click.
   if (Date.now() - recording.startedAt < MIN_RECORDING_MS) {
-    latched = true;
+    setLatched(true);
     showBar(`● 0:00  ${RECORDING_HINT_CLICK}`, true);
     return;
   }
@@ -173,9 +177,21 @@ dom.voiceBtn.addEventListener("pointerup", (event) => {
 
 dom.voiceBtn.addEventListener("pointercancel", () => {
   held = false;
-  if (!latched) void stop(true);
+  if (!state.voiceLatched) void stop(true);
 });
 dom.voiceBtn.addEventListener("contextmenu", (event) => event.preventDefault());
+
+// Send while a click-started recording runs sends the recording (capture: before send.ts sends the typed text).
+dom.composer.addEventListener(
+  "submit",
+  (event) => {
+    if (!recording || !state.voiceLatched) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void stop(false);
+  },
+  { capture: true }
+);
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && recording) {

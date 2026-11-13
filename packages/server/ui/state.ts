@@ -48,6 +48,8 @@ export const state = {
   /** Message the next send replies to (quotes), in the open conversation. */
   replyTo: undefined as Message | undefined,
   sending: false,
+  /** A voice recording started with a click is running: Send sends it (voice.ts). */
+  voiceLatched: false,
   mention: { open: false, start: 0, items: [] as MentionCandidate[], index: 0 },
 };
 

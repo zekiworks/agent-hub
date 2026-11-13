@@ -39,8 +39,8 @@ export function updateComposerState(): void {
     dom.holdBarText.textContent = `${offline.map((id) => `@${id}`).join(", ")} ${offline.length > 1 ? "are" : "is"} offline: your message waits for ${offline.length > 1 ? "them" : "it"},`;
   }
   const hasContent = dom.input.value.trim().length > 0 || state.staged.length > 0;
-  dom.sendBtn.disabled = state.sending || !state.me || !hasContent;
-  dom.sendBtn.textContent = state.sending ? "Sending…" : "Send";
+  dom.sendBtn.disabled = state.sending || !state.me || (!hasContent && !state.voiceLatched);
+  dom.sendBtn.textContent = state.sending ? "Sending…" : state.voiceLatched ? "Send 🎤" : "Send";
   const view = state.view;
   const conv = view.kind === "conversation" ? state.conversations.get(view.id) : undefined;
   const target = view.kind === "draft" ? nameList(view.to) : conv ? conversationTitle(conv) : "";
