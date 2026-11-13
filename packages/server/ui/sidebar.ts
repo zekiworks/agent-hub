@@ -19,6 +19,9 @@ import {
   UNREAD_ONLY_KEY,
 } from "./state";
 
+/** How long an agent that went offline stays in the agent list (dimmed) when offline agents are hidden. */
+const RECENTLY_SEEN_MS = 2 * 60_000;
+
 export function renderSidebar(): void {
   renderBackBadge();
   renderUnreadToggle();
@@ -164,7 +167,10 @@ function renderFilterNote(hidden: Conversation[]): void {
 
 function renderAgentList(): void {
   const all = agents();
-  const list = state.includeOffline ? all : all.filter((a) => a.online || a.id === currentDirectAgent());
+  // Agents seen in the last two minutes stay listed (dimmed while offline): an agent that keeps reconnecting would
+  // otherwise blink in and out and shift every row below it.
+  const recent = Date.now() - RECENTLY_SEEN_MS;
+  const list = state.includeOffline ? all : all.filter((a) => a.online || a.lastSeenAt > recent || a.id === currentDirectAgent());
   const hosts = new Set(list.map((a) => a.host ?? ""));
   const showHost = hosts.size > 1;
   const active = currentDirectAgent();

@@ -1592,6 +1592,18 @@ ul.md-list ul.md-list { list-style: circle; }
     display: none;
   }
 
+  /* Phones have no hover: the agent filter button is always visible and finger-sized (44px touch target). */
+  .agent-filter {
+    width: 44px;
+    height: 44px;
+    opacity: 0.8;
+  }
+
+  .agent-filter svg {
+    width: 20px;
+    height: 20px;
+  }
+
   /* Conversation bar: ← (unread elsewhere), title, ⓘ for members and the agent panel. */
   .conv-header {
     padding: 4px 8px;
