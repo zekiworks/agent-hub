@@ -234,7 +234,7 @@ async function renderMachines(): Promise<void> {
       const used = t.lastUsedAt ? `last used ${shortTime(t.lastUsedAt)}` : "not used yet";
       const state = t.state === "approved" ? "allowed" : t.state === "denied" ? "denied" : `waiting, code ${t.code}`;
       // The bus notes the folders (and older entries, agent ids) that asked; one name per folder is enough here.
-      const agents = [...new Set(t.agents.map((a) => a.split("/").filter(Boolean).pop() ?? a))];
+      const agents = [...new Set(t.agents.map((a) => (a.split("/").filter(Boolean).pop() ?? a).toLowerCase()))];
       li.textContent = `${t.host ?? "?"}${t.addr ? ` (${t.addr})` : ""} · ${agents.join(", ") || "no agents yet"} · ${state} · ${used} `;
       const action = t.state === "approved" ? "deny" : "approve";
       const button = document.createElement("button");
