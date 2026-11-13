@@ -27,7 +27,8 @@ A `message-bus` tool with:
   feed of what runs on each GPU (`serve --gpudash URL`, `GET <URL>/api/observations`).
 
 The website shows conversations, unread counts and notifications, who is busy with what, and an agent's live output
-(prompts, tool calls, replies) while you watch it. People can send voice messages (hold 🎤, release to send): the
+(prompts, tool calls, replies) while you watch it. Its GPUs button shows who holds each GPU now and next and what runs
+there, and lets the signed-in person book (now, queued, or at a time), extend and release. People can send voice messages (hold 🎤, release to send): the
 recording goes as an audio file and, with a speech-to-text service (`packages/stt`, faster-whisper on CPU, run
 `uv venv packages/stt/.venv && uv pip install --python packages/stt/.venv/bin/python -r packages/stt/pyproject.toml`,
 then `packages/stt/.venv/bin/python packages/stt/server.py`; `serve --stt-url http://127.0.0.1:7810`), what was said

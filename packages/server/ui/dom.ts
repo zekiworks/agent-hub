@@ -65,6 +65,21 @@ export const dom = {
   holdSelect: el<HTMLSelectElement>("hold-select"),
   voiceBtn: el<HTMLButtonElement>("voice-btn"),
   voiceBar: el<HTMLDivElement>("voice-bar"),
+  gpuBtn: el<HTMLButtonElement>("gpu-btn"),
+  gpuDialog: el<HTMLDialogElement>("gpu-dialog"),
+  gpuClose: el<HTMLButtonElement>("gpu-close"),
+  gpuList: el<HTMLUListElement>("gpu-list"),
+  gpuMine: el<HTMLUListElement>("gpu-mine"),
+  gpuForm: el<HTMLFormElement>("gpu-form"),
+  gpuResource: el<HTMLSelectElement>("gpu-resource"),
+  gpuStart: el<HTMLSelectElement>("gpu-start"),
+  gpuAtLabel: el<HTMLLabelElement>("gpu-at-label"),
+  gpuAt: el<HTMLInputElement>("gpu-at"),
+  gpuHours: el<HTMLInputElement>("gpu-hours"),
+  gpuPurpose: el<HTMLInputElement>("gpu-purpose"),
+  gpuPrivate: el<HTMLInputElement>("gpu-private"),
+  gpuError: el<HTMLDivElement>("gpu-error"),
+  gpuBook: el<HTMLButtonElement>("gpu-book"),
 };
 
 /** The phone layout of styles.css (one screen at a time: the conversation list or a conversation). */

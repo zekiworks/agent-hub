@@ -17,6 +17,7 @@
       <span id="link-status" class="link-status" data-state="connecting">connecting…</span>
       <a id="auth-link" class="topbar-link" href="/auth" hidden>Sign in</a>
       <div class="topbar-spacer"></div>
+      <button id="gpu-btn" type="button" class="link-btn" title="Who holds which GPU, and book one">GPUs</button>
       <button id="notify-btn" type="button" class="link-btn notify-btn" hidden></button>
       <label class="profile" title="Who you are on the bus">
         <span class="profile-label">You are</span>
@@ -144,6 +145,36 @@
       <div class="dialog-actions">
         <button type="button" id="group-cancel" class="btn">Cancel</button>
         <button type="submit" id="group-open" class="btn btn-primary">Open conversation</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="gpu-dialog" class="dialog gpu-dialog">
+    <div class="gpu-head">
+      <h2>GPUs</h2>
+      <button type="button" id="gpu-close" class="link-btn" title="Close (Esc)">✕</button>
+    </div>
+    <p class="dialog-hint">Who holds what now and next. A booking is the claim; release it when you are done.</p>
+    <ul id="gpu-list" class="gpu-list"></ul>
+    <h3>Your bookings</h3>
+    <ul id="gpu-mine" class="gpu-list"></ul>
+    <h3>Book</h3>
+    <form id="gpu-form" class="gpu-form">
+      <label>Resource <select id="gpu-resource" required></select></label>
+      <label>Start
+        <select id="gpu-start">
+          <option value="now" selected>now</option>
+          <option value="next">as soon as it is free (queue)</option>
+          <option value="at">at…</option>
+        </select>
+      </label>
+      <label id="gpu-at-label" hidden>At <input id="gpu-at" type="datetime-local" /></label>
+      <label>Hours <input id="gpu-hours" type="number" min="0.5" max="48" step="0.5" value="4" required /></label>
+      <label class="gpu-purpose">Purpose <input id="gpu-purpose" type="text" placeholder="one line: what it is for" required /></label>
+      <label class="gpu-private"><input id="gpu-private" type="checkbox" /> Private (others should not send requests to it)</label>
+      <div id="gpu-error" class="composer-error" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button type="submit" id="gpu-book" class="btn btn-primary">Book</button>
       </div>
     </form>
   </dialog>

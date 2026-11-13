@@ -6,6 +6,7 @@ import { dom, PHONE, scrollToBottom } from "./dom";
 import { loadDraft } from "./drafts";
 import { errorText } from "./format";
 import "./group";
+import { resourcesChanged } from "./gpus";
 import { hooks } from "./hooks";
 import { applyActivity, syncWatch } from "./live";
 import { loadEarlier, loadMessages, loadState, receive } from "./loading";
@@ -113,6 +114,9 @@ function handleFrame(frame: ViewerServerFrame): void {
       break;
     case "agent-tokens":
       void loadAgentRequests();
+      break;
+    case "resources":
+      resourcesChanged();
       break;
     case "error":
       // The session ended (signed out elsewhere, passkey removed): sign in again.

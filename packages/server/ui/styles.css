@@ -1536,6 +1536,129 @@ ul.md-list ul.md-list { list-style: circle; }
   background: var(--accent-strong);
 }
 
+/* The GPUs dialog: schedule per resource, your bookings, the booking form. */
+.gpu-dialog {
+  width: min(680px, calc(100vw - 24px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.gpu-dialog h3 {
+  margin: 18px 0 6px;
+  font-size: 15px;
+}
+
+.gpu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gpu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gpu-row {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-raised);
+  font-size: 13px;
+}
+
+.gpu-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.gpu-label {
+  font-weight: 700;
+}
+
+.gpu-model,
+.gpu-use,
+.gpu-free {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gpu-hold {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.gpu-overdue,
+.gpu-unbooked {
+  color: var(--warning);
+}
+
+.gpu-planned,
+.gpu-queued {
+  color: var(--muted);
+}
+
+.gpu-mine-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gpu-mine-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.gpu-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.gpu-action {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.gpu-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+  font-size: 13px;
+}
+
+.gpu-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--muted);
+}
+
+.gpu-form .gpu-purpose,
+.gpu-form .gpu-private,
+.gpu-form .composer-error,
+.gpu-form .dialog-actions {
+  grid-column: 1 / -1;
+}
+
+.gpu-form .gpu-private {
+  flex-direction: row;
+  align-items: center;
+}
+
+.gpu-form label[hidden] {
+  display: none;
+}
+
 /* ---- Narrow screens ---- */
 
 @media (max-width: 900px) {
