@@ -177,7 +177,7 @@ async function showLink(site: Site): Promise<void> {
   const { code, expiresAt } = await postJson<{ code: string; expiresAt: number }>("/api/auth/link", {});
   const select = el<HTMLSelectElement>("auth-link-origin");
   if (select.options.length === 0) {
-    for (const address of await busAddresses(state)) select.append(new Option(address, address));
+    for (const address of await busAddresses(site)) select.append(new Option(address, address));
   }
   const status = el("auth-link-status");
   const draw = (): void => {
