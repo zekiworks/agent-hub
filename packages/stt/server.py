@@ -23,9 +23,11 @@ HOST = os.environ.get("STT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("STT_PORT", "7810"))
 THREADS = int(os.environ.get("STT_THREADS", "16"))
 MAX_BYTES = 50 * 1024 * 1024
-# The languages people speak on this bus. Whisper picks the likeliest of these; left free, short clips in Turkish are
-# sometimes heard as another language entirely. Empty: any language.
+# The languages people speak on this bus, the usual one first. Whisper's own guess hears short Turkish clips as
+# English or Icelandic, so the first language is used unless Whisper is near-certain of another one in the list.
+# Empty: any language, Whisper's guess.
 LANGUAGES = [code for code in os.environ.get("STT_LANGUAGES", "tr,en").split(",") if code]
+OTHER_LANGUAGE_MIN = 0.85
 
 model = WhisperModel(MODEL, device="cpu", compute_type="int8", cpu_threads=THREADS)
 # One transcription at a time: the model uses all its threads for each.
@@ -78,7 +80,8 @@ class Handler(BaseHTTPRequestHandler):
                 if LANGUAGES:
                     _, _, probabilities = model.detect_language(samples, vad_filter=True)
                     scores = dict(probabilities)
-                    language = max(LANGUAGES, key=lambda code: scores.get(code, 0.0))
+                    other = max(LANGUAGES[1:], key=lambda code: scores.get(code, 0.0), default=None)
+                    language = other if other and scores.get(other, 0.0) >= OTHER_LANGUAGE_MIN else LANGUAGES[0]
                 segments, info = model.transcribe(samples, language=language, vad_filter=True, beam_size=5)
                 text = " ".join(s.text.strip() for s in segments).strip()
         except Exception as error:  # undecodable audio and the like: the caller sends the voice message without text
