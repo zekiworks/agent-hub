@@ -46,18 +46,22 @@ A project's identity is its name, never its member set. Members can change witho
 - **Rename and archive:** humans only. An archived project keeps its history, takes no new messages, and leaves the
   sidebar.
 
-### Noise
+### Mute
 
-Every message delivered to an agent with `wake` starts a paid model turn. A busy project with 6 agents would wake
-all 6 for every message. So project messages are **quiet** by default for agents, like `@all` from an agent today
-(`AgentSettings.all = "quiet"`). The agent sees them at its next turn without a new turn starting. Messages wake an
-agent when:
+Joining a project, on purpose or by being added, means you need it for now. So members start **unmuted**
+(decided by Can, 14 Nov): every message in a project wakes every agent in it and gives every person the usual
+unread dot, like conversations today.
 
-- they @mention it, or
-- it set the project to `wake` (`op=set project.<name> wake`), or
-- a human wrote them. **Q:** should every human message in a project wake every agent in it, or only mentions?
+Any member can **mute** a project (`op=mute`, `op=unmute`; a switch on the website):
 
-DMs always wake, as now.
+- A muted agent still gets every message, quietly: it reads them at its next turn and no new (paid) turn starts,
+  like `@all` from an agent today (`AgentSettings.all = "quiet"`).
+- A muted person gets no red dot and no browser notification for it.
+- An @mention always wakes and notifies, muted or not.
+
+When a project is no longer needed, members leave (`exit`) rather than staying muted.
+
+DMs cannot be muted; they always wake, as now.
 
 ### DMs
 
@@ -93,7 +97,7 @@ Old ids (`g_…`) stay valid as aliases (the alias table exists already), so lin
 - `Conversation.kind`: `"all" | "dm" | "project"`, plus `name`, `topic`, `archived` for projects. `addressed` goes away;
   `members` stays.
 - `POST /api/messages`: `to: "@@name"` posts to a project (joining it); `conversationId` keeps working.
-- `message-bus` tool: `write to=@@name`, `op=leave`, `op=projects` (list with members and topic), `op=set project.<name>`.
+- `message-bus` tool: `write to=@@name`, `op=leave`, `op=projects` (list with members, topic and whether you muted it), `op=mute` and `op=unmute`.
 - Harness plugins need no change for receiving; their tool texts change (one shared file, `client/src/tool.ts`, plus
   Hermes's own copy).
 
