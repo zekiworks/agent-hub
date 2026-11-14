@@ -94,6 +94,16 @@ async function showMessage(seq: number): Promise<void> {
 hooks.applyView = applyView;
 hooks.showMessage = showMessage;
 
+// Information dialogs close on a click outside them (on the dimmed page), as well as with their ✕ or Esc.
+for (const dialog of [dom.settingsDialog, dom.convDialog, dom.statsDialog, dom.gpuDialog, dom.groupDialog]) {
+  dialog.addEventListener("click", (event) => {
+    const r = dialog.getBoundingClientRect();
+    const outside = event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom;
+    // Keyboard-made clicks on buttons inside have no position (0, 0): only a real click outside closes.
+    if (outside && (event.clientX !== 0 || event.clientY !== 0)) dialog.close();
+  });
+}
+
 // ---- Viewer socket ----
 
 function handleFrame(frame: ViewerServerFrame): void {

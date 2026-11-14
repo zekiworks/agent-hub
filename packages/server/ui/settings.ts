@@ -10,8 +10,8 @@ import { state } from "./state";
 type EnglishSpeech = NonNullable<AgentSettings["englishSpeech"]>;
 
 const CHOICES: Array<[EnglishSpeech, string]> = [
-  ["whisper", "Whisper, for every language (default)"],
-  ["liquid", "Liquid (LFM3-Audio) for English, Whisper for the rest"],
+  ["whisper", "Whisper large-v3-turbo — English: 4.9% wrong words, 1.5 s per recording"],
+  ["liquid", "Liquid LFM3-Audio — English: 5.3% wrong words, 0.4 s per recording"],
 ];
 
 function render(): void {
@@ -46,8 +46,14 @@ function render(): void {
     h(
       "p",
       "dialog-hint",
-      "Measured on 100 English recordings: Liquid 5.3% wrong words, Whisper 4.9%; Liquid is about 3½× faster. " +
-        "Whisper decides the language first, so Turkish always goes to Whisper (Liquid gets 55% of Turkish words wrong)."
+      "Whisper decides the language first; only English goes to the model chosen here. Every other language, Turkish " +
+        "included, is always written by Whisper: on Turkish, Liquid gets 55% of the words wrong and Whisper 6%."
+    ),
+    h(
+      "p",
+      "dialog-hint",
+      "Measured by compactor on CPU with FLEURS: English, 100 recordings (14 Nov); Turkish, 50 recordings (6 Nov, " +
+        "with Whisper large-v3, the larger sibling of the turbo the bus runs). Lower is better."
     ),
     note
   );
