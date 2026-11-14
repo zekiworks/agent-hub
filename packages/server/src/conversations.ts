@@ -47,10 +47,13 @@ export function readable(
  * `all`: agents asking for every conversation (scope=all, or a token without an agent) also read other agents'
  * conversations, never a person's (docs/projects.md).
  */
-export type Reader = { id: string; kind: "agent" | "human"; all?: boolean };
+export type Reader = { id: string; kind: "agent" | "human"; all?: boolean; tokenHash?: string };
 
 export function mayRead(ctx: BusContext, conversation: Conversation, reader: Reader): boolean {
   if (canRead(ctx, conversation, reader)) return true;
+  // A token that did not say which of its agents reads (clients from before projects) reads what any of them may:
+  // agents on one machine share its token and can already write as one another.
+  if (reader.tokenHash && conversation.members.some((id) => ctx.db.agentTokenHash(id) === reader.tokenHash)) return true;
   return reader.kind === "agent" && reader.all === true && conversation.kind !== "project" && !conversation.members.some((id) => ctx.hub.isHuman(id));
 }
 

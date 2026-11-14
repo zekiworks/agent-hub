@@ -783,9 +783,15 @@ describe("http", () => {
     expect(snapshot.humans).toEqual(["carol", "uma"]);
     expect(snapshot.participants[0]?.id).toBe("alpha");
     expect(snapshot.conversations.map((c: Conversation) => c.id)).toEqual(["all", group.conversation.id]);
-    // uma's DM with alpha is hers: carol and agent tokens do not see it.
+    // uma's DM with alpha is hers and alpha's: carol does not see it. The agent token does (alpha is one of its
+    // agents): clients from before projects read without saying which agent they are.
     expect((await state("carol")).conversations.map((c: Conversation) => c.id)).toEqual(["all"]);
-    expect((await state()).conversations.map((c: Conversation) => c.id)).toEqual(["all"]);
+    expect((await state()).conversations.map((c: Conversation) => c.id)).toEqual(["all", group.conversation.id]);
+    // Another machine's token, approved, with none of its agents in it: does not see it.
+    bus.approveAgentToken("another-machine-token-0123456789abcdef");
+    const other = await busFetch(bus, "/api/state", { headers: { "X-Agent-Token": "another-machine-token-0123456789abcdef" } });
+    const otherState: StateResponse = await other.json();
+    expect(otherState.conversations.map((c: Conversation) => c.id)).toEqual(["all"]);
 
     const page = await getJson<MessagesResponse>(bus, `/api/conversations/all/messages?beforeSeq=${sent[4]?.seq}&limit=2`);
     expect(page.messages.map((m) => m.text)).toEqual(["m2", "m3"]);

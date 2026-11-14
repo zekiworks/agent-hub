@@ -161,7 +161,8 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     if (method === "GET" && fileMatch?.[1] && fileKey && auth.checkFileKey(fileKey)) return getFile(ctx, decodeURIComponent(fileMatch[1]));
     const reader = ctx.requireReader(req);
     // People read as themselves; an agent token reads what agents may (see canRead), or as one of its agents (`as`).
-    let viewer: Reader = reader.kind === "human" ? { id: reader.id, kind: "human" } : { id: "", kind: "agent", all: true };
+    let viewer: Reader =
+      reader.kind === "human" ? { id: reader.id, kind: "human" } : { id: "", kind: "agent", all: true, tokenHash: reader.tokenHash };
     const as = url.searchParams.get("as");
     if (reader.kind === "agent" && as) {
       const agent = ctx.hub.knownParticipant(as.trim().toLowerCase());
