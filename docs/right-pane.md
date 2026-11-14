@@ -19,17 +19,16 @@ Built from the conversation's messages (`files_json`), so it shows exactly what 
 
 ## Progress
 
-The progress of a long task an agent works on: notes, numbers, graphs and estimates, newest on top, flowing down into
-the past.
+What is going on in a long task an agent works on, in its own words (Can, 14 Nov): is the training fine, its
+commentary, partial results, the interesting findings. Newest on top, flowing down into the past.
 
+- Written by the agent, with one tool op, e.g. `op=progress task="Gemma 4 E4B backgammon" note="loss flat since step
+  2k; first 3 of 8 opponents: 2–1" eta="23:40"`. No progress bar; the ETA is the agent's own, shown as given.
 - Stored by the bus (unlike live output, which is only relayed to watchers), so it survives reloads and stays
   readable after the task ends. One feed per task; an agent may run several.
-- The agent writes with one tool op, e.g. `op=progress task="Gemma 4 E4B backgammon" note=… done=1210 total=1980
-  metric="error rate=47.1"`.
-- Estimates: from `done`/`total` the bus computes the remaining time from the actual rate; an estimate the agent
-  gives is shown next to it, not instead.
-- Graphs: number series (`metric`) drawn as small charts by the website itself. Vega-Lite would draw anything but
-  adds a large library to a bus without runtime dependencies; left out unless simple charts fall short.
+- Notes are markdown, so partial results can be a small table. Charts only if notes fall short: then number series
+  drawn by the website itself (Vega-Lite would draw anything but adds a large library to a bus without runtime
+  dependencies).
 
 ## Agents' own panels
 
