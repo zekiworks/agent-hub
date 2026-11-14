@@ -283,6 +283,11 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
   };
 }
 
+/** A host name as a machine: without its domain, lowercase ("MacBook-Pro-2.local" and "macbook-pro-2.home" match). */
+function machineName(host: string): string {
+  return host.split(".")[0]?.toLowerCase() ?? "";
+}
+
 /** How long a group DM may stay silent before the migration to projects archives it. */
 const MIGRATION_ARCHIVE_AFTER_MS = 7 * 24 * 3600_000;
 
@@ -594,28 +599,31 @@ export class BusDatabase {
     now = Date.now()
   ): JoinResult {
     return this.db.transaction((): JoinResult => {
+      // The machine is its host name without the domain, any case: a Mac reports "MacBook-Pro-2.local" on one
+      // network and "macbook-pro-2.home" on another (14 Nov: its agents came back as new ids after a restart).
+      const machine = `lower(CASE WHEN instr(host, '.') > 0 THEN substr(host, 1, instr(host, '.') - 1) ELSE host END)`;
       const sameFolder =
         "path" in identity
           ? this.db
               .query<ParticipantRow, [string, string]>(
-                "SELECT * FROM participants WHERE kind = 'agent' AND host = ?1 AND path = ?2 ORDER BY created_at"
+                `SELECT * FROM participants WHERE kind = 'agent' AND ${machine} = ?1 AND path = ?2 ORDER BY created_at`
               )
-              .all(identity.host, identity.path)
+              .all(machineName(identity.host), identity.path)
           : this.db
               .query<ParticipantRow, [string, string]>(
-                "SELECT * FROM participants WHERE kind = 'agent' AND host = ?1 AND name = ?2 ORDER BY created_at"
+                `SELECT * FROM participants WHERE kind = 'agent' AND ${machine} = ?1 AND name = ?2 ORDER BY created_at`
               )
-              .all(identity.host, identity.name);
+              .all(machineName(identity.host), identity.name);
       const existing =
         sameFolder.find((p) => p.harness === harness) ??
         sameFolder.find((p) => p.harness === null) ??
         (harness === null ? sameFolder[0] : undefined);
       if (existing) {
         this.db
-          .query("UPDATE participants SET last_seen_at = ?2, harness = COALESCE(?3, harness) WHERE id = ?1")
-          .run(existing.id, now, harness);
+          .query("UPDATE participants SET last_seen_at = ?2, harness = COALESCE(?3, harness), host = ?4 WHERE id = ?1")
+          .run(existing.id, now, harness, identity.host);
         return {
-          participant: toParticipant({ ...existing, last_seen_at: now, harness: harness ?? existing.harness }),
+          participant: toParticipant({ ...existing, last_seen_at: now, harness: harness ?? existing.harness, host: identity.host }),
           isNew: false,
         };
       }

@@ -163,6 +163,17 @@ describe("agent ids", () => {
     expect(again.id).toBe("alpha");
   });
 
+  test("a machine whose host name changes domain or case (MacBook-Pro-2.local → macbook-pro-2.home) keeps its agents' ids", async () => {
+    const first = await joinPath("/Users/someone/code/proj", "MacBook-Pro-2.local");
+    expect(first.id).toBe("proj");
+    await send({ from: "carol", to: "@proj", text: "taking part" }); // agents that took part are kept when they leave
+    await leave(first.client);
+    const again = await joinPath("/Users/someone/code/proj", "macbook-pro-2.home");
+    expect(again.id).toBe("proj");
+    // Another machine with the same folder is still another agent.
+    expect((await joinPath("/Users/someone/code/proj", "other-mac.home")).id).not.toBe("proj");
+  });
+
   test("an id already held is qualified by the first part of the address that differs", async () => {
     const a = await joinPath("/tmp/a/proj");
     const b = await joinPath("/tmp/b/proj");
