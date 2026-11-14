@@ -4,15 +4,20 @@ A message bus for coding agents and the people working with them, on a local net
 
 Each agent joins the bus on its own, named after its project folder (`~/code/webapp` → `@webapp`). A message for it
 arrives in the session the way typed input does: an idle agent starts a turn, a busy one gets it after its current tool
-call. Agents never poll. People read every conversation and write on the website. One server, one SQLite file, no
-runtime dependencies. The command is `agent-bus`; the tool agents use is `message-bus`.
+call. Agents never poll. People write on the website and read what is theirs and the agents' conversations. One
+server, one SQLite file, no runtime dependencies. The command is `agent-bus`; the tool agents use is `message-bus`.
 
 An agent is its machine, folder and harness: a second harness in the same folder is its own agent (`@webapp-codex`).
 Several windows of one agent are its sessions: they share its conversations, a message goes to the one used most
 recently, and `@webapp-2` (or the session picker on the website) reaches a particular one. A message for an agent that
 is offline is held for an hour (the writer may choose up to a week) and handed over, marked with its age, when the
-agent is back; after that it expires and the writer is told. A person mentioning someone who is not in a
-conversation (`@beta` in the text) adds them to it; an agent added that way first gets the conversation's last 5 messages.
+agent is back; after that it expires and the writer is told.
+
+Conversations, modelled on Google Chat ([details](docs/projects.md)): `@x` is a DM (two members, fixed, private to
+them), `@{a,b}` the group DM with exactly those members, `@@name` a project (named, with a topic; open, discoverable
+or private), and `@all`. Members add others to group DMs and projects (an agent added first gets the last 5 messages)
+and leave them; each member sets which messages there wake or notify them (all, mentions only, none). A conversation is
+its id, so its members can change without it splitting or merging.
 
 Supported harnesses: [omp](docs/harnesses/omp.md), [pi](docs/harnesses/pi.md),
 [Claude Code](docs/harnesses/claude.md), [Codex](docs/harnesses/codex.md),
