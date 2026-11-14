@@ -2,13 +2,14 @@
 import { senderLabel, type Message, type Quote, type ReceiptEvent } from "@agent-bus/protocol";
 import { renderFile } from "./attachments";
 import { setReplyTo, updateComposerState } from "./composer";
-import { dom } from "./dom";
+import { dom, PHONE } from "./dom";
 import { dayFormat, dayKey, fullFormat, nameList, timeFormat } from "./format";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
 import { setTitleBase } from "./notify";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
+import { CAN_SPEAK, speakButton } from "./speak";
 import { conversationTitle, state } from "./state";
 import { flashMessage, mentionNodes, mentionsMe, shownMessage } from "./text";
 
@@ -132,15 +133,25 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   time.title = fullFormat.format(message.createdAt);
   head.append(h("span", "msg-seq", `#${message.seq}`), time);
   li.append(head);
-  // Outside the head so grouped messages (whose head is hidden) can be replied to too. Clicking it again cancels.
-  const replyBtn = h("button", "msg-reply-btn", "↩ ");
+  // Outside the head so grouped messages (whose head is hidden) can be replied to too. Shown on hover, or on phones
+  // (no hover) after tapping the message. Clicking Reply again cancels.
+  const actions = h("div", "msg-actions");
+  if (message.text && CAN_SPEAK) actions.append(speakButton(message.text));
+  const replyBtn = h("button", "msg-action-btn msg-reply-btn", "↩ ");
   replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";
   replyBtn.title = "Reply to this message (quotes it); click again to cancel";
   replyBtn.addEventListener("click", () =>
     setReplyTo(state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq ? undefined : message)
   );
-  li.append(replyBtn);
+  actions.append(replyBtn);
+  li.append(actions);
+  li.addEventListener("click", (event) => {
+    if (!PHONE.matches || (event.target as Element).closest("a, button, audio, img, input, summary")) return;
+    const tapped = li.classList.contains("msg-tapped");
+    for (const other of dom.messageList.querySelectorAll(".msg-tapped")) other.classList.remove("msg-tapped");
+    if (!tapped) li.classList.add("msg-tapped");
+  });
 
   if (message.quote) li.append(renderQuote(message.quote));
   if (message.text) li.append(renderText(message.text));

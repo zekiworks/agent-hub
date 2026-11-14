@@ -779,7 +779,8 @@ button:disabled {
 }
 
 /* The hovered message gets a frame, so it is clear which one Reply applies to (grouped messages included). */
-.msg:hover {
+.msg:hover,
+.msg.msg-tapped {
   background: var(--hover);
   outline: 1px solid var(--muted);
   outline-offset: -1px;
@@ -880,28 +881,37 @@ button:disabled {
   color: var(--muted);
 }
 
-.msg-reply-btn {
+/* ▶ read aloud and ↩ Reply, top right of a message: on hover, on phones after a tap, and while replying to it. */
+.msg-actions {
   position: absolute;
   top: 4px;
   right: 12px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.msg:hover .msg-actions,
+.msg.msg-tapped .msg-actions,
+.msg-actions:focus-within,
+.msg-replying .msg-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.msg-action-btn {
   padding: 3px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel-raised);
   color: var(--text);
   font-size: 13px;
-  opacity: 0;
   cursor: pointer;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
 }
 
-.msg:hover .msg-reply-btn,
-.msg-reply-btn:focus-visible,
-.msg-replying .msg-reply-btn {
-  opacity: 1;
-}
-
-.msg-reply-btn:hover,
+.msg-action-btn:hover,
 .msg-replying .msg-reply-btn {
   border-color: var(--accent);
   color: var(--accent);
@@ -1973,19 +1983,14 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 16px;
   }
 
-  /* No hover on phones: ↩ stays visible on every message, in room kept free for it on the right. */
-  .msg .msg-reply-btn {
+  /* No hover on phones: tapping a message frames it and shows ▶ and ↩, finger-sized. */
+  .msg-action-btn {
     padding: 4px 12px;
     font-size: 20px;
-    opacity: 0.75;
   }
 
   .msg-reply-label {
     display: none;
-  }
-
-  .msg {
-    padding-right: 60px;
   }
 }
 
