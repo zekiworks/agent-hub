@@ -176,6 +176,21 @@ export function currentDirectAgent(): string | undefined {
   return convAgents.length === 1 ? convAgents[0] : undefined;
 }
 
+/**
+ * A project's own colour. Projects in the order they were made each step a golden angle (137.5°) round the colour
+ * wheel, so every one gets a different hue, as far as possible from the ones before it, and keeps it: new projects
+ * only add to the end. (A hash of the name gave 12 hues for 17 projects.) Lightness alternates a little to separate
+ * neighbours further; both levels read on the dark theme. Nothing is stored.
+ */
+export function projectColor(conv: Conversation): string {
+  const projects = Array.from(state.conversations.values())
+    .filter((c) => c.kind === "project")
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  const rank = Math.max(0, projects.findIndex((c) => c.id === conv.id));
+  const hue = Math.round((rank * 137.508) % 360);
+  return `hsl(${hue} 70% ${rank % 2 === 0 ? 62 : 70}%)`;
+}
+
 /** "all", a project's "@@name", or the members: everyone but me (all of them if I am not a member). */
 export function conversationTitle(conv: Conversation): string {
   if (conv.kind === "all") return "all";

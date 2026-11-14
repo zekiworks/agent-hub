@@ -1685,8 +1685,13 @@ ul.md-list ul.md-list { list-style: circle; }
   min-width: 0;
 }
 
+/* Each project in its own colour (state.ts projectColor): a bar on the left and its name. */
+.conv-item.conv-project {
+  box-shadow: inset 3px 0 0 var(--project-color, var(--accent));
+}
+
 .conv-item.conv-project .side-item-title {
-  color: var(--accent);
+  color: var(--project-color, var(--accent));
 }
 
 .conv-item.conv-muted {

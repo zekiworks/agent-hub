@@ -11,6 +11,7 @@ import {
   agents,
   browsableProjects,
   otherGroups,
+  projectColor,
   sortedGroups,
   conversationTitle,
   currentDirectAgent,
@@ -167,7 +168,10 @@ function conversationItem(conv: Conversation): HTMLLIElement {
       ? what
       : `${what} · ${conv.members.length} members${conv.members.includes(state.me) ? "" : " · you're not in it"}${conv.archived ? " · archived" : ""}`
   );
-  if (conv.kind === "project") button.classList.add("conv-project");
+  if (conv.kind === "project") {
+    button.classList.add("conv-project");
+    button.style.setProperty("--project-color", projectColor(conv));
+  }
   if (conv.notify?.[state.me]) button.classList.add("conv-muted");
   const text = h("span", "side-item-text");
   text.append(title, meta);
