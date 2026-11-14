@@ -84,46 +84,67 @@ function renderAgentStatus(agent: Participant): HTMLSpanElement | null {
   return h("span", "agent-status agent-busy", `busy ${elapsed(status.since)}`);
 }
 
+/** Unread messages for me directly (●●: they mention me, or a conversation of me and one other). */
+function hasMention(conv: Conversation): boolean {
+  return (state.urgent.get(conv.id) ?? 0) > 0;
+}
+
+/**
+ * Mentions: conversations with unread ●● messages, newest first, whatever the filters (they are for me). Read, a
+ * conversation goes back down to Conversations.
+ */
+function renderMentionList(): void {
+  const mentions = Array.from(state.conversations.values())
+    .filter(hasMention)
+    .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+  dom.mentionSection.hidden = mentions.length === 0;
+  dom.mentionCount.textContent = mentions.length > 0 ? String(mentions.length) : "";
+  dom.mentionList.replaceChildren(...mentions.map(conversationItem));
+}
+
+function conversationItem(conv: Conversation): HTMLLIElement {
+  const li = h("li");
+  const button = h("button", "side-item conv-item");
+  button.type = "button";
+  if (isCurrent(conv.id)) button.classList.add("active");
+  const title = h("span", "side-item-title", conversationTitle(conv));
+  const meta = h(
+    "span",
+    "side-item-detail",
+    conv.kind === "all"
+      ? "everyone"
+      : `${conv.members.length} members${conv.members.includes(state.me) ? "" : " · you're not in it"}`
+  );
+  const text = h("span", "side-item-text");
+  text.append(title, meta);
+  button.append(text);
+  const unread = state.unread.get(conv.id) ?? 0;
+  if (unread > 0) {
+    button.append(h("span", "badge", unread > 99 ? "99+" : String(unread)));
+    if (hasMention(conv)) {
+      const dots = h("span", "attention-dots");
+      dots.append(h("span", "attention-dot"), h("span", "attention-dot"));
+      dots.title = "For you directly: mentions you, or a conversation of just you and one other";
+      button.append(dots);
+    } else if ((state.attention.get(conv.id) ?? 0) > 0) {
+      const dot = h("span", "attention-dot");
+      dot.title = "In a conversation you are in";
+      button.append(dot);
+    }
+  }
+  else if (conv.lastMessageAt > 0) button.append(h("span", "side-item-time", relativeTime(conv.lastMessageAt)));
+  button.title = conv.kind === "all" ? "Delivered to every agent" : `Members: ${nameList(conv.members)}`;
+  button.addEventListener("click", () => navigate({ kind: "conversation", id: conv.id }));
+  li.append(button);
+  return li;
+}
+
 function renderConversationList(): void {
-  const conversations = sortedConversations();
+  renderMentionList();
+  const conversations = sortedConversations().filter((c) => !hasMention(c));
   const shown = conversations.filter(passesFilter);
   renderFilterNote(conversations.filter((c) => !passesFilter(c)));
-  const items = shown.map((conv) => {
-    const li = h("li");
-    const button = h("button", "side-item conv-item");
-    button.type = "button";
-    if (isCurrent(conv.id)) button.classList.add("active");
-    const title = h("span", "side-item-title", conversationTitle(conv));
-    const meta = h(
-      "span",
-      "side-item-detail",
-      conv.kind === "all"
-        ? "everyone"
-        : `${conv.members.length} members${conv.members.includes(state.me) ? "" : " · you're not in it"}`
-    );
-    const text = h("span", "side-item-text");
-    text.append(title, meta);
-    button.append(text);
-    const unread = state.unread.get(conv.id) ?? 0;
-    if (unread > 0) {
-      button.append(h("span", "badge", unread > 99 ? "99+" : String(unread)));
-      if ((state.urgent.get(conv.id) ?? 0) > 0) {
-        const dots = h("span", "attention-dots");
-        dots.append(h("span", "attention-dot"), h("span", "attention-dot"));
-        dots.title = "For you directly: mentions you, or a conversation of just you and one other";
-        button.append(dots);
-      } else if ((state.attention.get(conv.id) ?? 0) > 0) {
-        const dot = h("span", "attention-dot");
-        dot.title = "In a conversation you are in";
-        button.append(dot);
-      }
-    }
-    else if (conv.lastMessageAt > 0) button.append(h("span", "side-item-time", relativeTime(conv.lastMessageAt)));
-    button.title = conv.kind === "all" ? "Delivered to every agent" : `Members: ${nameList(conv.members)}`;
-    button.addEventListener("click", () => navigate({ kind: "conversation", id: conv.id }));
-    li.append(button);
-    return li;
-  });
+  const items = shown.map(conversationItem);
   if (state.view.kind === "draft") {
     const li = h("li");
     const button = h("button", "side-item conv-item active");
