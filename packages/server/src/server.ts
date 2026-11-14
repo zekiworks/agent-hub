@@ -22,6 +22,7 @@ import { resolveLanAddresses } from "./lan";
 import { getMessageReceipts, getMessages, MAX_RECEIPT_WAIT_MS, postMessage } from "./messages";
 import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
+import { postSpeech } from "./speech";
 import { Website } from "./website";
 
 export interface BusServerOptions {
@@ -43,6 +44,8 @@ export interface BusServerOptions {
   gpudash?: string;
   /** The speech-to-text service (packages/stt, e.g. http://127.0.0.1:7810) that turns voice messages into text. */
   sttUrl?: string;
+  /** A text-to-speech server (llama-server with LFM3-Audio, e.g. http://127.0.0.1:9941) that reads messages aloud. */
+  ttsUrl?: string;
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
   forgetOfflineDays?: number;
   /**
@@ -179,6 +182,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     if (method === "GET" && fileMatch?.[1]) return getFile(ctx, decodeURIComponent(fileMatch[1]));
     const transcriptMatch = /^\/api\/files\/([^/]+)\/transcript$/.exec(pathname);
     if (method === "POST" && transcriptMatch?.[1]) return json(await transcribeFile(ctx, decodeURIComponent(transcriptMatch[1]), options.sttUrl));
+    if (method === "POST" && pathname === "/api/speech") return await postSpeech(req, options.ttsUrl);
     if (method === "POST" && pathname === "/api/settings") return json(await postSetting(ctx, req));
     return (await schedule.handle(req, url)) ?? json({ error: `No route for ${method} ${pathname}` }, 404);
   };

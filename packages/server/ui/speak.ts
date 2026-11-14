@@ -1,72 +1,71 @@
-// Reading a message aloud with the browser's own speech synthesis (no server): the ▶ button next to ↩ Reply.
+// ▶ next to ↩ Reply: the message read aloud by the bus's text-to-speech server (POST /api/speech: LFM3-Audio on
+// bariton, good Turkish; phones' own voices often have none). ▶ plays, ⏸ pauses, ▶ again goes on. One at a time.
+import { SESSION_KEY } from "./api";
 import { showError } from "./composer";
+import { errorText } from "./format";
 import { h } from "./html";
 
-export const CAN_SPEAK = "speechSynthesis" in window;
+/** The message being read (or paused), its button, and its audio. */
+let current: { button: HTMLButtonElement; audio: HTMLAudioElement; url: string } | undefined;
 
-/** The button whose message is being read now, and its utterance (kept referenced: Chrome drops unreferenced ones). */
-let speaking: { button: HTMLButtonElement; utterance: SpeechSynthesisUtterance } | undefined;
-
-/** Turkish when the text has Turkish letters, else English: the voice is picked by language. */
-function language(text: string): string {
-  return /[çğışöüÇĞİŞÖÜ]/.test(text) ? "tr-TR" : "en-US";
+function forget(): void {
+  if (!current) return;
+  current.audio.pause();
+  URL.revokeObjectURL(current.url);
+  current.button.textContent = "▶";
+  current.button.title = "Read it aloud";
+  current = undefined;
 }
 
-/** A voice for `lang` ("tr-TR"), or for its language ("tr"), or none (the browser's default). */
-function voiceFor(lang: string): SpeechSynthesisVoice | undefined {
-  const voices = speechSynthesis.getVoices();
-  const base = lang.slice(0, 2);
-  return voices.find((v) => v.lang.replace("_", "-") === lang) ?? voices.find((v) => v.lang.toLowerCase().startsWith(base));
+function showPlaying(button: HTMLButtonElement, playing: boolean): void {
+  button.textContent = playing ? "⏸" : "▶";
+  button.title = playing ? "Pause" : "Go on reading";
 }
 
-/** What a listener should hear: no markdown signs, code or link addresses. */
-function plain(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, " (code) ")
-    .replace(/https?:\/\/\S+/g, " (link) ")
-    .replace(/@\{([^}]*)\}/g, "$1")
-    .replace(/[*_`#>|@]/g, " ");
+async function speech(text: string): Promise<Blob> {
+  const session = localStorage.getItem(SESSION_KEY);
+  const res = await fetch("/api/speech", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session}` } : {}) },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `HTTP ${res.status}`);
+  }
+  return res.blob();
 }
-
-function stop(): void {
-  // Safari drops an utterance spoken right after a cancel() of nothing: cancel only what is speaking.
-  if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
-  if (speaking) speaking.button.textContent = "▶";
-  speaking = undefined;
-}
-
-// Some browsers load their voices only after the first getVoices() call.
-if (CAN_SPEAK) speechSynthesis.getVoices();
 
 export function speakButton(text: string): HTMLButtonElement {
   const button = h("button", "msg-action-btn msg-speak-btn", "▶");
   button.type = "button";
-  button.title = "Read it aloud (click again to stop)";
-  button.addEventListener("click", () => {
-    const again = speaking?.button === button;
-    stop();
-    if (again) return;
-    const lang = language(text);
-    const utterance = new SpeechSynthesisUtterance(plain(text));
-    utterance.lang = lang;
-    const voice = voiceFor(lang);
-    if (voice) utterance.voice = voice;
-    else if (speechSynthesis.getVoices().length > 0) {
-      showError(`This device has no ${lang.startsWith("tr") ? "Turkish" : "English"} voice; reading with its default voice.`);
+  button.title = "Read it aloud";
+  button.addEventListener("click", async () => {
+    if (current?.button === button) {
+      // This message: pause or go on.
+      if (current.audio.paused) await current.audio.play();
+      else current.audio.pause();
+      showPlaying(button, !current.audio.paused);
+      return;
     }
-    const done = () => {
-      if (speaking?.utterance !== utterance) return;
-      button.textContent = "▶";
-      speaking = undefined;
-    };
-    utterance.addEventListener("end", done);
-    utterance.addEventListener("error", (event) => {
-      if (event.error !== "interrupted" && event.error !== "canceled") showError(`Could not read it aloud: ${event.error}`);
-      done();
-    });
-    speaking = { button, utterance };
-    button.textContent = "■";
-    speechSynthesis.speak(utterance);
+    forget();
+    // An Audio made inside the click may play after the await (Safari allows sound only from a user's gesture).
+    const audio = new Audio();
+    current = { button, audio, url: "" };
+    button.textContent = "…";
+    button.title = "Making the speech…";
+    try {
+      const url = URL.createObjectURL(await speech(text));
+      if (current?.audio !== audio) return URL.revokeObjectURL(url); // another ▶ was pressed meanwhile
+      current.url = url;
+      audio.src = url;
+      audio.addEventListener("ended", forget, { once: true });
+      await audio.play();
+      showPlaying(button, true);
+    } catch (err) {
+      if (current?.audio === audio) forget();
+      showError(`Could not read it aloud: ${errorText(err)}`);
+    }
   });
   return button;
 }

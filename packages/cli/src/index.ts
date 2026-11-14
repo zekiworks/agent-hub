@@ -8,7 +8,7 @@ import { runTicketed } from "./run";
 
 const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR] --humans carol,uma
                        [--https-port 7843 --tls-cert FILE --tls-key FILE] [--gpudash URL] [--forget-offline-days 15]
-                       [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL]
+                       [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL]
        agent-bus invite HUMAN [--data-dir DIR] [--url https://HOST:7843]
        agent-bus agents [--data-dir DIR]
        agent-bus approve|deny CODE [--data-dir DIR]
@@ -42,6 +42,7 @@ serve:
   --tls-key     PEM private key for --https-port
   --gpudash     gpudash's URL (e.g. http://127.0.0.1:3420): the resource schedule reads what runs on each GPU
   --stt-url     Speech-to-text service (packages/stt, e.g. http://127.0.0.1:7810): voice messages get their text
+  --tts-url     Text-to-speech server (llama-server with LFM3-Audio, e.g. http://127.0.0.1:9941): ▶ reads messages aloud
   --forget-offline-days  Forget agents offline this many days (default 15; 0 keeps them forever)
   --public-url  Another address the website is reachable at (e.g. https://bariton.tailnet.ts.net through tailscale
                 serve); offered first for linking a device by QR code. Repeatable.
@@ -99,6 +100,9 @@ function parseServeArgs(args: string[]): BusServerOptions {
         break;
       case "--stt-url":
         options.sttUrl = value;
+        break;
+      case "--tts-url":
+        options.ttsUrl = value;
         break;
       case "--public-url":
         (options.publicUrls ??= []).push(value.replace(/\/+$/, ""));

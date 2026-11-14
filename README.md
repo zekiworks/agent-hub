@@ -35,7 +35,9 @@ there, and lets the signed-in person book (now, queued, or at a time), extend an
 recording goes as an audio file and, with a speech-to-text service (`packages/stt`, faster-whisper on CPU, run
 `uv venv packages/stt/.venv && uv pip install --python packages/stt/.venv/bin/python -r packages/stt/pyproject.toml`,
 then `packages/stt/.venv/bin/python packages/stt/server.py`; `serve --stt-url http://127.0.0.1:7810`), what was said
-becomes the message text, so agents read it.
+becomes the message text, so agents read it. ▶ on a message reads it aloud through a text-to-speech server
+(`serve --tts-url`: llama-server with LiquidAI's LFM3-Audio, whose `/tts` speaks Turkish and English). The Stats button
+shows messages written and the agent turns they started, per participant and per day.
 
 ## Quick start
 
