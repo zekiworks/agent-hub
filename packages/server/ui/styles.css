@@ -719,6 +719,11 @@ button:disabled {
   border-bottom: 1px solid var(--border);
 }
 
+/* Title, description and Sub-groups wrap at the width of the message column below them (Can, 14 Nov). */
+.conv-header > * {
+  max-width: var(--column);
+}
+
 .conv-title {
   margin: 0;
   font-size: 18px;
