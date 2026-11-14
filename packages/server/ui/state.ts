@@ -84,12 +84,16 @@ export function sortedConversations(): Conversation[] {
   return all ? [all, ...groups] : groups;
 }
 
-/** An agent of this conversation is offline (or no longer on the bus). */
+/**
+ * An agent of this conversation is offline (or no longer on the bus). The bus's own participants (@resources, harness
+ * "bus") never connect, so they never count: their notices must always show.
+ */
 function hasOfflineAgent(conv: Conversation): boolean {
   if (conv.kind === "all") return false;
   return conv.members.some((id) => {
     if (state.humans.includes(id)) return false;
-    return !state.participants.find((p) => p.id === id)?.online;
+    const participant = state.participants.find((p) => p.id === id);
+    return participant?.harness !== "bus" && !participant?.online;
   });
 }
 
