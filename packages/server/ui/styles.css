@@ -828,6 +828,16 @@ button:disabled {
   display: none;
 }
 
+/* Following the reading (speak.ts, CSS Custom Highlight API): the sentence softly, the word more strongly. */
+::highlight(speak-sentence) {
+  background-color: rgba(70, 167, 88, 0.22);
+}
+
+::highlight(speak-word) {
+  background-color: rgba(70, 167, 88, 0.6);
+  color: #fff;
+}
+
 .msg-continued {
   padding-top: 0;
 }
