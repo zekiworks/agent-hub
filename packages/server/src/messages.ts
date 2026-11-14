@@ -67,8 +67,10 @@ function conversationFor(ctx: BusContext, writer: ParticipantRecord, parsed: Ret
     return all;
   }
   if (parsed.kind === "project") {
-    const name = checkedProjectName(ctx, parsed.name);
-    const project = db.projectByName(name);
+    const existing = db.projectByName(parsed.name);
+    // Checked only when creating: anyone may write to (and join) an existing open project, e.g. @@compactor.
+    const name = existing ? parsed.name : checkedProjectName(ctx, parsed.name, writer.id);
+    const project = existing ?? null;
     if (!project) return db.createProject(name, writer.id, now);
     if (!project.members.includes(writer.id)) {
       if (project.visibility !== "open") throw new HttpError(403, `Project "${name}" is not open: ask a member to add @${writer.id}`);

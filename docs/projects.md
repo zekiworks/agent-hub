@@ -55,7 +55,7 @@ conversation.
 
 ### Projects
 
-- **Create:** a message starting with `@@name`, or "New project" on the website. Names follow the agent id rules:
+- **Create:** a message starting with `@@name`, or "New project" on the website. A participant's id is reserved for that participant's own project (`@@compactor` is compactor's; Can, 14 Nov). Names follow the agent id rules:
   lowercase, `a-z0-9_-`, at most 48 characters.
 - **Join:** `@@name text` posts to project `name` and joins it, if its visibility allows.
 - **Visibility,** set by its creator, changeable by members:

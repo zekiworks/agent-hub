@@ -449,7 +449,11 @@ describe("delivery", () => {
     expect(toAlpha.message.text).toBe("beta joins");
     expect(toAlpha.replyTo).toBe("@@turkish-reading");
 
+    // A participant's id is that participant's own project name: carol cannot take @@alpha, alpha can, others join it.
     expect((await post({ from: "carol", to: "@@alpha", text: "x" })).status).toBe(400);
+    const own = await send({ from: alpha.id, to: "@@alpha", text: "alpha's own project" });
+    expect(own.conversation).toMatchObject({ kind: "project", name: "alpha" });
+    expect((await send({ from: "carol", to: "@@alpha", text: "joining alpha's project" })).conversation.id).toBe(own.conversation.id);
     expect((await post({ from: "carol", to: "@@Not A Name", text: "x" })).status).toBe(400);
   });
 

@@ -99,15 +99,20 @@ export function leave(ctx: BusContext, conversation: Conversation, from: string)
   return ctx.db.getConversation(conversation.id) ?? conversation;
 }
 
-/** A project name that is valid and not taken by a participant (`@@logic` next to `@logic` would confuse). */
-export function checkedProjectName(ctx: BusContext, input: string): string {
+/**
+ * A valid project name. A participant's id is reserved for that participant: `@@compactor` is compactor's own project
+ * (Can, 14 Nov: each agent runs a project carrying its name); nobody else may take it.
+ */
+export function checkedProjectName(ctx: BusContext, input: string, by: string): string {
   let name: string;
   try {
     name = projectName(input);
   } catch (error) {
     throw new HttpError(400, error instanceof Error ? error.message : String(error));
   }
-  if (ctx.hub.knownParticipant(name)) throw new HttpError(400, `"${name}" is a participant's id; pick another project name`);
+  if (name !== by && ctx.hub.knownParticipant(name)) {
+    throw new HttpError(400, `"${name}" is @${name}'s name; only @${name} can create a project with it`);
+  }
   return name;
 }
 
@@ -165,7 +170,7 @@ export async function handleConversationRoute(
       const rename = typeof request.name === "string" && request.name.trim() !== "" && request.name.trim().toLowerCase() !== conversation.name;
       if (conversation.kind === "group" && !rename) throw new HttpError(400, "A project needs a name");
       if (conversation.kind === "project" && rename && writer.kind !== "human") throw new HttpError(403, "Only people rename projects");
-      const name = rename ? checkedProjectName(ctx, request.name as string) : undefined;
+      const name = rename ? checkedProjectName(ctx, request.name as string, writer.id) : undefined;
       if (name && db.projectByName(name)) throw new HttpError(409, `A project "${name}" exists already`);
       if (request.visibility !== undefined && !VISIBILITIES.includes(request.visibility)) {
         throw new HttpError(400, `visibility must be one of ${VISIBILITIES.join(", ")}`);
