@@ -1983,7 +1983,20 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 16px;
   }
 
-  /* No hover on phones: tapping a message frames it and shows ▶ and ↩, finger-sized. */
+  /* No hover on phones: tapping a message frames it and shows ▶ and ↩, finger-sized, in a row under the message
+   * (floating over it covered the text). */
+  .msg-actions {
+    position: static;
+    display: none;
+    justify-content: flex-end;
+    margin-top: 6px;
+  }
+
+  .msg.msg-tapped .msg-actions,
+  .msg-replying .msg-actions {
+    display: flex;
+  }
+
   .msg-action-btn {
     padding: 4px 12px;
     font-size: 20px;

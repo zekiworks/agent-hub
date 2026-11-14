@@ -145,7 +145,6 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
     setReplyTo(state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq ? undefined : message)
   );
   actions.append(replyBtn);
-  li.append(actions);
   li.addEventListener("click", (event) => {
     if (!PHONE.matches || (event.target as Element).closest("a, button, audio, img, input, summary")) return;
     const tapped = li.classList.contains("msg-tapped");
@@ -162,6 +161,8 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   }
   const receipts = renderReceipts(message);
   if (receipts) li.append(receipts);
+  // Last: on phones it is a row under the message (on wider screens it floats top right).
+  li.append(actions);
   return li;
 }
 
