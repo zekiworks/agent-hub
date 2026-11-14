@@ -198,6 +198,29 @@ test("a free GPU computing nothing for 15 min is announced once to its subscribe
   expect(schedule.listing().subscriptions.map((s) => s.subscriber)).toEqual(["carol"]);
 });
 
+test("a restart of the bus keeps an idle spell's start and the hourly limit (notices said 'since <the restart>')", () => {
+  const db = new Database(":memory:", { strict: true });
+  const make = () =>
+    new ResourceSchedule(db, { notify: (to, text) => notices.push({ to, text }), changed: () => {}, agentFolders: () => [], now: () => t });
+  schedule = make();
+  schedule.observe(observation());
+  schedule.subscribe(BETA, {});
+  run(5, () => load(80));
+  run(10, () => load(0)); // idle from the first quiet report
+  const idleFrom = new Date(t - 5 * MIN);
+  schedule = make(); // the bus restarts
+  run(10, () => load(0));
+  // 15 minutes after the spell began, not after the restart, and naming its real start.
+  expect(notices.map((n) => n.to)).toEqual(["beta"]);
+  const two = (n: number) => String(n).padStart(2, "0");
+  expect(notices[0]?.text).toContain(`since ${idleFrom.getFullYear()}-${two(idleFrom.getMonth() + 1)}-${two(idleFrom.getDate())} ${two(idleFrom.getHours())}:${two(idleFrom.getMinutes())}`);
+  // Another restart and a new spell within the hour: still not announced again.
+  run(5, () => load(80));
+  schedule = make();
+  run(20, () => load(0));
+  expect(notices).toHaveLength(1);
+});
+
 test("a held GPU computing nothing tells the next owner and the holder, not the subscribers; with nobody next, nobody", () => {
   schedule.subscribe(CAROL, {});
   const a = schedule.reserve({ from: "alpha", resource: "host1 GPU 2", hours: 8, purpose: "serving" }, ALPHA);

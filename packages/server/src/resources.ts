@@ -100,6 +100,15 @@ CREATE TABLE IF NOT EXISTS gpu_subscriptions (
   min_free_mib INTEGER,
   created_at INTEGER NOT NULL
 );
+-- Per GPU: since when it computes nothing (null: it computes), whether that spell was announced, and when the last
+-- one was. Kept here so a restart of the bus neither restarts the spell (its notices said "since <the restart>")
+-- nor forgets the hourly limit.
+CREATE TABLE IF NOT EXISTS gpu_idle (
+  resource_id TEXT PRIMARY KEY,
+  since INTEGER,
+  noticed INTEGER NOT NULL DEFAULT 0,
+  announced_at INTEGER
+);
 `;
 
 interface ResourceRow {
@@ -211,6 +220,23 @@ export class ResourceSchedule {
     if (!columns.some((c) => c.name === "private")) this.db.exec("ALTER TABLE reservations ADD COLUMN private INTEGER NOT NULL DEFAULT 0");
     this.now = options.now ?? Date.now;
     this.rules = { ...DEFAULT_RULES, ...options.rules };
+    for (const row of this.db
+      .query<{ resource_id: string; since: number | null; noticed: number; announced_at: number | null }, []>("SELECT * FROM gpu_idle")
+      .all()) {
+      if (row.since !== null) this.unused.set(row.resource_id, { since: row.since, noticed: row.noticed === 1 });
+      if (row.announced_at !== null) this.announcedAt.set(row.resource_id, row.announced_at);
+    }
+  }
+
+  /** Writes a GPU's idle spell and last notice time (the maps) to gpu_idle. */
+  private saveIdle(resourceId: string): void {
+    const spell = this.unused.get(resourceId);
+    this.db
+      .query(
+        `INSERT INTO gpu_idle (resource_id, since, noticed, announced_at) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(resource_id) DO UPDATE SET since = ?2, noticed = ?3, announced_at = ?4`
+      )
+      .run(resourceId, spell?.since ?? null, spell?.noticed ? 1 : 0, this.announcedAt.get(resourceId) ?? null);
   }
 
   // ---- Reading ----
@@ -675,8 +701,11 @@ export class ResourceSchedule {
       gpus.push({ resourceId: id, memoryUsed: gpu.memoryUsed, utilization: gpu.utilization, processes });
       // An idle spell starts at the first report of no compute and ends at the first report of some.
       if (gpu.utilization < UNUSED_UTIL_PCT) {
-        if (!this.unused.has(id)) this.unused.set(id, { since: now, noticed: false });
-      } else this.unused.delete(id);
+        if (!this.unused.has(id)) {
+          this.unused.set(id, { since: now, noticed: false });
+          this.saveIdle(id);
+        }
+      } else if (this.unused.delete(id)) this.saveIdle(id);
       // Who is using it: a reservation named by its processes, or a holder whose folder they run in.
       for (const row of open.values()) {
         if (row.resource_id !== id || row.start_at === null || row.start_at > now) continue;
@@ -747,8 +776,10 @@ export class ResourceSchedule {
       const gpu = observed.get(resourceId);
       if (!resource || !gpu || now - gpu.at > OBSERVATION_FRESH_MS) continue;
       spell.noticed = true;
-      if (now - (this.announcedAt.get(resourceId) ?? -Infinity) < UNUSED_REPEAT_MS) continue;
-      if (this.announceUnused(resource, gpu, spell.since, now)) this.announcedAt.set(resourceId, now);
+      if (now - (this.announcedAt.get(resourceId) ?? -Infinity) >= UNUSED_REPEAT_MS && this.announceUnused(resource, gpu, spell.since, now)) {
+        this.announcedAt.set(resourceId, now);
+      }
+      this.saveIdle(resourceId);
     }
     if (changed) this.options.changed();
   }
