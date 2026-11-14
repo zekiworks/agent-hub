@@ -1946,6 +1946,12 @@ ul.md-list ul.md-list { list-style: circle; }
     display: none;
   }
 
+  /* Settings, Stats, GPUs, notifications and "You are" do not fit one phone-wide row: they wrap under the brand. */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+
   .app.phone-list {
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
