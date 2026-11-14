@@ -47,14 +47,18 @@
       </section>
       <section class="side-section">
         <div class="side-heading">
-          <span>Conversations</span>
+          <span>Projects</span>
           <span class="side-heading-actions">
             <button id="unread-btn" type="button" class="unread-toggle" aria-pressed="false" title="Show only conversations with unread messages">Unread</button>
-            <button id="new-group-btn" type="button" class="link-btn" title="Start a group with several participants">+ Group</button>
+            <button id="agent-dms-btn" type="button" class="unread-toggle" aria-pressed="false">Agent DMs</button>
+            <button id="new-project-btn" type="button" class="link-btn" title="Start a project: a named conversation others can join">+ Project</button>
+            <button id="new-group-btn" type="button" class="link-btn" title="Start a group DM with several participants">+ Group</button>
           </span>
         </div>
         <div id="conv-filter" class="conv-filter" hidden></div>
         <ul id="conversation-list" class="side-list"></ul>
+        <button id="browse-btn" type="button" class="link-btn browse-btn" hidden></button>
+        <ul id="browse-list" class="side-list" hidden></ul>
       </section>
     </aside>
 
@@ -63,6 +67,7 @@
         <div class="conv-bar">
           <button id="back-btn" type="button" class="back-btn" title="Conversations">←<span id="back-badge" class="badge" hidden></span></button>
           <h1 id="conv-title" class="conv-title"></h1>
+          <button id="conv-menu-btn" type="button" class="icon-btn" title="Members, notifications and settings of this conversation" hidden>⋯</button>
           <button id="details-btn" type="button" class="icon-btn details-btn" title="Members and details" aria-pressed="false">ⓘ</button>
         </div>
         <div id="conv-subtitle" class="conv-subtitle"></div>
@@ -165,6 +170,8 @@
       </div>
     </form>
   </dialog>
+
+  <dialog id="conv-dialog" class="dialog gpu-dialog conv-dialog"></dialog>
 
   <dialog id="stats-dialog" class="dialog gpu-dialog stats-dialog">
     <div class="gpu-head">

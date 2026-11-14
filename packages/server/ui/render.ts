@@ -34,10 +34,15 @@ function renderProfileSelect(): void {
 
 export function renderHeader(): void {
   const view = state.view;
+  dom.convMenuBtn.hidden = true;
   if (view.kind === "draft") {
-    dom.convTitle.textContent = nameList(view.to);
-    dom.convSubtitle.textContent = `New conversation between you and ${nameList(view.to)} — created when you send the first message.`;
-    setTitleBase(`${nameList(view.to)} · Agent Bus`);
+    const title = view.project !== undefined ? `@@${view.project}` : nameList(view.to);
+    dom.convTitle.textContent = title;
+    dom.convSubtitle.textContent =
+      view.project !== undefined
+        ? `New project "${view.project}", open: anyone can find and join it — created when you send the first message.`
+        : `New conversation between you and ${nameList(view.to)} — created when you send the first message.`;
+    setTitleBase(`${title} · Agent Bus`);
     return;
   }
   const conv = state.conversations.get(view.id);
@@ -50,13 +55,23 @@ export function renderHeader(): void {
   const title = conversationTitle(conv);
   dom.convTitle.textContent = title;
   setTitleBase(`${title} · Agent Bus`);
+  dom.convMenuBtn.hidden = conv.kind === "all" || conv.kind === "dm";
   if (conv.kind === "all") {
     dom.convSubtitle.textContent = "Everyone. Every agent receives what is written here.";
   } else {
-    const membership = conv.members.includes(state.me)
+    const member = conv.members.includes(state.me);
+    const membership = member
       ? ""
-      : " You are viewing; you join when you send a message.";
-    dom.convSubtitle.textContent = `Members: ${nameList(conv.members)}.${membership}`;
+      : conv.kind === "dm"
+        ? " You are viewing agents' DM."
+        : conv.kind === "project" && conv.visibility !== "open"
+          ? " Ask a member to add you."
+          : " You are viewing; you join when you send a message.";
+    const project = conv.kind === "project" ? `${conv.topic ? `${conv.topic} · ` : ""}${conv.visibility ?? "open"} project · ` : "";
+    const level = conv.notify?.[state.me];
+    const notify = level ? ` Your notifications: ${level === "mentions" ? "mentions only" : "none"}.` : "";
+    const archived = conv.archived ? " Archived: writing in it brings it back." : "";
+    dom.convSubtitle.textContent = `${project}Members: ${nameList(conv.members)}.${membership}${notify}${archived}`;
   }
 }
 

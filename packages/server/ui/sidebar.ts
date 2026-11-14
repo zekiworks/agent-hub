@@ -1,4 +1,4 @@
-// The sidebar: conversations, agents, their filters and the Unread / Include offline toggles.
+// The sidebar: agents (a row is my DM with it), mentions, projects and group DMs, their filters and toggles.
 import type { Conversation, Participant } from "@agent-bus/protocol";
 import { dom } from "./dom";
 import { agentDetail, nameList, relativeTime } from "./format";
@@ -8,9 +8,12 @@ import { applyTitle, renderNotifyButton } from "./notify";
 import { renderBackBadge } from "./phones";
 import { navigate } from "./routing";
 import {
+  AGENT_DMS_KEY,
   agents,
+  browsableProjects,
   conversationTitle,
   currentDirectAgent,
+  dmWith,
   INCLUDE_OFFLINE_KEY,
   isCurrent,
   passesFilter,
@@ -51,6 +54,7 @@ export function renderSidebar(): void {
   renderBackBadge();
   renderUnreadToggle();
   renderOfflineToggle();
+  renderAgentDmsToggle();
   renderConversationList();
   renderAgentList();
   renderAgentPanel();
@@ -70,6 +74,36 @@ function renderOfflineToggle(): void {
 dom.offlineBtn.addEventListener("click", () => {
   state.includeOffline = !state.includeOffline;
   localStorage.setItem(INCLUDE_OFFLINE_KEY, state.includeOffline ? "1" : "0");
+  renderSidebar();
+});
+
+function renderAgentDmsToggle(): void {
+  dom.agentDmsBtn.classList.toggle("on", state.agentDms);
+  dom.agentDmsBtn.setAttribute("aria-pressed", String(state.agentDms));
+  dom.agentDmsBtn.title = state.agentDms
+    ? "Showing agents' conversations without a person in them — click to hide them"
+    : "Also show agents' conversations without a person in them (DMs and groups between agents)";
+}
+
+dom.agentDmsBtn.addEventListener("click", () => {
+  state.agentDms = !state.agentDms;
+  localStorage.setItem(AGENT_DMS_KEY, state.agentDms ? "1" : "0");
+  renderSidebar();
+});
+
+dom.newProjectBtn.addEventListener("click", () => {
+  const raw = prompt("Project name (lowercase letters, digits, - and _):")?.trim().toLowerCase();
+  if (!raw) return;
+  if (!/^[a-z0-9][a-z0-9_-]{0,47}$/.test(raw)) {
+    alert(`"${raw}" is not a project name: lowercase letters, digits, - and _, at most 48.`);
+    return;
+  }
+  const existing = Array.from(state.conversations.values()).find((c) => c.kind === "project" && c.name === raw);
+  navigate(existing ? { kind: "conversation", id: existing.id } : { kind: "draft", to: [], project: raw });
+});
+
+dom.browseBtn.addEventListener("click", () => {
+  state.browsing = !state.browsing;
   renderSidebar();
 });
 
@@ -127,13 +161,21 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   button.type = "button";
   if (isCurrent(conv.id)) button.classList.add("active");
   const title = h("span", "side-item-title", conversationTitle(conv));
+  const what =
+    conv.kind === "project"
+      ? (conv.topic ?? `${conv.visibility ?? "open"} project`)
+      : conv.kind === "group"
+        ? "group DM"
+        : conv.kind === "dm"
+          ? "DM"
+          : "everyone";
   const meta = h(
     "span",
     "side-item-detail",
-    conv.kind === "all"
-      ? "everyone"
-      : `${conv.members.length} members${conv.members.includes(state.me) ? "" : " · you're not in it"}`
+    conv.kind === "all" ? what : `${what} · ${conv.members.length} members${conv.members.includes(state.me) ? "" : " · you're not in it"}`
   );
+  if (conv.kind === "project") button.classList.add("conv-project");
+  if (conv.notify?.[state.me]) button.classList.add("conv-muted");
   const text = h("span", "side-item-text");
   text.append(title, meta);
   button.append(text);
@@ -164,12 +206,13 @@ function renderConversationList(): void {
   const shown = conversations.filter(passesFilter);
   renderFilterNote(conversations.filter((c) => !passesFilter(c)));
   const items = shown.map(conversationItem);
-  if (state.view.kind === "draft") {
+  if (state.view.kind === "draft" && (state.view.project !== undefined || state.view.to.length > 1)) {
     const li = h("li");
     const button = h("button", "side-item conv-item active");
     button.type = "button";
     const text = h("span", "side-item-text");
-    text.append(h("span", "side-item-title", nameList(state.view.to)), h("span", "side-item-detail", "new — not sent yet"));
+    const title = state.view.project !== undefined ? `@@${state.view.project}` : nameList(state.view.to);
+    text.append(h("span", "side-item-title", title), h("span", "side-item-detail", "new — not sent yet"));
     button.append(text);
     li.append(button);
     items.splice(1, 0, li);
@@ -180,6 +223,11 @@ function renderConversationList(): void {
     items.push(h("li", "side-empty", `No conversations with ${nameList([...state.filter])} yet.`));
   }
   dom.conversationList.replaceChildren(...items);
+  const browsable = browsableProjects();
+  dom.browseBtn.hidden = browsable.length === 0;
+  dom.browseBtn.textContent = `${state.browsing ? "▾" : "▸"} Browse projects (${browsable.length})`;
+  dom.browseList.hidden = !state.browsing || browsable.length === 0;
+  dom.browseList.replaceChildren(...(state.browsing ? browsable.map(conversationItem) : []));
 }
 
 /** "with @a, @b · clear", plus how many unread messages the filter hides. */
@@ -243,6 +291,10 @@ function renderAgentList(): void {
       const detail = agentDetail(agent, showHost);
       if (detail) text.append(h("span", "side-item-detail", detail));
       button.append(dot, text);
+      // The row stands for my DM with it: its unread count shows here.
+      const dm = dmWith(agent.id);
+      const unread = dm ? (state.unread.get(dm.id) ?? 0) : 0;
+      if (unread > 0) button.append(h("span", "badge", unread > 99 ? "99+" : String(unread)));
       const tip = [
         agent.id,
         agent.harness ? `harness: ${agent.harness}` : "",
@@ -255,7 +307,7 @@ function renderAgentList(): void {
         "Open its page for what it is doing now.",
       ];
       button.title = tip.filter(Boolean).join("\n");
-      button.addEventListener("click", () => navigate({ kind: "draft", to: [agent.id] }));
+      button.addEventListener("click", () => navigate(dm ? { kind: "conversation", id: dm.id } : { kind: "draft", to: [agent.id] }));
       const filtering = state.filter.has(agent.id);
       const filter = h("button", `agent-filter${filtering ? " on" : ""}`);
       filter.type = "button";

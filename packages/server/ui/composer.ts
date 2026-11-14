@@ -18,7 +18,7 @@ export function hideError(): void {
 /** Agents of the open conversation (or draft) that are offline now: a message for them is held until they are back. */
 function offlineRecipients(): string[] {
   const view = state.view;
-  const ids = view.kind === "draft" ? view.to : (state.conversations.get(view.id)?.addressed ?? []);
+  const ids = view.kind === "draft" ? view.to : (state.conversations.get(view.id)?.members ?? []);
   return ids.filter((id) => {
     const p = state.participants.find((x) => x.id === id);
     return p?.kind === "agent" && !p.online;

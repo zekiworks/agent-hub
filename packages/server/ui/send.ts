@@ -2,6 +2,7 @@
 import {
   ALL_CONVERSATION_ID,
   formatAddress,
+  mentionedIds,
   type FileRef,
   type PostMessageRequest,
   type PostMessageResponse,
@@ -36,9 +37,21 @@ export async function postToView(view: View, text: string, fileIds: string[]): P
   if (fileIds.length > 0) request.fileIds = fileIds;
   if (state.replyTo && view.kind === "conversation" && state.replyTo.conversationId === view.id) {
     request.replyToSeq = state.replyTo.seq;
-  } else if (view.kind === "draft") request.to = formatAddress(view.to);
+  } else if (view.kind === "draft") request.to = view.project !== undefined ? `@@${view.project}` : formatAddress(view.to);
   else if (view.id === ALL_CONVERSATION_ID) request.to = "@all";
   else request.conversationId = view.id;
+  // @mentioning someone who is not in a group DM or project: add them, or only name them (as in Google Chat).
+  const target = view.kind === "conversation" ? state.conversations.get(view.id) : undefined;
+  const known = new Set(state.participants.map((p) => p.id));
+  const outsiders = target && target.kind !== "all" ? mentionedIds(text).filter((id) => known.has(id) && !target.members.includes(id)) : [];
+  if (target && outsiders.length > 0) {
+    const names = outsiders.map((id) => `@${id}`).join(", ");
+    if (target.kind === "dm") {
+      showError(`${names} ${outsiders.length > 1 ? "are" : "is"} not in this DM and will not see it: a DM stays between two. Use + Group or a project to bring them in.`);
+    } else if (confirm(`${names} ${outsiders.length > 1 ? "are" : "is"} not in this conversation.\n\nOK: add ${outsiders.length > 1 ? "them" : "them"} and send (they also see the earlier messages).\nCancel: send only, without adding anyone.`)) {
+      request.addMentioned = true;
+    }
+  }
   // On an agent's page with a session picked, the message goes to that session.
   const agent = currentDirectAgent();
   const session = agent ? chosenSession(agent) : undefined;

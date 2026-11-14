@@ -1618,6 +1618,42 @@ ul.md-list ul.md-list { list-style: circle; }
   justify-content: space-between;
 }
 
+/* The ⋯ menu of a group DM or project, and how projects show in the sidebar. */
+.conv-dialog select,
+.conv-dialog input[type="text"] {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.conv-row {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.conv-row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.conv-item.conv-project .side-item-title {
+  color: var(--accent);
+}
+
+.conv-item.conv-muted {
+  opacity: 0.7;
+}
+
+.browse-btn {
+  margin: 6px 8px 0;
+  font-size: 13px;
+}
+
 /* Stats dialog: per-participant table and per-day bars. */
 .stats-dialog .gpu-head h2 {
   margin-right: auto;

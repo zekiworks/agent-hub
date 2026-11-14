@@ -8,7 +8,7 @@ import { notify } from "./notify";
 import { applyEarlyReceipts, renderHeader, renderMessages, showEmpty } from "./render";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
-import { findGroup, isCurrent, mergeMessages, PAGE_SIZE, state } from "./state";
+import { draftConversation, isCurrent, mergeMessages, PAGE_SIZE, state } from "./state";
 import { isForMe, isUrgent, markRead, viewingNow } from "./unread";
 
 export async function loadState(): Promise<void> {
@@ -102,7 +102,7 @@ export function receive(message: Message, conversation: Conversation): void {
   }
   const current = isCurrent(conversation.id);
   // A draft for this group just came into existence (someone else wrote first, or we did).
-  if (state.view.kind === "draft" && findGroup([state.me, ...state.view.to])?.id === conversation.id) {
+  if (state.view.kind === "draft" && draftConversation(state.view)?.id === conversation.id) {
     navigate({ kind: "conversation", id: conversation.id });
     return;
   }

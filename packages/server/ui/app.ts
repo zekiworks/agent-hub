@@ -17,11 +17,12 @@ import { askProfile } from "./profile";
 import { applyReceipt, renderAll, showEmpty } from "./render";
 import { navigate, parseHash, viewHash } from "./routing";
 import "./send";
+import "./convmenu";
 import "./stats";
 import "./voice";
 import { renderSidebar } from "./sidebar";
 import { connectViewer, setLinkStatus } from "./socket";
-import { findGroup, isCurrent, state, type View } from "./state";
+import { draftConversation, isCurrent, state, type View } from "./state";
 import { flashMessage, fetchMessage, shownMessage } from "./text";
 import { loadReadMarkers, markRead, refreshUnread } from "./unread";
 
@@ -30,7 +31,7 @@ import { loadReadMarkers, markRead, refreshUnread } from "./unread";
 /** Drafts whose group already exists open the conversation instead. */
 function resolveView(view: View): View {
   if (view.kind !== "draft") return view;
-  const existing = findGroup([state.me, ...view.to]);
+  const existing = draftConversation(view);
   return existing ? { kind: "conversation", id: existing.id } : view;
 }
 
@@ -94,23 +95,6 @@ hooks.showMessage = showMessage;
 
 // ---- Viewer socket ----
 
-/**
- * A mention merged group `from` into `into` (its messages moved there): forget `from`, add its unread counts to
- * `into`, reload `into` (its cache lacks the moved messages) and follow if `from` is open.
- */
-function forgetMerged(from: string, into: string): void {
-  state.conversations.delete(from);
-  state.caches.delete(from);
-  state.caches.delete(into);
-  for (const counts of [state.unread, state.attention, state.urgent]) {
-    const moved = counts.get(from) ?? 0;
-    counts.delete(from);
-    if (moved > 0) counts.set(into, (counts.get(into) ?? 0) + moved);
-  }
-  if (state.view.kind === "conversation" && state.view.id === from) navigate({ kind: "conversation", id: into });
-  else if (state.view.kind === "conversation" && state.view.id === into) void loadMessages(into);
-}
-
 function handleFrame(frame: ViewerServerFrame): void {
   switch (frame.type) {
     case "participants":
@@ -121,8 +105,15 @@ function handleFrame(frame: ViewerServerFrame): void {
       updateComposerState();
       break;
     case "message":
-      if (frame.merged) forgetMerged(frame.merged, frame.conversation.id);
       receive(frame.message, frame.conversation);
+      break;
+    case "conversations":
+      // Members, notifications or a project's settings changed somewhere.
+      void loadState().then(() => {
+        renderSidebar();
+        if (state.view.kind === "conversation" && !state.conversations.has(state.view.id)) navigate({ kind: "conversation", id: "all" });
+        else renderAll();
+      });
       break;
     case "receipt":
     case "expired":

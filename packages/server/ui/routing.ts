@@ -5,13 +5,16 @@ import { hooks } from "./hooks";
 import type { View } from "./state";
 
 export function viewHash(view: View): string {
-  return view.kind === "conversation" ? `#/c/${encodeURIComponent(view.id)}` : `#/to/${view.to.join(",")}`;
+  if (view.kind === "conversation") return `#/c/${encodeURIComponent(view.id)}`;
+  return view.project !== undefined ? `#/p/${encodeURIComponent(view.project)}` : `#/to/${view.to.join(",")}`;
 }
 
 export function parseHash(): View {
   const hash = location.hash;
   const conv = /^#\/c\/(.+)$/.exec(hash);
   if (conv?.[1]) return { kind: "conversation", id: decodeURIComponent(conv[1]) };
+  const project = /^#\/p\/(.+)$/.exec(hash);
+  if (project?.[1]) return { kind: "draft", to: [], project: decodeURIComponent(project[1]) };
   const draft = /^#\/to\/(.+)$/.exec(hash);
   if (draft?.[1]) {
     const to = sortedUnique(decodeURIComponent(draft[1]).split(",").map((s) => s.trim()).filter(Boolean));
