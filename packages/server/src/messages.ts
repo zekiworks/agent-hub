@@ -12,7 +12,7 @@ import {
   type Receipt,
 } from "@agent-bus/protocol";
 import type { BusContext } from "./context";
-import { addMembers, canRead, checkedProjectName, leave, mayRead, type Reader } from "./conversations";
+import { addMembers, canRead, canSee, checkedProjectName, leave, mayRead, type Reader } from "./conversations";
 import { DEFAULT_HOLD_MS, type ParticipantRecord } from "./db";
 import { HttpError, readJsonObject } from "./http";
 
@@ -59,6 +59,19 @@ function recipientsFor(ctx: BusContext, conversation: Conversation, writerId: st
  * members a DM, more a group DM (the one with exactly these members, else a new one); "@@name" a project, created
  * (open) if there is none, joined if open.
  */
+/**
+ * The root project `name` of "@{@@name,a,b}", which `writer` must be able to see. Groups go under root projects only
+ * (one level), so a sub-project's name is refused with the reason.
+ */
+export function rootProjectFor(ctx: BusContext, writer: ParticipantRecord, name: string): Conversation {
+  const project = ctx.db.projectByName(name);
+  if (!project || !canSee(ctx, project, { id: writer.id, kind: writer.kind === "human" ? "human" : "agent" })) {
+    throw new HttpError(404, `No project "@@${name}"`);
+  }
+  if (project.parentId) throw new HttpError(409, `@@${name} is itself under a project; groups go under root projects`);
+  return project;
+}
+
 function conversationFor(ctx: BusContext, writer: ParticipantRecord, parsed: ReturnType<BusContext["knownAddress"]>, now: number): Conversation {
   const { db } = ctx;
   if (parsed.kind === "all") {
@@ -80,6 +93,7 @@ function conversationFor(ctx: BusContext, writer: ParticipantRecord, parsed: Ret
   }
   const ids = Array.from(new Set([writer.id, ...parsed.ids]));
   if (ids.length < 2) throw new HttpError(400, "Cannot write only to yourself");
+  if (parsed.project) return db.groupUnder(rootProjectFor(ctx, writer, parsed.project).id, ids, now);
   const [a, b] = ids;
   return ids.length === 2 && a && b ? db.dmOf(a, b, now) : db.groupDmOf(ids, now);
 }

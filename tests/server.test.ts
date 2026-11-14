@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { isJsonObject } from "@agent-bus/protocol";
+import { isJsonObject, mentionedIds } from "@agent-bus/protocol";
 import type {
   AgentServerFrame,
   Conversation,
@@ -603,6 +603,37 @@ describe("delivery", () => {
     // Only members set it; null makes it a root again.
     expect((await parent(child.conversation.id, null, "uma")).status).toBe(403);
     expect((await answeredConversation(await parent(child.conversation.id, null))).parentId).toBeUndefined();
+  });
+
+  test("@{@@project,a,b} is the group DM of those members under that project, apart from the same set elsewhere", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    await send({ from: "carol", to: "@@benchmarks", text: "root" });
+    const loose = await send({ from: "carol", to: "@{alpha,uma}", text: "not under a project" });
+    await alpha.client.take("deliver");
+
+    const under = await send({ from: "carol", to: "@{@@benchmarks,alpha,uma}", text: "under benchmarks" });
+    expect(under.conversation.id).not.toBe(loose.conversation.id);
+    expect(under.conversation).toMatchObject({ kind: "group", parentName: "benchmarks", members: ["alpha", "carol", "uma"] });
+    // Replies keep the prefix, so the answer lands in the same group.
+    expect((await alpha.client.take("deliver")).replyTo).toBe("@{@@benchmarks,carol,uma}");
+    expect((await send({ from: alpha.id, to: "@{@@benchmarks,carol,uma}", text: "back" })).conversation.id).toBe(under.conversation.id);
+
+    // Two members under a project make a group DM there (DMs have no parent); the DM itself stays apart.
+    const pair = await send({ from: "carol", to: "@{@@benchmarks,alpha}", text: "just us, in benchmarks" });
+    expect(pair.conversation).toMatchObject({ kind: "group", parentName: "benchmarks", members: ["alpha", "carol"] });
+    expect((await send({ from: "carol", to: "@alpha", text: "our DM" })).conversation.kind).toBe("dm");
+
+    // The prefix is nobody's mention, and history finds the group by it.
+    expect(mentionedIds("see @{@@benchmarks,alpha} and @carol")).toEqual(["alpha", "carol"]);
+    const hist = await getJson<{ messages: Message[] }>(bus, `/api/history?from=alpha&to=${encodeURIComponent("@{@@benchmarks,carol,uma}")}`);
+    expect(hist.messages.map((m) => m.text)).toEqual(["under benchmarks", "back"]);
+
+    // Only root projects, and only real ones.
+    const child = await send({ from: "carol", to: "@@reading", text: "child" });
+    await postJson(bus, `/api/conversations/${child.conversation.id}/parent`, { from: "carol", parent: "@@benchmarks" });
+    expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@reading,alpha}", text: "x" })).status).toBe(409);
+    expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@nowhere,alpha}", text: "x" })).status).toBe(404);
+    expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@benchmarks}", text: "x" })).status).toBe(400);
   });
 
   test("a person deletes a project for good, member or not; agents cannot; what was under it becomes a root", async () => {

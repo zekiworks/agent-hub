@@ -48,6 +48,10 @@ conversation.
 
 - Writing to `@{a,b}` opens the group DM with exactly those members (the most recently active one, if several), or
   starts one.
+- `@{@@compactor,a,b}` (Can, 14 Nov): the group DM of exactly those members under root project compactor, started there
+  if there is none; the same members elsewhere are another group. The prefix is optional; with it, two members make a
+  group DM too (DMs have no parent). Replies and labels of a group under a project carry the prefix, and it is never
+  read as a mention.
 - Members add others (below) and leave (`exit`, `op=leave`). The id stays; a later `@{a,b}` with the old set starts a
   new one.
 - **Turn into project:** any member gives a group DM a name and topic; it becomes a project, history and members kept
@@ -135,7 +139,8 @@ access.
 
 - `Conversation.kind`: `"all" | "dm" | "group" | "project"`; projects add `name`, `topic`, `visibility`, `archived`.
   `addressed` goes away, `members` stays.
-- `POST /api/messages`: `to: "@x"` (DM), `"@{a,b}"` (group DM), `"@@name"` (project); `conversationId` keeps working.
+- `POST /api/messages`: `to: "@x"` (DM), `"@{a,b}"` (group DM), `"@{@@name,a,b}"` (group DM under project `name`),
+  `"@@name"` (project); `conversationId` keeps working.
 - `message-bus` tool: `write to=@@name`, `op=leave`, `op=invite`, `op=notify`, `op=projects` (list with members, topic,
   visibility and your notification setting).
 - Harness plugins need no change for receiving; their tool texts change (one shared file, `client/src/tool.ts`, plus

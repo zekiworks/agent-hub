@@ -116,6 +116,8 @@ export interface Conversation {
    * root projects, and a project with children stays a root. Children take the parent's colour.
    */
   parentId?: string;
+  /** The parent project's name, with `parentId`: a group under it is addressed "@{@@name,a,b}". */
+  parentName?: string;
   /** Members whose notification setting is not `all`. */
   notify?: Record<string, Exclude<NotifyLevel, "all">>;
   /** A discoverable project the reader is not in: its name, topic and members only, not its messages. */

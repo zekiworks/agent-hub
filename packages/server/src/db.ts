@@ -84,6 +84,9 @@ interface ParticipantRow {
   last_seen_at: number;
 }
 
+/** Column for queries over `conversations c`: the parent project's name. */
+const PARENT_NAME = "(SELECT p.name FROM conversations p WHERE p.id = c.parent_id) AS parent_name";
+
 interface ConversationRow {
   id: string;
   kind: string;
@@ -95,6 +98,8 @@ interface ConversationRow {
   archived: number | null;
   /** Null for root projects and unattached groups (and on databases from before the column). */
   parent_id?: string | null;
+  /** The parent's name, joined in by the queries that read conversations. */
+  parent_name?: string | null;
   created_at: number;
   last_message_at: number;
 }
@@ -740,6 +745,7 @@ export class BusDatabase {
       ...(kind === "project" ? { visibility: toVisibility(row.visibility) } : {}),
       ...(row.archived ? { archived: true as const } : {}),
       ...(row.parent_id ? { parentId: row.parent_id } : {}),
+      ...(row.parent_id && row.parent_name ? { parentName: row.parent_name } : {}),
       ...(Object.keys(notify).length > 0 ? { notify } : {}),
       createdAt: row.created_at,
       lastMessageAt: row.last_message_at,
@@ -752,7 +758,7 @@ export class BusDatabase {
       .query<{ new_id: string }, [string]>("SELECT new_id FROM conversation_aliases WHERE old_id = ?1")
       .get(id);
     const row = this.db
-      .query<ConversationRow, [string]>("SELECT * FROM conversations WHERE id = ?1")
+      .query<ConversationRow, [string]>(`SELECT c.*, ${PARENT_NAME} FROM conversations c WHERE c.id = ?1`)
       .get(alias?.new_id ?? id);
     return row ? this.toConversation(row, this.membersOf(row.id)) : null;
   }
@@ -761,8 +767,8 @@ export class BusDatabase {
   listConversations(): Conversation[] {
     const rows = this.db
       .query<ConversationRow, []>(
-        `SELECT * FROM conversations
-         ORDER BY (kind = 'all') DESC, last_message_at DESC, id`
+        `SELECT c.*, ${PARENT_NAME} FROM conversations c
+         ORDER BY (c.kind = 'all') DESC, c.last_message_at DESC, c.id`
       )
       .all();
     const members = new Map<string, Array<{ participant_id: string; notify: string | null }>>();
@@ -782,18 +788,19 @@ export class BusDatabase {
    * The conversation of `kind` whose members are exactly `ids` (a DM or a group DM), without creating one: an
    * unarchived one first, then the most recently active.
    */
-  findByMembers(kind: "dm" | "group", ids: readonly string[]): Conversation | null {
+  findByMembers(kind: "dm" | "group", ids: readonly string[], parentId?: string): Conversation | null {
     const wanted = Array.from(new Set(ids));
     const row = this.db
-      .query<{ id: string }, [string, string, number]>(
+      .query<{ id: string }, [string, string, number, string | null]>(
         `SELECT c.id FROM conversations c
          WHERE c.kind = ?1
+           AND (?4 IS NULL OR c.parent_id = ?4)
            AND (SELECT COUNT(*) FROM conversation_members m WHERE m.conversation_id = c.id) = ?3
            AND (SELECT COUNT(*) FROM conversation_members m
                 WHERE m.conversation_id = c.id AND m.participant_id IN (SELECT value FROM json_each(?2))) = ?3
          ORDER BY COALESCE(c.archived, 0), c.last_message_at DESC LIMIT 1`
       )
-      .get(kind, JSON.stringify(wanted), wanted.length);
+      .get(kind, JSON.stringify(wanted), wanted.length, parentId ?? null);
     return row ? this.getConversation(row.id) : null;
   }
 
@@ -805,6 +812,15 @@ export class BusDatabase {
   /** The group DM with exactly `ids` (three or more, the writer included), created if there is none. */
   groupDmOf(ids: readonly string[], now = Date.now()): Conversation {
     return this.findByMembers("group", ids) ?? this.createConversation("group", ids, now);
+  }
+
+  /** The group DM of exactly `ids` under project `parentId` (two members too: DMs have no parent), made if missing. */
+  groupUnder(parentId: string, ids: readonly string[], now = Date.now()): Conversation {
+    const found = this.findByMembers("group", ids, parentId);
+    if (found) return found;
+    const made = this.createConversation("group", ids, now);
+    this.setParent(made.id, parentId);
+    return this.getConversation(made.id) as Conversation;
   }
 
   /** The project named `name` (archived or not), or null. */

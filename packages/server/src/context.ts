@@ -114,6 +114,6 @@ export class BusContext {
         `Unknown id${unknown.length > 1 ? "s" : ""} ${unknown.join(", ")}. Known ids: ${this.hub.knownIds().join(", ")}`
       );
     }
-    return { kind: "ids", ids: Array.from(new Set(ids)), sessions };
+    return { kind: "ids", ids: Array.from(new Set(ids)), ...(parsed.project ? { project: parsed.project } : {}), sessions };
   }
 }

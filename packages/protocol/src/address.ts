@@ -1,6 +1,10 @@
 import type { AgentSettings, Conversation, ParticipantKind, Quote, Receipt } from "./types";
 
-export type ParsedAddress = { kind: "all" } | { kind: "ids"; ids: string[] } | { kind: "project"; name: string };
+/** `project` on ids: "@{@@compactor,logic,turkce}", the group DM of those ids under root project compactor. */
+export type ParsedAddress =
+  | { kind: "all" }
+  | { kind: "ids"; ids: string[]; project?: string }
+  | { kind: "project"; name: string };
 
 const SLUG = "[a-z0-9][a-z0-9_-]*";
 /** One slug, or `base@qualifier` for an agent whose folder (or name) is already taken. Max 48 chars. */
@@ -9,18 +13,25 @@ const MAX_ID_CHARS = 48;
 
 /**
  * Parses a write target: "@all", "@id", "@{id1, id2}" (the leading "@" and the ones inside braces are optional), or
- * "@@name" for project `name`. Ids and names are lowercased. Throws on anything else.
+ * "@@name" for project `name`. Inside braces one "@@name" may come too (Can, 14 Nov): "@{@@compactor,logic,turkce}" is
+ * the group DM of those ids under project compactor. Ids and names are lowercased. Throws on anything else.
  */
 export function parseAddress(input: string): ParsedAddress {
   if (input.trim().startsWith("@@")) return { kind: "project", name: projectName(input.trim().slice(2)) };
   const raw = input.trim().replace(/^@/, "");
   if (raw.toLowerCase() === "all") return { kind: "all" };
   const inner = raw.startsWith("{") && raw.endsWith("}") ? raw.slice(1, -1) : raw;
-  const ids = inner
+  const parts = inner
     .split(",")
-    .map((s) => s.trim().replace(/^@/, "").toLowerCase())
+    .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  if (ids.length === 0) throw new Error(`Empty address "${input}"`);
+  const projects = parts.filter((s) => s.startsWith("@@")).map((s) => projectName(s.slice(2)));
+  if (projects.length > 1) throw new Error(`One project per address, got "${input}"`);
+  if (projects.length > 0 && raw === inner) throw new Error(`Write a project's group as @{@@project,id1,id2}, got "${input}"`);
+  const ids = parts
+    .filter((s) => !s.startsWith("@@"))
+    .map((s) => s.replace(/^@/, "").toLowerCase());
+  if (ids.length === 0) throw new Error(projects.length > 0 ? `Name the members too: @{@@${projects[0]},id1,id2}, got "${input}"` : `Empty address "${input}"`);
   for (const id of ids) {
     if (id === "all") throw new Error(`"@all" cannot be combined with other ids in "${input}"`);
     if (!ID_RE.test(id) || id.length > MAX_ID_CHARS) throw new Error(`Invalid id "${id}" in "${input}"`);
@@ -28,7 +39,7 @@ export function parseAddress(input: string): ParsedAddress {
   if (ids.length > 1 && raw === inner) {
     throw new Error(`Write several ids as @{id1,id2}, got "${input}"`);
   }
-  return { kind: "ids", ids: Array.from(new Set(ids)) };
+  return { kind: "ids", ids: Array.from(new Set(ids)), ...(projects[0] ? { project: projects[0] } : {}) };
 }
 
 /** A project name as given (lowercased): the agent id rules, a slug of at most 48 characters; throws otherwise. */
@@ -51,6 +62,7 @@ export function mentionedIds(text: string): string[] {
   const ids: string[] = [];
   for (const match of text.matchAll(MENTION_RE)) {
     for (const part of (match[2] ?? "").replace(/^@\{?|\}$/g, "").split(",")) {
+      if (part.trim().startsWith("@@")) continue; // a project prefix, "@{@@compactor,a}", is nobody's mention
       const id = part.trim().replace(/^@/, "").toLowerCase();
       if (id && !ids.includes(id)) ids.push(id);
     }
@@ -81,14 +93,20 @@ export function formatAddress(ids: readonly string[]): string {
 export function replyAddress(conversation: Conversation, recipientId: string): string {
   if (conversation.kind === "all") return "@all";
   if (conversation.kind === "project" && conversation.name) return `@@${conversation.name}`;
-  return formatAddress(conversation.members.filter((id) => id !== recipientId));
+  return groupAddress(conversation, conversation.members.filter((id) => id !== recipientId));
 }
 
 /** How a conversation is named in delivery headers and tool results: "@all", "@@project", or its members. */
-export function conversationLabel(conversation: Pick<Conversation, "kind" | "members" | "name">): string {
+export function conversationLabel(conversation: Pick<Conversation, "kind" | "members" | "name" | "parentName">): string {
   if (conversation.kind === "all") return "@all";
   if (conversation.kind === "project" && conversation.name) return `@@${conversation.name}`;
-  return formatAddress(conversation.members);
+  return groupAddress(conversation, conversation.members);
+}
+
+/** `ids` as an address, with the project prefix of a group under one: "@{@@compactor,a,b}"; else "@a" or "@{a,b}". */
+function groupAddress(conversation: Pick<Conversation, "kind" | "parentName">, ids: readonly string[]): string {
+  if (conversation.kind === "group" && conversation.parentName) return `@{@@${conversation.parentName},${ids.join(",")}}`;
+  return formatAddress(ids);
 }
 
 /** `text` @mentions `id` (or names it inside `@{…}`). */

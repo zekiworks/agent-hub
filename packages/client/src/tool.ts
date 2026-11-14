@@ -5,7 +5,7 @@
 import { realpathSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { conversationLabel, defangHeaders, deliveryHeader, describeReceipts, formatTime, provenanceMark, quoteLine, senderLabel } from "../../protocol/src/address";
+import { conversationLabel, defangHeaders, deliveryHeader, describeReceipts, formatTime, parseAddress, provenanceMark, quoteLine, senderLabel } from "../../protocol/src/address";
 import type { Reservation, ReservationResponse, Resource, ResourcesResponse } from "../../protocol/src/resources";
 import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptEvent } from "../../protocol/src/types";
 import type { BusConnection, Delivery } from "./connection";
@@ -84,7 +84,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
       "reply/write/send a message, set a setting, read (inbox, show, history, search), conversations (projects, invite, leave, notify, project, parent), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
   },
   { name: "message_id", type: "number", description: "a message's #number (reply, show, history)" },
-  { name: "to", type: "string", description: '"@all", "@id" (a DM), "@{id1,id2}" (a group DM) or "@@name" (a project) (write/send, history, invite, leave, notify, project)' },
+  { name: "to", type: "string", description: '"@all", "@id" (a DM), "@{id1,id2}" (a group DM; "@{@@project,id1,id2}" for the one under that project) or "@@name" (a project) (write/send, history, invite, leave, notify, project)' },
   { name: "message", type: "string", description: "message text (reply/write; optional caption for send)" },
   { name: "files", type: "string[]", description: "file paths, relative to the project folder or absolute (optional for reply and write)" },
   { name: "key", type: "string", description: "setting name (set)" },
@@ -156,7 +156,8 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "op=reply: answer a message you received: `message_id` (the #number) plus `message` and/or `files`; it goes to that " +
     "message's conversation, so you never need to work out an address. " +
     "op=write: start or continue a conversation: `to` is \"@all\", \"@id\" (your DM with it), \"@{id1,id2}\" (the group " +
-    "DM with exactly them) or \"@@name\" (project `name`: you join it if it is open; a new name creates it), plus " +
+    "DM with exactly them; \"@{@@project,id1,id2}\" for the one under that root project, made there if new) or " +
+    "\"@@name\" (project `name`: you join it if it is open; a new name creates it), plus " +
     "`message` and/or `files` (local paths). Naming someone in a message's text does not add them to a conversation. " +
     "op=send: the same as write, with `files` required. Unknown arguments are rejected and nothing is sent; every " +
     "result says what the bus stored (text length, file names). " +
@@ -637,9 +638,13 @@ export class BusTool {
       if (!project) throw new Error(`No project "${name}" that you can see.`);
       return project;
     }
-    const ids = new Set([me, ...to.replace(/^@/, "").replace(/^\{|\}$/g, "").split(",").map((s) => s.trim().replace(/^@/, "").toLowerCase())]);
+    const parsed = parseAddress(to);
+    if (parsed.kind !== "ids") throw new Error(`${params.op} needs a group DM, project or DM, not ${to}.`);
+    const ids = new Set([me, ...parsed.ids]);
+    // "@{@@compactor,a,b}": only the group under that project; without a prefix, any (the most recent).
     const match = conversations
-      .filter((c) => (c.kind === "dm" || c.kind === "group") && c.members.length === ids.size && c.members.every((m) => ids.has(m)))
+      .filter((c) => (parsed.project ? c.kind === "group" && c.parentName === parsed.project : c.kind === "dm" || c.kind === "group"))
+      .filter((c) => c.members.length === ids.size && c.members.every((m) => ids.has(m)))
       .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || b.lastMessageAt - a.lastMessageAt)[0];
     if (!match) throw new Error(`No conversation of yours with ${to}.`);
     return match;

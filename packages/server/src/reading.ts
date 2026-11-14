@@ -69,7 +69,9 @@ export function getHistory(ctx: BusContext, url: URL): ReadResponse {
       if (!conversation) throw new HttpError(404, `No project "${parsed.name}"`);
     } else {
       const ids = Array.from(new Set([me.id, ...parsed.ids]));
-      conversation = db.findByMembers(ids.length === 2 ? "dm" : "group", ids);
+      const parent = parsed.project ? db.projectByName(parsed.project) : undefined;
+      if (parsed.project && !parent) throw new HttpError(404, `No project "@@${parsed.project}"`);
+      conversation = parent ? db.findByMembers("group", ids, parent.id) : db.findByMembers(ids.length === 2 ? "dm" : "group", ids);
       if (!conversation) throw new HttpError(404, `No conversation of @${me.id} with ${to} yet`);
     }
   } else {

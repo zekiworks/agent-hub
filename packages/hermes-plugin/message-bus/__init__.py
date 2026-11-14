@@ -98,7 +98,7 @@ SCHEMA = {
             "op": {"type": "string", "enum": ["reply", "write", "send", "set", "inbox", "show", "history", "search"],
                    "description": "reply/write/send a message, set a setting, or read: inbox, show, history, search"},
             "message_id": {"type": "integer", "description": "a message's #number (reply, show, history)"},
-            "to": {"type": "string", "description": "\"@all\", \"@id\", \"@{id1,id2}\" or \"@@project\" (write/send, history)"},
+            "to": {"type": "string", "description": "\"@all\", \"@id\", \"@{id1,id2}\" (\"@{@@project,id1,id2}\" for the group under that project) or \"@@project\" (write/send, history)"},
             "message": {"type": "string", "description": "message text (reply/write; optional caption for send)"},
             "files": {"type": "array", "items": {"type": "string"},
                       "description": "absolute file paths (optional for reply and write)"},
@@ -148,6 +148,8 @@ def _conversation_label(conversation: dict) -> str:
         return "@all"
     if conversation["kind"] == "project" and conversation.get("name"):
         return f"@@{conversation['name']}"
+    if conversation["kind"] == "group" and conversation.get("parentName"):
+        return f"@{{@@{conversation['parentName']},{','.join(conversation['members'])}}}"
     return _format_address(conversation["members"])
 
 
