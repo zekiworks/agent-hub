@@ -353,6 +353,22 @@ export interface MessagesResponse {
   messages: Message[];
 }
 
+/** A file shared in a conversation, with the message that shared it. */
+export interface SharedFile {
+  file: FileRef;
+  seq: number;
+  from: string;
+  createdAt: number;
+}
+
+/**
+ * GET /api/conversations/:id/files: the files shared there, newest first (the right pane's Shared list). Voice
+ * messages are left out: they are messages, not shared files.
+ */
+export interface SharedFilesResponse {
+  files: SharedFile[];
+}
+
 /**
  * GET /api/inbox, /api/history, /api/search: messages (ascending by seq) with the conversations they are in.
  * `scope=mine` (default) limits to `@all` and conversations the reader is a member of; `scope=all` reads everything.

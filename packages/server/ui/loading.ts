@@ -7,6 +7,7 @@ import { errorText } from "./format";
 import { notify } from "./notify";
 import { applyEarlyReceipts, renderHeader, renderMessages, showEmpty } from "./render";
 import { navigate } from "./routing";
+import { sharedFilesChanged, sharedFilesLoaded } from "./files";
 import { renderSidebar } from "./sidebar";
 import { draftConversation, isCurrent, mergeMessages, PAGE_SIZE, state } from "./state";
 import { isForMe, isUrgent, markRead, viewingNow } from "./unread";
@@ -31,6 +32,7 @@ export async function loadMessages(conversationId: string): Promise<void> {
       messages: mergeMessages(res.messages, live),
       hasEarlier: res.messages.length >= PAGE_SIZE,
     });
+    sharedFilesLoaded(conversationId, res.messages);
     if (isCurrent(conversationId)) {
       renderMessages();
       scrollToBottom();
@@ -79,6 +81,7 @@ export function receive(message: Message, conversation: Conversation): void {
   const known = (cache?.messages ?? pending ?? []).some((m) => m.seq === message.seq);
   if (!known) {
     applyEarlyReceipts(message);
+    if (message.files.length > 0) sharedFilesChanged(conversation.id);
     if (cache) cache.messages = mergeMessages(cache.messages, [message]);
     else pending?.push(message);
   }

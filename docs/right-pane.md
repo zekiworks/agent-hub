@@ -1,7 +1,15 @@
 # The right pane: extensions (design)
 
-Status: Can's ideas of 14 Nov 2026, written down for Can and Ümit to mark up; nothing built yet. Build order proposed
-below.
+Status: Can's ideas of 14 Nov 2026. Built so far (14 Nov): the pane with its extension system, **File** and
+**Shared**. Progress, agents' panels and Live in the pane come next (build order below).
+
+## How an extension plugs in (built)
+
+`packages/server/ui/pane.ts`: an extension registers `{ id, title(), applies(view), render(body) }`. Its tab shows
+while `applies` is true for the open view; `render` fills its own part of the pane when the view changes or the
+extension calls `refreshPane(id)`, never on tab switches, so scroll positions stay. `openPane(id)` opens the pane on
+it (File does so when an attachment is clicked). Open or closed and the last tab are kept per browser; ▤ in the
+conversation header opens and closes the pane, Esc closes it. On phones the pane covers the conversation.
 
 ## One pane, tabs by context
 
@@ -9,13 +17,15 @@ The website's right pane holds extensions. Which tabs show depends on what the m
 
 | Main panel | Tabs |
 |---|---|
-| A conversation | **Files** (the viewer for an opened attachment, as today), **Shared** (every file shared in it) |
+| A conversation | **File** (the viewer for an opened attachment: markdown, plain text, images), **Shared** (every file shared in it) |
 | An agent's page | **Live** (its live output, moved here), **Progress** (its long tasks), plus the panels it switched on (below) |
 
 ## Shared files
 
 Every file attached in the conversation, newest first: name, size, who shared it, when, and a link to its message.
-Built from the conversation's messages (`files_json`), so it shows exactly what the reader may read; no new storage.
+Built from the conversation's messages (`GET /api/conversations/:id/files`, read-checked like its messages), so it
+shows exactly what the reader may read; no new storage. Voice messages are left out (they are messages, not shared
+files). It updates when a file arrives.
 
 ## Progress
 

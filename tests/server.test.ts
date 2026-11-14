@@ -12,6 +12,7 @@ import type {
   MessagesResponse,
   Participant,
   PostMessageResponse,
+  SharedFilesResponse,
   StateResponse,
   ViewerServerFrame,
 } from "@agent-bus/protocol";
@@ -634,6 +635,32 @@ describe("delivery", () => {
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@reading,alpha}", text: "x" })).status).toBe(409);
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@nowhere,alpha}", text: "x" })).status).toBe(404);
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@benchmarks}", text: "x" })).status).toBe(400);
+  });
+
+  test("a conversation's shared files: newest first, without voice messages, only for those who may read it", async () => {
+    await joinPath("/tmp/x/alpha");
+    const upload = async (name: string, type: string): Promise<FileRef> => {
+      const res = await busFetch(bus, `/api/files?from=carol&name=${encodeURIComponent(name)}`, {
+        method: "POST",
+        headers: { "Content-Type": type },
+        body: new TextEncoder().encode(name),
+      }, "carol");
+      return ((await res.json()) as { file: FileRef }).file;
+    };
+    const first = await upload("plan.md", "text/markdown");
+    const voice = await upload("voice-20261114-120000.webm", "audio/webm");
+    const second = await upload("results.csv", "text/csv");
+    const dm = await send({ from: "carol", to: "@alpha", text: "the plan", fileIds: [first.id] });
+    await send({ from: "carol", conversationId: dm.conversation.id, text: "🎤 hi", fileIds: [voice.id] });
+    const last = await send({ from: "carol", conversationId: dm.conversation.id, text: "and results", fileIds: [second.id] });
+
+    const res = await getJson<SharedFilesResponse>(bus, `/api/conversations/${dm.conversation.id}/files`, "carol");
+    expect(res.files.map((f) => [f.file.name, f.from, f.seq])).toEqual([
+      ["results.csv", "carol", last.message.seq],
+      ["plan.md", "carol", dm.message.seq],
+    ]);
+    // carol's DM with alpha is hers: uma does not see its files.
+    expect((await busFetch(bus, `/api/conversations/${dm.conversation.id}/files`, {}, "uma")).status).toBe(404);
   });
 
   test("a person deletes a project for good, member or not; agents cannot; what was under it becomes a root", async () => {

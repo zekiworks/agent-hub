@@ -20,7 +20,7 @@ import { getFile, MAX_FILE_BYTES, postFile, transcribeFile } from "./files";
 import { CORS_HEADERS, errorResponse, HttpError, json, nonEmptyParam } from "./http";
 import type { SocketData } from "./hub";
 import { resolveLanAddresses } from "./lan";
-import { getMessageReceipts, getMessages, MAX_RECEIPT_WAIT_MS, postMessage } from "./messages";
+import { getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, postMessage } from "./messages";
 import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
 import { postSpeech } from "./speech";
@@ -186,6 +186,8 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 7));
       return json(db.stats(Date.now() - days * 86_400_000, days));
     }
+    const sharedMatch = /^\/api\/conversations\/([^/]+)\/files$/.exec(pathname);
+    if (method === "GET" && sharedMatch?.[1]) return json(getSharedFiles(ctx, decodeURIComponent(sharedMatch[1]), viewer));
     const messagesMatch = /^\/api\/conversations\/([^/]+)\/messages$/.exec(pathname);
     if (method === "GET" && messagesMatch?.[1]) {
       return json(getMessages(ctx, decodeURIComponent(messagesMatch[1]), url, viewer));

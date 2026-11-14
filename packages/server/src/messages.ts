@@ -8,6 +8,7 @@ import {
   type FileRef,
   type Message,
   type MessagesResponse,
+  type SharedFilesResponse,
   type PostMessageResponse,
   type Receipt,
 } from "@agent-bus/protocol";
@@ -291,6 +292,18 @@ export function postResourcesNotice(ctx: BusContext, holder: string, text: strin
 }
 
 /** GET /api/conversations/:id/messages?beforeSeq=&limit= (the website's pages). */
+/** Most files listed per conversation. */
+const MAX_SHARED_FILES = 500;
+
+/** GET /api/conversations/:id/files, for whoever may read the conversation. */
+export function getSharedFiles(ctx: BusContext, conversationId: string, reader: Reader): SharedFilesResponse {
+  const conversation = ctx.db.getConversation(conversationId);
+  if (!conversation || !mayRead(ctx, conversation, reader)) {
+    throw new HttpError(404, `Unknown conversation "${conversationId}"`);
+  }
+  return { files: ctx.db.sharedFiles(conversation.id, MAX_SHARED_FILES) };
+}
+
 export function getMessages(
   ctx: BusContext,
   conversationId: string,

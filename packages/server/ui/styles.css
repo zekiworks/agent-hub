@@ -80,16 +80,17 @@ button:disabled {
     "side main";
 }
 
-/* With a document open, the conversation is only as wide as its column (plus the chat box's 2 × 20px margin)
-   and the document takes the rest; when space runs out the conversation narrows first. */
-.app.with-doc {
+/* With the right pane open, the conversation is only as wide as its column (plus the chat box's 2 × 20px margin)
+   and the pane takes the rest; when space runs out the conversation narrows first. */
+.app.with-pane {
   grid-template-columns: 280px minmax(0, calc(var(--column) + 40px)) minmax(360px, 1fr);
   grid-template-areas:
     "top top top"
     "side main doc";
 }
 
-.doc-panel {
+/* The right pane (pane.ts): a row of extension tabs, then the open extension's body. */
+.pane {
   grid-area: doc;
   display: flex;
   flex-direction: column;
@@ -98,8 +99,80 @@ button:disabled {
   background: var(--panel);
 }
 
-.doc-panel[hidden] {
+.pane[hidden] {
   display: none;
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pane-tabs {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.pane-tab {
+  padding: 6px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pane-tab:hover {
+  color: var(--text);
+}
+
+.pane-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.pane-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.pane-host[hidden] {
+  display: none;
+}
+
+.pane-pad {
+  padding: 14px 16px;
+}
+
+.pane-btn.on {
+  color: var(--accent);
+}
+
+/* File: the viewer of an opened attachment (files.ts). */
+.doc-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .doc-head {
@@ -133,6 +206,49 @@ button:disabled {
 
 .doc-note {
   color: var(--muted);
+}
+
+.doc-image {
+  max-width: 100%;
+  height: auto;
+}
+
+.doc-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+/* Shared: the files of the open conversation, newest first (files.ts). */
+.shared-list {
+  margin: 0;
+  padding: 8px 0;
+  list-style: none;
+}
+
+.shared-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.shared-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.shared-meta {
+  color: var(--muted);
+}
+
+.shared-at {
+  font-size: 13px;
 }
 
 .topbar {
@@ -1973,14 +2089,14 @@ ul.md-list ul.md-list { list-style: circle; }
 
 @media (max-width: 1100px) {
   /* Too narrow for three columns: the document covers the conversation instead. */
-  .app.with-doc {
+  .app.with-pane {
     grid-template-columns: 220px minmax(0, 1fr);
     grid-template-areas:
       "top top"
       "side doc";
   }
 
-  .app.with-doc .main {
+  .app.with-pane .main {
     display: none;
   }
 }
@@ -1994,7 +2110,7 @@ ul.md-list ul.md-list { list-style: circle; }
   /* One screen at a time: the open conversation, or (.phone-list) the top bar and the conversation list.
      The page is pinned to the visible area above the iOS keyboard (--vvh, --vvt set by phones.ts). */
   .app,
-  .app.with-doc {
+  .app.with-pane {
     position: fixed;
     left: 0;
     right: 0;
@@ -2005,7 +2121,7 @@ ul.md-list ul.md-list { list-style: circle; }
     grid-template-areas: "main";
   }
 
-  .app.with-doc {
+  .app.with-pane {
     grid-template-areas: "doc";
   }
 
@@ -2028,7 +2144,7 @@ ul.md-list ul.md-list { list-style: circle; }
   }
 
   .app.phone-list .main,
-  .app.phone-list .doc-panel {
+  .app.phone-list .pane {
     display: none;
   }
 

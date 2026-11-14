@@ -77,6 +77,7 @@
         <div class="conv-bar">
           <button id="back-btn" type="button" class="back-btn" title="Conversations">←<span id="back-badge" class="badge" hidden></span></button>
           <h1 id="conv-title" class="conv-title"></h1>
+          <button id="pane-btn" type="button" class="icon-btn pane-btn" title="Files shared here, and more, on the right" aria-pressed="false" hidden>▤</button>
           <button id="conv-menu-btn" type="button" class="icon-btn" title="Members, notifications and settings of this conversation" hidden>⋯</button>
           <button id="details-btn" type="button" class="icon-btn details-btn" title="Members and details" aria-pressed="false">ⓘ</button>
         </div>
@@ -148,13 +149,13 @@
       <div id="drop-overlay" class="drop-overlay" hidden>Drop files to attach</div>
     </main>
 
-    <aside id="doc-panel" class="doc-panel" hidden>
-      <div class="doc-head">
-        <span id="doc-title" class="doc-title"></span>
-        <a id="doc-download" class="link-btn doc-download" title="Download the file">Download</a>
-        <button id="doc-close" type="button" class="icon-btn doc-close" title="Close (Esc)">✕</button>
+    <!-- The right pane: extensions as tabs (pane.ts, docs/right-pane.md). -->
+    <aside id="pane" class="pane" hidden>
+      <div class="pane-head">
+        <div id="pane-tabs" class="pane-tabs" role="tablist"></div>
+        <button id="pane-close" type="button" class="icon-btn pane-close" title="Close (Esc)">✕</button>
       </div>
-      <div id="doc-body" class="doc-body msg-text"></div>
+      <div id="pane-body" class="pane-body"></div>
     </aside>
   </div>
 

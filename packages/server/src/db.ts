@@ -19,6 +19,7 @@ import {
   type ProjectVisibility,
   type Quote,
   type Receipt,
+  type SharedFile,
   type StatsResponse,
 } from "@agent-bus/protocol";
 
@@ -924,6 +925,24 @@ export class BusDatabase {
       this.db.query("DELETE FROM conversations WHERE id = ?1 AND kind = 'project'").run(conversationId);
       return n;
     })();
+  }
+
+  /** Files shared in `conversationId`, newest first, without voice messages (audio named "voice-…"). */
+  sharedFiles(conversationId: string, limit: number): SharedFile[] {
+    const rows = this.db
+      .query<{ seq: number; from_id: string; created_at: number; files_json: string }, [string]>(
+        "SELECT seq, from_id, created_at, files_json FROM messages WHERE conversation_id = ?1 AND files_json != '[]' ORDER BY seq DESC"
+      )
+      .all(conversationId);
+    const shared: SharedFile[] = [];
+    for (const row of rows) {
+      for (const file of parseFiles(row.files_json)) {
+        if (file.mimeType.startsWith("audio/") && file.name.startsWith("voice-")) continue;
+        shared.push({ file, seq: row.seq, from: row.from_id, createdAt: row.created_at });
+        if (shared.length >= limit) return shared;
+      }
+    }
+    return shared;
   }
 
   setArchived(conversationId: string, archived: boolean): void {

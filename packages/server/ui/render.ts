@@ -9,6 +9,7 @@ import { renderMarkdown } from "./markdown";
 import { setTitleBase } from "./notify";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
+import { renderPane } from "./pane";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationTitle, hasProjectColor, projectColor, state } from "./state";
 import { flashMessage, mentionNodes, mentionsMe, shownMessage } from "./text";
@@ -19,6 +20,7 @@ export function renderAll(): void {
   renderHeader();
   renderMessages();
   updateComposerState();
+  renderPane();
 }
 
 function renderProfileSelect(): void {
