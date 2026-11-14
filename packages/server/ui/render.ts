@@ -152,7 +152,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   // Outside the head so grouped messages (whose head is hidden) can be replied to too. Shown on hover, or on phones
   // (no hover) after tapping the message. Clicking Reply again cancels.
   const actions = h("div", "msg-actions");
-  if (message.text) actions.append(speakButton(message));
+  if (message.text) actions.append(speakButton(message), copyButton(message));
   const replyBtn = h("button", "msg-action-btn msg-reply-btn", "↩ ");
   replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";
@@ -285,6 +285,40 @@ function renderQuote(quote: Quote): HTMLButtonElement {
 }
 
 /** Message text as markdown (see markdown.ts), with @mentions highlighted outside code. */
+/**
+ * ⧉: the whole message's text to the clipboard, as shown (without markdown signs); single sentences people select
+ * themselves.
+ */
+function copyButton(message: Message): HTMLButtonElement {
+  const button = h("button", "msg-action-btn msg-copy-btn", "⧉");
+  button.type = "button";
+  button.title = "Copy the whole message";
+  button.addEventListener("click", async () => {
+    const shown = button.closest(".msg")?.querySelector<HTMLElement>(".msg-text");
+    const text = shown?.innerText.trim() || message.text;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Without clipboard access (plain http, older browsers): copy from a selected hidden text box.
+      const box = h("textarea");
+      box.value = text;
+      box.style.position = "fixed";
+      box.style.opacity = "0";
+      document.body.append(box);
+      box.select();
+      document.execCommand("copy");
+      box.remove();
+    }
+    button.textContent = "✓";
+    button.title = "Copied";
+    setTimeout(() => {
+      button.textContent = "⧉";
+      button.title = "Copy the whole message";
+    }, 1500);
+  });
+  return button;
+}
+
 function renderText(text: string): HTMLDivElement {
   const body = h("div", "msg-text");
   body.append(...renderMarkdown(text, mentionNodes));
