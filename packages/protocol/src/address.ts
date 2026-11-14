@@ -1,6 +1,6 @@
 import type { AgentSettings, Conversation, ParticipantKind, Quote, Receipt } from "./types";
 
-export type ParsedAddress = { kind: "all" } | { kind: "ids"; ids: string[] };
+export type ParsedAddress = { kind: "all" } | { kind: "ids"; ids: string[] } | { kind: "project"; name: string };
 
 const SLUG = "[a-z0-9][a-z0-9_-]*";
 /** One slug, or `base@qualifier` for an agent whose folder (or name) is already taken. Max 48 chars. */
@@ -8,10 +8,11 @@ const ID_RE = new RegExp(`^${SLUG}(?:@${SLUG})?$`);
 const MAX_ID_CHARS = 48;
 
 /**
- * Parses a write target: "@all", "@id", "@{id1, id2}" (the leading "@" and the ones
- * inside braces are optional). Ids are lowercased. Throws on anything else.
+ * Parses a write target: "@all", "@id", "@{id1, id2}" (the leading "@" and the ones inside braces are optional), or
+ * "@@name" for project `name`. Ids and names are lowercased. Throws on anything else.
  */
 export function parseAddress(input: string): ParsedAddress {
+  if (input.trim().startsWith("@@")) return { kind: "project", name: projectName(input.trim().slice(2)) };
   const raw = input.trim().replace(/^@/, "");
   if (raw.toLowerCase() === "all") return { kind: "all" };
   const inner = raw.startsWith("{") && raw.endsWith("}") ? raw.slice(1, -1) : raw;
@@ -28,6 +29,15 @@ export function parseAddress(input: string): ParsedAddress {
     throw new Error(`Write several ids as @{id1,id2}, got "${input}"`);
   }
   return { kind: "ids", ids: Array.from(new Set(ids)) };
+}
+
+/** A project name as given (lowercased): the agent id rules, a slug of at most 48 characters; throws otherwise. */
+export function projectName(input: string): string {
+  const name = input.trim().toLowerCase();
+  if (!new RegExp(`^${SLUG}$`).test(name) || name.length > MAX_ID_CHARS) {
+    throw new Error(`Invalid project name "${input}": lowercase letters, digits, "-" and "_", at most ${MAX_ID_CHARS}`);
+  }
+  return name;
 }
 
 /** An @mention in message text: "@id", "@id@host" or "@{a,b}", after a start, space or opening bracket. */
@@ -65,21 +75,34 @@ export function formatAddress(ids: readonly string[]): string {
 }
 
 /**
- * Address `recipientId` uses to reply into `conversation`: every other member (the addressed ids plus
- * humans who joined by writing). The server resolves that set back to this conversation.
+ * Address `recipientId` uses to reply into `conversation`: "@@name" for a project, else every other member (for a
+ * group DM the server picks the group with exactly those members, the most recent if several).
  */
 export function replyAddress(conversation: Conversation, recipientId: string): string {
   if (conversation.kind === "all") return "@all";
+  if (conversation.kind === "project" && conversation.name) return `@@${conversation.name}`;
   return formatAddress(conversation.members.filter((id) => id !== recipientId));
 }
 
-/** Whether a message starts a turn for the recipient (false = quiet delivery). See AgentSettings.all. */
+/** `text` @mentions `id` (or names it inside `@{…}`). */
+export function mentions(text: string, id: string): boolean {
+  return mentionedIds(text).includes(id);
+}
+
+/**
+ * Whether a message starts a turn for agent `recipientId` (false = quiet delivery, read at its next turn).
+ * `@all` from an agent follows the agent's `all` setting; in a group DM or project the recipient's notification
+ * setting there decides (`mentions`: only when the text @mentions it); a DM always wakes.
+ */
 export function shouldWake(
-  conversationKind: Conversation["kind"],
-  fromKind: ParticipantKind,
+  conversation: Pick<Conversation, "kind" | "notify">,
+  message: { fromKind: ParticipantKind; text: string },
+  recipientId: string,
   recipientSettings: AgentSettings
 ): boolean {
-  return !(conversationKind === "all" && fromKind === "agent" && recipientSettings.all === "quiet");
+  if (conversation.kind === "all") return !(message.fromKind === "agent" && recipientSettings.all === "quiet");
+  const level = conversation.notify?.[recipientId] ?? "all";
+  return level === "all" || (level === "mentions" && mentions(message.text, recipientId));
 }
 
 /** Lowercase id slug: [a-z0-9_-], max 48 chars; "" when nothing usable remains. */

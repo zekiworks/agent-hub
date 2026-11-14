@@ -73,14 +73,38 @@ export interface AgentStatus {
   activity?: string;
 }
 
+/**
+ * `all`: every agent. `dm`: exactly two members, fixed. `group`: a group DM, unnamed, its members add others and
+ * leave. `project`: named, with a topic and a visibility; people and agents join and leave. See docs/projects.md.
+ */
+export type ConversationKind = "all" | "dm" | "group" | "project";
+
+/** Who can find and read a project: anyone (open), its name and topic only (discoverable), its members (private). */
+export type ProjectVisibility = "open" | "discoverable" | "private";
+
+/**
+ * A member's notifications for one conversation. Agents: `all` = every message wakes it, `mentions` = only messages
+ * that @mention it do (the rest it reads at its next turn), `none` = none do. People: unread dots and notifications
+ * likewise.
+ */
+export type NotifyLevel = "all" | "mentions" | "none";
+
 export interface Conversation {
-  /** "all" or "g_<12 hex>". */
+  /** "all" or "g_<12 hex>". Its identity: members can change, the id never does. */
   id: string;
-  kind: "all" | "group";
-  /** Groups: the sorted ids the conversation was addressed to (writer included). Identity of the group; "all": []. */
-  addressed: string[];
-  /** Groups: `addressed` plus humans who have written in it. "all": []. */
+  kind: ConversationKind;
+  /** Sorted participant ids; [] for `all`. */
   members: string[];
+  /** Projects. */
+  name?: string;
+  topic?: string;
+  visibility?: ProjectVisibility;
+  /** Group DMs and projects out of the sidebar (and Browse) until someone writes in them again. */
+  archived?: true;
+  /** Members whose notification setting is not `all`. */
+  notify?: Record<string, Exclude<NotifyLevel, "all">>;
+  /** A discoverable project the reader is not in: its name, topic and members only, not its messages. */
+  preview?: true;
   createdAt: number;
   lastMessageAt: number;
 }
@@ -231,8 +255,9 @@ export type AgentClientFrame =
 // ---- Website: WS /ws/viewer ----
 
 export type ViewerServerFrame =
-  /** `merged`: a group that this message's mention merged into `conversation` (its id is now an alias). */
-  | { type: "message"; message: Message; conversation: Conversation; merged?: string }
+  | { type: "message"; message: Message; conversation: Conversation }
+  /** Conversations changed (members, notifications, a project's settings): refetch GET /api/state. */
+  | { type: "conversations" }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
   | ExpiredFrame
@@ -320,7 +345,12 @@ export interface ReadResponse {
   conversations: Conversation[];
 }
 
-/** POST /api/messages. Exactly one of `to` / `conversationId` / `replyToSeq`. */
+/**
+ * POST /api/messages. Exactly one of `to` / `conversationId` / `replyToSeq`. `to`: "@x" (the writer's DM with x),
+ * "@{a,b}" (the group DM with exactly these members and the writer; a new one if there is none), "@@name" (project
+ * `name`: created, open, if new; joined if open), "@all". In a group DM or project, a message that is exactly
+ * "exit" makes the writer leave instead.
+ */
 export interface PostMessageRequest {
   from: string;
   to?: string;
@@ -333,10 +363,54 @@ export interface PostMessageRequest {
   toSession?: number;
   /** How long to hold it for recipients that are offline, in hours (default 1, at most 168). */
   holdHours?: number;
+  /**
+   * People only, in a group DM or project: add the participants the text @mentions who are not members before
+   * sending (agents get the last 5 messages first). Default false: mentions alone add nobody.
+   */
+  addMentioned?: boolean;
 }
 
 export interface PostMessageResponse {
   message: Message;
+  conversation: Conversation;
+}
+
+/** POST /api/conversations/:id/members: a member adds `ids` to its group DM or project. */
+export interface AddMembersRequest {
+  from: string;
+  ids: string[];
+}
+
+/** POST /api/conversations/:id/leave */
+export interface LeaveRequest {
+  from: string;
+}
+
+/** POST /api/conversations/:id/notify: a member's own notification setting there. */
+export interface NotifyRequest {
+  from: string;
+  level: NotifyLevel;
+}
+
+/**
+ * POST /api/conversations/:id/project: a member turns a group DM into a project (`name` required) or changes a
+ * project's `topic` and `visibility`; renaming is for people only.
+ */
+export interface ProjectRequest {
+  from: string;
+  name?: string;
+  topic?: string;
+  visibility?: ProjectVisibility;
+}
+
+/** POST /api/conversations/:id/archive: a person archives (or brings back) a group DM or project. */
+export interface ArchiveRequest {
+  from: string;
+  archived: boolean;
+}
+
+/** What the conversation endpoints above answer. */
+export interface ConversationResponse {
   conversation: Conversation;
 }
 

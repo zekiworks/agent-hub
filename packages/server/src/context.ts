@@ -98,7 +98,7 @@ export class BusContext {
       throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }
     const sessions = new Map<string, number>();
-    if (parsed.kind === "all") return { ...parsed, sessions };
+    if (parsed.kind !== "ids") return { ...parsed, sessions };
     const ids = parsed.ids.map((id) => {
       if (this.hub.knownParticipant(id)) return id;
       const match = /^(.+)-(\d+)$/.exec(id);

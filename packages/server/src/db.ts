@@ -11,9 +11,12 @@ import {
   type AgentIdentity,
   type AgentSettings,
   type Conversation,
+  type ConversationKind,
   type FileRef,
   type Message,
+  type NotifyLevel,
   type ParticipantKind,
+  type ProjectVisibility,
   type Quote,
   type Receipt,
   type StatsResponse,
@@ -84,7 +87,12 @@ interface ParticipantRow {
 interface ConversationRow {
   id: string;
   kind: string;
+  /** The members, kept for readers of the database that predate projects (Ali's hourly scan). */
   addressed_json: string;
+  name: string | null;
+  topic: string | null;
+  visibility: string | null;
+  archived: number | null;
   created_at: number;
   last_message_at: number;
 }
@@ -132,8 +140,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS participants_agent_name_harness
 
 CREATE TABLE IF NOT EXISTS conversations (
   id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK (kind IN ('all', 'group')),
+  kind TEXT NOT NULL CHECK (kind IN ('all', 'dm', 'group', 'project')),
   addressed_json TEXT NOT NULL,
+  name TEXT,
+  topic TEXT,
+  visibility TEXT CHECK (visibility IN ('open', 'discoverable', 'private')),
+  archived INTEGER,
   created_at INTEGER NOT NULL,
   last_message_at INTEGER NOT NULL
 );
@@ -141,6 +153,8 @@ CREATE TABLE IF NOT EXISTS conversations (
 CREATE TABLE IF NOT EXISTS conversation_members (
   conversation_id TEXT NOT NULL REFERENCES conversations(id),
   participant_id TEXT NOT NULL,
+  -- null: "all"; else "mentions" or "none" (NotifyLevel)
+  notify TEXT,
   PRIMARY KEY (conversation_id, participant_id)
 );
 CREATE INDEX IF NOT EXISTS conversation_members_participant
@@ -195,11 +209,6 @@ function parseSettings(json: string): AgentSettings {
   return { ...DEFAULT_AGENT_SETTINGS };
 }
 
-function parseStringArray(json: string): string[] {
-  const parsed: unknown = JSON.parse(json);
-  return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
-}
-
 function parseFiles(json: string): FileRef[] {
   const parsed: unknown = JSON.parse(json);
   if (!Array.isArray(parsed)) return [];
@@ -223,6 +232,10 @@ function parseFiles(json: string): FileRef[] {
     }
   }
   return out;
+}
+
+function toVisibility(value: string | null): ProjectVisibility {
+  return value === "discoverable" || value === "private" ? value : "open";
 }
 
 function toKind(kind: string): ParticipantKind {
@@ -270,11 +283,8 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
   };
 }
 
-/** `"g_" + sha256(thread key ids joined by ",").hex.slice(0, 12)`, the id of a newly created group. */
-export function groupConversationId(keyIds: readonly string[]): string {
-  const hex = new Bun.CryptoHasher("sha256").update(keyIds.join(",")).digest("hex");
-  return `g_${hex.slice(0, 12)}`;
-}
+/** How long a group DM may stay silent before the migration to projects archives it. */
+const MIGRATION_ARCHIVE_AFTER_MS = 7 * 24 * 3600_000;
 
 export class BusDatabase {
   readonly db: Database;
@@ -302,11 +312,6 @@ export class BusDatabase {
     if (!messageColumns.some((c) => c.name === "verified")) {
       this.db.exec("ALTER TABLE messages ADD COLUMN verified INTEGER");
     }
-    // Databases created before one-thread-per-agent-set lack the column (filled in by mergeThreads).
-    const conversationColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all();
-    if (!conversationColumns.some((c) => c.name === "thread_key")) {
-      this.db.exec("ALTER TABLE conversations ADD COLUMN thread_key TEXT");
-    }
     // Databases created before agent tokens lack the column (null: the agent id is not bound to a token yet).
     const participantColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(participants)").all();
     if (!participantColumns.some((c) => c.name === "token_hash")) {
@@ -324,80 +329,73 @@ export class BusDatabase {
       this.db.exec("ALTER TABLE messages ADD COLUMN expires_at INTEGER");
     }
     this.seed(humans, now);
-    this.mergeThreads();
+    this.migrateToProjects(now);
+    this.db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS conversations_project_name ON conversations(name) WHERE kind = 'project'"
+    );
   }
 
   /**
-   * Thread key of an address set (writer included): its agent ids, sorted; the human ids when it has no agent.
-   * Humans join and leave the picture by writing, so they never decide which thread a message lands in.
+   * Databases from before projects: a group was its set of agents. The table is rebuilt (its CHECK changes) and each
+   * group becomes a DM (two members) or a group DM (three or more), archived when silent for a week; ids, members and
+   * history stay. Runs once: afterwards the table has a `name` column.
    */
-  threadKey(ids: readonly string[]): string {
-    const sorted = Array.from(new Set(ids)).sort();
-    const agents = this.db
-      .query<{ id: string }, [string]>(
-        "SELECT id FROM participants WHERE kind = 'agent' AND id IN (SELECT value FROM json_each(?1)) ORDER BY id"
-      )
-      .all(JSON.stringify(sorted))
-      .map((r) => r.id);
-    return (agents.length > 0 ? agents : sorted).join(",");
-  }
-
-  /**
-   * Gives every group its thread key and merges groups that share one into the one with the most messages:
-   * messages move, members are united, and the merged ids become aliases. Idempotent; runs at startup.
-   */
-  private mergeThreads(): void {
-    this.db.transaction(() => {
-      const groups = this.db
-        .query<{ id: string; n: number; last: number }, []>(
-          `SELECT c.id, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS n, c.last_message_at AS last
-           FROM conversations c WHERE c.kind = 'group' ORDER BY n DESC, last DESC, c.id`
-        )
-        .all();
-      const survivors = new Map<string, string>();
-      for (const group of groups) {
-        const key = this.threadKey(this.membersOf(group.id));
-        const survivor = survivors.get(key);
-        if (survivor === undefined) {
-          survivors.set(key, group.id);
-          this.db.query("UPDATE conversations SET thread_key = ?2 WHERE id = ?1").run(group.id, key);
-          continue;
+  private migrateToProjects(now: number): void {
+    const columns = this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all();
+    if (columns.some((c) => c.name === "name")) return;
+    const memberColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(conversation_members)").all();
+    // foreign_keys cannot change inside a transaction; the rebuild drops the table messages and members refer to.
+    this.db.exec("PRAGMA foreign_keys = OFF;");
+    try {
+      this.db.transaction(() => {
+        if (!memberColumns.some((c) => c.name === "notify")) {
+          this.db.exec("ALTER TABLE conversation_members ADD COLUMN notify TEXT");
         }
-        this.mergeConversation(group.id, survivor);
-      }
-      this.db.exec(
-        "CREATE UNIQUE INDEX IF NOT EXISTS conversations_thread_key ON conversations(thread_key) WHERE kind = 'group'"
-      );
-    })();
+        this.db.exec(`
+          CREATE TABLE conversations_new (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL CHECK (kind IN ('all', 'dm', 'group', 'project')),
+            addressed_json TEXT NOT NULL,
+            name TEXT,
+            topic TEXT,
+            visibility TEXT CHECK (visibility IN ('open', 'discoverable', 'private')),
+            archived INTEGER,
+            created_at INTEGER NOT NULL,
+            last_message_at INTEGER NOT NULL
+          );`);
+        this.db
+          .query(
+            `INSERT INTO conversations_new (id, kind, addressed_json, archived, created_at, last_message_at)
+             SELECT c.id,
+               CASE WHEN c.kind = 'all' THEN 'all' WHEN n.count = 2 THEN 'dm' ELSE 'group' END,
+               CASE WHEN c.kind = 'all' THEN '[]' ELSE n.members END,
+               CASE WHEN c.kind != 'all' AND n.count > 2 AND c.last_message_at < ?1 THEN 1 END,
+               c.created_at, c.last_message_at
+             FROM conversations c
+             LEFT JOIN (SELECT conversation_id, COUNT(*) AS count,
+                          json_group_array(participant_id) AS members
+                        FROM (SELECT * FROM conversation_members ORDER BY participant_id)
+                        GROUP BY conversation_id) n ON n.conversation_id = c.id`
+          )
+          .run(now - MIGRATION_ARCHIVE_AFTER_MS);
+        this.db.exec("DROP TABLE conversations; ALTER TABLE conversations_new RENAME TO conversations;");
+        const broken = this.db.query("PRAGMA foreign_key_check").all();
+        if (broken.length > 0) throw new Error(`Projects migration left ${broken.length} broken references`);
+      })();
+    } finally {
+      this.db.exec("PRAGMA foreign_keys = ON;");
+    }
   }
 
-  private mergeConversation(from: string, into: string): void {
-    const rows = this.db
-      .query<ConversationRow, [string, string]>("SELECT * FROM conversations WHERE id IN (?1, ?2)")
-      .all(from, into);
-    const source = rows.find((r) => r.id === from);
-    const target = rows.find((r) => r.id === into);
-    if (!source || !target) return;
-    const addressed = Array.from(
-      new Set([...parseStringArray(target.addressed_json), ...parseStringArray(source.addressed_json)])
-    ).sort();
-    this.db.query("UPDATE messages SET conversation_id = ?2 WHERE conversation_id = ?1").run(from, into);
-    this.db
-      .query(
-        `INSERT OR IGNORE INTO conversation_members (conversation_id, participant_id)
-         SELECT ?2, participant_id FROM conversation_members WHERE conversation_id = ?1`
-      )
-      .run(from, into);
-    this.db.query("DELETE FROM conversation_members WHERE conversation_id = ?1").run(from);
-    this.db
-      .query(
-        `UPDATE conversations SET addressed_json = ?2, created_at = MIN(created_at, ?3),
-           last_message_at = MAX(last_message_at, ?4) WHERE id = ?1`
-      )
-      .run(into, JSON.stringify(addressed), source.created_at, source.last_message_at);
-    this.db.query("DELETE FROM conversations WHERE id = ?1").run(from);
-    this.db.query("UPDATE conversation_aliases SET new_id = ?2 WHERE new_id = ?1").run(from, into);
-    this.db.query("INSERT OR REPLACE INTO conversation_aliases (old_id, new_id) VALUES (?1, ?2)").run(from, into);
+  /** A new conversation id: "g_" and 12 random hex digits, never one in use or an alias. */
+  private newConversationId(): string {
+    const taken = this.db.query<{ id: string }, [string]>(
+      "SELECT id FROM conversations WHERE id = ?1 UNION SELECT old_id FROM conversation_aliases WHERE old_id = ?1"
+    );
+    for (;;) {
+      const id = `g_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+      if (!taken.get(id)) return id;
+    }
   }
 
   close(): void {
@@ -706,27 +704,33 @@ export class BusDatabase {
       .run(id, JSON.stringify(settings));
   }
 
-  private membersOf(conversationId: string): string[] {
+  private membersOf(conversationId: string): Array<{ participant_id: string; notify: string | null }> {
     return this.db
-      .query<{ participant_id: string }, [string]>(
-        "SELECT participant_id FROM conversation_members WHERE conversation_id = ?1 ORDER BY participant_id"
+      .query<{ participant_id: string; notify: string | null }, [string]>(
+        "SELECT participant_id, notify FROM conversation_members WHERE conversation_id = ?1 ORDER BY participant_id"
       )
-      .all(conversationId)
-      .map((r) => r.participant_id);
+      .all(conversationId);
   }
 
-  private toConversation(row: ConversationRow, members: string[]): Conversation {
+  private toConversation(row: ConversationRow, members: Array<{ participant_id: string; notify: string | null }>): Conversation {
+    const kind: ConversationKind = row.kind === "dm" || row.kind === "group" || row.kind === "project" ? row.kind : "all";
+    const notify: Record<string, "mentions" | "none"> = {};
+    for (const m of members) if (m.notify === "mentions" || m.notify === "none") notify[m.participant_id] = m.notify;
     return {
       id: row.id,
-      kind: row.kind === "group" ? "group" : "all",
-      addressed: parseStringArray(row.addressed_json),
-      members,
+      kind,
+      members: members.map((m) => m.participant_id),
+      ...(row.name !== null ? { name: row.name } : {}),
+      ...(row.topic !== null ? { topic: row.topic } : {}),
+      ...(kind === "project" ? { visibility: toVisibility(row.visibility) } : {}),
+      ...(row.archived ? { archived: true as const } : {}),
+      ...(Object.keys(notify).length > 0 ? { notify } : {}),
       createdAt: row.created_at,
       lastMessageAt: row.last_message_at,
     };
   }
 
-  /** The conversation `id`, or the one it was merged into. */
+  /** The conversation `id`, or the one it was merged into (merges happened before projects; old ids still work). */
   getConversation(id: string): Conversation | null {
     const alias = this.db
       .query<{ new_id: string }, [string]>("SELECT new_id FROM conversation_aliases WHERE old_id = ?1")
@@ -737,7 +741,7 @@ export class BusDatabase {
     return row ? this.toConversation(row, this.membersOf(row.id)) : null;
   }
 
-  /** `all` first, then groups by lastMessageAt desc. */
+  /** Every conversation: `all` first, then by lastMessageAt desc. Who may see which is the server's business. */
   listConversations(): Conversation[] {
     const rows = this.db
       .query<ConversationRow, []>(
@@ -745,85 +749,134 @@ export class BusDatabase {
          ORDER BY (kind = 'all') DESC, last_message_at DESC, id`
       )
       .all();
-    const members = new Map<string, string[]>();
+    const members = new Map<string, Array<{ participant_id: string; notify: string | null }>>();
     for (const m of this.db
-      .query<{ conversation_id: string; participant_id: string }, []>(
-        "SELECT conversation_id, participant_id FROM conversation_members ORDER BY participant_id"
+      .query<{ conversation_id: string; participant_id: string; notify: string | null }, []>(
+        "SELECT conversation_id, participant_id, notify FROM conversation_members ORDER BY participant_id"
       )
       .all()) {
       const list = members.get(m.conversation_id);
-      if (list) list.push(m.participant_id);
-      else members.set(m.conversation_id, [m.participant_id]);
+      if (list) list.push(m);
+      else members.set(m.conversation_id, [m]);
     }
     return rows.map((row) => this.toConversation(row, members.get(row.id) ?? []));
   }
 
   /**
-   * The group for an address set (`ids` sorted, unique, writer included): one thread per thread key (its agents,
-   * see `threadKey`), created if needed. Humans in `ids` become members, so a human an agent writes to is in it.
+   * The conversation of `kind` whose members are exactly `ids` (a DM or a group DM), without creating one: an
+   * unarchived one first, then the most recently active.
    */
-  getOrCreateGroup(ids: readonly string[], now = Date.now()): Conversation {
-    const key = this.threadKey(ids);
+  findByMembers(kind: "dm" | "group", ids: readonly string[]): Conversation | null {
+    const wanted = Array.from(new Set(ids));
+    const row = this.db
+      .query<{ id: string }, [string, string, number]>(
+        `SELECT c.id FROM conversations c
+         WHERE c.kind = ?1
+           AND (SELECT COUNT(*) FROM conversation_members m WHERE m.conversation_id = c.id) = ?3
+           AND (SELECT COUNT(*) FROM conversation_members m
+                WHERE m.conversation_id = c.id AND m.participant_id IN (SELECT value FROM json_each(?2))) = ?3
+         ORDER BY COALESCE(c.archived, 0), c.last_message_at DESC LIMIT 1`
+      )
+      .get(kind, JSON.stringify(wanted), wanted.length);
+    return row ? this.getConversation(row.id) : null;
+  }
+
+  /** The DM of `a` and `b` (two different participants), created if there is none. */
+  dmOf(a: string, b: string, now = Date.now()): Conversation {
+    return this.findByMembers("dm", [a, b]) ?? this.createConversation("dm", [a, b], now);
+  }
+
+  /** The group DM with exactly `ids` (three or more, the writer included), created if there is none. */
+  groupDmOf(ids: readonly string[], now = Date.now()): Conversation {
+    return this.findByMembers("group", ids) ?? this.createConversation("group", ids, now);
+  }
+
+  /** The project named `name` (archived or not), or null. */
+  projectByName(name: string): Conversation | null {
+    const row = this.db
+      .query<{ id: string }, [string]>("SELECT id FROM conversations WHERE kind = 'project' AND name = ?1")
+      .get(name);
+    return row ? this.getConversation(row.id) : null;
+  }
+
+  /** A new open project `name` with `creator` as its only member. */
+  createProject(name: string, creator: string, now = Date.now()): Conversation {
+    return this.createConversation("project", [creator], now, { name, visibility: "open" });
+  }
+
+  private createConversation(
+    kind: "dm" | "group" | "project",
+    ids: readonly string[],
+    now: number,
+    project?: { name: string; visibility: ProjectVisibility }
+  ): Conversation {
     return this.db.transaction((): Conversation => {
-      const addMember = this.db.query(
-        "INSERT OR IGNORE INTO conversation_members (conversation_id, participant_id) VALUES (?1, ?2)"
-      );
-      const existing = this.db
-        .query<{ id: string }, [string]>("SELECT id FROM conversations WHERE kind = 'group' AND thread_key = ?1")
-        .get(key);
-      let id = existing?.id;
-      if (id === undefined) {
-        const base = groupConversationId(key.split(","));
-        id = base;
-        const taken = this.db.query<{ id: string }, [string]>(
-          "SELECT id FROM conversations WHERE id = ?1 UNION SELECT old_id FROM conversation_aliases WHERE old_id = ?1"
-        );
-        for (let n = 2; taken.get(id); n++) id = `${base}-${n}`;
-        this.db
-          .query(
-            `INSERT INTO conversations (id, kind, addressed_json, created_at, last_message_at, thread_key)
-             VALUES (?1, 'group', ?2, ?3, ?3, ?4)`
-          )
-          .run(id, JSON.stringify(ids), now, key);
-      }
-      for (const member of ids) addMember.run(id, member);
-      const conversation = this.getConversation(id);
-      if (!conversation) throw new Error(`Failed to create conversation ${id}`);
-      return conversation;
+      const id = this.newConversationId();
+      this.db
+        .query(
+          `INSERT INTO conversations (id, kind, addressed_json, name, visibility, created_at, last_message_at)
+           VALUES (?1, ?2, '[]', ?3, ?4, ?5, ?5)`
+        )
+        .run(id, kind, project?.name ?? null, project?.visibility ?? null, now);
+      for (const member of ids) this.addMember(id, member);
+      return this.getConversation(id) as Conversation;
     })();
   }
 
+  /** Adds a member (a no-op if it is one) and keeps `addressed_json` in step. */
   addMember(conversationId: string, participantId: string): void {
     this.db
       .query("INSERT OR IGNORE INTO conversation_members (conversation_id, participant_id) VALUES (?1, ?2)")
       .run(conversationId, participantId);
+    this.syncAddressed(conversationId);
   }
 
-  /**
-   * Adds `ids` to group `conversationId`: they join its address set and members. Agents change the thread key; when
-   * another group already has the new key, that group is merged into this one (its messages move here, its id
-   * becomes an alias), so this conversation keeps its id and history. Returns the updated conversation and the id
-   * that was merged in, if any.
-   */
-  inviteToGroup(conversationId: string, ids: readonly string[]): { conversation: Conversation; merged?: string } {
-    return this.db.transaction((): { conversation: Conversation; merged?: string } => {
-      const current = this.getConversation(conversationId);
-      if (!current || current.kind !== "group") throw new Error(`${conversationId} is not a group`);
-      const addressed = Array.from(new Set([...current.addressed, ...ids])).sort();
-      const key = this.threadKey(addressed);
-      const other = this.db
-        .query<{ id: string }, [string, string]>("SELECT id FROM conversations WHERE kind = 'group' AND thread_key = ?1 AND id != ?2")
-        .get(key, current.id);
-      if (other) this.mergeConversation(other.id, current.id);
-      const merged = this.getConversation(current.id) as Conversation;
-      const finalAddressed = Array.from(new Set([...merged.addressed, ...addressed])).sort();
+  /** Removes a member; returns whether it was one. */
+  removeMember(conversationId: string, participantId: string): boolean {
+    const removed =
       this.db
-        .query("UPDATE conversations SET addressed_json = ?2, thread_key = ?3 WHERE id = ?1")
-        .run(current.id, JSON.stringify(finalAddressed), key);
-      for (const id of ids) this.addMember(current.id, id);
-      const conversation = this.getConversation(current.id) as Conversation;
-      return other ? { conversation, merged: other.id } : { conversation };
-    })();
+        .query("DELETE FROM conversation_members WHERE conversation_id = ?1 AND participant_id = ?2")
+        .run(conversationId, participantId).changes > 0;
+    if (removed) this.syncAddressed(conversationId);
+    return removed;
+  }
+
+  private syncAddressed(conversationId: string): void {
+    this.db
+      .query(
+        `UPDATE conversations SET addressed_json = (
+           SELECT COALESCE(json_group_array(participant_id), '[]') FROM
+             (SELECT participant_id FROM conversation_members WHERE conversation_id = ?1 ORDER BY participant_id))
+         WHERE id = ?1 AND kind != 'all'`
+      )
+      .run(conversationId);
+  }
+
+  setNotify(conversationId: string, participantId: string, level: NotifyLevel): boolean {
+    return (
+      this.db
+        .query("UPDATE conversation_members SET notify = ?3 WHERE conversation_id = ?1 AND participant_id = ?2")
+        .run(conversationId, participantId, level === "all" ? null : level).changes > 0
+    );
+  }
+
+  /** Turns a group DM into a project, or changes a project's name, topic or visibility (the caller checks who may). */
+  updateProject(
+    conversationId: string,
+    changes: { name?: string; topic?: string; visibility?: ProjectVisibility }
+  ): void {
+    this.db
+      .query(
+        `UPDATE conversations SET kind = 'project', name = COALESCE(?2, name), topic = COALESCE(?3, topic),
+           visibility = COALESCE(?4, visibility, 'open') WHERE id = ?1 AND kind IN ('group', 'project')`
+      )
+      .run(conversationId, changes.name ?? null, changes.topic ?? null, changes.visibility ?? null);
+  }
+
+  setArchived(conversationId: string, archived: boolean): void {
+    this.db
+      .query("UPDATE conversations SET archived = ?2 WHERE id = ?1 AND kind IN ('group', 'project')")
+      .run(conversationId, archived ? 1 : null);
   }
 
   /**
@@ -1005,21 +1058,13 @@ export class BusDatabase {
     return this.withReceipts(rows.reverse());
   }
 
-  /** Ids of `@all` and of every group `participantId` is a member of. */
+  /** Ids of `@all` and of every conversation `participantId` is a member of. */
   conversationIdsOf(participantId: string): string[] {
     const ids = this.db
       .query<{ conversation_id: string }, [string]>("SELECT conversation_id FROM conversation_members WHERE participant_id = ?1")
       .all(participantId)
       .map((r) => r.conversation_id);
     return [ALL_CONVERSATION_ID, ...ids];
-  }
-
-  /** The existing group for an address set (writer included), without creating one. */
-  findGroup(ids: readonly string[]): Conversation | null {
-    const row = this.db
-      .query<{ id: string }, [string]>("SELECT id FROM conversations WHERE kind = 'group' AND thread_key = ?1")
-      .get(this.threadKey(ids));
-    return row ? this.getConversation(row.id) : null;
   }
 
   /**
