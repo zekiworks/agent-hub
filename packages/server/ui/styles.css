@@ -641,6 +641,11 @@ button:disabled {
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
 }
 
+.dot-busy {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px rgba(227, 165, 71, 0.25);
+}
+
 .dot-off {
   background: transparent;
   border: 1.5px solid var(--offline);

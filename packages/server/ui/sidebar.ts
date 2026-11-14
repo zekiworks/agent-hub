@@ -1,7 +1,7 @@
 // The sidebar: conversations, agents, their filters and the Unread / Include offline toggles.
 import type { Conversation, Participant } from "@agent-bus/protocol";
 import { dom } from "./dom";
-import { agentDetail, elapsed, nameList, relativeTime } from "./format";
+import { agentDetail, nameList, relativeTime } from "./format";
 import { h } from "./html";
 import { renderAgentPanel } from "./live";
 import { applyTitle, renderNotifyButton } from "./notify";
@@ -75,13 +75,6 @@ function funnelIcon(): SVGSVGElement {
   path.setAttribute("d", "M2 3h12l-4.5 5.5V13l-3 1.5V8.5z");
   svg.append(path);
   return svg;
-}
-
-/** Third sidebar line, only while the agent reports it is busy: "busy 14 min". Details are on its page. */
-function renderAgentStatus(agent: Participant): HTMLSpanElement | null {
-  const status = agent.status;
-  if (!agent.online || status?.state !== "busy") return null;
-  return h("span", "agent-status agent-busy", `busy ${elapsed(status.since)}`);
 }
 
 /** Unread messages for me directly (●●: they mention me, or a conversation of me and one other). */
@@ -208,7 +201,10 @@ function renderAgentList(): void {
       button.type = "button";
       if (agent.id === active) button.classList.add("active");
       if (!agent.online) button.classList.add("offline");
-      const dot = h("span", `dot ${agent.online ? "dot-on" : "dot-off"}`);
+      // Busy is an orange dot, not a "busy 14 min" line: a line that comes and goes made the column jump. The duration
+      // is on the agent's page.
+      const busy = agent.online && agent.status?.state === "busy";
+      const dot = h("span", `dot ${busy ? "dot-busy" : agent.online ? "dot-on" : "dot-off"}`);
       const text = h("span", "side-item-text");
       const name = h("span", "side-item-title", agent.id);
       if (agent.connections > 1 && agent.online) name.append(h("span", "conn-count", ` ×${agent.connections}`));
@@ -220,8 +216,6 @@ function renderAgentList(): void {
       text.append(name);
       const detail = agentDetail(agent, showHost);
       if (detail) text.append(h("span", "side-item-detail", detail));
-      const statusLine = renderAgentStatus(agent);
-      if (statusLine) text.append(statusLine);
       button.append(dot, text);
       const tip = [
         agent.id,
@@ -230,7 +224,7 @@ function renderAgentList(): void {
         agent.host ? `host: ${agent.host}` : "",
         agent.connectionError ?? "",
         agent.online
-          ? `online (${agent.connections} connection${agent.connections === 1 ? "" : "s"})`
+          ? `${busy ? "busy" : "idle"}, online (${agent.connections} connection${agent.connections === 1 ? "" : "s"})`
           : `last seen ${relativeTime(agent.lastSeenAt)}`,
         "Open its page for what it is doing now.",
       ];
