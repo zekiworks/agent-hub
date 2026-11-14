@@ -84,6 +84,13 @@ export function replyAddress(conversation: Conversation, recipientId: string): s
   return formatAddress(conversation.members.filter((id) => id !== recipientId));
 }
 
+/** How a conversation is named in delivery headers and tool results: "@all", "@@project", or its members. */
+export function conversationLabel(conversation: Pick<Conversation, "kind" | "members" | "name">): string {
+  if (conversation.kind === "all") return "@all";
+  if (conversation.kind === "project" && conversation.name) return `@@${conversation.name}`;
+  return formatAddress(conversation.members);
+}
+
 /** `text` @mentions `id` (or names it inside `@{…}`). */
 export function mentions(text: string, id: string): boolean {
   return mentionedIds(text).includes(id);

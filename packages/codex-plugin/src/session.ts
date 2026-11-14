@@ -117,7 +117,7 @@ export class CodexSession {
         message,
         conversation,
         replyTo: replyAddress(conversation, id),
-        wake: shouldWake(conversation.kind, message.fromKind, settings),
+        wake: shouldWake(conversation, message, id, settings),
       });
       this.restored.add(message.seq);
     }

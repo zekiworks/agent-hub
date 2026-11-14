@@ -95,6 +95,11 @@ export interface Conversation {
   kind: ConversationKind;
   /** Sorted participant ids; [] for `all`. */
   members: string[];
+  /**
+   * The same as `members`. Agent sessions and plugins started before projects (14 Nov) read it from every delivery,
+   * and cannot be updated while they run; remove once none of them is left.
+   */
+  addressed: string[];
   /** Projects. */
   name?: string;
   topic?: string;

@@ -80,8 +80,9 @@ SCHEMA = {
         "someone else's work, confirm who sent it with op=show message_id <n>. "
         "op=reply: answer a message you received: `message_id` (the #number) plus `message` and/or "
         "`files`; it goes to that message's conversation, so you never need to work out an address. "
-        "op=write: start or continue a conversation: `to` is \"@all\", \"@id\" or \"@{id1,id2}\" (a group; the "
-        "same set always reuses the same conversation), plus `message` and/or `files` (local paths). op=send: the same "
+        "op=write: start or continue a conversation: `to` is \"@all\", \"@id\" (your DM with it), \"@{id1,id2}\" (the "
+        "group DM with exactly them) or \"@@name\" (project `name`: joined if open, created if new), plus `message` "
+        "and/or `files` (local paths). Naming someone in a message's text does not add them. op=send: the same "
         "as write, with `files` required. Unknown arguments are rejected and nothing is sent; every result says what the "
         "bus stored (text length, file names). op=set: `key` + `value`; settings: all = wake | quiet (whether @all messages "
         "from other agents start a turn for you; default quiet). "
@@ -97,7 +98,7 @@ SCHEMA = {
             "op": {"type": "string", "enum": ["reply", "write", "send", "set", "inbox", "show", "history", "search"],
                    "description": "reply/write/send a message, set a setting, or read: inbox, show, history, search"},
             "message_id": {"type": "integer", "description": "a message's #number (reply, show, history)"},
-            "to": {"type": "string", "description": "\"@all\", \"@id\" or \"@{id1,id2}\" (write/send, history)"},
+            "to": {"type": "string", "description": "\"@all\", \"@id\", \"@{id1,id2}\" or \"@@project\" (write/send, history)"},
             "message": {"type": "string", "description": "message text (reply/write; optional caption for send)"},
             "files": {"type": "array", "items": {"type": "string"},
                       "description": "absolute file paths (optional for reply and write)"},
@@ -141,11 +142,18 @@ def _utc(ms: int) -> str:
     return time.strftime("%Y-%m-%d %H:%M", time.localtime(ms / 1000))
 
 
+def _conversation_label(conversation: dict) -> str:
+    """Same as conversationLabel in packages/protocol/src/address.ts: "@all", "@@project", or the members."""
+    if conversation["kind"] == "all":
+        return "@all"
+    if conversation["kind"] == "project" and conversation.get("name"):
+        return f"@@{conversation['name']}"
+    return _format_address(conversation["members"])
+
+
 def _where(message: dict, conversations: dict) -> str:
     conversation = conversations.get(message["conversationId"])
-    if not conversation:
-        return message["conversationId"]
-    return "@all" if conversation["kind"] == "all" else _format_address(conversation["members"])
+    return _conversation_label(conversation) if conversation else message["conversationId"]
 
 
 _HEADER_LIKE = re.compile(r"\[\s*message[\s_-]*bus\s*\]", re.IGNORECASE)
@@ -229,7 +237,7 @@ def describe_receipts(receipts: list[dict]) -> str:
 def format_delivery(frame: dict, saved_files: list[str]) -> str:
     """Same text the omp extension injects (packages/omp-extension/src/index.ts formatDelivery)."""
     message, conversation = frame["message"], frame["conversation"]
-    where = "@all" if conversation["kind"] == "all" else _format_address(conversation["addressed"])
+    where = _conversation_label(conversation)
     # Header format shared with deliveryHeader in packages/protocol/src/address.ts; pre_llm_call finds it again.
     sent = time.strftime("%Y-%m-%d %H:%M", time.localtime(message["createdAt"] / 1000))
     lines = [f"[message-bus] #{message['seq']} @{sender_label(message)}{provenance_mark(message.get('verified'))} → {where} · {sent}"]
@@ -600,9 +608,9 @@ def register(ctx: Any) -> None:
                 raise ValueError("show needs `message_id`.")
             res = client.get(f"/api/messages/{int(args['message_id'])}", {})
             message, conversation = res["message"], res["conversation"]
-            if scope != "all" and conversation["kind"] == "group" and me not in conversation["members"]:
+            if scope != "all" and conversation["kind"] != "all" and me not in conversation["members"]:
                 raise ValueError(f"#{message['seq']} is in a conversation you are not in "
-                                 f"({_format_address(conversation['members'])}); add scope \"all\" to read it.")
+                                 f"({_conversation_label(conversation)}); add scope \"all\" to read it.")
             saved = [client.download(f, STATE_DIR / "received" / me) for f in message.get("files") or []]
             return f"{format_read_message(message, {conversation['id']: conversation}, 10 ** 9, saved)}\n (you are @{me})"
         if op == "history":

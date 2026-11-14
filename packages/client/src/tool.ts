@@ -5,7 +5,7 @@
 import { realpathSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { defangHeaders, deliveryHeader, describeReceipts, formatAddress, formatTime, provenanceMark, quoteLine, senderLabel } from "../../protocol/src/address";
+import { conversationLabel, defangHeaders, deliveryHeader, describeReceipts, formatTime, provenanceMark, quoteLine, senderLabel } from "../../protocol/src/address";
 import type { Reservation, ReservationResponse, Resource, ResourcesResponse } from "../../protocol/src/resources";
 import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptEvent } from "../../protocol/src/types";
 import type { BusConnection, Delivery } from "./connection";
@@ -29,7 +29,12 @@ export interface MessageBusToolParams {
     | "extend"
     | "mode"
     | "subscribe"
-    | "unsubscribe";
+    | "unsubscribe"
+    | "projects"
+    | "invite"
+    | "leave"
+    | "notify"
+    | "project";
   message_id?: number;
   to?: string;
   message?: string;
@@ -49,6 +54,11 @@ export interface MessageBusToolParams {
   start?: string;
   purpose?: string;
   mode?: "shared" | "private";
+  ids?: string[];
+  level?: "all" | "mentions" | "none";
+  name?: string;
+  topic?: string;
+  visibility?: "open" | "discoverable" | "private";
 }
 
 /** One tool parameter, for building a harness's schema (zod for omp, JSON schema for MCP). Only `op` is required. */
@@ -63,12 +73,16 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   {
     name: "op",
     type: "string",
-    enum: ["reply", "write", "send", "set", "inbox", "show", "history", "search", "resources", "servers", "reserve", "release", "extend", "mode", "subscribe", "unsubscribe"],
+    enum: [
+      "reply", "write", "send", "set", "inbox", "show", "history", "search",
+      "projects", "invite", "leave", "notify", "project",
+      "resources", "servers", "reserve", "release", "extend", "mode", "subscribe", "unsubscribe",
+    ],
     description:
-      "reply/write/send a message, set a setting, read (inbox, show, history, search), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
+      "reply/write/send a message, set a setting, read (inbox, show, history, search), conversations (projects, invite, leave, notify, project), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
   },
   { name: "message_id", type: "number", description: "a message's #number (reply, show, history)" },
-  { name: "to", type: "string", description: '"@all", "@id" or "@{id1,id2}" (write/send, history)' },
+  { name: "to", type: "string", description: '"@all", "@id" (a DM), "@{id1,id2}" (a group DM) or "@@name" (a project) (write/send, history, invite, leave, notify, project)' },
   { name: "message", type: "string", description: "message text (reply/write; optional caption for send)" },
   { name: "files", type: "string[]", description: "file paths, relative to the project folder or absolute (optional for reply and write)" },
   { name: "key", type: "string", description: "setting name (set)" },
@@ -90,6 +104,11 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   { name: "start", type: "string", description: 'reserve: omit for now, a time ("2026-11-10 14:00"), or "next" to queue until it is free' },
   { name: "purpose", type: "string", description: "one line: what it is for (reserve)" },
   { name: "mode", type: "string", enum: ["shared", "private"], description: '"shared" (default: others may send requests to your servers) or "private" (reserve, mode)' },
+  { name: "ids", type: "string[]", description: "participant ids to add (invite)" },
+  { name: "level", type: "string", enum: ["all", "mentions", "none"], description: "notify: which messages there start a turn for you" },
+  { name: "name", type: "string", description: "project: a name for a group DM turned into a project" },
+  { name: "topic", type: "string", description: "project: a one-line topic" },
+  { name: "visibility", type: "string", enum: ["open", "discoverable", "private"], description: "project: who can find and join it" },
 ];
 
 /** Every argument the tool takes; anything else is rejected rather than silently ignored. */
@@ -133,8 +152,9 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "op=show message_id <n>. " +
     "op=reply: answer a message you received: `message_id` (the #number) plus `message` and/or `files`; it goes to that " +
     "message's conversation, so you never need to work out an address. " +
-    "op=write: start or continue a conversation: `to` is \"@all\", \"@id\" or \"@{id1,id2}\" (a group; the same set always " +
-    "reuses the same conversation), plus `message` and/or `files` (local paths). " +
+    "op=write: start or continue a conversation: `to` is \"@all\", \"@id\" (your DM with it), \"@{id1,id2}\" (the group " +
+    "DM with exactly them) or \"@@name\" (project `name`: you join it if it is open; a new name creates it), plus " +
+    "`message` and/or `files` (local paths). Naming someone in a message's text does not add them to a conversation. " +
     "op=send: the same as write, with `files` required. Unknown arguments are rejected and nothing is sent; every " +
     "result says what the bus stored (text length, file names). " +
     "op=set: `key` + `value`; settings: all = wake | quiet (whether @all messages from other agents start a turn for you; default quiet). " +
@@ -145,6 +165,11 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "or the conversation of `message_id`. " +
     "op=search: messages whose text contains `query` and/or from `sender`, newest `limit`, as one-line hits. " +
     "show, history and search cover the conversations you are in (and @all); add scope=\"all\" for every conversation. " +
+    "Conversations: op=projects lists the projects you can see (yours, open, discoverable) and your group DMs. " +
+    "op=invite (`to` or `message_id` for the conversation, `ids`) adds others to a group DM or project; they get its " +
+    "last 5 messages. op=leave leaves one. op=notify (`level`: all, mentions, none) sets which messages there start a " +
+    "turn for you: in a busy project, mentions saves turns. op=project turns a group DM into a project (`name`, " +
+    "optional `topic`, `visibility`) or changes a project's topic and visibility. " +
     "Shared GPUs (experimental; instead of claim/release messages; shared by default): op=servers lists the model " +
     "servers running now (model, URL, who runs it, shared or private): for light use just send requests to a shared " +
     "one instead of starting your own; for sustained heavy use tell its owner first; leave private ones alone. " +
@@ -203,7 +228,7 @@ export async function deliveryText(conn: BusConnection, delivery: Delivery): Pro
 /** Text injected into the session for one delivery; `savedFiles` are local paths of its attachments. */
 export function formatDelivery(delivery: Delivery, savedFiles: string[]): string {
   const { message, conversation, replyTo } = delivery;
-  const where = conversation.kind === "all" ? "@all" : formatAddress(conversation.addressed);
+  const where = conversationLabel(conversation);
   const lines = [deliveryHeader(message.seq, senderLabel(message), where, message.createdAt, message.verified)];
   // Held while this agent was offline: say how old it is, so an old instruction is not taken as current.
   const age = Math.round((Date.now() - message.createdAt) / 60_000);
@@ -235,7 +260,7 @@ const READ_BUDGET_CHARS = 30_000;
  * cannot pass itself off as another entry (`#n @carol (verified) → …` starts at the margin only when the bus wrote it).
  */
 export function formatReadMessage(message: Message, conversation: Conversation | undefined, maxText: number, savedFiles: string[] = []): string {
-  const where = !conversation ? message.conversationId : conversation.kind === "all" ? "@all" : formatAddress(conversation.members);
+  const where = !conversation ? message.conversationId : conversationLabel(conversation);
   const lines = [`#${message.seq} @${senderLabel(message)}${provenanceMark(message.verified)} → ${where} · ${formatTime(message.createdAt)}`];
   if (message.quote) lines.push(quoteLine(message.quote));
   if (message.text) {
@@ -251,7 +276,7 @@ export function formatReadMessage(message: Message, conversation: Conversation |
 
 /** "#n · time · @from → where: …snippet…" around the first match of `query`. */
 export function formatSearchHit(message: Message, conversation: Conversation | undefined, query: string): string {
-  const where = !conversation ? message.conversationId : conversation.kind === "all" ? "@all" : formatAddress(conversation.members);
+  const where = !conversation ? message.conversationId : conversationLabel(conversation);
   const flat = message.text.replace(/\s+/g, " ").trim();
   const at = query ? flat.toLowerCase().indexOf(query.toLowerCase()) : 0;
   const start = Math.max(0, at - 80);
@@ -446,8 +471,8 @@ export class BusTool {
       case "show": {
         if (params.message_id === undefined) throw new Error("show needs `message_id`.");
         const { message, conversation } = await conn.message(params.message_id);
-        if (params.scope !== "all" && conversation.kind === "group" && !conversation.members.includes(conn.id ?? "")) {
-          throw new Error(`#${message.seq} is in a conversation you are not in (${formatAddress(conversation.members)}); add scope "all" to read it.`);
+        if (params.scope !== "all" && conversation.kind !== "all" && !conversation.members.includes(conn.id ?? "")) {
+          throw new Error(`#${message.seq} is in a conversation you are not in (${conversationLabel(conversation)}); add scope "all" to read it.`);
         }
         const saved: string[] = [];
         if (message.files.length > 0) {
@@ -514,6 +539,49 @@ export class BusTool {
         const res = await conn.schedule(`/api/reservations/${encodeURIComponent(params.reservation)}/extend`, { hours: params.hours });
         return result(`Extended: ${formatReservation(res.reservation, res.resource)}.`);
       }
+      case "projects": {
+        const me = conn.id ?? "";
+        const { conversations } = await conn.state();
+        const lines = conversations
+          .filter((c) => c.kind === "project" || (c.kind === "group" && c.members.includes(me)))
+          .filter((c) => !c.archived)
+          .map((c) => {
+            const mine = c.members.includes(me);
+            const level = c.notify?.[me];
+            return (
+              `${conversationLabel(c)}${c.topic ? ` — ${c.topic}` : ""} · ${c.kind === "project" ? (c.visibility ?? "open") : "group DM"} · ` +
+              `${c.members.length} members${mine ? `, you are in it${level ? ` (notify: ${level})` : ""}` : ""} · ${c.id}`
+            );
+          });
+        return result(lines.length > 0 ? lines.join("\n") : "No projects or group DMs yet. Start one with op=write to=\"@@name\".");
+      }
+      case "invite":
+      case "leave":
+      case "notify":
+      case "project": {
+        const conversation = await this.conversationOf(params);
+        const body =
+          params.op === "invite"
+            ? { ids: (params.ids ?? []).map((id) => id.replace(/^@/, "")) }
+            : params.op === "notify"
+              ? { level: params.level }
+              : params.op === "project"
+                ? { ...(params.name ? { name: params.name } : {}), ...(params.topic ? { topic: params.topic } : {}), ...(params.visibility ? { visibility: params.visibility } : {}) }
+                : {};
+        if (params.op === "invite" && body.ids?.length === 0) throw new Error("invite needs `ids`.");
+        if (params.op === "notify" && !params.level) throw new Error("notify needs `level`: all, mentions or none.");
+        const res = await conn.conversationAction(conversation.id, params.op === "invite" ? "members" : params.op, body);
+        const c = res.conversation;
+        const done =
+          params.op === "invite"
+            ? `Added ${body.ids?.map((id) => `@${id}`).join(", ")}; members now ${c.members.map((m) => `@${m}`).join(", ")}`
+            : params.op === "leave"
+              ? "You left it"
+              : params.op === "notify"
+                ? `Notifications there: ${params.level}`
+                : `Project ${conversationLabel(c)}${c.topic ? ` — ${c.topic}` : ""} (${c.visibility ?? "open"})`;
+        return result(`${done} (${conversationLabel(c)}, ${c.id}).`);
+      }
       case "subscribe": {
         const res = await conn.subscribe({
           ...(params.resource ? { host: params.resource } : {}),
@@ -531,11 +599,32 @@ export class BusTool {
     }
   }
 
+  /** The conversation `message_id` is in, or the one `to` names for this agent ("@@name", "@x", "@{a,b}"). */
+  private async conversationOf(params: MessageBusToolParams): Promise<Conversation> {
+    if (params.message_id !== undefined) return (await this.conn.message(params.message_id)).conversation;
+    if (!params.to) throw new Error(`${params.op} needs \`to\` (the conversation as you would write to it) or \`message_id\`.`);
+    const me = this.conn.id ?? "";
+    const { conversations } = await this.conn.state();
+    const to = params.to.trim();
+    if (to.startsWith("@@")) {
+      const name = to.slice(2).toLowerCase();
+      const project = conversations.find((c) => c.kind === "project" && c.name === name);
+      if (!project) throw new Error(`No project "${name}" that you can see.`);
+      return project;
+    }
+    const ids = new Set([me, ...to.replace(/^@/, "").replace(/^\{|\}$/g, "").split(",").map((s) => s.trim().replace(/^@/, "").toLowerCase())]);
+    const match = conversations
+      .filter((c) => (c.kind === "dm" || c.kind === "group") && c.members.length === ids.size && c.members.every((m) => ids.has(m)))
+      .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || b.lastMessageAt - a.lastMessageAt)[0];
+    if (!match) throw new Error(`No conversation of yours with ${to}.`);
+    return match;
+  }
+
   /** Waits for receipts and returns the delivery line for the tool result; remembers late group recipients. */
   private async deliveryStatus(sent: PostMessageResponse): Promise<string> {
     const message = await this.conn.waitForReceipts(sent.message.seq, receiptWaitMs());
     const pending = message.receipts.filter((r) => r.deliveredAt === null).map((r) => r.to);
-    const late = pending.length > 0 && sent.conversation.kind === "group";
+    const late = pending.length > 0 && sent.conversation.kind !== "all";
     if (late) this.awaitingReceipts.set(message.seq, new Set(pending));
     return `${describeReceipts(message.receipts)}${late ? ". You will be told when they receive it, or if it expires first" : ""}`;
   }

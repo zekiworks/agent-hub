@@ -17,7 +17,7 @@ import { BusContext, tokenHash } from "./context";
 import { canRead, canSee, handleConversationRoute } from "./conversations";
 import { BusDatabase } from "./db";
 import { getFile, MAX_FILE_BYTES, postFile, transcribeFile } from "./files";
-import { CORS_HEADERS, errorResponse, json, nonEmptyParam } from "./http";
+import { CORS_HEADERS, errorResponse, HttpError, json, nonEmptyParam } from "./http";
 import type { SocketData } from "./hub";
 import { resolveLanAddresses } from "./lan";
 import { getMessageReceipts, getMessages, MAX_RECEIPT_WAIT_MS, postMessage } from "./messages";
@@ -160,8 +160,15 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     const fileKey = url.searchParams.get("k");
     if (method === "GET" && fileMatch?.[1] && fileKey && auth.checkFileKey(fileKey)) return getFile(ctx, decodeURIComponent(fileMatch[1]));
     const reader = ctx.requireReader(req);
-    // People read as themselves; an agent token reads what agents may (see canRead).
-    const viewer = reader.kind === "human" ? { id: reader.id, kind: "human" as const } : { id: "", kind: "agent" as const };
+    // People read as themselves; an agent token reads what agents may (see canRead), or as one of its agents (`as`).
+    let viewer = reader.kind === "human" ? { id: reader.id, kind: "human" as const } : { id: "", kind: "agent" as const };
+    const as = url.searchParams.get("as");
+    if (reader.kind === "agent" && as) {
+      const agent = ctx.hub.knownParticipant(as.trim().toLowerCase());
+      if (!agent || agent.kind !== "agent") throw new HttpError(400, `Unknown agent "${as}"`);
+      ctx.checkWriter(req, agent);
+      viewer = { id: agent.id, kind: "agent" };
+    }
     if (pathname.startsWith("/api/agent-tokens")) return handleAgentTokens(ctx, sockets, req, url);
     if (method === "GET" && pathname === "/api/state") {
       const conversations = db

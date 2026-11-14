@@ -9,6 +9,7 @@ import type {
   ActivityEvent,
   AgentClientFrame,
   Conversation,
+  ConversationResponse,
   ReadResponse,
   AgentStatus,
   AgentServerFrame,
@@ -17,6 +18,7 @@ import type {
   Participant,
   PostMessageResponse,
   ReceiptEvent,
+  StateResponse,
 } from "../../protocol/src/types";
 import type { GpuSubscription, ReservationResponse, ResourcesResponse } from "../../protocol/src/resources";
 
@@ -290,6 +292,21 @@ export class BusConnection {
     const qs = new URLSearchParams({ from: this.requireId(), q, limit: String(limit), scope: all ? "all" : "mine" });
     if (sender) qs.set("sender", sender);
     return this.request<ReadResponse>(`/api/search?${qs}`, { method: "GET" });
+  }
+
+  /** The conversations this agent can see (its own, @all, open and discoverable projects), with the participants. */
+  state(): Promise<StateResponse> {
+    return this.request<StateResponse>(`/api/state?${new URLSearchParams({ as: this.requireId() })}`, { method: "GET" });
+  }
+
+  /** POST /api/conversations/:id/{members,leave,notify,project} as this agent. */
+  conversationAction(conversationId: string, action: "members" | "leave" | "notify" | "project", body: Record<string, unknown> = {}): Promise<ConversationResponse> {
+    const from = this.requireId();
+    return this.request<ConversationResponse>(`/api/conversations/${encodeURIComponent(conversationId)}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from, ...body }),
+    });
   }
 
   /** One message by number, with its conversation. */

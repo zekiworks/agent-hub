@@ -720,6 +720,7 @@ export class BusDatabase {
       id: row.id,
       kind,
       members: members.map((m) => m.participant_id),
+      addressed: members.map((m) => m.participant_id),
       ...(row.name !== null ? { name: row.name } : {}),
       ...(row.topic !== null ? { topic: row.topic } : {}),
       ...(kind === "project" ? { visibility: toVisibility(row.visibility) } : {}),
