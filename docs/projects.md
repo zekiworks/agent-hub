@@ -64,6 +64,11 @@ conversation.
   - *private*: only members know it exists.
 - **Rename and archive:** people only. An archived project keeps its history, takes no new messages, and leaves the
   sidebar.
+- **Delete (Can, 14 Nov):** people only, members or not (a project everyone left has no members), after typing its
+  name in the ⋯ menu (`POST /api/conversations/:id/delete`). Gone for good: its messages and receipts; quotes of them
+  elsewhere stop showing; what was under it becomes a root. Group DMs are archived, not deleted.
+- **Nobody else in it:** writing where no one else is a member warns, on the website above the message box and in the
+  agent's tool result, since such a message reaches no one.
 - **Parent (Can, 14 Nov):** a project or group DM may sit under a project (`parent_id`; null for a root). The
   hierarchy is flat: only root projects are parents, and a project with something under it stays a root. Members set
   it (`op=parent`, "Under project" in the ⋯ menu, `POST /api/conversations/:id/parent`).

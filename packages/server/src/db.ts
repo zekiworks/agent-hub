@@ -893,6 +893,23 @@ export class BusDatabase {
     this.db.query("UPDATE conversations SET parent_id = ?2 WHERE id = ?1").run(conversationId, parentId);
   }
 
+  /**
+   * Deletes a project for good: its messages, their receipts, its members and old ids. What was under it becomes a
+   * root. Quotes of its messages elsewhere stop showing (they are looked up when shown). Returns the messages deleted.
+   */
+  deleteProject(conversationId: string): number {
+    return this.db.transaction(() => {
+      const { n } = this.db.query("SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?1").get(conversationId) as { n: number };
+      this.db.query("UPDATE conversations SET parent_id = NULL WHERE parent_id = ?1").run(conversationId);
+      this.db.query("DELETE FROM receipts WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
+      this.db.query("DELETE FROM messages WHERE conversation_id = ?1").run(conversationId);
+      this.db.query("DELETE FROM conversation_members WHERE conversation_id = ?1").run(conversationId);
+      this.db.query("DELETE FROM conversation_aliases WHERE new_id = ?1").run(conversationId);
+      this.db.query("DELETE FROM conversations WHERE id = ?1 AND kind = 'project'").run(conversationId);
+      return n;
+    })();
+  }
+
   setArchived(conversationId: string, archived: boolean): void {
     this.db
       .query("UPDATE conversations SET archived = ?2 WHERE id = ?1 AND kind IN ('group', 'project')")

@@ -73,6 +73,7 @@ export const dom = {
   replyBar: el<HTMLDivElement>("reply-bar"),
   replyBarText: el<HTMLSpanElement>("reply-bar-text"),
   replyCancel: el<HTMLButtonElement>("reply-cancel"),
+  nobodyBar: el<HTMLDivElement>("nobody-bar"),
   holdBar: el<HTMLDivElement>("hold-bar"),
   holdBarText: el<HTMLSpanElement>("hold-bar-text"),
   holdSelect: el<HTMLSelectElement>("hold-select"),

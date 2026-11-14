@@ -33,7 +33,7 @@ async function act(conv: Conversation, action: string, body: Record<string, unkn
     await postJson<ConversationResponse>(`/api/conversations/${encodeURIComponent(conv.id)}/${action}`, { from: state.me, ...body });
     await loadState();
     renderSidebar();
-    if (action === "leave") {
+    if (action === "leave" || action === "delete") {
       dom.convDialog.close();
       navigate({ kind: "conversation", id: "all" });
       return;
@@ -161,6 +161,23 @@ function render(): void {
           ? "You are not in it. A member can add you."
           : "You are not in it. Write a message to join."
       )
+    );
+  }
+  // Deleting is for people, members or not (an emptied project has none), and only after typing the name.
+  if (conv.kind === "project" && conv.name) {
+    const name = conv.name;
+    body.push(
+      h("h3", "", "Delete"),
+      h("p", "dialog-hint", "Gone for good: its messages, and their quotes elsewhere. What is under it becomes a root."),
+      button("Delete project…", () => {
+        const typed = prompt(`Delete @@${name} and all its messages for good? Type its name to confirm.`);
+        if (typed === null) return;
+        if (typed.trim().replace(/^@@/, "").toLowerCase() !== name) {
+          alert(`"${typed}" is not "${name}": nothing was deleted.`);
+          return;
+        }
+        void act(conv, "delete", {});
+      })
     );
   }
   const error = h("div", "composer-error");

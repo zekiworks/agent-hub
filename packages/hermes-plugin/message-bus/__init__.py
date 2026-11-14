@@ -329,6 +329,9 @@ class BusClient:
         if late:
             with _awaiting_lock:
                 _awaiting_receipts[seq] = pending
+        conversation = sent["conversation"]
+        if conversation["kind"] != "all" and all(m == sent["message"]["from"] for m in conversation["members"]):
+            return f"WARNING: nobody else is in {_conversation_label(conversation)}, so no one receives this. Invite someone or write where they are"
         return describe_receipts(message["receipts"]) + (". You will be told when they receive it, or if it expires first" if late else "")
 
     def download(self, ref: dict, dest_dir: Path) -> str:

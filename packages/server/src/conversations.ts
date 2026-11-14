@@ -7,6 +7,7 @@ import {
   type ArchiveRequest,
   type Conversation,
   type ConversationResponse,
+  type DeleteProjectResponse,
   type NotifyLevel,
   type NotifyRequest,
   type ParentRequest,
@@ -129,13 +130,13 @@ function memberRequest(ctx: BusContext, req: Request, body: Record<string, unkno
   return { writer, conversation };
 }
 
-/** POST /api/conversations/:id/{members,leave,notify,project,parent,archive}; null for any other path. */
+/** POST /api/conversations/:id/{members,leave,notify,project,parent,archive,delete}; null for any other path. */
 export async function handleConversationRoute(
   ctx: BusContext,
   req: Request,
   id: string,
   action: string
-): Promise<ConversationResponse | null> {
+): Promise<ConversationResponse | DeleteProjectResponse | null> {
   const body = await readJsonObject(req);
   const { db } = ctx;
   switch (action) {
@@ -217,6 +218,22 @@ export async function handleConversationRoute(
       db.setArchived(conversation.id, (body as Partial<ArchiveRequest>).archived === true);
       ctx.hub.conversationsChanged();
       return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "delete": {
+      // People only, and not only members: an emptied project (everyone left) must still be removable (Can, 14 Nov).
+      if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+      const writer = ctx.hub.knownParticipant(body.from.trim().toLowerCase());
+      if (!writer) throw new HttpError(400, `Unknown participant "${body.from}"`);
+      ctx.checkWriter(req, writer);
+      if (writer.kind !== "human") throw new HttpError(403, "Only people delete projects");
+      const conversation = db.getConversation(id);
+      if (!conversation || !canSee(ctx, conversation, { id: writer.id, kind: "human" })) {
+        throw new HttpError(404, `Unknown conversation "${id}"`);
+      }
+      if (conversation.kind !== "project") throw new HttpError(400, "Only projects can be deleted (archive a group DM)");
+      const messages = db.deleteProject(conversation.id);
+      ctx.hub.conversationsChanged();
+      return { deleted: conversation.id, messages };
     }
     default:
       return null;

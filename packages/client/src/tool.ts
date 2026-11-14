@@ -651,6 +651,10 @@ export class BusTool {
     const pending = message.receipts.filter((r) => r.deliveredAt === null).map((r) => r.to);
     const late = pending.length > 0 && sent.conversation.kind !== "all";
     if (late) this.awaitingReceipts.set(message.seq, new Set(pending));
+    // Nobody else in it (its other members left): say so plainly instead of "humans read it on the website".
+    if (sent.conversation.kind !== "all" && sent.conversation.members.every((id) => id === sent.message.from)) {
+      return `WARNING: nobody else is in ${conversationLabel(sent.conversation)}, so no one receives this. Invite someone (op=invite) or write where they are`;
+    }
     return `${describeReceipts(message.receipts)}${late ? ". You will be told when they receive it, or if it expires first" : ""}`;
   }
 }

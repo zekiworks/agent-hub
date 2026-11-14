@@ -358,7 +358,10 @@ test("conversation ops: write to @@project, projects, invite, notify and leave, 
   const beta = await rawAgent("beta");
   const text = async (params: Parameters<FakeOmp["run"]>[0]) => (await alpha.run(params)).content[0]!.text;
 
-  await text({ op: "write", to: "@@benchmarks", message: "starting the benchmarks project" });
+  // Alone in a new project: the result warns that no one receives it.
+  expect(await text({ op: "write", to: "@@benchmarks", message: "starting the benchmarks project" })).toContain(
+    "WARNING: nobody else is in @@benchmarks, so no one receives this"
+  );
   const listed = await text({ op: "projects" });
   expect(listed).toContain("@@benchmarks · open · 1 members, you are in it");
 

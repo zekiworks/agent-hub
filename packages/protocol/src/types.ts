@@ -438,6 +438,12 @@ export interface ConversationResponse {
   conversation: Conversation;
 }
 
+/** POST /api/conversations/:id/delete (people only, projects only): gone for good, with how many messages. */
+export interface DeleteProjectResponse {
+  deleted: string;
+  messages: number;
+}
+
 /** POST /api/settings */
 export interface SetSettingRequest {
   from: string;

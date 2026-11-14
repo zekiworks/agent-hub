@@ -605,6 +605,31 @@ describe("delivery", () => {
     expect((await answeredConversation(await parent(child.conversation.id, null))).parentId).toBeUndefined();
   });
 
+  test("a person deletes a project for good, member or not; agents cannot; what was under it becomes a root", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const root = await send({ from: alpha.id, to: "@@stand-in", text: "made by alpha" });
+    const kept = await send({ from: "carol", to: "@@kept", text: "stays" });
+    const dm = await send({ from: "carol", to: "@alpha", text: "a dm" });
+    const child = await send({ from: "carol", to: "@@under", text: "child" });
+    await postJson(bus, `/api/conversations/${child.conversation.id}/parent`, { from: "carol", parent: "@@stand-in" });
+    const del = (id: string, from: string) => postJson(bus, `/api/conversations/${id}/delete`, { from });
+
+    expect((await del(root.conversation.id, alpha.id)).status).toBe(403); // agents cannot
+    expect((await del(dm.conversation.id, "carol")).status).toBe(400); // only projects
+    // Everyone left: uma (never a member) can still delete it.
+    await postJson(bus, `/api/conversations/${root.conversation.id}/leave`, { from: alpha.id });
+    const res = await del(root.conversation.id, "uma");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deleted: root.conversation.id, messages: 1 });
+
+    const after = (await state("carol")).conversations;
+    expect(after.some((c) => c.id === root.conversation.id)).toBe(false);
+    expect(after.find((c) => c.id === child.conversation.id)?.parentId).toBeUndefined();
+    expect((await busFetch(bus, `/api/messages/${root.message.seq}`, {}, "carol")).status).toBe(404);
+    expect((await del(child.conversation.id, "carol")).status).toBe(200);
+    expect((await state("carol")).conversations.some((c) => c.id === kept.conversation.id)).toBe(true); // others untouched
+  });
+
   test("live frames go only to viewers who may read the conversation", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const viewer = await connectViewer(); // carol

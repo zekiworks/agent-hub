@@ -33,6 +33,14 @@ export function holdHours(): number | undefined {
 }
 
 export function updateComposerState(): void {
+  // Nobody else in the open conversation (they all left): a message there reaches no one (Can, 14 Nov).
+  const view0 = state.view;
+  const open = view0.kind === "conversation" ? state.conversations.get(view0.id) : undefined;
+  const alone = !!open && open.kind !== "all" && open.members.every((id) => id === state.me);
+  dom.nobodyBar.hidden = !alone;
+  if (open && alone) {
+    dom.nobodyBar.textContent = `Nobody else is in ${conversationTitle(open)}: a message here reaches no one. Add people in its ⋯ menu, or write where they are.`;
+  }
   const offline = offlineRecipients();
   dom.holdBar.hidden = offline.length === 0;
   if (offline.length > 0) {

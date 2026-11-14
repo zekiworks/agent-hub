@@ -2388,6 +2388,16 @@ ul.md-list ul.md-list { list-style: circle; }
   font-size: 13px;
 }
 
+/* "Nobody else is in it": a warning, not a note (composer.ts). */
+.nobody-bar {
+  border-left-color: var(--error);
+  color: var(--text);
+}
+
+.hold-bar[hidden] {
+  display: none;
+}
+
 /* Voice messages: the 🎤 button (red while recording), the recording panel in the box's place, the status bar above
    the box, and the player in a message. */
 .voice-btn {
