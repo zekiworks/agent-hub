@@ -83,7 +83,9 @@ export async function transcribeFile(ctx: BusContext, fileId: string, sttUrl: st
   if (!file.mimeType.startsWith("audio/")) throw new HttpError(400, `${file.name} is not audio (${file.mimeType})`);
   let res: Response;
   try {
-    res = await fetch(`${sttUrl.replace(/\/+$/, "")}/transcribe`, { method: "POST", body: Bun.file(blobPath) });
+    // The bus's own names (agents, people), so speech-to-text writes "message-bus" and "compactor", not look-alike words.
+    const names = ctx.hub.knownIds().join(" ");
+    res = await fetch(`${sttUrl.replace(/\/+$/, "")}/transcribe?${new URLSearchParams({ hotwords: names })}`, { method: "POST", body: Bun.file(blobPath) });
   } catch (error) {
     throw new HttpError(502, `Speech-to-text service unreachable: ${error instanceof Error ? error.message : String(error)}`);
   }

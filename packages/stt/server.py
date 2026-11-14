@@ -12,6 +12,7 @@ import os
 import sys
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import av
@@ -81,6 +82,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if self.path.split("?")[0] != "/transcribe":
             return self.reply(404, {"error": "not found"})
+        # Words to expect (the bus's agent and people names), as faster-whisper hotwords.
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        hotwords = " ".join(query.get("hotwords", []))[:1000] or None
         size = int(self.headers.get("Content-Length") or 0)
         if size <= 0 or size > MAX_BYTES:
             return self.reply(400, {"error": f"body must be 1 byte to {MAX_BYTES} bytes of audio"})
@@ -95,7 +99,7 @@ class Handler(BaseHTTPRequestHandler):
                     scores = dict(probabilities)
                     other = max(LANGUAGES[1:], key=lambda code: scores.get(code, 0.0), default=None)
                     language = other if other and scores.get(other, 0.0) >= OTHER_LANGUAGE_MIN else LANGUAGES[0]
-                segments, info = model.transcribe(samples, language=language, vad_filter=True, beam_size=5)
+                segments, info = model.transcribe(samples, language=language, vad_filter=True, beam_size=5, hotwords=hotwords)
                 text = " ".join(s.text.strip() for s in segments).strip()
                 if text.lower() in SILENCE_PHRASES:
                     text = ""
