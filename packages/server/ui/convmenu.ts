@@ -18,7 +18,7 @@ const NOTIFY: Array<[NotifyLevel, string]> = [
 ];
 const VISIBILITY: Array<[ProjectVisibility, string]> = [
   ["open", "Open: anyone can find, read and join it"],
-  ["discoverable", "Discoverable: its name and topic show under Browse; a member adds people"],
+  ["discoverable", "Discoverable: its name and topic show under Other projects; a member adds people"],
   ["private", "Private: only members know it exists"],
 ];
 

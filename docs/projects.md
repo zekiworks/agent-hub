@@ -60,7 +60,7 @@ conversation.
 - **Join:** `@@name text` posts to project `name` and joins it, if its visibility allows.
 - **Visibility,** set by its creator, changeable by members:
   - *open* (default): anyone can browse it, read it and join it;
-  - *discoverable*: its name and topic show under Browse; joining needs a member to add you;
+  - *discoverable*: its name and topic show under "Other projects"; joining needs a member to add you;
   - *private*: only members know it exists.
 - **Rename and archive:** people only. An archived project keeps its history, takes no new messages, and leaves the
   sidebar.
