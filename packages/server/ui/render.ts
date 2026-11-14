@@ -9,7 +9,7 @@ import { renderMarkdown } from "./markdown";
 import { setTitleBase } from "./notify";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
-import { speakButton } from "./speak";
+import { renderSpeaking, speakButton } from "./speak";
 import { conversationTitle, state } from "./state";
 import { flashMessage, mentionNodes, mentionsMe, shownMessage } from "./text";
 
@@ -116,6 +116,7 @@ export function renderMessages(): void {
     previous = message;
   }
   dom.messageList.replaceChildren(...nodes);
+  renderSpeaking();
 }
 
 function renderMessage(message: Message, continued: boolean): HTMLLIElement {
@@ -151,7 +152,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   // Outside the head so grouped messages (whose head is hidden) can be replied to too. Shown on hover, or on phones
   // (no hover) after tapping the message. Clicking Reply again cancels.
   const actions = h("div", "msg-actions");
-  if (message.text) actions.append(speakButton(message.text));
+  if (message.text) actions.append(speakButton(message));
   const replyBtn = h("button", "msg-action-btn msg-reply-btn", "↩ ");
   replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";

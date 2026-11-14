@@ -798,6 +798,36 @@ button:disabled {
   outline-offset: -2px;
 }
 
+/* The message being read aloud: outlined in green while it plays or is paused (speak.ts). */
+.msg.msg-speaking,
+.msg.msg-speaking:hover {
+  outline: 2px solid var(--success);
+  outline-offset: -2px;
+}
+
+.msg.msg-speaking .msg-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* "Reading #123 @carol ⏸ ■" above the message box, wherever the page is scrolled. */
+.speak-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--success);
+  border-radius: 0 4px 4px 0;
+  background: var(--panel-raised);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.speak-bar[hidden] {
+  display: none;
+}
+
 .msg-continued {
   padding-top: 0;
 }
