@@ -1,8 +1,9 @@
 // ▶ next to ↩ Reply: the message read aloud by the bus's text-to-speech server (POST /api/speech: LFM3-Audio on
 // bariton, good Turkish; phones' own voices often have none). ▶ plays, ⏸ pauses, ▶ again goes on. One at a time.
 // It is read one sentence at a time, so the page can follow it as Hilde does: the sentence being read is highlighted
-// exactly, and the word, estimated by its share of the sentence's audio, more strongly. While it plays, a bar above
-// the message box names it (⏸/▶, ■ stop, a link back to it), and the message is outlined.
+// exactly, and the word, estimated by its share of the sentence's audio, more strongly. The message is outlined; when
+// it is off screen (scrolled away, another conversation open), a bar above the message box names it (⏸/▶, ■ stop, a
+// link back to it). On screen, its own ⏸ is enough.
 import type { Message } from "@agent-bus/protocol";
 import { SESSION_KEY } from "./api";
 import { showError } from "./composer";
@@ -140,8 +141,22 @@ function show(): void {
     toggle,
     stop
   );
-  bar.hidden = false;
+  bar.hidden = onScreen(current.seq);
 }
+
+/** The message `seq` is on screen (in the open conversation, scrolled into view). */
+function onScreen(seq: number): boolean {
+  const el = dom.messageList.querySelector<HTMLElement>(`[data-seq="${seq}"]`);
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  const view = dom.messageScroll.getBoundingClientRect();
+  return r.bottom > view.top && r.top < view.bottom;
+}
+
+// Scrolling the message away shows the bar; scrolling back hides it.
+dom.messageScroll.addEventListener("scroll", () => {
+  if (current) bar.hidden = onScreen(current.seq);
+}, { passive: true });
 
 function forget(): void {
   if (current) {
