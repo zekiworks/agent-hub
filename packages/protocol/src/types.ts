@@ -5,7 +5,7 @@ export const ALL_CONVERSATION_ID = "all";
 
 export type ParticipantKind = "agent" | "human";
 
-/** Per-agent settings, changed by the agent with `set(key, value)`. */
+/** Per-participant settings: agents change theirs with `set(key, value)`, people theirs on the website. */
 export interface AgentSettings {
   /**
    * How `@all` messages written by other agents reach this agent:
@@ -13,6 +13,11 @@ export interface AgentSettings {
    * "wake" = like any other message. `@all` from humans always behaves like a composer message.
    */
   all: "wake" | "quiet";
+  /**
+   * People: who writes their English voice messages as text. "whisper" (default) for every language; "liquid": LFM3-
+   * Audio for what Whisper judges English (as good, faster; Whisper keeps every other language).
+   */
+  englishSpeech?: "whisper" | "liquid";
 }
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = { all: "quiet" };
@@ -433,6 +438,8 @@ export interface TranscriptResponse {
   language: string;
   /** Seconds of audio. */
   duration: number;
+  /** The model that wrote it: "whisper" or "liquid". */
+  engine?: string;
 }
 
 export interface HealthResponse {

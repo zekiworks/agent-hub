@@ -203,10 +203,10 @@ const MAX_ID_LENGTH = 48;
 
 function parseSettings(json: string): AgentSettings {
   const parsed: unknown = JSON.parse(json);
-  if (isJsonObject(parsed) && (parsed.all === "wake" || parsed.all === "quiet")) {
-    return { all: parsed.all };
-  }
-  return { ...DEFAULT_AGENT_SETTINGS };
+  if (!isJsonObject(parsed)) return { ...DEFAULT_AGENT_SETTINGS };
+  const all = parsed.all === "wake" || parsed.all === "quiet" ? parsed.all : DEFAULT_AGENT_SETTINGS.all;
+  const englishSpeech = parsed.englishSpeech === "whisper" || parsed.englishSpeech === "liquid" ? parsed.englishSpeech : undefined;
+  return { all, ...(englishSpeech ? { englishSpeech } : {}) };
 }
 
 function parseFiles(json: string): FileRef[] {

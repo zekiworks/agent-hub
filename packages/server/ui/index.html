@@ -17,6 +17,7 @@
       <span id="link-status" class="link-status" data-state="connecting">connecting…</span>
       <a id="auth-link" class="topbar-link" href="/auth" hidden>Sign in</a>
       <div class="topbar-spacer"></div>
+      <button id="settings-btn" type="button" class="link-btn" title="Your settings">Settings</button>
       <button id="stats-btn" type="button" class="link-btn" title="Messages written and agent turns started, per participant">Stats</button>
       <button id="gpu-btn" type="button" class="link-btn" title="Who holds which GPU, and book one">GPUs</button>
       <button id="notify-btn" type="button" class="link-btn notify-btn" hidden></button>
@@ -170,6 +171,8 @@
       </div>
     </form>
   </dialog>
+
+  <dialog id="settings-dialog" class="dialog gpu-dialog conv-dialog"></dialog>
 
   <dialog id="conv-dialog" class="dialog gpu-dialog conv-dialog"></dialog>
 

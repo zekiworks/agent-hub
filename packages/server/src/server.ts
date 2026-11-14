@@ -201,7 +201,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     if (method === "POST" && pathname === "/api/files") return json(await postFile(ctx, req, url));
     if (method === "GET" && fileMatch?.[1]) return getFile(ctx, decodeURIComponent(fileMatch[1]));
     const transcriptMatch = /^\/api\/files\/([^/]+)\/transcript$/.exec(pathname);
-    if (method === "POST" && transcriptMatch?.[1]) return json(await transcribeFile(ctx, decodeURIComponent(transcriptMatch[1]), options.sttUrl));
+    if (method === "POST" && transcriptMatch?.[1]) return json(await transcribeFile(ctx, decodeURIComponent(transcriptMatch[1]), options.sttUrl, viewer.kind === "human" ? viewer.id : undefined));
     if (method === "POST" && pathname === "/api/speech") return await postSpeech(req, options.ttsUrl);
     if (method === "POST" && pathname === "/api/settings") return json(await postSetting(ctx, req));
     return (await schedule.handle(req, url)) ?? json({ error: `No route for ${method} ${pathname}` }, 404);

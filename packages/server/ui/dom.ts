@@ -80,6 +80,8 @@ export const dom = {
   voiceHint: el<HTMLSpanElement>("voice-hint"),
   voicePause: el<HTMLButtonElement>("voice-pause"),
   inputWrap: el<HTMLDivElement>("composer-input-wrap"),
+  settingsBtn: el<HTMLButtonElement>("settings-btn"),
+  settingsDialog: el<HTMLDialogElement>("settings-dialog"),
   convMenuBtn: el<HTMLButtonElement>("conv-menu-btn"),
   convDialog: el<HTMLDialogElement>("conv-dialog"),
   statsBtn: el<HTMLButtonElement>("stats-btn"),

@@ -75,7 +75,13 @@ export function getFile(ctx: BusContext, fileId: string): Response {
  * POST /api/files/:id/transcript: the text of an uploaded voice message, from the speech-to-text service at `sttUrl`
  * (packages/stt). 503 when the bus has none, 502 when it fails or cannot decode the audio.
  */
-export async function transcribeFile(ctx: BusContext, fileId: string, sttUrl: string | undefined): Promise<TranscriptResponse> {
+export async function transcribeFile(
+  ctx: BusContext,
+  fileId: string,
+  sttUrl: string | undefined,
+  /** The person asking: their englishSpeech setting picks who writes English. */
+  asker?: string
+): Promise<TranscriptResponse> {
   if (!sttUrl) throw new HttpError(503, "This bus has no speech-to-text service (serve --stt-url)");
   const file = ctx.db.getFile(fileId);
   const blobPath = path.join(ctx.filesDir, fileId);
@@ -85,11 +91,13 @@ export async function transcribeFile(ctx: BusContext, fileId: string, sttUrl: st
   try {
     // The bus's own names (agents, people), so speech-to-text writes "message-bus" and "compactor", not look-alike words.
     const names = ctx.hub.knownIds().join(" ");
-    res = await fetch(`${sttUrl.replace(/\/+$/, "")}/transcribe?${new URLSearchParams({ hotwords: names })}`, { method: "POST", body: Bun.file(blobPath) });
+    const query = new URLSearchParams({ hotwords: names });
+    if (asker && ctx.db.getParticipant(asker)?.settings.englishSpeech === "liquid") query.set("english", "liquid");
+    res = await fetch(`${sttUrl.replace(/\/+$/, "")}/transcribe?${query}`, { method: "POST", body: Bun.file(blobPath) });
   } catch (error) {
     throw new HttpError(502, `Speech-to-text service unreachable: ${error instanceof Error ? error.message : String(error)}`);
   }
   const body = (await res.json().catch(() => ({}))) as Partial<TranscriptResponse> & { error?: string };
   if (!res.ok || typeof body.text !== "string") throw new HttpError(502, `Speech to text failed: ${body.error ?? `HTTP ${res.status}`}`);
-  return { text: body.text, language: body.language ?? "", duration: body.duration ?? 0 };
+  return { text: body.text, language: body.language ?? "", duration: body.duration ?? 0, ...(body.engine ? { engine: body.engine } : {}) };
 }

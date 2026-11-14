@@ -18,6 +18,7 @@ import { applyReceipt, renderAll, showEmpty } from "./render";
 import { navigate, parseHash, viewHash } from "./routing";
 import "./send";
 import "./convmenu";
+import "./settings";
 import "./stats";
 import "./voice";
 import { renderSidebar } from "./sidebar";

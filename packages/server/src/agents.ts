@@ -276,10 +276,18 @@ export async function handleAgentTokens(ctx: BusContext, sockets: AgentSockets, 
 export async function postSetting(ctx: BusContext, req: Request): Promise<{ participant: Participant }> {
   const body = await readJsonObject(req);
   const participant = typeof body.from === "string" ? ctx.db.getParticipant(body.from.trim().toLowerCase()) : null;
-  if (!participant || participant.kind !== "agent") {
-    throw new HttpError(400, "from must be an agent id; settings are per agent");
-  }
+  if (!participant) throw new HttpError(400, "from must be a participant id; settings are per participant");
   ctx.checkWriter(req, participant);
+  if (participant.kind === "human") {
+    // People have one setting: who writes their English voice messages.
+    if (body.key !== "englishSpeech" || (body.value !== "whisper" && body.value !== "liquid")) {
+      throw new HttpError(400, 'People\'s setting is englishSpeech: "whisper" or "liquid"');
+    }
+    const settings: AgentSettings = { ...participant.settings, englishSpeech: body.value };
+    ctx.db.setSettings(participant.id, settings);
+    ctx.hub.broadcastParticipants();
+    return { participant: ctx.hub.toParticipant({ ...participant, settings }) };
+  }
   if (body.key !== "all") {
     throw new HttpError(400, `Unknown setting "${String(body.key)}". Valid keys: all`);
   }
