@@ -1212,10 +1212,6 @@ ul.md-list ul.md-list { list-style: circle; }
   cursor: default;
 }
 
-.msg-receipts.receipts-seen {
-  color: var(--success);
-}
-
 .msg-receipts.receipts-delivered {
   color: var(--accent);
 }

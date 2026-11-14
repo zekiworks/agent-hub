@@ -155,59 +155,43 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
 }
 
 /**
- * "✓✓ seen by @a" / "✓ delivered to @a · not seen yet" / "○ held for @a (offline)" / "✕ expired for @a"; with several
- * recipients "✓✓ seen by all 3" or "✓✓ seen: @a · ✓ delivered: @b · ○ held: @c · ✕ expired: @d". Null when there are
- * no agent recipients. A receipt not delivered yet is "held" while its agent is offline, "waiting" while it is online.
+ * "✓" once every agent recipient has it (seen or not: seen is not shown, it took too much room in groups). Otherwise
+ * what is still open: "✓ 3 · ○ waiting: @a · ○ held: @b (offline) · ✕ expired: @c". Names and times are in the
+ * tooltip. Null when there are no agent recipients. A receipt not delivered yet is "held" while its agent is offline,
+ * "waiting" while it is online.
  */
 function renderReceipts(message: Message): HTMLDivElement | null {
   const { receipts } = message;
   if (receipts.length === 0) return null;
   const offline = (to: string) => state.participants.find((p) => p.id === to)?.online !== true;
-  const seen = receipts.filter((r) => r.seenAt !== null);
-  const delivered = receipts.filter((r) => r.seenAt === null && r.deliveredAt !== null);
+  const delivered = receipts.filter((r) => r.deliveredAt !== null);
   const expired = receipts.filter((r) => r.deliveredAt === null && r.expired === true);
   const held = receipts.filter((r) => r.deliveredAt === null && r.expired !== true && offline(r.to));
   const waiting = receipts.filter((r) => r.deliveredAt === null && r.expired !== true && !offline(r.to));
-  const status =
-    waiting.length + held.length > 0 ? "receipts-pending" : expired.length > 0 ? "receipts-expired" : delivered.length > 0 ? "receipts-delivered" : "receipts-seen";
+  const status = waiting.length + held.length > 0 ? "receipts-pending" : expired.length > 0 ? "receipts-expired" : "receipts-delivered";
   const el = h("div", `msg-receipts ${status}`);
   el.dataset.receipts = String(message.seq);
   // A message sent to one session of an agent names it (`alpha-2`).
   const label = (r: (typeof receipts)[number]) => (r.session === undefined ? r.to : `${r.to}-${r.session}`);
   const names = (list: typeof receipts) => list.map(label).join(", ");
-  if (receipts.length === 1) {
-    const to = receipts[0] ? label(receipts[0]) : "";
-    el.textContent = seen.length
-      ? `✓✓ seen by ${to}`
-      : delivered.length
-        ? `✓ delivered to ${to} · not seen yet`
-        : expired.length
-          ? `✕ expired for ${to} (it stayed offline)`
-          : held.length
-            ? `○ held for ${to} (offline; delivered when it is back)`
-            : `○ not delivered yet to ${to}`;
-  } else if (seen.length === receipts.length) {
-    el.textContent = `✓✓ seen by all ${receipts.length}`;
-  } else {
-    el.textContent = [
-      seen.length ? `✓✓ seen: ${names(seen)}` : "",
-      delivered.length ? `✓ delivered: ${names(delivered)}` : "",
-      waiting.length ? `○ waiting: ${names(waiting)}` : "",
-      held.length ? `○ held: ${names(held)}` : "",
-      expired.length ? `✕ expired: ${names(expired)}` : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }
+  el.textContent =
+    delivered.length === receipts.length
+      ? "✓"
+      : [
+          delivered.length ? `✓ ${delivered.length}` : "",
+          waiting.length ? `○ waiting: ${names(waiting)}` : "",
+          held.length ? `○ held: ${names(held)} (offline)` : "",
+          expired.length ? `✕ expired: ${names(expired)}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
   el.title = receipts
     .map((r) =>
-      r.seenAt !== null
-        ? `${label(r)}: seen ${fullFormat.format(r.seenAt)}`
-        : r.deliveredAt !== null
-          ? `${label(r)}: delivered ${fullFormat.format(r.deliveredAt)}, not seen yet`
-          : r.expired
-            ? `${label(r)}: expired ${fullFormat.format(message.expiresAt)} (it stayed offline)`
-            : `${label(r)}: not delivered yet; held until ${fullFormat.format(message.expiresAt)}`
+      r.deliveredAt !== null
+        ? `${label(r)}: delivered ${fullFormat.format(r.deliveredAt)}`
+        : r.expired
+          ? `${label(r)}: expired ${fullFormat.format(message.expiresAt)} (it stayed offline)`
+          : `${label(r)}: not delivered yet; held until ${fullFormat.format(message.expiresAt)}`
     )
     .join("\n");
   return el;
