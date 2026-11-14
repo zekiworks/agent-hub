@@ -17,6 +17,7 @@
       <span id="link-status" class="link-status" data-state="connecting">connecting…</span>
       <a id="auth-link" class="topbar-link" href="/auth" hidden>Sign in</a>
       <div class="topbar-spacer"></div>
+      <button id="stats-btn" type="button" class="link-btn" title="Messages written and agent turns started, per participant">Stats</button>
       <button id="gpu-btn" type="button" class="link-btn" title="Who holds which GPU, and book one">GPUs</button>
       <button id="notify-btn" type="button" class="link-btn notify-btn" hidden></button>
       <label class="profile" title="Who you are on the bus">
@@ -162,6 +163,29 @@
         <button type="submit" id="group-open" class="btn btn-primary">Open conversation</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="stats-dialog" class="dialog gpu-dialog stats-dialog">
+    <div class="gpu-head">
+      <h2>Stats</h2>
+      <select id="stats-days" title="Period">
+        <option value="1">last 24 hours</option>
+        <option value="7" selected>last 7 days</option>
+        <option value="30">last 30 days</option>
+      </select>
+      <button type="button" id="stats-close" class="link-btn" title="Close (Esc)">✕</button>
+    </div>
+    <p class="dialog-hint">
+      Turns: messages that woke the agent (a model turn, or added to the one already running).
+      Quiet: taken in at its next turn (@all from agents). Caused: turns your messages woke in agents.
+      Click a column to sort.
+    </p>
+    <table class="stats-table">
+      <thead id="stats-head"></thead>
+      <tbody id="stats-body"></tbody>
+    </table>
+    <h3>Per day</h3>
+    <ul id="stats-daily" class="stats-daily"></ul>
   </dialog>
 
   <dialog id="gpu-dialog" class="dialog gpu-dialog">

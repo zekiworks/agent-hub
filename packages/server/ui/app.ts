@@ -17,6 +17,7 @@ import { askProfile } from "./profile";
 import { applyReceipt, renderAll, showEmpty } from "./render";
 import { navigate, parseHash, viewHash } from "./routing";
 import "./send";
+import "./stats";
 import "./voice";
 import { renderSidebar } from "./sidebar";
 import { connectViewer, setLinkStatus } from "./socket";

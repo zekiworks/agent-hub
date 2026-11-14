@@ -279,6 +279,33 @@ export interface StateResponse {
   humans: string[];
 }
 
+/**
+ * GET /api/stats?days=N: messages written and the agent turns they started, over the last `days` days. A delivery
+ * "wakes" its agent unless it is quiet (@all from an agent, for an agent with the default `all` setting); a woken agent
+ * that is already busy takes the message into its running turn, so `turns` is an upper bound on new model turns.
+ */
+export interface StatsResponse {
+  since: number;
+  days: number;
+  /** Everyone who wrote or got a message in the window. */
+  participants: ParticipantStats[];
+  /** Per day in the bus's time zone ("2026-11-14"), oldest first; days without messages are left out. */
+  daily: Array<{ day: string; messages: number; turns: number }>;
+}
+
+export interface ParticipantStats {
+  id: string;
+  kind: ParticipantKind;
+  /** Messages it wrote. */
+  written: number;
+  /** Agents: deliveries that woke it. */
+  turns: number;
+  /** Agents: deliveries it took in quietly, at its next turn. */
+  quiet: number;
+  /** Deliveries of its messages that woke an agent. */
+  caused: number;
+}
+
 export interface MessagesResponse {
   /** Ascending by seq. */
   messages: Message[];

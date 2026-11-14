@@ -1563,6 +1563,97 @@ ul.md-list ul.md-list { list-style: circle; }
   justify-content: space-between;
 }
 
+/* Stats dialog: per-participant table and per-day bars. */
+.stats-dialog .gpu-head h2 {
+  margin-right: auto;
+}
+
+.stats-dialog .gpu-head select {
+  margin-right: 12px;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.stats-table th {
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.stats-table th.sorted {
+  color: var(--accent);
+}
+
+.stats-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-table .zero {
+  color: var(--muted);
+}
+
+.stats-total td {
+  font-weight: 700;
+  border-bottom: 0;
+}
+
+.stats-daily {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.stats-daily li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stats-day {
+  flex: none;
+  width: 40px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-track {
+  flex: 1;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--panel-raised);
+}
+
+.stats-bar {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.stats-day-text {
+  flex: none;
+  width: 150px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .gpu-list {
   list-style: none;
   margin: 0;

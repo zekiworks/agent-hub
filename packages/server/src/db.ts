@@ -16,6 +16,7 @@ import {
   type ParticipantKind,
   type Quote,
   type Receipt,
+  type StatsResponse,
 } from "@agent-bus/protocol";
 
 /** Stored participant; `online`/`connections` are live state added by the server. */
@@ -439,6 +440,70 @@ export class BusDatabase {
       )
       .get(agentId, since);
     return row?.n ?? 0;
+  }
+
+  /**
+   * Messages written since `since`, and their deliveries split into woke/quiet by the wake rule (`shouldWake`): only
+   * @all from an agent is quiet, for recipients whose `all` setting is quiet (the default, also for forgotten agents).
+   */
+  stats(since: number, days: number): StatsResponse {
+    const deliveries = `
+      SELECT r.recipient, m.from_id, m.created_at,
+        NOT (c.kind = 'all' AND m.from_kind = 'agent'
+             AND COALESCE(json_extract(p.settings_json, '$.all'), 'quiet') = 'quiet') AS woke
+      FROM receipts r
+      JOIN messages m ON m.seq = r.seq
+      JOIN conversations c ON c.id = m.conversation_id
+      LEFT JOIN participants p ON p.id = r.recipient
+      WHERE r.delivered_at IS NOT NULL AND m.created_at >= ?1`;
+    const byId = new Map<string, StatsResponse["participants"][number]>();
+    const row = (id: string, kind: string) => {
+      let entry = byId.get(id);
+      if (!entry) byId.set(id, (entry = { id, kind: toKind(kind), written: 0, turns: 0, quiet: 0, caused: 0 }));
+      return entry;
+    };
+    for (const w of this.db
+      .query<{ from_id: string; from_kind: string; n: number }, [number]>(
+        "SELECT from_id, from_kind, COUNT(*) AS n FROM messages WHERE created_at >= ?1 GROUP BY from_id"
+      )
+      .all(since)) {
+      row(w.from_id, w.from_kind).written = w.n;
+    }
+    for (const d of this.db
+      .query<{ recipient: string; kind: string | null; turns: number; quiet: number }, [number]>(
+        `SELECT d.recipient, p.kind, SUM(d.woke) AS turns, SUM(1 - d.woke) AS quiet
+         FROM (${deliveries}) d LEFT JOIN participants p ON p.id = d.recipient GROUP BY d.recipient`
+      )
+      .all(since)) {
+      const entry = row(d.recipient, d.kind ?? "agent");
+      entry.turns = d.turns;
+      entry.quiet = d.quiet;
+    }
+    for (const c of this.db
+      .query<{ from_id: string; caused: number }, [number]>(
+        `SELECT from_id, SUM(woke) AS caused FROM (${deliveries}) GROUP BY from_id`
+      )
+      .all(since)) {
+      const entry = byId.get(c.from_id);
+      if (entry) entry.caused = c.caused;
+    }
+    const day = "strftime('%Y-%m-%d', created_at / 1000, 'unixepoch', 'localtime')";
+    const turnsByDay = new Map(
+      this.db
+        .query<{ day: string; turns: number }, [number]>(
+          `SELECT ${day} AS day, SUM(woke) AS turns FROM (${deliveries}) GROUP BY day`
+        )
+        .all(since)
+        .map((d) => [d.day, d.turns])
+    );
+    const daily = this.db
+      .query<{ day: string; messages: number }, [number]>(
+        `SELECT ${day} AS day, COUNT(*) AS messages FROM messages WHERE created_at >= ?1 GROUP BY day ORDER BY day`
+      )
+      .all(since)
+      .map((d) => ({ day: d.day, messages: d.messages, turns: turnsByDay.get(d.day) ?? 0 }));
+    const participants = [...byId.values()].sort((a, b) => b.written + b.turns - (a.written + a.turns));
+    return { since, days, participants, daily };
   }
 
   listParticipants(): ParticipantRecord[] {
