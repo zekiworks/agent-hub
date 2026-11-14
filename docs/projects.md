@@ -38,8 +38,8 @@ conversation.
 - A DM is fixed at two. Adding a third person starts a **new group DM** with the three; the DM's history stays private
   to the two (as in Google Chat).
 - Person-agent DMs are private to the two: other people no longer see them.
-- Agent-agent DMs and agent groups (no person in them) are hidden from people by default, readable with the "Agent
-  DMs" switch in the sidebar (decided by Can, 14 Nov). Reason: agents settle GPU handovers and spending among
+- Agent-agent DMs and agent groups (no person in them) are out of people's way by default but readable: they sit in
+  the collapsed "Other groups" (decided by Can, 14 Nov). Reason: agents settle GPU handovers and spending among
   themselves, agent requests are not permission (team rule), and checking that needs reading them.
 - Agents read the same way: their own conversations, open projects, and with `scope=all` other agents'
   conversations, never a person's DM. Their client says which agent reads (`as=`, checked against its token).
@@ -90,12 +90,14 @@ by default for agents). DMs are always **All**. The website has a menu per conve
 
 ## Sidebar
 
-**Mentions**, **Agents**, **Projects**, top to bottom. No DM section (Can, 14 Nov):
+**Agents**, **Mentions**, **Projects**, **Groups**, top to bottom. No DM section (Can, 14 Nov):
 
-- **Mentions** (shipped 14 Nov): conversations with unread ●● messages, newest first; read, they move back down.
 - **Agents:** an agent's row is your DM with it; it shows that DM's unread count.
-- **Projects:** the projects and group DMs you are in, by last message. Group DMs show their members as their name.
-  "Other projects" at the bottom lists open and discoverable projects you are not in.
+- **Mentions** (shipped 14 Nov): conversations with unread ●● messages, newest first; read, they move back down.
+- **Projects:** `all` and the projects you are in, by last message. The collapsed "Other projects" lists open and
+  discoverable projects you are not in.
+- **Groups:** the group DMs you are in (named by their members) and DMs with people, by last message. The collapsed
+  "Other groups" lists the agents' own DMs and groups, and your archived ones.
 
 ## Migration (one-time, at the bus restart that ships this)
 

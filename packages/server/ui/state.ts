@@ -5,8 +5,6 @@ import { nameList, sortedUnique } from "./format";
 export const UNREAD_ONLY_KEY = "agent-bus.unreadOnly";
 /** Show offline agents and the conversations with them (off by default, to keep the list to who is working now). */
 export const INCLUDE_OFFLINE_KEY = "agent-bus.includeOffline";
-/** Show agent-only conversations (agents' DMs and groups) in the sidebar; hidden by default (docs/projects.md). */
-export const AGENT_DMS_KEY = "agent-bus.agentDms";
 
 /** Messages per page fetched from a conversation. */
 export const PAGE_SIZE = 100;
@@ -47,9 +45,10 @@ export const state = {
   /** Show only conversations with unread messages (the open one stays). Remembered in this browser. */
   unreadOnly: localStorage.getItem(UNREAD_ONLY_KEY) === "1",
   includeOffline: localStorage.getItem(INCLUDE_OFFLINE_KEY) === "1",
-  agentDms: localStorage.getItem(AGENT_DMS_KEY) === "1",
   /** "Other projects" is open. */
   browsing: false,
+  /** "Other groups" is open. */
+  otherGroupsOpen: false,
   readAt: {} as Record<string, number>,
   view: { kind: "conversation", id: ALL_CONVERSATION_ID } as View,
   staged: [] as File[],
@@ -103,17 +102,33 @@ export function isDmWithAgent(conv: Conversation): boolean {
   return conv.kind === "dm" && conv.members.includes(state.me) && conv.members.some((id) => id !== state.me && !state.humans.includes(id));
 }
 
-/**
- * The sidebar's Projects list: `all`, then the projects and group DMs I am in (and DMs with people), by last message;
- * agent-only conversations too while "Agent DMs" is on. Archived ones and DMs with agents are left out.
- */
+const byLast = (a: Conversation, b: Conversation) => b.lastMessageAt - a.lastMessageAt;
+
+/** The sidebar's Projects list: `all`, then the projects I am in, by last message; archived ones left out. */
 export function sortedConversations(): Conversation[] {
   const all = state.conversations.get(ALL_CONVERSATION_ID);
-  const listed = Array.from(state.conversations.values())
-    .filter((c) => c.kind !== "all" && !c.archived && !c.preview && !isDmWithAgent(c))
-    .filter((c) => c.members.includes(state.me) || (state.agentDms && isAgentOnly(c)))
-    .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
-  return all ? [all, ...listed] : listed;
+  const mine = Array.from(state.conversations.values())
+    .filter((c) => c.kind === "project" && !c.archived && c.members.includes(state.me))
+    .sort(byLast);
+  return all ? [all, ...mine] : mine;
+}
+
+/** The sidebar's Groups list: the group DMs I am in, and DMs with people (DMs with agents are their Agents rows). */
+export function sortedGroups(): Conversation[] {
+  return Array.from(state.conversations.values())
+    .filter((c) => (c.kind === "group" || c.kind === "dm") && !c.archived && c.members.includes(state.me) && !isDmWithAgent(c))
+    .sort(byLast);
+}
+
+/**
+ * "Other groups": the group DMs and DMs I can read and am not in, i.e. the agents' own (no person in them; people
+ * may read them for oversight, docs/projects.md), and my archived ones; the latter last.
+ */
+export function otherGroups(): Conversation[] {
+  return Array.from(state.conversations.values())
+    .filter((c) => (c.kind === "group" || c.kind === "dm") && !c.preview)
+    .filter((c) => (!c.members.includes(state.me) && isAgentOnly(c)) || (c.archived && c.members.includes(state.me)))
+    .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || byLast(a, b));
 }
 
 /** "Other projects": the projects I can see and am not in (open or discoverable), archived ones last. */

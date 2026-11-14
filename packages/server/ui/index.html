@@ -51,15 +51,24 @@
           <span>Projects</span>
           <span class="side-heading-actions">
             <button id="unread-btn" type="button" class="unread-toggle" aria-pressed="false" title="Show only conversations with unread messages">Unread</button>
-            <button id="agent-dms-btn" type="button" class="unread-toggle" aria-pressed="false">Agent DMs</button>
             <button id="new-project-btn" type="button" class="link-btn" title="Start a project: a named conversation others can join">+ Project</button>
-            <button id="new-group-btn" type="button" class="link-btn" title="Start a group DM with several participants">+ Group</button>
           </span>
         </div>
         <div id="conv-filter" class="conv-filter" hidden></div>
         <ul id="conversation-list" class="side-list"></ul>
         <button id="browse-btn" type="button" class="link-btn browse-btn" hidden></button>
         <ul id="browse-list" class="side-list" hidden></ul>
+      </section>
+      <section class="side-section">
+        <div class="side-heading">
+          <span>Groups</span>
+          <span class="side-heading-actions">
+            <button id="new-group-btn" type="button" class="link-btn" title="Start a group DM with several participants">+ Group</button>
+          </span>
+        </div>
+        <ul id="group-list" class="side-list"></ul>
+        <button id="other-groups-btn" type="button" class="link-btn browse-btn" hidden></button>
+        <ul id="other-groups-list" class="side-list" hidden></ul>
       </section>
     </aside>
 

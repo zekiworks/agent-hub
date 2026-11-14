@@ -8,9 +8,10 @@ import { applyTitle, renderNotifyButton } from "./notify";
 import { renderBackBadge } from "./phones";
 import { navigate } from "./routing";
 import {
-  AGENT_DMS_KEY,
   agents,
   browsableProjects,
+  otherGroups,
+  sortedGroups,
   conversationTitle,
   currentDirectAgent,
   dmWith,
@@ -54,7 +55,6 @@ export function renderSidebar(): void {
   renderBackBadge();
   renderUnreadToggle();
   renderOfflineToggle();
-  renderAgentDmsToggle();
   renderConversationList();
   renderAgentList();
   renderAgentPanel();
@@ -77,20 +77,6 @@ dom.offlineBtn.addEventListener("click", () => {
   renderSidebar();
 });
 
-function renderAgentDmsToggle(): void {
-  dom.agentDmsBtn.classList.toggle("on", state.agentDms);
-  dom.agentDmsBtn.setAttribute("aria-pressed", String(state.agentDms));
-  dom.agentDmsBtn.title = state.agentDms
-    ? "Showing agents' conversations without a person in them — click to hide them"
-    : "Also show agents' conversations without a person in them (DMs and groups between agents)";
-}
-
-dom.agentDmsBtn.addEventListener("click", () => {
-  state.agentDms = !state.agentDms;
-  localStorage.setItem(AGENT_DMS_KEY, state.agentDms ? "1" : "0");
-  renderSidebar();
-});
-
 dom.newProjectBtn.addEventListener("click", () => {
   const raw = prompt("Project name (lowercase letters, digits, - and _):")?.trim().toLowerCase();
   if (!raw) return;
@@ -100,6 +86,11 @@ dom.newProjectBtn.addEventListener("click", () => {
   }
   const existing = Array.from(state.conversations.values()).find((c) => c.kind === "project" && c.name === raw);
   navigate(existing ? { kind: "conversation", id: existing.id } : { kind: "draft", to: [], project: raw });
+});
+
+dom.otherGroupsBtn.addEventListener("click", () => {
+  state.otherGroupsOpen = !state.otherGroupsOpen;
+  renderSidebar();
 });
 
 dom.browseBtn.addEventListener("click", () => {
@@ -202,23 +193,31 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   return li;
 }
 
+/** The open draft of a new project or group DM ("new — not sent yet"); a draft DM with an agent is its Agents row. */
+function draftItem(): HTMLLIElement | undefined {
+  const view = state.view;
+  if (view.kind !== "draft" || (view.project === undefined && view.to.length < 2)) return undefined;
+  const li = h("li");
+  const button = h("button", "side-item conv-item active");
+  button.type = "button";
+  const text = h("span", "side-item-text");
+  text.append(
+    h("span", "side-item-title", view.project !== undefined ? `@@${view.project}` : nameList(view.to)),
+    h("span", "side-item-detail", "new — not sent yet")
+  );
+  button.append(text);
+  li.append(button);
+  return li;
+}
+
 function renderConversationList(): void {
   renderMentionList();
   const conversations = sortedConversations().filter((c) => !hasMention(c));
   const shown = conversations.filter(passesFilter);
   renderFilterNote(conversations.filter((c) => !passesFilter(c)));
   const items = shown.map(conversationItem);
-  if (state.view.kind === "draft" && (state.view.project !== undefined || state.view.to.length > 1)) {
-    const li = h("li");
-    const button = h("button", "side-item conv-item active");
-    button.type = "button";
-    const text = h("span", "side-item-text");
-    const title = state.view.project !== undefined ? `@@${state.view.project}` : nameList(state.view.to);
-    text.append(h("span", "side-item-title", title), h("span", "side-item-detail", "new — not sent yet"));
-    button.append(text);
-    li.append(button);
-    items.splice(1, 0, li);
-  }
+  const draft = draftItem();
+  if (draft && state.view.kind === "draft" && state.view.project !== undefined) items.splice(1, 0, draft);
   if (state.unreadOnly && shown.every((c) => isCurrent(c.id))) {
     items.push(h("li", "side-empty", "No unread conversations."));
   } else if (!state.unreadOnly && state.filter.size > 0 && shown.every((c) => c.kind === "all")) {
@@ -230,6 +229,17 @@ function renderConversationList(): void {
   dom.browseBtn.textContent = `${state.browsing ? "▾" : "▸"} Other projects (${browsable.length})`;
   dom.browseList.hidden = !state.browsing || browsable.length === 0;
   dom.browseList.replaceChildren(...(state.browsing ? browsable.map(conversationItem) : []));
+
+  const groups = sortedGroups().filter((c) => !hasMention(c) && passesFilter(c));
+  const groupItems = groups.map(conversationItem);
+  if (draft && state.view.kind === "draft" && state.view.project === undefined) groupItems.unshift(draft);
+  dom.groupList.replaceChildren(...(groupItems.length > 0 ? groupItems : [h("li", "side-empty", "No group conversations.")]));
+  const others = otherGroups();
+  dom.otherGroupsBtn.hidden = others.length === 0;
+  dom.otherGroupsBtn.textContent = `${state.otherGroupsOpen ? "▾" : "▸"} Other groups (${others.length})`;
+  dom.otherGroupsBtn.title = "Agents' conversations without a person in them, and your archived groups";
+  dom.otherGroupsList.hidden = !state.otherGroupsOpen || others.length === 0;
+  dom.otherGroupsList.replaceChildren(...(state.otherGroupsOpen ? others.map(conversationItem) : []));
 }
 
 /** "with @a, @b · clear", plus how many unread messages the filter hides. */
