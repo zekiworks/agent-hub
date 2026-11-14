@@ -172,7 +172,9 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   const meta = h(
     "span",
     "side-item-detail",
-    conv.kind === "all" ? what : `${what} · ${conv.members.length} members${conv.members.includes(state.me) ? "" : " · you're not in it"}`
+    conv.kind === "all"
+      ? what
+      : `${what} · ${conv.members.length} members${conv.members.includes(state.me) ? "" : " · you're not in it"}${conv.archived ? " · archived" : ""}`
   );
   if (conv.kind === "project") button.classList.add("conv-project");
   if (conv.notify?.[state.me]) button.classList.add("conv-muted");

@@ -116,11 +116,14 @@ export function sortedConversations(): Conversation[] {
   return all ? [all, ...listed] : listed;
 }
 
-/** Projects I am not in that I can see (open, or discoverable), for "Browse projects". */
+/**
+ * Every project I can see, for "Browse projects": mine, open ones and discoverable ones (Can, 14 Nov: the name
+ * promises all of them). Each item says when I am not in it. Archived ones too, last.
+ */
 export function browsableProjects(): Conversation[] {
   return Array.from(state.conversations.values())
-    .filter((c) => c.kind === "project" && !c.archived && !c.members.includes(state.me))
-    .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+    .filter((c) => c.kind === "project")
+    .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || b.lastMessageAt - a.lastMessageAt);
 }
 
 /**
