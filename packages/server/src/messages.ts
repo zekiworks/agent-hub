@@ -12,7 +12,7 @@ import {
   type Receipt,
 } from "@agent-bus/protocol";
 import type { BusContext } from "./context";
-import { addMembers, canRead, checkedProjectName, leave } from "./conversations";
+import { addMembers, canRead, checkedProjectName, leave, mayRead, type Reader } from "./conversations";
 import { DEFAULT_HOLD_MS, type ParticipantRecord } from "./db";
 import { HttpError, readJsonObject } from "./http";
 
@@ -176,7 +176,8 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     hub.conversationsChanged();
   }
   // "exit" alone, from an agent in a group DM or project: it leaves (people have the website's Leave button).
-  if (writer.kind === "agent" && text.trim().toLowerCase() === "exit" && files.length === 0) {
+  const leavable = conversation.kind === "group" || conversation.kind === "project";
+  if (leavable && writer.kind === "agent" && text.trim().toLowerCase() === "exit" && files.length === 0) {
     const left = leave(ctx, conversation, writer.id);
     const message = db.insertMessage({
       conversationId: left.id,
@@ -278,10 +279,10 @@ export function getMessages(
   ctx: BusContext,
   conversationId: string,
   url: URL,
-  reader: { id: string; kind: "agent" | "human" }
+  reader: Reader
 ): MessagesResponse {
   const conversation = ctx.db.getConversation(conversationId);
-  if (!conversation || !canRead(ctx, conversation, reader)) {
+  if (!conversation || !mayRead(ctx, conversation, reader)) {
     throw new HttpError(404, `Unknown conversation "${conversationId}"`);
   }
   const parseIntParam = (key: string): number | null => {
@@ -305,10 +306,15 @@ export function getMessages(
 export async function getMessageReceipts(
   ctx: BusContext,
   seq: number,
-  url: URL
+  url: URL,
+  reader: Reader
 ): Promise<{ message: Message; conversation: Conversation }> {
   const current = ctx.db.getMessage(seq);
-  if (!current) throw new HttpError(404, `Unknown message ${seq}`);
+  const own = current ? ctx.db.getConversation(current.conversationId) : null;
+  // A message the reader may not read is answered as unknown, like a conversation.
+  if (!current || !own || !mayRead(ctx, own, { ...reader, all: reader.all || url.searchParams.get("scope") === "all" })) {
+    throw new HttpError(404, `Unknown message ${seq}`);
+  }
   const withConversation = (message: Message): { message: Message; conversation: Conversation } => {
     const conversation = ctx.db.getConversation(message.conversationId);
     if (!conversation) throw new Error(`Conversation ${message.conversationId} of message ${seq} is missing`);

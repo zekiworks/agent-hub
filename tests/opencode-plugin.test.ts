@@ -174,7 +174,7 @@ test("native inbox wakes/steers direct messages, keeps agent broadcasts quiet, a
     sessionID: "s1", delivery: "steer", resume: true, metadata: { source: "agent-bus" },
   });
   expect(server.injected[0]!.text).toContain("@carol (verified)");
-  const receipt = async () => (await getJson<{ message: typeof message }>(bus, `/api/messages/${message.seq}`)).message.receipts[0]!;
+  const receipt = async () => (await getJson<{ message: typeof message }>(bus, `/api/messages/${message.seq}`, "carol")).message.receipts[0]!;
   await until(async () => (await receipt()).deliveredAt !== null);
   expect((await receipt()).seenAt).toBeNull();
   await server.context("s1", ["not dequeued yet"]);
@@ -258,7 +258,7 @@ test("failed native admission is not acknowledged or seen; bus backlog retries i
   server.failDelivery = true;
   const { message } = await post("carol", "@alpha", "retry after admission failure");
   await until(() => server.attempted.length === 1);
-  const receipt = async () => (await getJson<{ message: typeof message }>(bus, `/api/messages/${message.seq}`)).message.receipts[0]!;
+  const receipt = async () => (await getJson<{ message: typeof message }>(bus, `/api/messages/${message.seq}`, "carol")).message.receipts[0]!;
   expect((await receipt()).deliveredAt).toBeNull();
   expect((await receipt()).seenAt).toBeNull();
   await server.stop();

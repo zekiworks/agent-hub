@@ -15,7 +15,7 @@ import type {
   StateResponse,
   ViewerServerFrame,
 } from "@agent-bus/protocol";
-import { groupConversationId, type BusServerHandle } from "@agent-bus/server";
+import type { BusServerHandle } from "@agent-bus/server";
 import { agentSocketUrl, busFetch, getJson, identity, postJson, startBus } from "./helpers";
 
 type Frame = AgentServerFrame | ViewerServerFrame;
@@ -127,8 +127,9 @@ function setSetting(from: string, key: string, value: unknown): Promise<Response
   return postJson(bus, "/api/settings", { from, key, value });
 }
 
-function state(): Promise<StateResponse> {
-  return getJson<StateResponse>(bus, "/api/state");
+/** GET /api/state as `as` (a person: what they see), else as the test agent token (what agents may read). */
+function state(as?: string): Promise<StateResponse> {
+  return getJson<StateResponse>(bus, "/api/state", as);
 }
 
 /** A viewer signed in at upgrade with a human's session. */
@@ -136,6 +137,15 @@ async function connectViewer(): Promise<Client> {
   const viewer = await Client.connect(wsUrl("/ws/viewer"), identity(bus, "carol"));
   clients.push(viewer);
   return viewer;
+}
+
+/** The conversation a /api/conversations/:id/… answer carries (400 etc. throw with the bus's error). */
+async function answeredConversation(res: Response): Promise<Conversation> {
+  const body: unknown = await res.json();
+  if (!res.ok || !isJsonObject(body) || !isJsonObject(body.conversation)) throw new Error(`${res.status}: ${JSON.stringify(body)}`);
+  // The bus's ConversationResponse; its shape is what these tests check.
+  const conversation = body.conversation as unknown as Conversation;
+  return conversation;
 }
 
 async function errorOf(res: Response): Promise<string> {
@@ -380,150 +390,231 @@ describe("delivery", () => {
     expect((await send({ from: "carol", to: "@alpha", text: "carol: from a human, kept" })).message.text).toBe("carol: from a human, kept");
   });
 
-  test("groups are reused for the same set regardless of order", async () => {
+  test("@x is a DM, @{a,b} the group DM with exactly those members; both are reused, and the two never mix", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
     const first = await send({ from: "carol", to: "@{beta,alpha}", text: "one" });
     const second = await send({ from: "carol", to: "@{alpha, beta}", text: "two" });
     expect(first.conversation.id).toBe(second.conversation.id);
     expect(first.conversation.kind).toBe("group");
+    expect(first.conversation.members).toEqual(["alpha", "beta", "carol"]);
+    // Old clients read `addressed`: it stays, equal to the members.
     expect(first.conversation.addressed).toEqual(["alpha", "beta", "carol"]);
-    expect(first.conversation.id).toBe(groupConversationId(["alpha", "beta"]));
-
     const toAlpha = await alpha.client.take("deliver");
     expect(toAlpha.replyTo).toBe("@{beta,carol}");
     expect(toAlpha.wake).toBe(true);
-    const toBeta = await beta.client.take("deliver");
-    expect(toBeta.replyTo).toBe("@{alpha,carol}");
-
-    // The same agents without the human: still that thread.
-    const direct = await send({ from: alpha.id, to: "@beta", text: "direct" });
-    expect(direct.conversation.id).toBe(first.conversation.id);
-    expect((await beta.client.take("deliver")).message.id).toBe(second.message.id);
     expect((await beta.client.take("deliver")).replyTo).toBe("@{alpha,carol}");
+
+    // The same agents without the person: their own DM, not the group.
+    const direct = await send({ from: alpha.id, to: "@beta", text: "direct" });
+    expect(direct.conversation.kind).toBe("dm");
+    expect(direct.conversation.id).not.toBe(first.conversation.id);
+    expect(direct.conversation.members).toEqual(["alpha", "beta"]);
+    // A person's DM with an agent is another conversation again, reused both ways.
+    const dm = await send({ from: "carol", to: "@alpha", text: "dm" });
+    expect(dm.conversation.kind).toBe("dm");
+    expect((await send({ from: alpha.id, to: "@carol", text: "back" })).conversation.id).toBe(dm.conversation.id);
   });
 
-  test("one thread per set of agents: humans never split it, and a human an agent writes to joins it", async () => {
+  test("a DM is fixed at two: nobody joins it by writing, nobody leaves it", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
-    const fromCarol = await send({ from: "carol", to: "@alpha", text: "carol here" });
-    const fromUma = await send({ from: "uma", to: "@alpha", text: "uma here" });
-    const fromAlpha = await send({ from: alpha.id, to: "@{carol,uma}", text: "to both" });
-    expect(fromUma.conversation.id).toBe(fromCarol.conversation.id);
-    expect(fromAlpha.conversation.id).toBe(fromCarol.conversation.id);
-    expect(fromAlpha.conversation.members).toEqual(["alpha", "carol", "uma"]);
-
-    // A different set of agents is a different thread; so is a humans-only one.
-    expect((await send({ from: "carol", to: "@{alpha,beta}", text: "x" })).conversation.id).not.toBe(fromCarol.conversation.id);
-    expect((await send({ from: beta.id, to: "@carol", text: "x" })).conversation.id).not.toBe(fromCarol.conversation.id);
-    const humans = await send({ from: "carol", to: "@uma", text: "just us" });
-    expect(humans.conversation.members).toEqual(["carol", "uma"]);
-    expect((await send({ from: "uma", to: "@carol", text: "yes" })).conversation.id).toBe(humans.conversation.id);
+    const started = await send({ from: alpha.id, to: `@${beta.id}`, text: "hi beta" });
+    expect((await beta.client.take("deliver")).replyTo).toBe("@alpha");
+    const intruder = await post({ from: "uma", conversationId: started.conversation.id, text: "did you read this?" });
+    expect(intruder.status).toBe(403);
+    expect(await errorOf(intruder)).toContain("not in this DM");
+    const left = await postJson(bus, `/api/conversations/${started.conversation.id}/leave`, { from: alpha.id });
+    expect(left.status).toBe(400);
+    // An agent saying "exit" in a DM is an ordinary message.
+    const exit = await send({ from: alpha.id, conversationId: started.conversation.id, text: "exit" });
+    expect(exit.message.receipts.map((r) => r.to)).toEqual(["beta"]);
   });
 
-  test("threads that share their agents are merged at startup; the merged id stays a working alias", async () => {
+  test("@@name creates an open project; others join by writing; replies use @@name; names are not participant ids", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
-    const kept = await send({ from: "carol", to: "@alpha", text: "kept thread" });
-    await leave(alpha.client);
+    const beta = await joinPath("/tmp/x/beta");
+    const created = await send({ from: "carol", to: "@@turkish-reading", text: "starting" });
+    expect(created.conversation).toMatchObject({ kind: "project", name: "turkish-reading", visibility: "open", members: ["carol"] });
+    expect(created.message.receipts).toEqual([]);
+
+    const joined = await send({ from: alpha.id, to: "@@turkish-reading", text: "alpha joins" });
+    expect(joined.conversation.id).toBe(created.conversation.id);
+    expect(joined.conversation.members).toEqual(["alpha", "carol"]);
+    // Joining, alpha first gets the messages before it.
+    expect((await alpha.client.take("deliver")).message.text).toBe("starting");
+    // Writing by id joins an open project too.
+    await send({ from: beta.id, conversationId: created.conversation.id, text: "beta joins" });
+    const toAlpha = await alpha.client.take("deliver");
+    expect(toAlpha.message.text).toBe("beta joins");
+    expect(toAlpha.replyTo).toBe("@@turkish-reading");
+
+    expect((await post({ from: "carol", to: "@@alpha", text: "x" })).status).toBe(400);
+    expect((await post({ from: "carol", to: "@@Not A Name", text: "x" })).status).toBe(400);
+  });
+
+  test("adding members: a member adds anyone, an agent gets the last 5 messages first; mentions add only with addMentioned, from people", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const first = await send({ from: "carol", to: "@@review", text: "m1" });
+    await send({ from: alpha.id, to: "@@review", text: "m2" });
+    for (const text of ["m3", "m4", "m5", "m6"]) await send({ from: "carol", conversationId: first.conversation.id, text });
+    const beta = await joinPath("/tmp/x/beta");
+    const gamma = await joinPath("/tmp/x/gamma");
+
+    // Named in passing (no addMentioned): nobody is added.
+    const named = await send({ from: "carol", conversationId: first.conversation.id, text: "@beta might know" });
+    expect(named.conversation.members).toEqual(["alpha", "carol"]);
+    // "Add and send": beta joins and gets the last 5 earlier messages, then this one.
+    const invite = await send({ from: "carol", conversationId: first.conversation.id, text: "@beta can you look?", addMentioned: true });
+    expect(invite.conversation.members).toEqual(["alpha", "beta", "carol"]);
+    const toBeta: string[] = [];
+    for (let i = 0; i < 6; i++) toBeta.push((await beta.client.take("deliver")).message.text);
+    expect(toBeta).toEqual(["m3", "m4", "m5", "m6", "@beta might know", "@beta can you look?"]);
+    // Agents' mentions never add, even when they ask.
+    const byAgent = await send({ from: alpha.id, conversationId: first.conversation.id, text: "@gamma could do this", addMentioned: true });
+    expect(byAgent.conversation.members).toEqual(["alpha", "beta", "carol"]);
+    // Any member (an agent too) adds explicitly.
+    const added = await postJson(bus, `/api/conversations/${first.conversation.id}/members`, { from: alpha.id, ids: ["gamma"] });
+    expect(added.status).toBe(200);
+    expect((await answeredConversation(added)).members).toEqual(["alpha", "beta", "carol", "gamma"]);
+    // The last 5 before it joined: m5, m6 and the three about beta and gamma.
+    expect((await gamma.client.take("deliver")).message.text).toBe("m5");
+    // Not a member: cannot add.
+    expect((await postJson(bus, `/api/conversations/${first.conversation.id}/members`, { from: "uma", ids: ["uma"] })).status).toBe(403);
+  });
+
+  test("leaving: an agent's bare exit or op leave; a group DM keeps its id when members change", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const group = await send({ from: "carol", to: "@{alpha,beta}", text: "hello both" });
+    await alpha.client.take("deliver");
+    await beta.client.take("deliver");
+    const exit = await send({ from: alpha.id, conversationId: group.conversation.id, text: "exit" });
+    expect(exit.conversation.id).toBe(group.conversation.id);
+    expect(exit.conversation.members).toEqual(["beta", "carol"]);
+    expect(exit.message.receipts).toEqual([]);
+    const next = await send({ from: "carol", conversationId: group.conversation.id, text: "only beta now" });
+    expect(next.message.receipts.map((r) => r.to)).toEqual(["beta"]);
+    expect((await postJson(bus, `/api/conversations/${group.conversation.id}/leave`, { from: "carol" })).status).toBe(200);
+    // A person's "exit" is a message, not a leave (they use the website's Leave).
+    const word = await send({ from: "uma", to: "@{alpha,beta}", text: "exit" });
+    expect(word.conversation.members).toContain("uma");
+  });
+
+  test("notifications per member: mentions wakes only on @mention, none never; DMs always wake", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const project = await send({ from: "carol", to: "@@notify-test", text: "start" });
+    await send({ from: alpha.id, to: "@@notify-test", text: "in" });
+    expect((await alpha.client.take("deliver")).message.text).toBe("start"); // context on joining
+    const set = await postJson(bus, `/api/conversations/${project.conversation.id}/notify`, { from: alpha.id, level: "mentions" });
+    expect((await answeredConversation(set)).notify).toEqual({ alpha: "mentions" });
+    await send({ from: "carol", conversationId: project.conversation.id, text: "plain" });
+    expect((await alpha.client.take("deliver")).wake).toBe(false);
+    await send({ from: "carol", conversationId: project.conversation.id, text: "@alpha look" });
+    expect((await alpha.client.take("deliver")).wake).toBe(true);
+    await postJson(bus, `/api/conversations/${project.conversation.id}/notify`, { from: alpha.id, level: "none" });
+    await send({ from: "carol", conversationId: project.conversation.id, text: "@alpha again" });
+    expect((await alpha.client.take("deliver")).wake).toBe(false);
+    const dm = await send({ from: "carol", to: "@alpha", text: "dm" });
+    expect((await postJson(bus, `/api/conversations/${dm.conversation.id}/notify`, { from: alpha.id, level: "none" })).status).toBe(400);
+    expect((await alpha.client.take("deliver")).wake).toBe(true);
+  });
+
+  test("a group DM becomes a project with its members and history; projects can be private; archiving", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const group = await send({ from: "carol", to: "@{alpha,uma}", text: "plan" });
+    await alpha.client.take("deliver");
+    const turned = await postJson(bus, `/api/conversations/${group.conversation.id}/project`, { from: alpha.id, name: "plan", topic: "the plan" });
+    expect(await answeredConversation(turned)).toMatchObject({
+      id: group.conversation.id, kind: "project", name: "plan", topic: "the plan", visibility: "open", members: ["alpha", "carol", "uma"],
+    });
+    // Only people rename; anyone in it changes visibility.
+    expect((await postJson(bus, `/api/conversations/${group.conversation.id}/project`, { from: alpha.id, name: "other" })).status).toBe(403);
+    await postJson(bus, `/api/conversations/${group.conversation.id}/project`, { from: "carol", visibility: "private" });
+    const beta = await joinPath("/tmp/x/beta");
+    expect((await post({ from: beta.id, to: "@@plan", text: "let me in" })).status).toBe(403);
+    expect((await post({ from: beta.id, conversationId: group.conversation.id, text: "let me in" })).status).toBe(403);
+
+    // Archived: an agent's message is refused, a person's brings it back.
+    expect((await postJson(bus, `/api/conversations/${group.conversation.id}/archive`, { from: alpha.id, archived: true })).status).toBe(403);
+    await postJson(bus, `/api/conversations/${group.conversation.id}/archive`, { from: "carol", archived: true });
+    expect((await post({ from: alpha.id, to: "@@plan", text: "still here" })).status).toBe(409);
+    const back = await send({ from: "uma", to: "@@plan", text: "back" });
+    expect(back.conversation.archived).toBeUndefined();
+  });
+
+  test("who sees what: people's DMs stay with them; agents' conversations are readable by people; discoverable projects are previews", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const umasDm = await send({ from: "uma", to: "@alpha", text: "between us" });
+    const agents = await send({ from: alpha.id, to: "@beta", text: "agents only" });
+    const hidden = await send({ from: "uma", to: "@@quiet", text: "q" });
+    await postJson(bus, `/api/conversations/${hidden.conversation.id}/project`, { from: "uma", visibility: "discoverable" });
+
+    const carol = await state("carol");
+    const ids = carol.conversations.map((c: Conversation) => c.id);
+    expect(ids).not.toContain(umasDm.conversation.id);
+    expect(ids).toContain(agents.conversation.id);
+    expect(carol.conversations.find((c: Conversation) => c.id === hidden.conversation.id)?.preview).toBe(true);
+    expect((await busFetch(bus, `/api/conversations/${umasDm.conversation.id}/messages`, {}, "carol")).status).toBe(404);
+    expect((await busFetch(bus, `/api/conversations/${hidden.conversation.id}/messages`, {}, "carol")).status).toBe(404);
+    expect((await busFetch(bus, `/api/conversations/${agents.conversation.id}/messages`, {}, "carol")).status).toBe(200);
+
+    // An agent with scope=all reads other agents' conversations, never a person's DM.
+    const gamma = await joinPath("/tmp/x/gamma");
+    const history = (id: string) => busFetch(bus, `/api/history?from=${gamma.id}&conversationId=${id}&scope=all`);
+    expect((await history(agents.conversation.id)).status).toBe(200);
+    expect((await history(umasDm.conversation.id)).status).toBe(403);
+    void beta;
+  });
+
+  test("live frames go only to viewers who may read the conversation", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const viewer = await connectViewer(); // carol
+    await viewer.take("participants");
+    await send({ from: "uma", to: "@alpha", text: "uma's own" });
+    await send({ from: "carol", to: "@alpha", text: "carol's own" });
+    expect((await viewer.take("message")).message.text).toBe("carol's own");
+    expect(viewer.queued("message")).toBe(0);
+    void alpha;
+  });
+
+  test("groups from before projects become DMs and group DMs at startup; silent ones are archived; old aliases still work", async () => {
     await bus.stop();
-    // A thread from before the rule: same agent (alpha), other human, older and smaller.
+    rmSync(dataDir, { recursive: true, force: true });
+    dataDir = mkdtempSync(path.join(tmpdir(), "mb-server-test-"));
+    // A database as the bus wrote it before projects.
     const raw = new Database(path.join(dataDir, "message-bus.sqlite"));
-    raw.exec("DROP INDEX conversations_thread_key");
-    raw.query("INSERT INTO conversations (id, kind, addressed_json, created_at, last_message_at) VALUES ('g_old', 'group', '[\"alpha\",\"uma\"]', 1, 1)").run();
-    raw.query("INSERT INTO conversation_members VALUES ('g_old', 'alpha'), ('g_old', 'uma')").run();
-    raw.query("INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at) VALUES ('m_old', 'g_old', 'uma', 'human', 'old thread', '[]', 1)").run();
+    raw.exec(`
+      CREATE TABLE conversations (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('all', 'group')), addressed_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL, last_message_at INTEGER NOT NULL, thread_key TEXT);
+      CREATE TABLE conversation_members (conversation_id TEXT NOT NULL REFERENCES conversations(id), participant_id TEXT NOT NULL,
+        PRIMARY KEY (conversation_id, participant_id));
+      CREATE TABLE conversation_aliases (old_id TEXT PRIMARY KEY, new_id TEXT NOT NULL);
+      CREATE TABLE messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
+        conversation_id TEXT NOT NULL REFERENCES conversations(id), from_id TEXT NOT NULL, from_kind TEXT NOT NULL,
+        text TEXT NOT NULL, files_json TEXT NOT NULL, created_at INTEGER NOT NULL);
+    `);
+    const now = Date.now();
+    raw.query("INSERT INTO conversations VALUES ('all', 'all', '[]', 1, 1, NULL)").run();
+    raw.query("INSERT INTO conversations VALUES ('g_pair', 'group', '[\"alpha\",\"carol\"]', 1, ?1, 'alpha')").run(now);
+    raw.query("INSERT INTO conversations VALUES ('g_trio', 'group', '[\"alpha\",\"beta\"]', 1, ?1, 'alpha,beta')").run(now);
+    raw.query("INSERT INTO conversations VALUES ('g_stale', 'group', '[\"alpha\",\"beta\",\"gamma\"]', 1, 1, 'alpha,beta,gamma')").run();
+    raw.query(`INSERT INTO conversation_members VALUES ('g_pair', 'alpha'), ('g_pair', 'carol'), ('g_trio', 'alpha'), ('g_trio', 'beta'),
+      ('g_trio', 'uma'), ('g_stale', 'alpha'), ('g_stale', 'beta'), ('g_stale', 'gamma')`).run();
+    raw.query("INSERT INTO conversation_aliases VALUES ('g_older', 'g_pair')").run();
+    raw.query("INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at) VALUES ('m1', 'g_pair', 'carol', 'human', 'old', '[]', 1)").run();
     raw.close();
 
     bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
-    const groups = (await state()).conversations.filter((c) => c.kind === "group");
-    expect(groups.map((c) => c.id)).toEqual([kept.conversation.id]);
-    expect(groups[0]?.members).toEqual(["alpha", "carol", "uma"]);
-    const page = await getJson<MessagesResponse>(bus, "/api/conversations/g_old/messages");
-    expect(page.messages.map((m) => m.text)).toEqual(["kept thread", "old thread"]);
-    await joinPath("/tmp/x/alpha"); // only online agents get messages
-    const byOldId = await send({ from: "uma", conversationId: "g_old", text: "still works" });
-    expect(byOldId.conversation.id).toBe(kept.conversation.id);
-  });
-
-  test("@mentioning a non-member invites them: they join, and a new agent gets the last 5 messages first", async () => {
-    const alpha = await joinPath("/tmp/x/alpha");
-    const first = await send({ from: "carol", to: "@alpha", text: "m1" });
-    for (const text of ["m2", "m3", "m4", "m5", "m6"]) await send({ from: "carol", conversationId: first.conversation.id, text });
-    for (let i = 0; i < 6; i++) await alpha.client.take("deliver");
-    const beta = await joinPath("/tmp/x/beta");
-
-    const invite = await send({ from: "carol", conversationId: first.conversation.id, text: "@beta can you look at this?" });
-    expect(invite.conversation.id).toBe(first.conversation.id);
-    expect(invite.conversation.addressed).toEqual(["alpha", "beta", "carol"]);
-    expect(invite.message.receipts.map((r) => r.to).sort()).toEqual(["alpha", "beta"]);
-    const toBeta: string[] = [];
-    for (let i = 0; i < 6; i++) toBeta.push((await beta.client.take("deliver")).message.text);
-    expect(toBeta).toEqual(["m2", "m3", "m4", "m5", "m6", "@beta can you look at this?"]);
-
-    // An agent naming someone in passing invites nobody.
-    await joinPath("/tmp/x/gamma");
-    const byAgent = await send({ from: alpha.id, conversationId: first.conversation.id, text: "@gamma could do this" });
-    expect(byAgent.conversation.addressed).toEqual(["alpha", "beta", "carol"]);
-    expect(byAgent.message.receipts.map((r) => r.to)).toEqual(["beta"]);
-    expect((await beta.client.take("deliver")).message.id).toBe(byAgent.message.id);
-
-    // Already a member: mentioning again invites nobody and sends no context.
-    const again = await send({ from: "carol", conversationId: first.conversation.id, text: "@beta and @nobody, thanks" });
-    expect(again.conversation.addressed).toEqual(["alpha", "beta", "carol"]);
-    expect((await beta.client.take("deliver")).message.id).toBe(again.message.id);
-  });
-
-  test("an invite that gives a group the agents of another merges that one in; this id and both histories stay", async () => {
-    const alpha = await joinPath("/tmp/x/alpha");
-    await joinPath("/tmp/x/beta");
-    const kept = await send({ from: "carol", to: "@alpha", text: "alpha thread" });
-    const other = await send({ from: "carol", to: "@{alpha,beta}", text: "alpha and beta thread" });
-    expect(other.conversation.id).not.toBe(kept.conversation.id);
-    const viewer = await connectViewer();
-    await viewer.take("participants");
-
-    const invite = await send({ from: "carol", conversationId: kept.conversation.id, text: "@beta joining here" });
-    expect(invite.conversation.id).toBe(kept.conversation.id);
-    const frame = await viewer.take("message");
-    expect(frame.merged).toBe(other.conversation.id);
-    const groups = (await state()).conversations.filter((c) => c.kind === "group");
-    expect(groups.map((c) => c.id)).toEqual([kept.conversation.id]);
-    const page = await getJson<MessagesResponse>(bus, `/api/conversations/${kept.conversation.id}/messages`);
-    expect(page.messages.map((m) => m.text)).toEqual(["alpha thread", "alpha and beta thread", "@beta joining here"]);
-    // The merged id keeps working, and the set alpha+beta now lands here.
-    expect((await send({ from: "uma", conversationId: other.conversation.id, text: "old id" })).conversation.id).toBe(kept.conversation.id);
-    expect((await send({ from: alpha.id, to: "@beta", text: "same set" })).conversation.id).toBe(kept.conversation.id);
-  });
-
-  test("a human who joins an agents' group by writing is in every reply address, and replies stay in that group", async () => {
-    const alpha = await joinPath("/tmp/x/alpha");
-    const beta = await joinPath("/tmp/x/beta");
-    const gamma = await joinPath("/tmp/x/gamma");
-    const started = await send({ from: alpha.id, to: `@${beta.id}`, text: "hi beta" });
-    expect(started.conversation.members).toEqual(["alpha", "beta"]);
-    expect((await beta.client.take("deliver")).replyTo).toBe("@alpha");
-
-    const joined = await send({ from: "uma", conversationId: started.conversation.id, text: "did you read this?" });
-    expect(joined.conversation.addressed).toEqual(["alpha", "beta"]);
-    expect(joined.conversation.members).toEqual(["alpha", "beta", "uma"]);
-    const toAlpha = await alpha.client.take("deliver");
-    expect(toAlpha.message.from).toBe("uma");
-    expect(toAlpha.replyTo).toBe("@{beta,uma}");
-
-    // The agent replies to the address it was given: same conversation, and the human's page gets it.
-    const answer = await send({ from: alpha.id, to: toAlpha.replyTo, text: "yes, read" });
-    expect(answer.conversation.id).toBe(started.conversation.id);
-    // So does an agent that writes to the members in another order, or a member writing by id.
-    expect((await send({ from: beta.id, to: "@{uma,alpha}", text: "me too" })).conversation.id).toBe(started.conversation.id);
-    expect((await send({ from: alpha.id, conversationId: started.conversation.id, text: "by id" })).conversation.id).toBe(
-      started.conversation.id
-    );
-    // The original address still means this conversation: the human stays in it once she has joined.
-    const original = await send({ from: alpha.id, to: "@beta", text: "original address" });
-    expect(original.conversation.id).toBe(started.conversation.id);
-
-    const outsider = await post({ from: gamma.id, conversationId: started.conversation.id, text: "let me in" });
-    expect(outsider.status).toBe(403);
+    const byId = new Map((await state("carol")).conversations.map((c: Conversation) => [c.id, c]));
+    expect(byId.get("g_pair")).toMatchObject({ kind: "dm", members: ["alpha", "carol"] });
+    expect(byId.get("g_stale")).toMatchObject({ kind: "group", archived: true });
+    expect((await state("uma")).conversations.find((c: Conversation) => c.id === "g_trio")).toMatchObject({ kind: "group", members: ["alpha", "beta", "uma"] });
+    const page = await getJson<MessagesResponse>(bus, "/api/conversations/g_older/messages", "carol");
+    expect(page.messages.map((m) => m.text)).toEqual(["old"]);
+    await joinPath("/tmp/x/alpha");
+    expect((await send({ from: "carol", to: "@alpha", text: "new" })).conversation.id).toBe("g_pair");
   });
 
   test("unknown targets and self-only addresses are rejected", async () => {
@@ -688,10 +779,13 @@ describe("http", () => {
     const group = await send({ from: "uma", to: "@alpha", text: "dm" });
     await alpha.client.take("deliver");
 
-    const snapshot = await state();
+    const snapshot = await state("uma");
     expect(snapshot.humans).toEqual(["carol", "uma"]);
     expect(snapshot.participants[0]?.id).toBe("alpha");
     expect(snapshot.conversations.map((c: Conversation) => c.id)).toEqual(["all", group.conversation.id]);
+    // uma's DM with alpha is hers: carol and agent tokens do not see it.
+    expect((await state("carol")).conversations.map((c: Conversation) => c.id)).toEqual(["all"]);
+    expect((await state()).conversations.map((c: Conversation) => c.id)).toEqual(["all"]);
 
     const page = await getJson<MessagesResponse>(bus, `/api/conversations/all/messages?beforeSeq=${sent[4]?.seq}&limit=2`);
     expect(page.messages.map((m) => m.text)).toEqual(["m2", "m3"]);
@@ -704,8 +798,9 @@ describe("http", () => {
 });
 
 describe("delivery receipts", () => {
-  const getMessage = async (seq: number, waitMs = 0) =>
-    (await getJson<{ message: Message }>(bus, `/api/messages/${seq}?waitMs=${waitMs}`)).message;
+  /** A message with its receipts, read by `as` (a person in its conversation; carol by default). */
+  const getMessage = async (seq: number, waitMs = 0, as = "carol") =>
+    (await getJson<{ message: Message }>(bus, `/api/messages/${seq}?waitMs=${waitMs}`, as)).message;
 
   test("each recipient's ack marks only that message delivered; viewers and the writer agent get receipt frames", async () => {
     const viewer = await connectViewer();
@@ -790,7 +885,7 @@ describe("delivery receipts", () => {
     const { message } = await send({ from: "uma", to: "@alpha", text: "dm" });
     alpha.client.send({ type: "ack", seq: (await alpha.client.take("deliver")).message.seq });
     await getMessage(message.seq, 10_000);
-    const page = await getJson<MessagesResponse>(bus, `/api/conversations/${message.conversationId}/messages`);
+    const page = await getJson<MessagesResponse>(bus, `/api/conversations/${message.conversationId}/messages`, "uma");
     expect(page.messages[0]?.receipts[0]).toMatchObject({ to: "alpha" });
     expect(page.messages[0]?.receipts[0]?.deliveredAt).toBeNumber();
   });
@@ -894,7 +989,7 @@ describe("agents offline for a long time", () => {
 
     bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
     expect(await agentIds()).toEqual(["recent"]);
-    const kept = await getJson<{ message: Message }>(bus, `/api/messages/${wrote.message.seq}`);
+    const kept = await getJson<{ message: Message }>(bus, `/api/messages/${wrote.message.seq}`, "carol");
     expect(kept.message.text).toBe("my last words");
     expect(kept.message.receipts.map((r) => r.to)).toEqual([]);
     // Its conversation is still there, but nobody can write to the forgotten agent.
@@ -927,14 +1022,14 @@ describe("reply quotes", () => {
     // Ordinary messages have no quote; pages carry quotes.
     const plain = await send({ from: "carol", to: "@alpha", text: "no quote" });
     expect(plain.message.quote).toBeUndefined();
-    const page = await getJson<MessagesResponse>(bus, `/api/conversations/${original.conversationId}/messages`);
+    const page = await getJson<MessagesResponse>(bus, `/api/conversations/${original.conversationId}/messages`, "carol");
     expect(page.messages.map((m) => m.quote?.seq ?? null)).toEqual([null, original.seq, reply.message.seq, null]);
 
     // The quote survives a restart (it is stored as the replied-to number and resolved on read).
     clients.splice(clients.indexOf(alpha.client), 1);
     await bus.stop();
     bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
-    const after = await getJson<{ message: Message }>(bus, `/api/messages/${human.message.seq}`);
+    const after = await getJson<{ message: Message }>(bus, `/api/messages/${human.message.seq}`, "carol");
     expect(after.message.quote?.seq).toBe(reply.message.seq);
   });
 });

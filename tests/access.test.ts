@@ -111,13 +111,14 @@ const tokenIdOf = (token: string): string => new Bun.CryptoHasher("sha256").upda
 
 test("every read route needs a session or an approved agent token (401 otherwise); health and auth state stay open", async () => {
   await agent("alpha").take("joined");
-  const { message } = (await (await postJson(bus, "/api/messages", { from: "carol", to: "@alpha", text: "hi" })).json()) as PostMessageResponse;
+  // In @all, which every reader may read: this test is about identification, not about who reads what.
+  const { message } = (await (await postJson(bus, "/api/messages", { from: "carol", to: "@all", text: "hi" })).json()) as PostMessageResponse;
   const upload = await busFetch(bus, "/api/files?from=carol&name=a.txt", { method: "POST", body: "abc" }, "carol");
   const { file } = (await upload.json()) as { file: FileRef };
   const routes = [
     "/api/state",
     "/api/inbox?for=alpha",
-    "/api/history?from=carol&to=@alpha",
+    "/api/history?from=carol&to=@all",
     "/api/search?from=carol&q=hi",
     `/api/conversations/${message.conversationId}/messages`,
     `/api/messages/${message.seq}`,

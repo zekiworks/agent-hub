@@ -294,7 +294,7 @@ test("a delivery is reported seen when its text reaches the model, not when it i
   expect(queued.deliverAs).toBe("aside");
 
   const receiptOf = async (waitMs: number) =>
-    (await getJson<{ message: { receipts: Array<{ deliveredAt: number | null; seenAt: number | null }> } }>(bus, `/api/messages/${message.seq}?waitMs=${waitMs}`))
+    (await getJson<{ message: { receipts: Array<{ deliveredAt: number | null; seenAt: number | null }> } }>(bus, `/api/messages/${message.seq}?waitMs=${waitMs}`, "carol"))
       .message.receipts[0]!;
   expect((await receiptOf(5000)).deliveredAt).toBeNumber();
 
@@ -348,9 +348,30 @@ test("reply answers a message by its number, into that message's conversation", 
 
   // A conversation alpha is not in: refused.
   const { message: private_ } = await post({ from: "beta", to: "@carol", text: "just between us" });
-  await expect(alpha.run({ op: "reply", message_id: private_.seq, message: "x" })).rejects.toThrow(/not in conversation/);
+  await expect(alpha.run({ op: "reply", message_id: private_.seq, message: "x" })).rejects.toThrow(/not in this DM/);
   await expect(alpha.run({ op: "reply", message_id: 999_999, message: "x" })).rejects.toThrow(/Unknown message #999999/);
   await expect(alpha.run({ op: "reply", message_id: message.seq })).rejects.toThrow(/reply needs/);
+});
+
+test("conversation ops: write to @@project, projects, invite, notify and leave, as the agent sees them", async () => {
+  const alpha = await startSession("alpha");
+  const beta = await rawAgent("beta");
+  const text = async (params: Parameters<FakeOmp["run"]>[0]) => (await alpha.run(params)).content[0]!.text;
+
+  await text({ op: "write", to: "@@benchmarks", message: "starting the benchmarks project" });
+  const listed = await text({ op: "projects" });
+  expect(listed).toContain("@@benchmarks · open · 1 members, you are in it");
+
+  expect(await text({ op: "invite", to: "@@benchmarks", ids: ["beta"] })).toContain("Added @beta; members now @alpha, @beta");
+  await beta.delivered("starting the benchmarks project"); // the newcomer's context
+  expect(await text({ op: "notify", to: "@@benchmarks", level: "mentions" })).toContain("Notifications there: mentions");
+  expect(await text({ op: "projects" })).toContain("you are in it (notify: mentions)");
+  await expect(alpha.run({ op: "notify", to: "@@benchmarks" })).rejects.toThrow(/notify needs `level`/);
+  await expect(alpha.run({ op: "invite", to: "@@nothing-here", ids: ["beta"] })).rejects.toThrow(/No project "nothing-here"/);
+
+  expect(await text({ op: "leave", to: "@@benchmarks" })).toContain("You left it");
+  expect(await text({ op: "projects" })).toContain("@@benchmarks · open · 1 members ·");
+  beta.ws.close();
 });
 
 test("the agent reports its status to the bus without a model turn: busy with its tool and intent, waiting messages, then idle", async () => {
@@ -446,7 +467,8 @@ test("read ops: inbox, show, history and search, mine by default and all on requ
   const beta = await rawAgent("beta");
   const first = (await post({ from: "carol", to: "@alpha", text: "first: please look at the GPU 3 claim" })).message;
   const second = (await post({ from: "beta", to: "@{alpha,carol}", text: "second, with the long report" })).message;
-  await post({ from: "beta", to: "@uma", text: "private to uma about GPU 3" }); // alpha is not in this one
+  const gamma = await rawAgent("gamma");
+  await post({ from: "beta", to: "@gamma", text: "private to gamma about GPU 3" }); // alpha is not in this one
   await alpha.injectedWith("second, with the long report");
   const injectedBefore = alpha.injected.length;
   const text = async (params: Parameters<FakeOmp["run"]>[0]) => (await alpha.run(params)).content[0]!.text;
@@ -458,18 +480,20 @@ test("read ops: inbox, show, history and search, mine by default and all on requ
   expect(await text({ op: "inbox", since: first.seq })).toContain("1 messages sent to you");
 
   expect(await text({ op: "show", message_id: first.seq })).toContain("first: please look at the GPU 3 claim");
-  const privateSeq = (await post({ from: "uma", to: "@beta", text: "uma to beta" })).message.seq;
+  // Agents' conversations alpha is not in: readable with scope "all"; a person's DM never.
+  const privateSeq = (await post({ from: "gamma", to: "@beta", text: "gamma to beta" })).message.seq;
   await expect(alpha.run({ op: "show", message_id: privateSeq })).rejects.toThrow(/not in .*scope "all"/);
-  expect(await text({ op: "show", message_id: privateSeq, scope: "all" })).toContain("uma to beta");
+  expect(await text({ op: "show", message_id: privateSeq, scope: "all" })).toContain("gamma to beta");
+  const umasSeq = (await post({ from: "uma", to: "@beta", text: "uma to beta" })).message.seq;
+  await expect(alpha.run({ op: "show", message_id: umasSeq, scope: "all" })).rejects.toThrow(/Unknown message/);
 
-  // One thread per set of agents: carol→alpha is the alpha thread, beta→{alpha,carol} the alpha+beta thread.
+  // carol→alpha is alpha's DM with carol; beta→{alpha,carol} the group DM of the three.
   const history = await text({ op: "history", to: "@carol", limit: 5 });
   expect(history).toContain("first: please look");
   expect(history).not.toContain("second,");
-  expect(await text({ op: "history", to: "@beta" })).toContain("second, with the long report");
+  expect(await text({ op: "history", to: "@{beta,carol}" })).toContain("second, with the long report");
   expect(await text({ op: "history", message_id: second.seq })).toContain("1 messages, oldest first");
   await expect(alpha.run({ op: "history", to: "@nobody" })).rejects.toThrow(/Unknown id nobody/);
-  const gamma = await rawAgent("gamma");
   await expect(alpha.run({ op: "history", to: "@gamma" })).rejects.toThrow(/No conversation of @alpha with @gamma/);
   gamma.ws.close();
 
@@ -478,7 +502,7 @@ test("read ops: inbox, show, history and search, mine by default and all on requ
   expect(mine).toContain("1 matching messages");
   expect(mine).toContain("@carol → @{alpha,carol}: first: please look at the GPU 3 claim");
   expect(await text({ op: "search", query: "gpu 3", scope: "all" })).toContain("2 matching messages");
-  expect(await text({ op: "search", sender: "beta", scope: "all" })).toContain("private to uma");
+  expect(await text({ op: "search", sender: "beta", scope: "all" })).toContain("private to gamma");
 
   // Reading delivered nothing new and started no turn.
   expect(alpha.injected.length).toBe(injectedBefore);

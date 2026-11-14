@@ -42,6 +42,18 @@ export function readable(
   return reader.kind === "human" && !conversation.members.some(isHuman);
 }
 
+/**
+ * A reader of the HTTP routes: a person, an agent (`id`), or an agent token that did not say which agent (`id` "").
+ * `all`: agents asking for every conversation (scope=all, or a token without an agent) also read other agents'
+ * conversations, never a person's (docs/projects.md).
+ */
+export type Reader = { id: string; kind: "agent" | "human"; all?: boolean };
+
+export function mayRead(ctx: BusContext, conversation: Conversation, reader: Reader): boolean {
+  if (canRead(ctx, conversation, reader)) return true;
+  return reader.kind === "agent" && reader.all === true && conversation.kind !== "project" && !conversation.members.some((id) => ctx.hub.isHuman(id));
+}
+
 /** Whether `reader` may see that `conversation` exists: what it may read, plus discoverable projects (name, topic, members). */
 export function canSee(ctx: BusContext, conversation: Conversation, reader: { id: string; kind: "agent" | "human" }): boolean {
   return canRead(ctx, conversation, reader) || (conversation.kind === "project" && conversation.visibility === "discoverable");

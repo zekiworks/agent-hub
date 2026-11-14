@@ -38,9 +38,9 @@ export function busFetch(bus: BusServerHandle, route: string, init: RequestInit 
   return fetch(`${bus.url}${route}`, { ...init, headers: { ...identity(bus, as), ...(init.headers as Record<string, string> | undefined) } });
 }
 
-/** GET `route` as JSON, identified by the test agent token. */
-export async function getJson<T>(bus: BusServerHandle, route: string): Promise<T> {
-  return (await (await busFetch(bus, route)).json()) as T;
+/** GET `route` as JSON, identified as `as` (a human's session), else by the test agent token. */
+export async function getJson<T>(bus: BusServerHandle, route: string, as?: string): Promise<T> {
+  return (await (await busFetch(bus, route, {}, as)).json()) as T;
 }
 
 /** POST `body` as JSON to `route`, identified as its `from` (a human's session, else the test agent token). */

@@ -206,7 +206,7 @@ test("a delivery is seen when its header reaches the model", async () => {
   const { message } = await post({ from: "carol", to: "@alpha", text: "seen check" });
   const injected = await alpha.injectedWith("seen check");
   const receipt = async (waitMs: number, until = "delivered") =>
-    (await getJson<{ message: { receipts: Array<{ deliveredAt: number | null; seenAt: number | null }> } }>(bus, `/api/messages/${message.seq}?waitMs=${waitMs}&until=${until}`))
+    (await getJson<{ message: { receipts: Array<{ deliveredAt: number | null; seenAt: number | null }> } }>(bus, `/api/messages/${message.seq}?waitMs=${waitMs}&until=${until}`, "carol"))
       .message.receipts[0]!;
   expect((await receipt(5000)).deliveredAt).toBeNumber();
   alpha.modelRequest(["something else"]);

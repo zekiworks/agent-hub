@@ -311,7 +311,8 @@ export class BusConnection {
 
   /** One message by number, with its conversation. */
   message(seq: number): Promise<{ message: Message; conversation: Conversation }> {
-    return this.request<{ message: Message; conversation: Conversation }>(`/api/messages/${seq}`, { method: "GET" });
+    const qs = new URLSearchParams({ as: this.requireId(), scope: "all" });
+    return this.request<{ message: Message; conversation: Conversation }>(`/api/messages/${seq}?${qs}`, { method: "GET" });
   }
 
   /** The resource schedule (experimental): resources, reservations, what probes see, warnings. */
@@ -352,7 +353,8 @@ export class BusConnection {
 
   /** The message with its receipts, after waiting up to `waitMs` for every recipient to have seen it. */
   async waitForReceipts(seq: number, waitMs: number): Promise<Message> {
-    const res = await this.request<{ message: Message }>(`/api/messages/${seq}?waitMs=${waitMs}&until=seen`, { method: "GET" });
+    const qs = new URLSearchParams({ as: this.requireId(), waitMs: String(waitMs), until: "seen" });
+    const res = await this.request<{ message: Message }>(`/api/messages/${seq}?${qs}`, { method: "GET" });
     return res.message;
   }
 

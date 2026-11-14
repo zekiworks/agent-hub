@@ -2,7 +2,7 @@
 // model's context, hence the small default page.
 import { ALL_CONVERSATION_ID, type Conversation, type Message, type ReadResponse } from "@agent-bus/protocol";
 import type { BusContext } from "./context";
-import { canRead } from "./conversations";
+import { mayRead as readerMayRead } from "./conversations";
 import { HttpError } from "./http";
 
 const DEFAULT_READ = 20;
@@ -34,14 +34,7 @@ function reader(ctx: BusContext, url: URL, param: string): ReaderScope {
   return { id: participant.id, kind: participant.kind, all: scope === "all" };
 }
 
-/**
- * What `scope=all` may read: what `canRead` allows, and for agents also other agents' DMs and groups (no person in
- * them), as before projects. People's DMs and private or discoverable projects stay with their members.
- */
-function mayRead(ctx: BusContext, conversation: Conversation, me: ReaderScope): boolean {
-  if (canRead(ctx, conversation, me)) return true;
-  return me.all && conversation.kind !== "project" && !conversation.members.some((id) => ctx.hub.isHuman(id));
-}
+const mayRead = readerMayRead;
 
 function withConversations(ctx: BusContext, messages: Message[]): ReadResponse {
   const ids = [...new Set(messages.map((m) => m.conversationId))];

@@ -14,7 +14,7 @@ import { forgetOfflineAgents, handleAgentTokens, postSetting, socketHandlers } f
 import { HumanAuth } from "./auth";
 import { handleAuth } from "./auth-routes";
 import { BusContext, tokenHash } from "./context";
-import { canRead, canSee, handleConversationRoute } from "./conversations";
+import { canSee, handleConversationRoute, mayRead, type Reader } from "./conversations";
 import { BusDatabase } from "./db";
 import { getFile, MAX_FILE_BYTES, postFile, transcribeFile } from "./files";
 import { CORS_HEADERS, errorResponse, HttpError, json, nonEmptyParam } from "./http";
@@ -161,7 +161,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     if (method === "GET" && fileMatch?.[1] && fileKey && auth.checkFileKey(fileKey)) return getFile(ctx, decodeURIComponent(fileMatch[1]));
     const reader = ctx.requireReader(req);
     // People read as themselves; an agent token reads what agents may (see canRead), or as one of its agents (`as`).
-    let viewer = reader.kind === "human" ? { id: reader.id, kind: "human" as const } : { id: "", kind: "agent" as const };
+    let viewer: Reader = reader.kind === "human" ? { id: reader.id, kind: "human" } : { id: "", kind: "agent", all: true };
     const as = url.searchParams.get("as");
     if (reader.kind === "agent" && as) {
       const agent = ctx.hub.knownParticipant(as.trim().toLowerCase());
@@ -173,8 +173,8 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     if (method === "GET" && pathname === "/api/state") {
       const conversations = db
         .listConversations()
-        .filter((c) => canSee(ctx, c, viewer))
-        .map((c) => (canRead(ctx, c, viewer) ? c : { ...c, preview: true as const }));
+        .filter((c) => mayRead(ctx, c, viewer) || canSee(ctx, c, viewer))
+        .map((c) => (mayRead(ctx, c, viewer) ? c : { ...c, preview: true as const }));
       const state: StateResponse = { participants: ctx.hub.listParticipants(), conversations, humans };
       return json(state);
     }
@@ -196,7 +196,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     }
     if (method === "POST" && pathname === "/api/messages") return json(await postMessage(ctx, req));
     const messageMatch = /^\/api\/messages\/(\d+)$/.exec(pathname);
-    if (method === "GET" && messageMatch?.[1]) return json(await getMessageReceipts(ctx, Number(messageMatch[1]), url));
+    if (method === "GET" && messageMatch?.[1]) return json(await getMessageReceipts(ctx, Number(messageMatch[1]), url, viewer));
     if (method === "POST" && pathname === "/api/files") return json(await postFile(ctx, req, url));
     if (method === "GET" && fileMatch?.[1]) return getFile(ctx, decodeURIComponent(fileMatch[1]));
     const transcriptMatch = /^\/api\/files\/([^/]+)\/transcript$/.exec(pathname);

@@ -322,9 +322,10 @@ class BusClient:
     def delivery_status(self, sent: dict) -> str:
         """Waits for receipts of a just-written message; remembers late group recipients."""
         seq = sent["message"]["seq"]
-        message = self._request("GET", f"/api/messages/{seq}?waitMs={RECEIPT_WAIT_MS}&until=seen")["message"]
+        qs = urllib.parse.urlencode({"as": self.my_id(), "waitMs": RECEIPT_WAIT_MS, "until": "seen"})
+        message = self._request("GET", f"/api/messages/{seq}?{qs}")["message"]
         pending = {r["to"] for r in message["receipts"] if r.get("deliveredAt") is None}
-        late = bool(pending) and sent["conversation"]["kind"] == "group"
+        late = bool(pending) and sent["conversation"]["kind"] != "all"
         if late:
             with _awaiting_lock:
                 _awaiting_receipts[seq] = pending
@@ -606,7 +607,7 @@ def register(ctx: Any) -> None:
         if op == "show":
             if args.get("message_id") is None:
                 raise ValueError("show needs `message_id`.")
-            res = client.get(f"/api/messages/{int(args['message_id'])}", {})
+            res = client.get(f"/api/messages/{int(args['message_id'])}", {"as": me, "scope": "all"})
             message, conversation = res["message"], res["conversation"]
             if scope != "all" and conversation["kind"] != "all" and me not in conversation["members"]:
                 raise ValueError(f"#{message['seq']} is in a conversation you are not in "
@@ -618,7 +619,7 @@ def register(ctx: Any) -> None:
             if args.get("to"):
                 params["to"] = args["to"]
             elif args.get("message_id") is not None:
-                params["conversationId"] = client.get(f"/api/messages/{int(args['message_id'])}", {})["message"]["conversationId"]
+                params["conversationId"] = client.get(f"/api/messages/{int(args['message_id'])}", {"as": me, "scope": "all"})["message"]["conversationId"]
             else:
                 raise ValueError("history needs `to` (an address) or `message_id` (that message's conversation).")
             res = client.get("/api/history", params)

@@ -49,7 +49,7 @@ async function participant(id: string): Promise<Participant | undefined> {
 }
 
 async function message(seq: number): Promise<Message> {
-  return (await getJson<{ message: Message }>(bus, `/api/messages/${seq}`)).message;
+  return (await getJson<{ message: Message }>(bus, `/api/messages/${seq}`, "carol")).message; // carol wrote it: hers to read
 }
 
 async function post(body: object): Promise<PostMessageResponse> {
