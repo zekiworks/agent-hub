@@ -21,6 +21,7 @@ export const dom = {
   loadEarlierBtn: el<HTMLButtonElement>("load-earlier-btn"),
   messageList: el<HTMLOListElement>("message-list"),
   messageEmpty: el<HTMLDivElement>("message-empty"),
+  workingLine: el<HTMLDivElement>("working-line"),
   composer: el<HTMLFormElement>("composer"),
   composerError: el<HTMLDivElement>("composer-error"),
   stagedFiles: el<HTMLUListElement>("staged-files"),

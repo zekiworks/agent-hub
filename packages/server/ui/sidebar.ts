@@ -22,6 +22,31 @@ import {
 /** How long an agent that went offline stays in the agent list (dimmed) when offline agents are hidden. */
 const RECENTLY_SEEN_MS = 2 * 60_000;
 
+/**
+ * "zeki is working ···" under the messages, like Discord's typing line: the open conversation's agents that report
+ * they are busy. Not for @all (some agent is always busy). The line keeps its height, so nothing jumps.
+ */
+function renderWorkingLine(): void {
+  const view = state.view;
+  const ids =
+    view.kind === "draft"
+      ? view.to
+      : view.id === "all"
+        ? []
+        : (state.conversations.get(view.id)?.members ?? []);
+  const busy = agents()
+    .filter((a) => ids.includes(a.id) && a.online && a.status?.state === "busy")
+    .map((a) => a.id);
+  if (busy.length === 0) {
+    dom.workingLine.replaceChildren();
+    return;
+  }
+  const who = busy.length <= 3 ? nameList(busy) : `${busy.length} agents`;
+  const dots = h("span", "working-dots");
+  dots.append(h("span"), h("span"), h("span"));
+  dom.workingLine.replaceChildren(dots, h("span", "", ` ${who} ${busy.length === 1 ? "is" : "are"} working`));
+}
+
 export function renderSidebar(): void {
   renderBackBadge();
   renderUnreadToggle();
@@ -29,6 +54,7 @@ export function renderSidebar(): void {
   renderConversationList();
   renderAgentList();
   renderAgentPanel();
+  renderWorkingLine();
   renderNotifyButton();
   applyTitle();
 }
