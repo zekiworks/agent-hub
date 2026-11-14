@@ -204,6 +204,8 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
           (agentToken !== undefined && ctx.tokens.isApproved(tokenHash(agentToken))));
       if (!ok) return refuse(ws, 4401, "Sign in (passkey, /auth) or send an approved agent token");
       data.signedIn = true;
+      const human = session !== undefined ? ctx.auth.humanOfSession(session) : undefined;
+      if (human !== undefined) data.human = human;
       hub.addViewer(ws);
       return;
     }

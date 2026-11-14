@@ -14,6 +14,7 @@ import { forgetOfflineAgents, handleAgentTokens, postSetting, socketHandlers } f
 import { HumanAuth } from "./auth";
 import { handleAuth } from "./auth-routes";
 import { BusContext, tokenHash } from "./context";
+import { canRead, canSee, handleConversationRoute } from "./conversations";
 import { BusDatabase } from "./db";
 import { getFile, MAX_FILE_BYTES, postFile, transcribeFile } from "./files";
 import { CORS_HEADERS, errorResponse, json, nonEmptyParam } from "./http";
@@ -158,10 +159,16 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     const fileMatch = /^\/api\/files\/([^/]+)$/.exec(pathname);
     const fileKey = url.searchParams.get("k");
     if (method === "GET" && fileMatch?.[1] && fileKey && auth.checkFileKey(fileKey)) return getFile(ctx, decodeURIComponent(fileMatch[1]));
-    ctx.requireReader(req);
+    const reader = ctx.requireReader(req);
+    // People read as themselves; an agent token reads what agents may (see canRead).
+    const viewer = reader.kind === "human" ? { id: reader.id, kind: "human" as const } : { id: "", kind: "agent" as const };
     if (pathname.startsWith("/api/agent-tokens")) return handleAgentTokens(ctx, sockets, req, url);
     if (method === "GET" && pathname === "/api/state") {
-      const state: StateResponse = { participants: ctx.hub.listParticipants(), conversations: db.listConversations(), humans };
+      const conversations = db
+        .listConversations()
+        .filter((c) => canSee(ctx, c, viewer))
+        .map((c) => (canRead(ctx, c, viewer) ? c : { ...c, preview: true as const }));
+      const state: StateResponse = { participants: ctx.hub.listParticipants(), conversations, humans };
       return json(state);
     }
     if (method === "GET" && pathname === "/api/inbox") return json(getInbox(ctx, url));
@@ -173,7 +180,12 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     }
     const messagesMatch = /^\/api\/conversations\/([^/]+)\/messages$/.exec(pathname);
     if (method === "GET" && messagesMatch?.[1]) {
-      return json(getMessages(ctx, decodeURIComponent(messagesMatch[1]), url));
+      return json(getMessages(ctx, decodeURIComponent(messagesMatch[1]), url, viewer));
+    }
+    const conversationAction = /^\/api\/conversations\/([^/]+)\/([a-z]+)$/.exec(pathname);
+    if (method === "POST" && conversationAction?.[1] && conversationAction[2]) {
+      const answer = await handleConversationRoute(ctx, req, decodeURIComponent(conversationAction[1]), conversationAction[2]);
+      if (answer) return json(answer);
     }
     if (method === "POST" && pathname === "/api/messages") return json(await postMessage(ctx, req));
     const messageMatch = /^\/api\/messages\/(\d+)$/.exec(pathname);
@@ -221,7 +233,9 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
         }
         if (pathname === "/ws/viewer") {
           // Scripts may sign in with headers here; browsers cannot, and send an `auth` frame first.
-          if (srv.upgrade(req, { data: { kind: "viewer", signedIn: ctx.readerOf(req) !== undefined } })) return undefined;
+          const reader = ctx.readerOf(req);
+          const viewer: SocketData = { kind: "viewer", signedIn: reader !== undefined, ...(reader?.kind === "human" ? { human: reader.id } : {}) };
+          if (srv.upgrade(req, { data: viewer })) return undefined;
           return json({ error: "Expected a WebSocket upgrade" }, 400);
         }
         if (pathname.startsWith("/api/")) {

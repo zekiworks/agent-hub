@@ -14,6 +14,7 @@ import {
   type ReceiptFrame,
   type ViewerServerFrame,
 } from "@agent-bus/protocol";
+import { readable } from "./conversations";
 import type { BusDatabase, ParticipantRecord } from "./db";
 
 /** How long a session keeps its number after its last connection closed (a reconnect after a short drop). */
@@ -55,6 +56,8 @@ export type SocketData =
       kind: "viewer";
       /** Signed in (passkey session or approved agent token, at upgrade or by the first frame); before that it gets nothing. */
       signedIn: boolean;
+      /** The person signed in, if a person (an agent token sees only what agents may read). */
+      human?: string;
       /** Agent whose live output this viewer watches, and which session (undefined: its most recently active one). */
       watching?: string;
       watchingSession?: number;
@@ -86,6 +89,7 @@ export class Hub {
   private lastStamp = 0;
   private viewerParticipantsTimer: Timer | undefined;
   private resourcesTimer: Timer | undefined;
+  private conversationsTimer: Timer | undefined;
   /** When each agent's connections dropped, within the last FLAP_WINDOW_MS (see `connectionError`). */
   private readonly drops = new Map<string, number[]>();
   /** Per flapping agent: the broadcast that clears its error once the window has passed without drops. */
@@ -312,6 +316,16 @@ export class Hub {
     }, 250);
   }
 
+  /** Members or a conversation's settings changed: viewers refetch GET /api/state (coalesced). */
+  conversationsChanged(): void {
+    if (this.conversationsTimer || this.viewers.size === 0) return;
+    this.conversationsTimer = setTimeout(() => {
+      this.conversationsTimer = undefined;
+      const frame = JSON.stringify({ type: "conversations" } satisfies ViewerServerFrame);
+      for (const ws of this.viewers) ws.send(frame);
+    }, 250);
+  }
+
   // ---- Sockets ----
 
   addAgentSocket(id: string, ws: Socket): void {
@@ -381,11 +395,21 @@ export class Hub {
     }
   }
 
+  /** Viewers whose person (or agent token) may read `conversation` (see `readable`). */
+  private viewersOf(conversation: Pick<Conversation, "kind" | "members" | "visibility"> | null): Socket[] {
+    if (!conversation) return [];
+    return [...this.viewers].filter(
+      (ws) =>
+        ws.data.kind === "viewer" &&
+        readable(conversation, ws.data.human ? { id: ws.data.human, kind: "human" } : { id: "", kind: "agent" }, (id) => this.isHuman(id))
+    );
+  }
+
   /** Tells the viewers and each writer's agent connections that a message expired for a recipient that stayed offline. */
   announceExpired(expired: ReadonlyArray<{ seq: number; conversationId: string; from: string; to: string }>): void {
     for (const e of expired) {
       const frame = JSON.stringify({ type: "expired", seq: e.seq, conversationId: e.conversationId, to: e.to } satisfies ExpiredFrame);
-      for (const ws of this.viewers) ws.send(frame);
+      for (const ws of this.viewersOf(this.db.getConversation(e.conversationId))) ws.send(frame);
       for (const ws of this.agentSockets.get(e.from) ?? []) ws.send(frame);
     }
   }
@@ -456,20 +480,20 @@ export class Hub {
       message,
       conversation,
       replyTo: replyAddress(conversation, recipient.id),
-      wake: shouldWake(conversation.kind, message.fromKind, recipient.settings),
+      wake: shouldWake(conversation, message, recipient.id, recipient.settings),
       ...(held ? { held } : {}),
     };
   }
 
-  /** Delivers a new message to its connected recipients and shows it to the viewers (`merged`: see the frame). */
-  publishMessage(message: Message, conversation: Conversation, merged?: string): void {
+  /** Delivers a new message to its connected recipients and shows it to the viewers. */
+  publishMessage(message: Message, conversation: Conversation): void {
     for (const { to, session } of message.receipts) {
       const recipient = this.db.getParticipant(to);
       if (!recipient) continue;
       this.deliver(this.deliveryTargets(to, session), message, conversation, recipient);
     }
-    const viewerFrame = JSON.stringify({ type: "message", message, conversation, ...(merged ? { merged } : {}) } satisfies ViewerServerFrame);
-    for (const ws of this.viewers) ws.send(viewerFrame);
+    const viewerFrame = JSON.stringify({ type: "message", message, conversation } satisfies ViewerServerFrame);
+    for (const ws of this.viewersOf(conversation)) ws.send(viewerFrame);
   }
 
   /** Records `agentId`'s ack/seen of `seq` and tells viewers, the writer's agent connections and receipt waiters. */
@@ -488,7 +512,7 @@ export class Hub {
       seenAt: receipt.seenAt,
     };
     const frame = JSON.stringify(update);
-    for (const ws of this.viewers) ws.send(frame);
+    for (const ws of this.viewersOf(this.db.getConversation(message.conversationId))) ws.send(frame);
     for (const ws of this.agentSockets.get(message.from) ?? []) ws.send(frame);
     for (const waiter of this.receiptWaiters.get(seq) ?? []) {
       if (message.receipts.every(waiter.done)) waiter.resolve();
@@ -566,6 +590,7 @@ export class Hub {
     this.receiptWaiters.clear();
     clearTimeout(this.viewerParticipantsTimer);
     clearTimeout(this.resourcesTimer);
+    clearTimeout(this.conversationsTimer);
     for (const timer of this.flapTimers.values()) clearTimeout(timer);
     this.flapTimers.clear();
   }

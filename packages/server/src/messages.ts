@@ -12,6 +12,7 @@ import {
   type Receipt,
 } from "@agent-bus/protocol";
 import type { BusContext } from "./context";
+import { addMembers, canRead, checkedProjectName, leave } from "./conversations";
 import { DEFAULT_HOLD_MS, type ParticipantRecord } from "./db";
 import { HttpError, readJsonObject } from "./http";
 
@@ -31,9 +32,6 @@ export const MAX_RECEIPT_WAIT_MS = 30_000;
 const DEFAULT_PAGE = 100;
 const MAX_PAGE = 500;
 
-/** Earlier messages a newly invited agent gets before the message that mentions it. */
-const INVITE_CONTEXT_MESSAGES = 5;
-
 /** Participants @mentioned in `text` (`@id-n` counts as agent `id`); unknown names and "@all" are left out. */
 function mentionedParticipants(ctx: BusContext, text: string): string[] {
   const ids: string[] = [];
@@ -45,15 +43,43 @@ function mentionedParticipants(ctx: BusContext, text: string): string[] {
   return ids;
 }
 
-/** Agents a new message goes to: every agent for `all`, the addressed agents of a group; never the writer. */
+/** Agents a new message goes to: every agent for `all`, else the conversation's agents; never the writer. */
 function recipientsFor(ctx: BusContext, conversation: Conversation, writerId: string): ParticipantRecord[] {
   return (
     conversation.kind === "all"
       ? ctx.db.listAgents()
-      : conversation.addressed
+      : conversation.members
           .map((id) => ctx.db.getParticipant(id))
           .filter((p): p is ParticipantRecord => p !== null && p.kind === "agent")
   ).filter((p) => p.id !== writerId);
+}
+
+/**
+ * The conversation `to` names for `writer`: "@all"; "@x" the writer's DM with x; "@{a,b}" with the writer, two
+ * members a DM, more a group DM (the one with exactly these members, else a new one); "@@name" a project, created
+ * (open) if there is none, joined if open.
+ */
+function conversationFor(ctx: BusContext, writer: ParticipantRecord, parsed: ReturnType<BusContext["knownAddress"]>, now: number): Conversation {
+  const { db } = ctx;
+  if (parsed.kind === "all") {
+    const all = db.getConversation(ALL_CONVERSATION_ID);
+    if (!all) throw new Error("The all conversation is missing");
+    return all;
+  }
+  if (parsed.kind === "project") {
+    const name = checkedProjectName(ctx, parsed.name);
+    const project = db.projectByName(name);
+    if (!project) return db.createProject(name, writer.id, now);
+    if (!project.members.includes(writer.id)) {
+      if (project.visibility !== "open") throw new HttpError(403, `Project "${name}" is not open: ask a member to add @${writer.id}`);
+      return addMembers(ctx, project, [writer.id]);
+    }
+    return project;
+  }
+  const ids = Array.from(new Set([writer.id, ...parsed.ids]));
+  if (ids.length < 2) throw new HttpError(400, "Cannot write only to yourself");
+  const [a, b] = ids;
+  return ids.length === 2 && a && b ? db.dmOf(a, b, now) : db.groupDmOf(ids, now);
 }
 
 /**
@@ -113,52 +139,62 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     if (typeof body.to !== "string") throw new HttpError(400, "to must be an address string");
     const parsed = ctx.knownAddress(body.to);
     sessions = parsed.sessions;
-    if (parsed.kind === "all") {
-      const all = db.getConversation(ALL_CONVERSATION_ID);
-      if (!all) throw new Error("The all conversation is missing");
-      conversation = all;
-    } else {
-      const addressed = Array.from(new Set([writer.id, ...parsed.ids])).sort();
-      if (addressed.length < 2) throw new HttpError(400, "Cannot write only to yourself");
-      conversation = db.getOrCreateGroup(addressed, now);
-    }
+    conversation = conversationFor(ctx, writer, parsed, now);
   } else {
     if (typeof body.conversationId !== "string") throw new HttpError(400, "conversationId must be a string");
     const existing = db.getConversation(body.conversationId);
     if (!existing) throw new HttpError(404, `Unknown conversation "${body.conversationId}"`);
     conversation = existing;
-    if (conversation.kind === "group") {
-      // Agents forgotten after a long time offline cannot be held for: they have no record to come back to.
-      const gone = conversation.addressed.filter((id) => !hub.knownParticipant(id));
-      if (gone.length > 0) {
-        throw new HttpError(409, `${gone.map((id) => `@${id}`).join(", ")} ${gone.length > 1 ? "are" : "is"} no longer on the bus (forgotten after a long time offline). Nothing was sent.`);
+    if (conversation.kind !== "all" && !conversation.members.includes(writer.id)) {
+      // A person may join a group DM or project they can read; an agent only an open project.
+      const joinable =
+        (conversation.kind === "project" && conversation.visibility === "open") ||
+        (writer.kind === "human" && conversation.kind !== "dm" && canRead(ctx, conversation, writer));
+      if (!joinable) {
+        throw new HttpError(
+          403,
+          conversation.kind === "dm"
+            ? `@${writer.id} is not in this DM: start a group DM or a project with its members`
+            : `@${writer.id} is not in ${conversation.id}: ask a member to add you`
+        );
       }
-      if (writer.kind === "agent" && !conversation.members.includes(writer.id)) {
-        throw new HttpError(403, `${writer.id} is not in conversation ${conversation.id}`);
-      }
-      if (writer.kind === "human" && !conversation.members.includes(writer.id)) {
-        db.addMember(conversation.id, writer.id);
-      }
+      conversation = addMembers(ctx, conversation, [writer.id]);
     }
   }
-  // A person mentioning someone who is not in a group invites them: they join it (agents change its thread; a group
-  // that already had the new set is merged into this one) and new agents first get the last messages as context.
-  // Only people: agents name each other in passing all the time, and that must not pull anyone in.
-  let merged: string | undefined;
-  if (conversation.kind === "group" && writer.kind === "human") {
-    const newcomers = mentionedParticipants(ctx, text).filter((id) => id !== writer.id && !conversation.addressed.includes(id));
-    if (newcomers.length > 0) {
-      const invited = db.inviteToGroup(conversation.id, newcomers);
-      conversation = invited.conversation;
-      merged = invited.merged;
-      for (const id of newcomers) {
-        const agent = db.getParticipant(id);
-        if (agent?.kind !== "agent") continue;
-        for (const earlier of db.addContextReceipts(conversation.id, id, INVITE_CONTEXT_MESSAGES)) {
-          hub.deliver(hub.deliveryTargets(id), earlier, conversation, agent);
-        }
-      }
+  if (conversation.kind !== "all") {
+    // Agents forgotten after a long time offline cannot be held for: they have no record to come back to.
+    const gone = conversation.members.filter((id) => !hub.knownParticipant(id));
+    if (gone.length > 0 && conversation.kind === "dm") {
+      throw new HttpError(409, `@${gone[0]} is no longer on the bus (forgotten after a long time offline). Nothing was sent.`);
     }
+  }
+  if (conversation.archived) {
+    if (writer.kind !== "human") {
+      throw new HttpError(409, `${conversation.name ? `Project "${conversation.name}"` : `Conversation ${conversation.id}`} is archived; a person can bring it back by writing in it`);
+    }
+    db.setArchived(conversation.id, false);
+    hub.conversationsChanged();
+  }
+  // "exit" alone, from an agent in a group DM or project: it leaves (people have the website's Leave button).
+  if (writer.kind === "agent" && text.trim().toLowerCase() === "exit" && files.length === 0) {
+    const left = leave(ctx, conversation, writer.id);
+    const message = db.insertMessage({
+      conversationId: left.id,
+      from: writer.id,
+      fromKind: writer.kind,
+      text: "(left the conversation)",
+      files: [],
+      createdAt: now,
+      recipients: [],
+      expiresAt: now,
+    });
+    hub.publishMessage(message, left);
+    return { message, conversation: left };
+  }
+  // A person can add whoever they @mention (the website asks first: "Add and send" or "Send only").
+  if (body.addMentioned === true && writer.kind === "human") {
+    const newcomers = mentionedParticipants(ctx, text).filter((id) => !conversation.members.includes(id));
+    if (newcomers.length > 0) conversation = addMembers(ctx, conversation, newcomers);
   }
   // A reply to a message one session of an agent wrote goes back to that session.
   if (replyToSeq !== undefined) {
@@ -168,11 +204,11 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     }
   }
   if (body.toSession !== undefined && body.toSession !== null) {
-    const agents = conversation.addressed.filter((id) => id !== writer.id && !hub.isHuman(id));
+    const agents = conversation.members.filter((id) => id !== writer.id && !hub.isHuman(id));
     if (typeof body.toSession !== "number" || !Number.isSafeInteger(body.toSession) || body.toSession < 1) {
       throw new HttpError(400, "toSession must be a session number");
     }
-    if (conversation.kind !== "group" || agents.length !== 1 || !agents[0]) {
+    if (conversation.kind === "all" || agents.length !== 1 || !agents[0]) {
       throw new HttpError(400, "toSession is for a conversation with one agent");
     }
     sessions.set(agents[0], body.toSession);
@@ -212,7 +248,7 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
   if (writer.kind === "human") db.touchParticipant(writer.id, now);
   const updated = db.getConversation(conversation.id);
   if (!updated) throw new Error(`Conversation ${conversation.id} vanished`);
-  hub.publishMessage(message, updated, merged);
+  hub.publishMessage(message, updated);
   return { message, conversation: updated };
 }
 
@@ -223,7 +259,7 @@ export function postResourcesNotice(ctx: BusContext, holder: string, text: strin
   if (!recipient) return;
   const writer = db.ensureBuiltInAgent(RESOURCES_AGENT_ID, "bus");
   const now = Date.now();
-  const conversation = db.getOrCreateGroup([writer.id, holder], now);
+  const conversation = db.dmOf(writer.id, holder, now);
   const message = db.insertMessage({
     conversationId: conversation.id,
     from: writer.id,
@@ -238,9 +274,14 @@ export function postResourcesNotice(ctx: BusContext, holder: string, text: strin
 }
 
 /** GET /api/conversations/:id/messages?beforeSeq=&limit= (the website's pages). */
-export function getMessages(ctx: BusContext, conversationId: string, url: URL): MessagesResponse {
+export function getMessages(
+  ctx: BusContext,
+  conversationId: string,
+  url: URL,
+  reader: { id: string; kind: "agent" | "human" }
+): MessagesResponse {
   const conversation = ctx.db.getConversation(conversationId);
-  if (!conversation) {
+  if (!conversation || !canRead(ctx, conversation, reader)) {
     throw new HttpError(404, `Unknown conversation "${conversationId}"`);
   }
   const parseIntParam = (key: string): number | null => {

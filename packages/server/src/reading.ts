@@ -2,6 +2,7 @@
 // model's context, hence the small default page.
 import { ALL_CONVERSATION_ID, type Conversation, type Message, type ReadResponse } from "@agent-bus/protocol";
 import type { BusContext } from "./context";
+import { canRead } from "./conversations";
 import { HttpError } from "./http";
 
 const DEFAULT_READ = 20;
@@ -19,15 +20,27 @@ function readLimit(url: URL): number {
   return Math.min(intParam(url, "limit", 1) ?? DEFAULT_READ, MAX_READ);
 }
 
-/** The reader (`param`, a known participant) and whether it reads everything (`scope=all`) or its own conversations. */
-function reader(ctx: BusContext, url: URL, param: string): { id: string; all: boolean } {
+type ReaderScope = { id: string; kind: "agent" | "human"; all: boolean };
+
+/** The reader (`param`, a known participant) and whether it reads everything it may (`scope=all`) or its own. */
+function reader(ctx: BusContext, url: URL, param: string): ReaderScope {
   const id = (url.searchParams.get(param) ?? "").trim().toLowerCase();
-  if (!ctx.hub.knownParticipant(id)) {
+  const participant = ctx.hub.knownParticipant(id);
+  if (!participant) {
     throw new HttpError(400, `Unknown participant "${id}" in ${param}. Known ids: ${ctx.hub.knownIds().join(", ")}`);
   }
   const scope = url.searchParams.get("scope") ?? "mine";
   if (scope !== "mine" && scope !== "all") throw new HttpError(400, 'scope must be "mine" or "all"');
-  return { id, all: scope === "all" };
+  return { id: participant.id, kind: participant.kind, all: scope === "all" };
+}
+
+/**
+ * What `scope=all` may read: what `canRead` allows, and for agents also other agents' DMs and groups (no person in
+ * them), as before projects. People's DMs and private or discoverable projects stay with their members.
+ */
+function mayRead(ctx: BusContext, conversation: Conversation, me: ReaderScope): boolean {
+  if (canRead(ctx, conversation, me)) return true;
+  return me.all && conversation.kind !== "project" && !conversation.members.some((id) => ctx.hub.isHuman(id));
 }
 
 function withConversations(ctx: BusContext, messages: Message[]): ReadResponse {
@@ -41,7 +54,10 @@ export function getInbox(ctx: BusContext, url: URL): ReadResponse {
   return withConversations(ctx, ctx.db.inboxFor(id, intParam(url, "sinceSeq", 0) ?? 0, readLimit(url)));
 }
 
-/** The newest `limit` messages (before `beforeSeq`) of the conversation `to` resolves to for `from`, or `conversationId`. */
+/**
+ * The newest `limit` messages (before `beforeSeq`) of the conversation `to` names for `from` ("@x" its DM with x,
+ * "@{a,b}" its group DM with them, "@@name" a project, "@all"), or of `conversationId`.
+ */
 export function getHistory(ctx: BusContext, url: URL): ReadResponse {
   const { db } = ctx;
   const me = reader(ctx, url, "from");
@@ -55,28 +71,35 @@ export function getHistory(ctx: BusContext, url: URL): ReadResponse {
     const parsed = ctx.knownAddress(to);
     if (parsed.kind === "all") {
       conversation = db.getConversation(ALL_CONVERSATION_ID);
+    } else if (parsed.kind === "project") {
+      conversation = db.projectByName(parsed.name);
+      if (!conversation) throw new HttpError(404, `No project "${parsed.name}"`);
     } else {
-      conversation = db.findGroup([me.id, ...parsed.ids]);
+      const ids = Array.from(new Set([me.id, ...parsed.ids]));
+      conversation = db.findByMembers(ids.length === 2 ? "dm" : "group", ids);
       if (!conversation) throw new HttpError(404, `No conversation of @${me.id} with ${to} yet`);
     }
   } else {
     throw new HttpError(400, "Give to (an address) or conversationId");
   }
   if (!conversation) throw new Error("The all conversation is missing");
-  if (!me.all && conversation.kind === "group" && !conversation.members.includes(me.id)) {
-    throw new HttpError(403, `@${me.id} is not in conversation ${conversation.id}; read it with scope=all`);
+  if (!mayRead(ctx, conversation, me)) {
+    throw new HttpError(403, `@${me.id} is not in conversation ${conversation.id}${me.all ? "" : "; read it with scope=all"}`);
   }
   return withConversations(ctx, db.listMessages(conversation.id, intParam(url, "beforeSeq", 1), readLimit(url)));
 }
 
-/** Messages whose text contains `q` (and from `sender`), newest `limit`, in the reader's conversations or all. */
+/** Messages whose text contains `q` (and from `sender`), newest `limit`, in the reader's conversations or all it may read. */
 export function getSearch(ctx: BusContext, url: URL): ReadResponse {
   const me = reader(ctx, url, "from");
   const sender = url.searchParams.get("sender")?.trim().replace(/^@/, "").toLowerCase() || null;
   const q = url.searchParams.get("q") ?? "";
   if (!q.trim() && !sender) throw new HttpError(400, "Give q (text to find) and/or sender");
-  return withConversations(
-    ctx,
-    ctx.db.searchMessages(q.trim(), sender, me.all ? null : ctx.db.conversationIdsOf(me.id), readLimit(url))
-  );
+  const ids = me.all
+    ? ctx.db
+        .listConversations()
+        .filter((c) => mayRead(ctx, c, me))
+        .map((c) => c.id)
+    : ctx.db.conversationIdsOf(me.id);
+  return withConversations(ctx, ctx.db.searchMessages(q.trim(), sender, ids, readLimit(url)));
 }
