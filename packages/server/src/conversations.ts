@@ -9,6 +9,7 @@ import {
   type ConversationResponse,
   type NotifyLevel,
   type NotifyRequest,
+  type ParentRequest,
   type ProjectRequest,
   type ProjectVisibility,
 } from "@agent-bus/protocol";
@@ -128,7 +129,7 @@ function memberRequest(ctx: BusContext, req: Request, body: Record<string, unkno
   return { writer, conversation };
 }
 
-/** POST /api/conversations/:id/{members,leave,notify,project,archive}; null for any other path. */
+/** POST /api/conversations/:id/{members,leave,notify,project,parent,archive}; null for any other path. */
 export async function handleConversationRoute(
   ctx: BusContext,
   req: Request,
@@ -181,6 +182,29 @@ export async function handleConversationRoute(
         ...(request.topic !== undefined ? { topic: request.topic.trim().slice(0, 200) } : {}),
         ...(request.visibility ? { visibility: request.visibility } : {}),
       });
+      ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "parent": {
+      const { conversation } = memberRequest(ctx, req, body, id);
+      if (conversation.kind !== "project" && conversation.kind !== "group") {
+        throw new HttpError(400, "Only projects and group DMs go under a project");
+      }
+      const raw = (body as Partial<ParentRequest>).parent;
+      if (raw === null || raw === undefined || raw === "") {
+        db.setParent(conversation.id, null);
+      } else {
+        if (typeof raw !== "string") throw new HttpError(400, "parent must be a project (\"@@name\" or its id) or null");
+        const parent = raw.startsWith("@@") ? db.projectByName(raw.slice(2).toLowerCase()) : db.getConversation(raw);
+        if (!parent || parent.kind !== "project") throw new HttpError(404, `No project ${raw}`);
+        // One level (Can, 14 Nov): only root projects are parents, and a project with children stays a root.
+        if (parent.id === conversation.id) throw new HttpError(409, "A project cannot be its own parent");
+        if (parent.parentId) throw new HttpError(409, `${raw} is itself under a project; only root projects are parents`);
+        if (db.listConversations().some((c) => c.parentId === conversation.id)) {
+          throw new HttpError(409, "This project has projects or groups under it, so it stays a root");
+        }
+        db.setParent(conversation.id, parent.id);
+      }
       ctx.hub.conversationsChanged();
       return { conversation: db.getConversation(conversation.id) ?? conversation };
     }

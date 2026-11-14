@@ -34,7 +34,8 @@ export interface MessageBusToolParams {
     | "invite"
     | "leave"
     | "notify"
-    | "project";
+    | "project"
+    | "parent";
   message_id?: number;
   to?: string;
   message?: string;
@@ -59,6 +60,7 @@ export interface MessageBusToolParams {
   name?: string;
   topic?: string;
   visibility?: "open" | "discoverable" | "private";
+  parent?: string;
 }
 
 /** One tool parameter, for building a harness's schema (zod for omp, JSON schema for MCP). Only `op` is required. */
@@ -75,11 +77,11 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     type: "string",
     enum: [
       "reply", "write", "send", "set", "inbox", "show", "history", "search",
-      "projects", "invite", "leave", "notify", "project",
+      "projects", "invite", "leave", "notify", "project", "parent",
       "resources", "servers", "reserve", "release", "extend", "mode", "subscribe", "unsubscribe",
     ],
     description:
-      "reply/write/send a message, set a setting, read (inbox, show, history, search), conversations (projects, invite, leave, notify, project), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
+      "reply/write/send a message, set a setting, read (inbox, show, history, search), conversations (projects, invite, leave, notify, project, parent), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
   },
   { name: "message_id", type: "number", description: "a message's #number (reply, show, history)" },
   { name: "to", type: "string", description: '"@all", "@id" (a DM), "@{id1,id2}" (a group DM) or "@@name" (a project) (write/send, history, invite, leave, notify, project)' },
@@ -109,6 +111,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   { name: "name", type: "string", description: "project: a name for a group DM turned into a project" },
   { name: "topic", type: "string", description: "project: a one-line topic" },
   { name: "visibility", type: "string", enum: ["open", "discoverable", "private"], description: "project: who can find and join it" },
+  { name: "parent", type: "string", description: 'parent: the project to put it under ("@@name"), or "none" for a root' },
 ];
 
 /** Every argument the tool takes; anything else is rejected rather than silently ignored. */
@@ -169,7 +172,8 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "op=invite (`to` or `message_id` for the conversation, `ids`) adds others to a group DM or project; they get its " +
     "last 5 messages. op=leave leaves one. op=notify (`level`: all, mentions, none) sets which messages there start a " +
     "turn for you: in a busy project, mentions saves turns. op=project turns a group DM into a project (`name`, " +
-    "optional `topic`, `visibility`) or changes a project's topic and visibility. " +
+    "optional `topic`, `visibility`) or changes a project's topic and visibility. op=parent (`parent` \"@@name\" or " +
+    "\"none\") puts a project or group DM under a root project (one level only); it then wears that project's colour on the website. " +
     "Shared GPUs (experimental; instead of claim/release messages; shared by default): op=servers lists the model " +
     "servers running now (model, URL, who runs it, shared or private): for light use just send requests to a shared " +
     "one instead of starting your own; for sustained heavy use tell its owner first; leave private ones alone. " +
@@ -554,6 +558,13 @@ export class BusTool {
             );
           });
         return result(lines.length > 0 ? lines.join("\n") : "No projects or group DMs yet. Start one with op=write to=\"@@name\".");
+      }
+      case "parent": {
+        if (!params.parent) throw new Error('parent needs `parent`: "@@name" or "none".');
+        const conversation = await this.conversationOf(params);
+        const res = await conn.conversationAction(conversation.id, "parent", { parent: params.parent === "none" ? null : params.parent });
+        const parent = res.conversation.parentId;
+        return result(`${conversationLabel(res.conversation)} is ${parent ? `now under ${params.parent}` : "a root again"} (${res.conversation.id}).`);
       }
       case "invite":
       case "leave":

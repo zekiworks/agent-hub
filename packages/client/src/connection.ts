@@ -299,8 +299,8 @@ export class BusConnection {
     return this.request<StateResponse>(`/api/state?${new URLSearchParams({ as: this.requireId() })}`, { method: "GET" });
   }
 
-  /** POST /api/conversations/:id/{members,leave,notify,project} as this agent. */
-  conversationAction(conversationId: string, action: "members" | "leave" | "notify" | "project", body: Record<string, unknown> = {}): Promise<ConversationResponse> {
+  /** POST /api/conversations/:id/{members,leave,notify,project,parent} as this agent. */
+  conversationAction(conversationId: string, action: "members" | "leave" | "notify" | "project" | "parent", body: Record<string, unknown> = {}): Promise<ConversationResponse> {
     const from = this.requireId();
     return this.request<ConversationResponse>(`/api/conversations/${encodeURIComponent(conversationId)}/${action}`, {
       method: "POST",

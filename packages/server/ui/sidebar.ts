@@ -10,6 +10,7 @@ import { navigate } from "./routing";
 import {
   agents,
   browsableProjects,
+  hasProjectColor,
   otherGroups,
   projectColor,
   sortedGroups,
@@ -168,7 +169,7 @@ function conversationItem(conv: Conversation): HTMLLIElement {
       ? what
       : `${what} · ${conv.members.length} members${conv.members.includes(state.me) ? "" : " · you're not in it"}${conv.archived ? " · archived" : ""}`
   );
-  if (conv.kind === "project") {
+  if (hasProjectColor(conv)) {
     button.classList.add("conv-project");
     button.style.setProperty("--project-color", projectColor(conv));
   }

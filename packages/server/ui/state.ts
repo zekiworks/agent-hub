@@ -183,12 +183,25 @@ export function currentDirectAgent(): string | undefined {
  * neighbours further; both levels read on the dark theme. Nothing is stored.
  */
 export function projectColor(conv: Conversation): string {
-  const projects = Array.from(state.conversations.values())
-    .filter((c) => c.kind === "project")
+  const root = rootProject(conv) ?? conv;
+  // Only root projects take a hue of their own; sub-projects and groups under a project wear their root's.
+  const roots = Array.from(state.conversations.values())
+    .filter((c) => c.kind === "project" && !c.parentId)
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-  const rank = Math.max(0, projects.findIndex((c) => c.id === conv.id));
+  const rank = Math.max(0, roots.findIndex((c) => c.id === root.id));
   const hue = Math.round((rank * 137.508) % 360);
   return `hsl(${hue} 70% ${rank % 2 === 0 ? 62 : 70}%)`;
+}
+
+/** The root project of `conv`: its parent (one level only), itself when it is a root project, else undefined. */
+export function rootProject(conv: Conversation): Conversation | undefined {
+  const parent = conv.parentId ? state.conversations.get(conv.parentId) : undefined;
+  return parent ?? (conv.kind === "project" ? conv : undefined);
+}
+
+/** Projects and anything under a project wear a project colour. */
+export function hasProjectColor(conv: Conversation): boolean {
+  return conv.kind === "project" || !!conv.parentId;
 }
 
 /** "all", a project's "@@name", or the members: everyone but me (all of them if I am not a member). */

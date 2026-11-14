@@ -93,6 +93,8 @@ interface ConversationRow {
   topic: string | null;
   visibility: string | null;
   archived: number | null;
+  /** Null for root projects and unattached groups (and on databases from before the column). */
+  parent_id?: string | null;
   created_at: number;
   last_message_at: number;
 }
@@ -335,6 +337,10 @@ export class BusDatabase {
     }
     this.seed(humans, now);
     this.migrateToProjects(now);
+    // Databases created before project hierarchy lack the column (null: a root).
+    if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "parent_id")) {
+      this.db.exec("ALTER TABLE conversations ADD COLUMN parent_id TEXT");
+    }
     this.db.exec(
       "CREATE UNIQUE INDEX IF NOT EXISTS conversations_project_name ON conversations(name) WHERE kind = 'project'"
     );
@@ -733,6 +739,7 @@ export class BusDatabase {
       ...(row.topic !== null ? { topic: row.topic } : {}),
       ...(kind === "project" ? { visibility: toVisibility(row.visibility) } : {}),
       ...(row.archived ? { archived: true as const } : {}),
+      ...(row.parent_id ? { parentId: row.parent_id } : {}),
       ...(Object.keys(notify).length > 0 ? { notify } : {}),
       createdAt: row.created_at,
       lastMessageAt: row.last_message_at,
@@ -880,6 +887,10 @@ export class BusDatabase {
            visibility = COALESCE(?4, visibility, 'open') WHERE id = ?1 AND kind IN ('group', 'project')`
       )
       .run(conversationId, changes.name ?? null, changes.topic ?? null, changes.visibility ?? null);
+  }
+
+  setParent(conversationId: string, parentId: string | null): void {
+    this.db.query("UPDATE conversations SET parent_id = ?2 WHERE id = ?1").run(conversationId, parentId);
   }
 
   setArchived(conversationId: string, archived: boolean): void {

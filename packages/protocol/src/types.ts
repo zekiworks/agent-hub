@@ -111,6 +111,11 @@ export interface Conversation {
   visibility?: ProjectVisibility;
   /** Group DMs and projects out of the sidebar (and Browse) until someone writes in them again. */
   archived?: true;
+  /**
+   * Projects and group DMs: the root project this one belongs under (absent: a root). One level only: parents are
+   * root projects, and a project with children stays a root. Children take the parent's colour.
+   */
+  parentId?: string;
   /** Members whose notification setting is not `all`. */
   notify?: Record<string, Exclude<NotifyLevel, "all">>;
   /** A discoverable project the reader is not in: its name, topic and members only, not its messages. */
@@ -411,6 +416,15 @@ export interface ProjectRequest {
   name?: string;
   topic?: string;
   visibility?: ProjectVisibility;
+}
+
+/**
+ * POST /api/conversations/:id/parent: a member puts a project or group DM under project `parent` ("@@name" or an id),
+ * or makes it a root again (`parent` null).
+ */
+export interface ParentRequest {
+  from: string;
+  parent: string | null;
 }
 
 /** POST /api/conversations/:id/archive: a person archives (or brings back) a group DM or project. */

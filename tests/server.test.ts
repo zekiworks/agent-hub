@@ -583,6 +583,28 @@ describe("delivery", () => {
     void beta;
   });
 
+  test("projects and group DMs go under a root project, one level only; DMs and non-projects cannot be parents", async () => {
+    await joinPath("/tmp/x/alpha");
+    const root = await send({ from: "carol", to: "@@benchmarks", text: "root" });
+    const child = await send({ from: "carol", to: "@@reading", text: "child" });
+    const group = await send({ from: "carol", to: "@{alpha,uma}", text: "a group" });
+    const dm = await send({ from: "carol", to: "@alpha", text: "a dm" });
+    const parent = (id: string, value: string | null, from = "carol") =>
+      postJson(bus, `/api/conversations/${id}/parent`, { from, parent: value });
+
+    expect((await answeredConversation(await parent(child.conversation.id, "@@benchmarks"))).parentId).toBe(root.conversation.id);
+    expect((await answeredConversation(await parent(group.conversation.id, root.conversation.id))).parentId).toBe(root.conversation.id);
+    // One level: a child is no parent, and a project with children stays a root. A group as parent, a DM as child: no.
+    const third = await send({ from: "carol", to: "@@third", text: "third" });
+    expect((await parent(third.conversation.id, "@@reading")).status).toBe(409);
+    expect((await parent(root.conversation.id, "@@third")).status).toBe(409);
+    expect((await parent(child.conversation.id, group.conversation.id)).status).toBe(404);
+    expect((await parent(dm.conversation.id, "@@benchmarks")).status).toBe(400);
+    // Only members set it; null makes it a root again.
+    expect((await parent(child.conversation.id, null, "uma")).status).toBe(403);
+    expect((await answeredConversation(await parent(child.conversation.id, null))).parentId).toBeUndefined();
+  });
+
   test("live frames go only to viewers who may read the conversation", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const viewer = await connectViewer(); // carol

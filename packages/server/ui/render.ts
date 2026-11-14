@@ -10,7 +10,7 @@ import { setTitleBase } from "./notify";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
 import { renderSpeaking, speakButton } from "./speak";
-import { conversationTitle, projectColor, state } from "./state";
+import { conversationTitle, hasProjectColor, projectColor, state } from "./state";
 import { flashMessage, mentionNodes, mentionsMe, shownMessage } from "./text";
 
 export function renderAll(): void {
@@ -55,7 +55,7 @@ export function renderHeader(): void {
   const title = conversationTitle(conv);
   dom.convTitle.textContent = title;
   // A project's colour on its title, as in the sidebar.
-  dom.convTitle.style.color = conv.kind === "project" ? projectColor(conv) : "";
+  dom.convTitle.style.color = hasProjectColor(conv) ? projectColor(conv) : "";
   setTitleBase(`${title} · Agent Bus`);
   dom.convMenuBtn.hidden = conv.kind === "all" || conv.kind === "dm";
   if (conv.kind === "all") {

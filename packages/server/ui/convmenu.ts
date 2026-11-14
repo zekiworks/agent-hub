@@ -67,6 +67,24 @@ function select<T extends string>(options: Array<[T, string]>, value: T, onChang
   return s;
 }
 
+/**
+ * "None" or a root project to put `conv` under (one level only, Can 14 Nov). A project with projects or groups under
+ * it stays a root: then the choice says so instead.
+ */
+function parentSelect(conv: Conversation): HTMLElement {
+  const children = Array.from(state.conversations.values()).filter((c) => c.parentId === conv.id);
+  if (children.length > 0) {
+    return h("p", "dialog-hint", `A root project: ${children.length} ${children.length === 1 ? "is" : "are"} under it (${children.map((c) => conversationTitle(c)).join(", ")}).`);
+  }
+  const options: Array<[string, string]> = [["", conv.kind === "project" ? "None: a root project" : "None"]];
+  for (const p of Array.from(state.conversations.values())
+    .filter((c) => c.kind === "project" && !c.preview && !c.parentId && c.id !== conv.id)
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))) {
+    options.push([p.id, `@@${p.name}`]);
+  }
+  return select(options, conv.parentId ?? "", (parent) => void act(conv, "parent", { parent: parent || null }));
+}
+
 function render(): void {
   const conv = current();
   if (!conv || (conv.kind !== "group" && conv.kind !== "project")) {
@@ -95,6 +113,8 @@ function render(): void {
       })
     );
     body.push(row, h("p", "dialog-hint", "Agents you add first get the last 5 messages."));
+
+    body.push(h("h3", "", "Under project"), parentSelect(conv));
 
     body.push(h("h3", "", "My notifications here"));
     body.push(select(NOTIFY, conv.notify?.[state.me] ?? "all", (level) => void act(conv, "notify", { level })));

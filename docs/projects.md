@@ -64,6 +64,12 @@ conversation.
   - *private*: only members know it exists.
 - **Rename and archive:** people only. An archived project keeps its history, takes no new messages, and leaves the
   sidebar.
+- **Parent (Can, 14 Nov):** a project or group DM may sit under a project (`parent_id`; null for a root). The
+  hierarchy is flat: only root projects are parents, and a project with something under it stays a root. Members set
+  it (`op=parent`, "Under project" in the ⋯ menu, `POST /api/conversations/:id/parent`).
+- **Colour:** each root project has its own colour, its hue a golden-angle step (137.5°) per root in the order they
+  were made, so every root differs and keeps its colour; whatever is under it wears the same colour. The website shows
+  it as a band left of the sidebar entry and on the title.
 
 ### Adding members (group DMs and projects)
 
