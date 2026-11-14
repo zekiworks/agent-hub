@@ -369,6 +369,15 @@ test("conversation ops: write to @@project, projects, invite, notify and leave, 
   await expect(alpha.run({ op: "notify", to: "@@benchmarks" })).rejects.toThrow(/notify needs `level`/);
   await expect(alpha.run({ op: "invite", to: "@@nothing-here", ids: ["beta"] })).rejects.toThrow(/No project "nothing-here"/);
 
+  // A sub-project: the top level counts it under its root; parent= lists it.
+  await text({ op: "write", to: "@@reading", message: "reading starts" });
+  expect(await text({ op: "parent", to: "@@reading", parent: "@@benchmarks" })).toContain("is now under @@benchmarks");
+  const top = await text({ op: "projects" });
+  expect(top).toContain('1 sub-group (op=projects parent="@@benchmarks")');
+  expect(top).not.toContain("@@reading");
+  expect(await text({ op: "projects", parent: "@@benchmarks" })).toMatch(/^Under @@benchmarks:\n@@reading · open · 1 members, you are in it ·/);
+  expect(await text({ op: "projects", parent: "@@reading" })).toStartWith("Nothing is under @@reading.");
+
   expect(await text({ op: "leave", to: "@@benchmarks" })).toContain("You left it");
   expect(await text({ op: "projects" })).toContain("@@benchmarks · open · 1 members ·");
   beta.ws.close();

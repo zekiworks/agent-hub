@@ -111,7 +111,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   { name: "name", type: "string", description: "project: a name for a group DM turned into a project" },
   { name: "topic", type: "string", description: "project: a one-line topic" },
   { name: "visibility", type: "string", enum: ["open", "discoverable", "private"], description: "project: who can find and join it" },
-  { name: "parent", type: "string", description: 'parent: the project to put it under ("@@name"), or "none" for a root' },
+  { name: "parent", type: "string", description: 'parent: the root project to put it under ("@@name"), or "none" for a root. projects: list what is under this project instead of the top level' },
 ];
 
 /** Every argument the tool takes; anything else is rejected rather than silently ignored. */
@@ -168,7 +168,7 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "or the conversation of `message_id`. " +
     "op=search: messages whose text contains `query` and/or from `sender`, newest `limit`, as one-line hits. " +
     "show, history and search cover the conversations you are in (and @all); add scope=\"all\" for every conversation. " +
-    "Conversations: op=projects lists the projects you can see (yours, open, discoverable) and your group DMs. " +
+    "Conversations: op=projects lists the top level you can see: root projects (yours, open, discoverable) and your group DMs under no project, each with how many sub-groups it has; with `parent` (\"@@name\") it lists that project's sub-groups. " +
     "op=invite (`to` or `message_id` for the conversation, `ids`) adds others to a group DM or project; they get its " +
     "last 5 messages. op=leave leaves one. op=notify (`level`: all, mentions, none) sets which messages there start a " +
     "turn for you: in a busy project, mentions saves turns. op=project turns a group DM into a project (`name`, " +
@@ -544,19 +544,33 @@ export class BusTool {
         return result(`Extended: ${formatReservation(res.reservation, res.resource)}.`);
       }
       case "projects": {
+        // Top level by default (root projects and group DMs under no project); with `parent`, what is under that project.
         const me = conn.id ?? "";
         const { conversations } = await conn.state();
-        const lines = conversations
+        const listed = conversations
           .filter((c) => c.kind === "project" || (c.kind === "group" && c.members.includes(me)))
-          .filter((c) => !c.archived)
+          .filter((c) => !c.archived);
+        let under: Conversation | undefined;
+        if (params.parent) {
+          const name = params.parent.trim().replace(/^@@/, "").toLowerCase();
+          under = conversations.find((c) => c.kind === "project" && (c.name === name || c.id === params.parent));
+          if (!under) throw new Error(`No project "${params.parent}" that you can see.`);
+        }
+        const lines = listed
+          .filter((c) => (under ? c.parentId === under.id : !c.parentId))
           .map((c) => {
             const mine = c.members.includes(me);
             const level = c.notify?.[me];
+            const children = listed.filter((x) => x.parentId === c.id).length;
             return (
               `${conversationLabel(c)}${c.topic ? ` — ${c.topic}` : ""} · ${c.kind === "project" ? (c.visibility ?? "open") : "group DM"} · ` +
-              `${c.members.length} members${mine ? `, you are in it${level ? ` (notify: ${level})` : ""}` : ""} · ${c.id}`
+              `${c.members.length} members${mine ? `, you are in it${level ? ` (notify: ${level})` : ""}` : ""}` +
+              `${children > 0 ? ` · ${children} sub-group${children === 1 ? "" : "s"} (op=projects parent=\"${conversationLabel(c)}\")` : ""} · ${c.id}`
             );
           });
+        if (under) {
+          return result(lines.length > 0 ? `Under ${conversationLabel(under)}:\n${lines.join("\n")}` : `Nothing is under ${conversationLabel(under)}.`);
+        }
         return result(lines.length > 0 ? lines.join("\n") : "No projects or group DMs yet. Start one with op=write to=\"@@name\".");
       }
       case "parent": {

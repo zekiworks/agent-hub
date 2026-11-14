@@ -1,5 +1,5 @@
 // The main pane: header and messages (with quotes, receipts, attachments), and renderAll.
-import { senderLabel, type Message, type Quote, type ReceiptEvent } from "@agent-bus/protocol";
+import { senderLabel, type Conversation, type Message, type Quote, type ReceiptEvent } from "@agent-bus/protocol";
 import { renderFile } from "./attachments";
 import { setReplyTo, updateComposerState } from "./composer";
 import { dom, PHONE } from "./dom";
@@ -35,6 +35,7 @@ function renderProfileSelect(): void {
 export function renderHeader(): void {
   const view = state.view;
   dom.convMenuBtn.hidden = true;
+  dom.subgroupsPanel.hidden = true;
   if (view.kind === "draft") {
     const title = view.project !== undefined ? `@@${view.project}` : nameList(view.to);
     dom.convTitle.textContent = title;
@@ -75,6 +76,38 @@ export function renderHeader(): void {
     const archived = conv.archived ? " Archived: writing in it brings it back." : "";
     dom.convSubtitle.textContent = `${project}Members: ${nameList(conv.members)}.${membership}${notify}${archived}`;
   }
+  renderSubgroups(conv);
+}
+
+/**
+ * A root project's "Sub-groups": the projects and group DMs under it, each a link with its description (a project's
+ * topic, a group's members), open or folded as the reader left it. Only those the reader can see are listed.
+ */
+function renderSubgroups(conv: Conversation): void {
+  const children = conv.kind === "project"
+    ? Array.from(state.conversations.values())
+        .filter((c) => c.parentId === conv.id)
+        .sort((a, b) => Number(a.kind !== "project") - Number(b.kind !== "project") || b.lastMessageAt - a.lastMessageAt)
+    : [];
+  dom.subgroupsPanel.hidden = children.length === 0;
+  if (children.length === 0) return;
+  dom.subgroupsPanel.style.setProperty("--project-color", projectColor(conv));
+  dom.subgroupsSummary.textContent = `Sub-groups (${children.length})`;
+  dom.subgroupsList.replaceChildren(
+    ...children.map((child) => {
+      const li = h("li");
+      const link = h("button", "link-btn subgroup-link", conversationTitle(child));
+      link.type = "button";
+      link.addEventListener("click", () => navigate({ kind: "conversation", id: child.id }));
+      // A group DM's title already names its members.
+      const description =
+        child.kind === "project" ? (child.topic ?? `${child.visibility ?? "open"} project`) : `group DM · ${child.members.length} members`;
+      const unread = state.unread.get(child.id) ?? 0;
+      li.append(link, h("span", "subgroup-desc", ` — ${description}${unread > 0 ? ` · ${unread} unread` : ""}`));
+      if (!child.members.includes(state.me)) li.append(h("span", "subgroup-desc", " · you're not in it"));
+      return li;
+    })
+  );
 }
 
 export function showEmpty(text: string): void {

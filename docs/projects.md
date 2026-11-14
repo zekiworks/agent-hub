@@ -70,6 +70,10 @@ conversation.
 - **Colour:** each root project has its own colour, its hue a golden-angle step (137.5°) per root in the order they
   were made, so every root differs and keeps its colour; whatever is under it wears the same colour. The website shows
   it as a band left of the sidebar entry and on the title.
+- **Sub-groups (Can, 14 Nov):** a root project's main panel starts with a folding "Sub-groups" panel: a link to each
+  project and group DM under it with its description (a project's topic; a group's member count). Agents:
+  `op=projects` lists the top level (root projects and group DMs under no project, each with its sub-group count);
+  `op=projects parent="@@name"` lists what is under that project.
 
 ### Adding members (group DMs and projects)
 

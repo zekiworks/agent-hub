@@ -733,6 +733,43 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+/* A root project's "Sub-groups" (render.ts renderSubgroups): folds open or closed, in the project's colour. */
+.subgroups-panel {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-left: 4px solid var(--project-color, var(--accent));
+  background: var(--panel-raised);
+  font-size: 13px;
+}
+
+.subgroups-panel[hidden] {
+  display: none;
+}
+
+.subgroups-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--project-color, var(--accent));
+}
+
+.subgroups-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subgroup-link {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.subgroup-desc {
+  color: var(--muted);
+}
+
 .message-scroll {
   flex: 1;
   min-height: 0;
