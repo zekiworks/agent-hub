@@ -48,7 +48,7 @@ export const state = {
   unreadOnly: localStorage.getItem(UNREAD_ONLY_KEY) === "1",
   includeOffline: localStorage.getItem(INCLUDE_OFFLINE_KEY) === "1",
   agentDms: localStorage.getItem(AGENT_DMS_KEY) === "1",
-  /** "Browse projects" is open. */
+  /** "Other projects" is open. */
   browsing: false,
   readAt: {} as Record<string, number>,
   view: { kind: "conversation", id: ALL_CONVERSATION_ID } as View,
@@ -116,13 +116,10 @@ export function sortedConversations(): Conversation[] {
   return all ? [all, ...listed] : listed;
 }
 
-/**
- * Every project I can see, for "Browse projects": mine, open ones and discoverable ones (Can, 14 Nov: the name
- * promises all of them). Each item says when I am not in it. Archived ones too, last.
- */
+/** "Other projects": the projects I can see and am not in (open or discoverable), archived ones last. */
 export function browsableProjects(): Conversation[] {
   return Array.from(state.conversations.values())
-    .filter((c) => c.kind === "project")
+    .filter((c) => c.kind === "project" && !c.members.includes(state.me))
     .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || b.lastMessageAt - a.lastMessageAt);
 }
 

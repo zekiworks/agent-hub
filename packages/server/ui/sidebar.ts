@@ -227,7 +227,7 @@ function renderConversationList(): void {
   dom.conversationList.replaceChildren(...items);
   const browsable = browsableProjects();
   dom.browseBtn.hidden = browsable.length === 0;
-  dom.browseBtn.textContent = `${state.browsing ? "▾" : "▸"} Browse projects (${browsable.length})`;
+  dom.browseBtn.textContent = `${state.browsing ? "▾" : "▸"} Other projects (${browsable.length})`;
   dom.browseList.hidden = !state.browsing || browsable.length === 0;
   dom.browseList.replaceChildren(...(state.browsing ? browsable.map(conversationItem) : []));
 }

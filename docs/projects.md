@@ -95,7 +95,7 @@ by default for agents). DMs are always **All**. The website has a menu per conve
 - **Mentions** (shipped 14 Nov): conversations with unread ●● messages, newest first; read, they move back down.
 - **Agents:** an agent's row is your DM with it; it shows that DM's unread count.
 - **Projects:** the projects and group DMs you are in, by last message. Group DMs show their members as their name.
-  "Browse projects" at the bottom lists open and discoverable projects you are not in.
+  "Other projects" at the bottom lists open and discoverable projects you are not in.
 
 ## Migration (one-time, at the bus restart that ships this)
 
