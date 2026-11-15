@@ -78,9 +78,32 @@ function taskChanged(message: Message, conversation: Conversation): void {
   void refreshInbox();
 }
 
+/**
+ * An address #/m/<n> (Can, 15 Nov: a message by its number without writing a reference to it): becomes that message's
+ * conversation, scrolled to the message. Returns the number, after putting the conversation view in its place.
+ */
+function takeMessageLink(): number | undefined {
+  const match = /^#\/m\/#?(\d{1,9})$/.exec(location.hash);
+  if (!match?.[1]) return undefined;
+  history.replaceState(null, "", "#/c/all");
+  return Number(match[1]);
+}
+
 window.addEventListener("hashchange", () => {
+  const seq = takeMessageLink();
+  if (seq !== undefined) {
+    void showMessage(seq);
+    return;
+  }
   takeDraftLink();
   applyView(parseHash());
+});
+
+// "#…" in the top bar: go to a message by its number.
+dom.gotoBtn.addEventListener("click", () => {
+  const answer = prompt("Go to message number:");
+  const seq = Number((answer ?? "").trim().replace(/^#/, ""));
+  if (Number.isSafeInteger(seq) && seq > 0) void showMessage(seq);
 });
 
 /** Opens the conversation of message `seq` (loading earlier pages as needed), scrolls to it and flashes it. */
@@ -236,11 +259,13 @@ async function boot(): Promise<void> {
     onFrame: handleFrame,
   });
   restoreAddress();
+  const linkedSeq = takeMessageLink();
   takeDraftLink();
   // Phones opened without a conversation in the address start on the conversation list.
   const startOnList = location.hash === "";
   applyView(parseHash());
   if (startOnList) setPhoneList(true);
+  if (linkedSeq !== undefined) void showMessage(linkedSeq);
   loadDraft();
   if (!state.me) askProfile();
   else {
