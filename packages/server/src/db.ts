@@ -89,11 +89,10 @@ interface ParticipantRow {
 /** Column for queries over `conversations c`: the parent project's name. */
 const PARENT_NAME = "(SELECT p.name FROM conversations p WHERE p.id = c.parent_id) AS parent_name";
 
-/** A member of a conversation, as stored: their notification level and whether they pinned it. */
+/** A member of a conversation, as stored: their notification level. */
 interface MemberRow {
   participant_id: string;
   notify: string | null;
-  pinned: number | null;
 }
 
 interface ConversationRow {
@@ -171,8 +170,6 @@ CREATE TABLE IF NOT EXISTS conversation_members (
   participant_id TEXT NOT NULL,
   -- null: "all"; else "mentions" or "none" (NotifyLevel)
   notify TEXT,
-  -- 1: this member pinned it (sorted first in their sidebar)
-  pinned INTEGER,
   PRIMARY KEY (conversation_id, participant_id)
 );
 CREATE INDEX IF NOT EXISTS conversation_members_participant
@@ -182,6 +179,15 @@ CREATE INDEX IF NOT EXISTS conversation_members_participant
 CREATE TABLE IF NOT EXISTS conversation_aliases (
   old_id TEXT PRIMARY KEY,
   new_id TEXT NOT NULL
+);
+
+-- Who pinned which conversation: it sorts first in their sidebar. Anyone who can see a project may pin it, member or
+-- not (Can, 15 Nov: pinned from "Other projects").
+CREATE TABLE IF NOT EXISTS pins (
+  participant_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (participant_id, conversation_id)
 );
 
 -- A conversation's checklist (Checklist in the protocol): its owner's markdown and people's ticks, by item text.
@@ -362,9 +368,12 @@ export class BusDatabase {
     }
     this.seed(humans, now);
     this.migrateToProjects(now);
-    // Databases created before pins lack the column (null: not pinned).
-    if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversation_members)").all().some((c) => c.name === "pinned")) {
-      this.db.exec("ALTER TABLE conversation_members ADD COLUMN pinned INTEGER");
+    // Pins were a members' column for a short while (15 Nov, 11:30): carried over to the pins table, then unused.
+    if (this.db.query<{ name: string }, []>("PRAGMA table_info(conversation_members)").all().some((c) => c.name === "pinned")) {
+      this.db
+        .query("INSERT OR IGNORE INTO pins (participant_id, conversation_id, created_at) SELECT participant_id, conversation_id, ?1 FROM conversation_members WHERE pinned = 1")
+        .run(now);
+      this.db.exec("UPDATE conversation_members SET pinned = NULL WHERE pinned IS NOT NULL");
     }
     // Databases created before project hierarchy lack the column (null: a root).
     if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "parent_id")) {
@@ -750,12 +759,19 @@ export class BusDatabase {
   private membersOf(conversationId: string): MemberRow[] {
     return this.db
       .query<MemberRow, [string]>(
-        "SELECT participant_id, notify, pinned FROM conversation_members WHERE conversation_id = ?1 ORDER BY participant_id"
+        "SELECT participant_id, notify FROM conversation_members WHERE conversation_id = ?1 ORDER BY participant_id"
       )
       .all(conversationId);
   }
 
-  private toConversation(row: ConversationRow, members: MemberRow[]): Conversation {
+  private pinsOf(conversationId: string): string[] {
+    return this.db
+      .query<{ participant_id: string }, [string]>("SELECT participant_id FROM pins WHERE conversation_id = ?1 ORDER BY participant_id")
+      .all(conversationId)
+      .map((p) => p.participant_id);
+  }
+
+  private toConversation(row: ConversationRow, members: MemberRow[], pins: string[]): Conversation {
     const kind: ConversationKind = row.kind === "dm" || row.kind === "group" || row.kind === "project" ? row.kind : "all";
     const notify: Record<string, "mentions" | "none"> = {};
     for (const m of members) if (m.notify === "mentions" || m.notify === "none") notify[m.participant_id] = m.notify;
@@ -771,7 +787,7 @@ export class BusDatabase {
       ...(row.parent_id ? { parentId: row.parent_id } : {}),
       ...(row.parent_id && row.parent_name ? { parentName: row.parent_name } : {}),
       ...(Object.keys(notify).length > 0 ? { notify } : {}),
-      ...(members.some((m) => m.pinned) ? { pinnedBy: members.filter((m) => m.pinned).map((m) => m.participant_id) } : {}),
+      ...(pins.length > 0 ? { pinnedBy: pins } : {}),
       createdAt: row.created_at,
       lastMessageAt: row.last_message_at,
     };
@@ -785,7 +801,7 @@ export class BusDatabase {
     const row = this.db
       .query<ConversationRow, [string]>(`SELECT c.*, ${PARENT_NAME} FROM conversations c WHERE c.id = ?1`)
       .get(alias?.new_id ?? id);
-    return row ? this.toConversation(row, this.membersOf(row.id)) : null;
+    return row ? this.toConversation(row, this.membersOf(row.id), this.pinsOf(row.id)) : null;
   }
 
   /** Every conversation: `all` first, then by lastMessageAt desc. Who may see which is the server's business. */
@@ -799,14 +815,20 @@ export class BusDatabase {
     const members = new Map<string, MemberRow[]>();
     for (const m of this.db
       .query<MemberRow & { conversation_id: string }, []>(
-        "SELECT conversation_id, participant_id, notify, pinned FROM conversation_members ORDER BY participant_id"
+        "SELECT conversation_id, participant_id, notify FROM conversation_members ORDER BY participant_id"
       )
       .all()) {
       const list = members.get(m.conversation_id);
       if (list) list.push(m);
       else members.set(m.conversation_id, [m]);
     }
-    return rows.map((row) => this.toConversation(row, members.get(row.id) ?? []));
+    const pins = new Map<string, string[]>();
+    for (const p of this.db
+      .query<{ conversation_id: string; participant_id: string }, []>("SELECT conversation_id, participant_id FROM pins ORDER BY participant_id")
+      .all()) {
+      pins.set(p.conversation_id, [...(pins.get(p.conversation_id) ?? []), p.participant_id]);
+    }
+    return rows.map((row) => this.toConversation(row, members.get(row.id) ?? [], pins.get(row.id) ?? []));
   }
 
   /**
@@ -946,6 +968,7 @@ export class BusDatabase {
       this.db.query("DELETE FROM messages WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_members WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM checklists WHERE conversation_id = ?1").run(conversationId);
+      this.db.query("DELETE FROM pins WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_aliases WHERE new_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversations WHERE id = ?1 AND kind = 'project'").run(conversationId);
       return n;
@@ -990,13 +1013,13 @@ export class BusDatabase {
     return shared;
   }
 
-  /** A member pins (or unpins) a conversation for themselves. Returns whether they are a member. */
-  setPinned(conversationId: string, participantId: string, pinned: boolean): boolean {
-    return (
+  /** Someone pins (or unpins) a conversation for themselves; whether they may is the caller's check. */
+  setPinned(conversationId: string, participantId: string, pinned: boolean): void {
+    if (pinned) {
       this.db
-        .query("UPDATE conversation_members SET pinned = ?3 WHERE conversation_id = ?1 AND participant_id = ?2")
-        .run(conversationId, participantId, pinned ? 1 : null).changes > 0
-    );
+        .query("INSERT OR IGNORE INTO pins (participant_id, conversation_id, created_at) VALUES (?1, ?2, ?3)")
+        .run(participantId, conversationId, Date.now());
+    } else this.db.query("DELETE FROM pins WHERE participant_id = ?1 AND conversation_id = ?2").run(participantId, conversationId);
   }
 
   setArchived(conversationId: string, archived: boolean): void {

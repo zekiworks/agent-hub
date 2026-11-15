@@ -1964,7 +1964,8 @@ ul.md-list ul.md-list { list-style: circle; }
 
 /* 📌 on a project of mine (sidebar.ts pinButton): on hover, and always once pinned or on touch screens. Over the
  * entry's top right; its time hides while the pin shows there. */
-#conversation-list li {
+#conversation-list li,
+#browse-list li {
   position: relative;
 }
 
@@ -1984,6 +1985,7 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 #conversation-list li:hover .pin-btn,
+#browse-list li:hover .pin-btn,
 .pin-btn:focus-visible {
   opacity: 0.6;
 }
@@ -1999,6 +2001,7 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 #conversation-list li:hover .side-item-time,
+#browse-list li:hover .side-item-time,
 #conversation-list li:has(.pin-btn.pinned) .side-item-time {
   visibility: hidden;
 }

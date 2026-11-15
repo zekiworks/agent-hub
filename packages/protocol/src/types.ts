@@ -120,7 +120,7 @@ export interface Conversation {
   parentName?: string;
   /** Members whose notification setting is not `all`. */
   notify?: Record<string, Exclude<NotifyLevel, "all">>;
-  /** Members who pinned it: it sorts first in their own sidebar (Can, 15 Nov). */
+  /** Who pinned it (members or not): it sorts first in their own sidebar (Can, 15 Nov). */
   pinnedBy?: string[];
   /** A discoverable project the reader is not in: its name, topic and members only, not its messages. */
   preview?: true;

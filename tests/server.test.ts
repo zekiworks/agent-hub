@@ -638,7 +638,7 @@ describe("delivery", () => {
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@benchmarks}", text: "x" })).status).toBe(400);
   });
 
-  test("pins are per member: a member pins a project for themselves; others' lists are unchanged", async () => {
+  test("pins are per person: anyone who can see a project pins it for themselves, member or not", async () => {
     await joinPath("/tmp/x/alpha");
     const project = await send({ from: "carol", to: "@@pinme", text: "x" });
     await send({ from: "uma", conversationId: project.conversation.id, text: "me too" });
@@ -646,9 +646,12 @@ describe("delivery", () => {
     expect((await answeredConversation(await pin(true))).pinnedBy).toEqual(["carol"]);
     expect((await answeredConversation(await pin(true, "uma"))).pinnedBy).toEqual(["carol", "uma"]);
     expect((await answeredConversation(await pin(false))).pinnedBy).toEqual(["uma"]);
-    // Members only; DMs and @all have nothing to pin.
+    // Not a member (pinned from "Other projects"): allowed; a project the person cannot see: not.
     const other = await send({ from: "carol", to: "@@other", text: "x" });
-    expect((await pin(true, "uma", other.conversation.id)).status).toBe(403);
+    expect((await answeredConversation(await pin(true, "uma", other.conversation.id))).pinnedBy).toEqual(["uma"]);
+    await postJson(bus, `/api/conversations/${other.conversation.id}/project`, { from: "carol", visibility: "private" });
+    expect((await pin(true, "uma", other.conversation.id)).status).toBe(404);
+    // DMs and @all have nothing to pin.
     const dm = await send({ from: "carol", to: "@alpha", text: "x" });
     expect((await pin(true, "carol", dm.conversation.id)).status).toBe(400);
     expect((await pin("yes" as unknown as boolean)).status).toBe(400);

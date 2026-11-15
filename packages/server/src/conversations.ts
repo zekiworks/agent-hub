@@ -153,7 +153,15 @@ export async function handleConversationRoute(
       return { conversation: leave(ctx, conversation, writer.id) };
     }
     case "pin": {
-      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      // Not only members: a project seen under "Other projects" can be pinned too (Can, 15 Nov).
+      if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+      const writer = ctx.hub.knownParticipant(body.from.trim().toLowerCase());
+      if (!writer) throw new HttpError(400, `Unknown participant "${body.from}"`);
+      ctx.checkWriter(req, writer);
+      const conversation = db.getConversation(id);
+      if (!conversation || !canSee(ctx, conversation, { id: writer.id, kind: writer.kind === "human" ? "human" : "agent" })) {
+        throw new HttpError(404, `Unknown conversation "${id}"`);
+      }
       const pinned = (body as { pinned?: unknown }).pinned;
       if (typeof pinned !== "boolean") throw new HttpError(400, "pinned must be true or false");
       if (conversation.kind !== "project" && conversation.kind !== "group") throw new HttpError(400, "Projects and group DMs can be pinned");

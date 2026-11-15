@@ -197,11 +197,11 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   button.title = conv.kind === "all" ? "Delivered to every agent" : `Members: ${nameList(conv.members)}`;
   button.addEventListener("click", () => navigate({ kind: "conversation", id: conv.id }));
   li.append(button);
-  if (conv.kind === "project" && conv.members.includes(state.me)) li.append(pinButton(conv));
+  if (conv.kind === "project") li.append(pinButton(conv));
   return li;
 }
 
-/** 📌 on a project of mine: a toggle that sorts it first in my Projects (kept on the bus, so on every device). */
+/** 📌 on a project, mine or not: a toggle that sorts it first in my Projects (kept on the bus, so on every device). */
 function pinButton(conv: Conversation): HTMLButtonElement {
   const pinned = pinnedByMe(conv);
   const pin = h("button", pinned ? "pin-btn pinned" : "pin-btn", "📌");

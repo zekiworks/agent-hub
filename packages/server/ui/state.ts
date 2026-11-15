@@ -110,14 +110,17 @@ export function pinnedByMe(conv: Conversation): boolean {
   return !!conv.pinnedBy?.includes(state.me);
 }
 
-/** The Projects list: the projects I pinned (Can, 15 Nov: first, no section of their own), then `all`, then the rest. */
+/**
+ * The Projects list: the projects I pinned, mine or not (Can, 15 Nov: first, no section of their own), then `all`,
+ * then my other projects.
+ */
 export function sortedConversations(): Conversation[] {
   const all = state.conversations.get(ALL_CONVERSATION_ID);
-  const mine = Array.from(state.conversations.values())
-    .filter((c) => c.kind === "project" && !c.archived && c.members.includes(state.me))
+  const projects = Array.from(state.conversations.values())
+    .filter((c) => c.kind === "project" && !c.archived)
     .sort(byLast);
-  const pinned = mine.filter(pinnedByMe);
-  const rest = mine.filter((c) => !pinnedByMe(c));
+  const pinned = projects.filter(pinnedByMe);
+  const rest = projects.filter((c) => !pinnedByMe(c) && c.members.includes(state.me));
   return [...pinned, ...(all ? [all] : []), ...rest];
 }
 
@@ -142,7 +145,7 @@ export function otherGroups(): Conversation[] {
 /** "Other projects": the projects I can see and am not in (open or discoverable), archived ones last. */
 export function browsableProjects(): Conversation[] {
   return Array.from(state.conversations.values())
-    .filter((c) => c.kind === "project" && !c.members.includes(state.me))
+    .filter((c) => c.kind === "project" && !c.members.includes(state.me) && !pinnedByMe(c))
     .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || b.lastMessageAt - a.lastMessageAt);
 }
 
