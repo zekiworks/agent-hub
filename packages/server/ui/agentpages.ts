@@ -40,3 +40,23 @@ export function registerAgentPages(names: readonly string[]): void {
     });
   }
 }
+
+/** At most one pointerleave notice per frame this often (ms). */
+const POINTERLEAVE_EVERY_MS = 250;
+let lastPointerleave = 0;
+
+// A pointer jumping straight out of a frame onto the website leaves the page inside with a stuck hover: it gets no
+// mouseleave, and the frame element's own pointer events are unreliable. The page's pointermove is not, so while the
+// pointer moves over the website, shown pages hear {type: "agent-bus:pointerleave"} (gpudash, 15 Nov).
+document.addEventListener(
+  "pointermove",
+  () => {
+    const now = Date.now();
+    if (now - lastPointerleave < POINTERLEAVE_EVERY_MS) return;
+    lastPointerleave = now;
+    for (const frame of document.querySelectorAll<HTMLIFrameElement>("iframe.agent-page")) {
+      if (frame.offsetParent !== null) frame.contentWindow?.postMessage({ type: "agent-bus:pointerleave" }, "*");
+    }
+  },
+  { passive: true }
+);

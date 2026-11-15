@@ -115,8 +115,10 @@ reading, finishing and pressing Send.
   box shows. Anything else is ignored.
 - From outside the website (the page opened on its own): a link `https://BUS/#/to/<id>?draft=<url-encoded text>`, same
   rules. Opened while signed out, the address is kept through signing in.
-- The website does not post into frames yet; it could (the person's id, theme, the conversation on the left), with
-  only what the page may know.
+- To the frame: `{type: "agent-bus:pointerleave"}` while the pointer moves over the website (at most one per 250 ms),
+  since a pointer jumping straight out of a frame gives the page no mouseleave and leaves its hover stuck (gpudash,
+  15 Nov). Check `event.source === parent`. More could follow (the person's id, theme, the conversation on the left),
+  with only what the page may know.
 
 On bariton the bus runs with `--ext gpudash=http://127.0.0.1:3420` (Can, 15 Nov); gpudash's narrow layout and
 relative URLs are in its own project.
