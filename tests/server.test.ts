@@ -367,6 +367,9 @@ describe("delivery", () => {
     // A reply answers its message's author, whoever wrote last.
     await send({ from: "carol", replyToSeq: asked.message.seq, text: "again" });
     expect(await both()).toEqual({ alpha: true, beta: false });
+    // "@all" in the text wakes every agent of the conversation.
+    await send({ from: "carol", to: "@all", text: "@all stop your runs" });
+    expect(await both()).toEqual({ alpha: true, beta: true });
     // A DM wakes its agent.
     await send({ from: "carol", to: "@beta", text: "dm" });
     expect((await beta.client.take("deliver")).wake).toBe(true);

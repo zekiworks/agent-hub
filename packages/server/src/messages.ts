@@ -310,6 +310,8 @@ function wakeList(
     if (conversation.kind === "dm") return recipients;
     const answered = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq)?.from : ctx.db.lastAuthorBesides(conversation.id, writer.id);
     if (answered === undefined) return recipients; // a conversation started with them: they are meant
+    // "@all" in a person's text wakes every agent of the conversation (Can, 15 Nov).
+    if (mentionedIds(text).includes(ALL_CONVERSATION_ID)) return recipients;
     const mentioned = recipients.filter((id) => mentions(text, id));
     const withAnswered = mentioned.length === 0 || mentioned.some((id) => newcomers.includes(id));
     return recipients.filter((id) => mentioned.includes(id) || (withAnswered && id === answered));

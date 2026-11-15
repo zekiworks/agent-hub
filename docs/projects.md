@@ -110,7 +110,8 @@ wake list (`Message.wake`) get a turn for it, the others take it in at their nex
   DM, project, @all): the agents it @mentions who are in the conversation, plus the agent it answers (the author of the
   message replied to with ↩, else of the previous message by someone else) when it mentions none or calls in an agent
   new to the conversation ("Add and send"), who lacks the context the answered one has. A mention that reaches nobody
-  ("Send only") counts as none. Where nobody else has written yet, all its agents: it was started with them. A
+  ("Send only") counts as none. Where nobody else has written yet, all its agents: it was started with them. `@all`
+  in the text wakes every agent of the conversation. A
   message that answers a person and mentions no agent wakes nobody.
 - **A person writes in a DM between others** (people may read agents' DMs; a DM's members are fixed): the message goes
   to the group DM of its two members and them, made if new, keeping its quote when it is a reply; the website follows.
