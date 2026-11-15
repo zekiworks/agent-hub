@@ -16,7 +16,7 @@ agent is back; after that it expires and the writer is told.
 
 Conversations, modelled on Google Chat ([details](docs/projects.md)): `@x` is a DM (two members, fixed, private to
 them), `@{a,b}` the group DM with exactly those members, `@@name` a project (named, with a topic; open, discoverable
-or private), and `@all`. Members add others to group DMs and projects (an agent added first gets the last 5 messages)
+or private), `#name` a room (a project for sub-work, optionally under one), and `@all`. Members add others to group DMs and projects (an agent added first gets the last 5 messages)
 and leave them; each member may mute one (notify: none). A conversation is
 its id, so its members can change without it splitting or merging.
 

@@ -4,7 +4,7 @@ import type { AgentSettings, Conversation, ParticipantKind, Quote, Receipt } fro
 export type ParsedAddress =
   | { kind: "all" }
   | { kind: "ids"; ids: string[]; project?: string }
-  | { kind: "project"; name: string };
+  | { kind: "project"; name: string; room?: true };
 
 const SLUG = "[a-z0-9][a-z0-9_-]*";
 /** One slug, or `base@qualifier` for an agent whose folder (or name) is already taken. Max 48 chars. */
@@ -18,6 +18,8 @@ const MAX_ID_CHARS = 48;
  */
 export function parseAddress(input: string): ParsedAddress {
   if (input.trim().startsWith("@@")) return { kind: "project", name: projectName(input.trim().slice(2)) };
+  // "#name": a room (Can, 15 Nov). A name of digits only is a message number, never a room.
+  if (input.trim().startsWith("#")) return { kind: "project", name: roomName(input.trim().slice(1)), room: true };
   const raw = input.trim().replace(/^@/, "");
   if (raw.toLowerCase() === "all") return { kind: "all" };
   const inner = raw.startsWith("{") && raw.endsWith("}") ? raw.slice(1, -1) : raw;
@@ -43,6 +45,18 @@ export function parseAddress(input: string): ParsedAddress {
 }
 
 /** A project name as given (lowercased): the agent id rules, a slug of at most 48 characters; throws otherwise. */
+/** A room's name: a project name with at least one letter, so "#8351" stays a message reference. */
+export function roomName(input: string): string {
+  const name = projectName(input);
+  if (!/[a-z]/.test(name)) throw new Error(`Invalid room name "${input}": it needs a letter ("#${name}" is a message number)`);
+  return name;
+}
+
+/** How a project or room is addressed: "#name" for a room, "@@name" for a project. */
+export function namedAddress(conversation: Pick<Conversation, "name" | "room">): string {
+  return conversation.room ? `#${conversation.name}` : `@@${conversation.name}`;
+}
+
 export function projectName(input: string): string {
   const name = input.trim().toLowerCase();
   if (!new RegExp(`^${SLUG}$`).test(name) || name.length > MAX_ID_CHARS) {
@@ -92,14 +106,14 @@ export function formatAddress(ids: readonly string[]): string {
  */
 export function replyAddress(conversation: Conversation, recipientId: string): string {
   if (conversation.kind === "all") return "@all";
-  if (conversation.kind === "project" && conversation.name) return `@@${conversation.name}`;
+  if (conversation.kind === "project" && conversation.name) return namedAddress(conversation);
   return groupAddress(conversation, conversation.members.filter((id) => id !== recipientId));
 }
 
 /** How a conversation is named in delivery headers and tool results: "@all", "@@project", or its members. */
-export function conversationLabel(conversation: Pick<Conversation, "kind" | "members" | "name" | "parentName">): string {
+export function conversationLabel(conversation: Pick<Conversation, "kind" | "members" | "name" | "parentName" | "room">): string {
   if (conversation.kind === "all") return "@all";
-  if (conversation.kind === "project" && conversation.name) return `@@${conversation.name}`;
+  if (conversation.kind === "project" && conversation.name) return namedAddress(conversation);
   return groupAddress(conversation, conversation.members);
 }
 

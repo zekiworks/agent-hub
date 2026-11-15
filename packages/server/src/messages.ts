@@ -84,10 +84,14 @@ function conversationFor(ctx: BusContext, writer: ParticipantRecord, parsed: Ret
   }
   if (parsed.kind === "project") {
     const existing = db.projectByName(parsed.name);
+    // A room is only "#name", a project only "@@name" (Can, 15 Nov): one name, one place, one way to write it.
+    if (existing && !!existing.room !== !!parsed.room) {
+      throw new HttpError(409, existing.room ? `"${parsed.name}" is a room: write to #${parsed.name}` : `"${parsed.name}" is a project: write to @@${parsed.name}`);
+    }
     // Checked only when creating: anyone may write to (and join) an existing open project, e.g. @@compactor.
     const name = existing ? parsed.name : checkedProjectName(ctx, parsed.name, writer.id);
     const project = existing ?? null;
-    if (!project) return db.createProject(name, writer.id, now);
+    if (!project) return db.createProject(name, writer.id, now, parsed.room === true);
     if (!project.members.includes(writer.id)) {
       if (project.visibility !== "open") throw new HttpError(403, `Project "${name}" is not open: ask a member to add @${writer.id}`);
       return addMembers(ctx, project, [writer.id]);

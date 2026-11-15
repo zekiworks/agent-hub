@@ -158,7 +158,7 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   const title = h("span", "side-item-title", conversationTitle(conv));
   const what =
     conv.kind === "project"
-      ? (conv.topic ?? `${conv.visibility ?? "open"} project`)
+      ? (conv.topic ?? `${conv.visibility ?? "open"} ${conv.room ? "room" : "project"}`)
       : conv.kind === "group"
         ? "group DM"
         : conv.kind === "dm"

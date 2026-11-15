@@ -115,6 +115,7 @@ interface ConversationRow {
   parent_name?: string | null;
   created_at: number;
   last_message_at: number;
+  room?: number | null;
 }
 
 interface MessageRow {
@@ -394,6 +395,10 @@ export class BusDatabase {
         .query("INSERT OR IGNORE INTO pins (participant_id, conversation_id, created_at) SELECT participant_id, conversation_id, ?1 FROM conversation_members WHERE pinned = 1")
         .run(now);
       this.db.exec("UPDATE conversation_members SET pinned = NULL WHERE pinned IS NOT NULL");
+    }
+    // Databases created before rooms lack the column (null: a project addressed as @@name).
+    if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "room")) {
+      this.db.exec("ALTER TABLE conversations ADD COLUMN room INTEGER");
     }
     // Databases created before project hierarchy lack the column (null: a root).
     if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "parent_id")) {
@@ -806,6 +811,7 @@ export class BusDatabase {
       ...(row.name !== null ? { name: row.name } : {}),
       ...(row.topic !== null ? { topic: row.topic } : {}),
       ...(kind === "project" ? { visibility: toVisibility(row.visibility) } : {}),
+      ...(row.room ? { room: true as const } : {}),
       ...(row.archived ? { archived: true as const } : {}),
       ...(row.archived === 2 ? { archivedIdle: true as const } : {}),
       ...(row.parent_id ? { parentId: row.parent_id } : {}),
@@ -903,8 +909,16 @@ export class BusDatabase {
   }
 
   /** A new open project `name` with `creator` as its only member. */
-  createProject(name: string, creator: string, now = Date.now()): Conversation {
-    return this.createConversation("project", [creator], now, { name, visibility: "open" });
+  createProject(name: string, creator: string, now = Date.now(), room = false): Conversation {
+    const created = this.createConversation("project", [creator], now, { name, visibility: "open" });
+    if (!room) return created;
+    this.setRoom(created.id);
+    return this.getConversation(created.id) as Conversation;
+  }
+
+  /** Makes a project a room: addressed as "#name" from now on. */
+  setRoom(conversationId: string): void {
+    this.db.query("UPDATE conversations SET room = 1 WHERE id = ?1 AND kind = 'project'").run(conversationId);
   }
 
   private createConversation(

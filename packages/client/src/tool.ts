@@ -35,6 +35,7 @@ export interface MessageBusToolParams {
     | "leave"
     | "notify"
     | "project"
+    | "room"
     | "parent"
     | "tasks"
     | "accept"
@@ -87,7 +88,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     type: "string",
     enum: [
       "reply", "write", "send", "set", "inbox", "show", "history", "search",
-      "projects", "invite", "leave", "notify", "project", "parent",
+      "projects", "invite", "leave", "notify", "project", "room", "parent",
       "tasks", "accept", "done", "reject", "withdraw",
       "resources", "servers", "reserve", "release", "extend", "mode", "subscribe", "unsubscribe",
     ],
@@ -128,7 +129,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   { name: "mode", type: "string", enum: ["shared", "private"], description: '"shared" (default: others may send requests to your servers) or "private" (reserve, mode)' },
   { name: "ids", type: "string[]", description: "participant ids to add (invite)" },
   { name: "level", type: "string", enum: ["all", "mentions", "none"], description: "notify: which messages there start a turn for you" },
-  { name: "name", type: "string", description: "project: a name for a group DM turned into a project" },
+  { name: "name", type: "string", description: "project, room: a name for a group DM turned into a project or room" },
   { name: "topic", type: "string", description: "project: a one-line topic" },
   { name: "visibility", type: "string", enum: ["open", "discoverable", "private"], description: "project: who can find and join it" },
   { name: "parent", type: "string", description: 'parent: the root project to put it under ("@@name"), or "none" for a root. projects: list what is under this project instead of the top level' },
@@ -180,7 +181,8 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "message's conversation, so you never need to work out an address. " +
     "op=write: start or continue a conversation: `to` is \"@all\", \"@id\" (your DM with it), \"@{id1,id2}\" (the group " +
     "DM with exactly them; \"@{@@project,id1,id2}\" for the one under that root project, made there if new) or " +
-    "\"@@name\" (project `name`: you join it if it is open; a new name creates it), plus " +
+    "\"@@name\" (project `name`: you join it if it is open; a new name creates it) or \"#name\" (room `name`, a " +
+    "named conversation, often under a project; the same joining and creating), plus " +
     "`message` and/or `files` (local paths). Naming someone in a message's text does not add them to a conversation. " +
     "op=send: the same as write, with `files` required. Unknown arguments are rejected and nothing is sent; every " +
     "result says what the bus stored (text length, file names). " +
@@ -201,8 +203,9 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "op=invite (`to` or `message_id` for the conversation, `ids`) adds others to a group DM or project; they get its " +
     "last 5 messages. op=leave leaves one. op=notify (`level`: none) mutes a conversation for you: no message there " +
     "wakes you, even one that lists you. op=project turns a group DM into a project (`name`, " +
-    "optional `topic`, `visibility`) or changes a project's topic and visibility. op=parent (`parent` \"@@name\" or " +
-    "\"none\") puts a project or group DM under a root project (one level only); it then wears that project's colour on the website. " +
+    "optional `topic`, `visibility`) or changes a project's topic and visibility. op=room turns a group DM " +
+    "into a room (`name`, optional `parent` \"@@project\"; it stays private). op=parent (`parent` \"@@name\" or " +
+    "\"none\") puts a project, room or group DM under a root project (one level only); it then wears that project's colour on the website. " +
     "Shared GPUs (experimental; instead of claim/release messages; shared by default): op=servers lists the model " +
     "servers running now (model, URL, who runs it, shared or private): for light use just send requests to a shared " +
     "one instead of starting your own; for sustained heavy use tell its owner first; leave private ones alone. " +
@@ -683,6 +686,13 @@ export class BusTool {
         const parent = res.conversation.parentId;
         return result(`${conversationLabel(res.conversation)} is ${parent ? `now under ${params.parent}` : "a root again"} (${res.conversation.id}).`);
       }
+      case "room": {
+        if (!params.name) throw new Error('room needs `name` (the room\'s #name), and `to` or `message_id` for the group DM.');
+        const conversation = await this.conversationOf(params);
+        const res = await conn.conversationAction(conversation.id, "room", { name: params.name, ...(params.parent ? { parent: params.parent } : {}) });
+        const c = res.conversation;
+        return result(`Now room ${conversationLabel(c)}${c.parentName ? ` under @@${c.parentName}` : ""}, private (${c.id}). Write to it as ${conversationLabel(c)}.`);
+      }
       case "invite":
       case "leave":
       case "notify":
@@ -734,10 +744,11 @@ export class BusTool {
     const me = this.conn.id ?? "";
     const { conversations } = await this.conn.state();
     const to = params.to.trim();
-    if (to.startsWith("@@")) {
-      const name = to.slice(2).toLowerCase();
-      const project = conversations.find((c) => c.kind === "project" && c.name === name);
-      if (!project) throw new Error(`No project "${name}" that you can see.`);
+    if (to.startsWith("@@") || to.startsWith("#")) {
+      const room = to.startsWith("#");
+      const name = to.slice(room ? 1 : 2).toLowerCase();
+      const project = conversations.find((c) => c.kind === "project" && c.name === name && !!c.room === room);
+      if (!project) throw new Error(`No ${room ? "room" : "project"} "${to}" that you can see.`);
       return project;
     }
     const parsed = parseAddress(to);

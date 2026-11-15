@@ -2,7 +2,9 @@
 // messages), leaving, notifications, turning a group DM into a project, a project's settings, archiving. See
 // docs/projects.md.
 import {
+  namedAddress,
   projectName,
+  roomName,
   type AddMembersRequest,
   type ArchiveRequest,
   type Conversation,
@@ -118,6 +120,28 @@ export function checkedProjectName(ctx: BusContext, input: string, by: string): 
   return name;
 }
 
+/**
+ * Puts `conversation` under project `raw` ("@@name", "#name" is refused, or its id), or makes it a root (null/""). One
+ * level (Can, 14 Nov): only root projects are parents, rooms are never parents, and one with children stays a root.
+ */
+function setParentChecked(ctx: BusContext, conversation: Conversation, raw: unknown): void {
+  const { db } = ctx;
+  if (raw === null || raw === undefined || raw === "") {
+    db.setParent(conversation.id, null);
+    return;
+  }
+  if (typeof raw !== "string") throw new HttpError(400, "parent must be a project (\"@@name\" or its id) or null");
+  const parent = raw.startsWith("@@") ? db.projectByName(raw.slice(2).toLowerCase()) : raw.startsWith("#") ? null : db.getConversation(raw);
+  if (!parent || parent.kind !== "project") throw new HttpError(404, `No project ${raw}`);
+  if (parent.room) throw new HttpError(409, `${namedAddress(parent)} is a room; rooms go under projects, not under rooms`);
+  if (parent.id === conversation.id) throw new HttpError(409, "A project cannot be its own parent");
+  if (parent.parentId) throw new HttpError(409, `${raw} is itself under a project; only root projects are parents`);
+  if (db.listConversations().some((c) => c.parentId === conversation.id)) {
+    throw new HttpError(409, "This project has projects, rooms or groups under it, so it stays a root");
+  }
+  db.setParent(conversation.id, parent.id);
+}
+
 /** The participant `body.from`, checked as the request's writer, and conversation `id` with it as a member. */
 function memberRequest(ctx: BusContext, req: Request, body: Record<string, unknown>, id: string) {
   if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
@@ -130,7 +154,7 @@ function memberRequest(ctx: BusContext, req: Request, body: Record<string, unkno
   return { writer, conversation };
 }
 
-/** POST /api/conversations/:id/{members,leave,notify,pin,project,parent,archive,delete}; null for any other path. */
+/** POST /api/conversations/:id/{members,leave,notify,pin,project,room,parent,archive,delete}; null for any other path. */
 export async function handleConversationRoute(
   ctx: BusContext,
   req: Request,
@@ -208,23 +232,29 @@ export async function handleConversationRoute(
     case "parent": {
       const { conversation } = memberRequest(ctx, req, body, id);
       if (conversation.kind !== "project" && conversation.kind !== "group") {
-        throw new HttpError(400, "Only projects and group DMs go under a project");
+        throw new HttpError(400, "Only projects, rooms and group DMs go under a project");
       }
-      const raw = (body as Partial<ParentRequest>).parent;
-      if (raw === null || raw === undefined || raw === "") {
-        db.setParent(conversation.id, null);
-      } else {
-        if (typeof raw !== "string") throw new HttpError(400, "parent must be a project (\"@@name\" or its id) or null");
-        const parent = raw.startsWith("@@") ? db.projectByName(raw.slice(2).toLowerCase()) : db.getConversation(raw);
-        if (!parent || parent.kind !== "project") throw new HttpError(404, `No project ${raw}`);
-        // One level (Can, 14 Nov): only root projects are parents, and a project with children stays a root.
-        if (parent.id === conversation.id) throw new HttpError(409, "A project cannot be its own parent");
-        if (parent.parentId) throw new HttpError(409, `${raw} is itself under a project; only root projects are parents`);
-        if (db.listConversations().some((c) => c.parentId === conversation.id)) {
-          throw new HttpError(409, "This project has projects or groups under it, so it stays a root");
-        }
-        db.setParent(conversation.id, parent.id);
+      setParentChecked(ctx, conversation, (body as Partial<ParentRequest>).parent);
+      ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "room": {
+      // A group DM becomes a room (Can, 15 Nov): a name ("#name"), optionally a parent project; it stays private.
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      if (conversation.kind !== "group") throw new HttpError(400, "Only a group DM becomes a room");
+      const request = body as { name?: unknown; parent?: unknown };
+      if (typeof request.name !== "string" || request.name.trim() === "") throw new HttpError(400, "A room needs a name");
+      let name: string;
+      try {
+        name = roomName(request.name.replace(/^#/, ""));
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
       }
+      if (db.projectByName(name)) throw new HttpError(409, `"${name}" is taken by a project or room already`);
+      checkedProjectName(ctx, name, writer.id);
+      if (request.parent !== undefined && request.parent !== null && request.parent !== "") setParentChecked(ctx, conversation, request.parent);
+      db.updateProject(conversation.id, { name, visibility: "private" });
+      db.setRoom(conversation.id);
       ctx.hub.conversationsChanged();
       return { conversation: db.getConversation(conversation.id) ?? conversation };
     }

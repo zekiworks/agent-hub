@@ -79,7 +79,7 @@ function parentSelect(conv: Conversation): HTMLElement {
   }
   const options: Array<[string, string]> = [["", conv.kind === "project" ? "None: a root project" : "None"]];
   for (const p of Array.from(state.conversations.values())
-    .filter((c) => c.kind === "project" && !c.preview && !c.parentId && c.id !== conv.id)
+    .filter((c) => c.kind === "project" && !c.room && !c.preview && !c.parentId && c.id !== conv.id)
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))) {
     options.push([p.id, `@@${p.name}`]);
   }
@@ -128,8 +128,27 @@ function render(): void {
       const row2 = h("div", "conv-row");
       row2.append(name, button("Turn into project", () => void act(conv, "project", { name: name.value.trim().toLowerCase() }), true));
       body.push(row2);
+      // A room (Can, 15 Nov): a named conversation, addressed only as #name, optionally under a project; stays private.
+      body.push(h("h3", "", "Turn into a room"), h("p", "dialog-hint", "A name (#name), optionally under a project; it stays private to its members."));
+      const roomName = h("input");
+      roomName.type = "text";
+      roomName.placeholder = "room-name";
+      const roomParent = h("select");
+      roomParent.append(new Option("No parent project", ""));
+      for (const p of Array.from(state.conversations.values())
+        .filter((c) => c.kind === "project" && !c.room && !c.preview && !c.parentId)
+        .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))) {
+        roomParent.append(new Option(`@@${p.name}`, p.id));
+      }
+      const row5 = h("div", "conv-row");
+      row5.append(
+        roomName,
+        roomParent,
+        button("Turn into room", () => void act(conv, "room", { name: roomName.value.trim().toLowerCase().replace(/^#/, ""), ...(roomParent.value ? { parent: roomParent.value } : {}) }), true)
+      );
+      body.push(row5);
     } else {
-      body.push(h("h3", "", "Project"));
+      body.push(h("h3", "", conv.room ? "Room" : "Project"));
       const topic = h("input");
       topic.type = "text";
       topic.placeholder = "one line: what it is about";
@@ -148,7 +167,7 @@ function render(): void {
     const footer = h("div", "dialog-actions");
     footer.append(
       button(conv.archived ? "Bring back" : "Archive", () => void act(conv, "archive", { archived: !conv.archived })),
-      button(conv.kind === "project" ? "Leave project" : "Leave group", () => {
+      button(conv.kind === "project" ? (conv.room ? "Leave room" : "Leave project") : "Leave group", () => {
         if (confirm(`Leave ${conversationTitle(conv)}? You stop getting its messages; a member can add you again.`)) void act(conv, "leave", {});
       })
     );
@@ -171,7 +190,7 @@ function render(): void {
       h("h3", "", "Delete"),
       h("p", "dialog-hint", "Gone for good: its messages, and their quotes elsewhere. What is under it becomes a root."),
       button("Delete project…", () => {
-        const typed = prompt(`Delete @@${name} and all its messages for good? Type its name to confirm.`);
+        const typed = prompt(`Delete ${conversationTitle(conv)} and all its messages for good? Type its name to confirm.`);
         if (typed === null) return;
         if (typed.trim().replace(/^@@/, "").toLowerCase() !== name) {
           alert(`"${typed}" is not "${name}": nothing was deleted.`);

@@ -772,6 +772,33 @@ describe("delivery", () => {
     expect((await pin("yes" as unknown as boolean)).status).toBe(400);
   });
 
+  test("rooms: #name is their only address; writing to a new one creates it; a group becomes one (private, under a project); names keep apart from projects and message numbers", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    // Writing to a new #name creates an open room; deliveries and replies name it #name.
+    const made = await send({ from: alpha.id, to: "#nightly", text: "first" });
+    expect(made.conversation).toMatchObject({ kind: "project", name: "nightly", room: true, visibility: "open" });
+    await send({ from: "carol", to: "#nightly", text: "joining" });
+    expect((await alpha.client.take("deliver")).replyTo).toBe("#nightly");
+    // One way to write each: a room is not @@name, a project is not #name; digits alone are a message number.
+    expect((await postJson(bus, "/api/messages", { from: "carol", to: "@@nightly", text: "x" })).status).toBe(409);
+    await send({ from: "carol", to: "@@infra", text: "a project" });
+    expect((await postJson(bus, "/api/messages", { from: "carol", to: "#infra", text: "x" })).status).toBe(409);
+    expect((await postJson(bus, "/api/messages", { from: "carol", to: "#8351", text: "x" })).status).toBe(400);
+    // A group becomes a room with a name and a parent project; it stays private; its address is #name.
+    const group = await send({ from: "carol", to: "@{alpha,uma}", text: "plan" });
+    await alpha.client.take("deliver");
+    const room = (body: Record<string, unknown>) => postJson(bus, `/api/conversations/${group.conversation.id}/room`, { from: "carol", ...body });
+    expect((await room({ name: "infra" })).status).toBe(409); // a project's name
+    expect((await room({ name: "plan", parent: "#nightly" })).status).toBe(404); // rooms are never parents
+    expect(await answeredConversation(await room({ name: "#Plan", parent: "@@infra" }))).toMatchObject({
+      kind: "project", room: true, name: "plan", visibility: "private", parentName: "infra", members: ["alpha", "carol", "uma"],
+    });
+    expect((await send({ from: "carol", to: "#plan", text: "in the room" })).conversation.id).toBe(group.conversation.id);
+    // Nothing goes under a room, even named by its id.
+    const project = await send({ from: "carol", to: "@@infra", text: "again" });
+    expect((await postJson(bus, `/api/conversations/${project.conversation.id}/parent`, { from: "carol", parent: made.conversation.id })).status).toBe(409);
+  });
+
   test("tasks: assigned by mention or DM, they wake their agents; assignees accept/finish/reject, the assigner withdraws; each step replies in the conversation", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");

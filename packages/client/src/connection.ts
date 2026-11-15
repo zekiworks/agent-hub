@@ -323,7 +323,7 @@ export class BusConnection {
   }
 
   /** POST /api/conversations/:id/{members,leave,notify,project,parent} as this agent. */
-  conversationAction(conversationId: string, action: "members" | "leave" | "notify" | "project" | "parent", body: Record<string, unknown> = {}): Promise<ConversationResponse> {
+  conversationAction(conversationId: string, action: "members" | "leave" | "notify" | "project" | "room" | "parent", body: Record<string, unknown> = {}): Promise<ConversationResponse> {
     const from = this.requireId();
     return this.request<ConversationResponse>(`/api/conversations/${encodeURIComponent(conversationId)}/${action}`, {
       method: "POST",

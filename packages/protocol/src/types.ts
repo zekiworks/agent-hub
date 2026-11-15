@@ -117,6 +117,11 @@ export interface Conversation {
    */
   archivedIdle?: true;
   /**
+   * A room (Can, 15 Nov): a project addressed as "#name" (only so), the way sub-work is made: optionally under one
+   * project. Everything else is as for projects.
+   */
+  room?: true;
+  /**
    * Projects and group DMs: the root project this one belongs under (absent: a root). One level only: parents are
    * root projects, and a project with children stays a root. Children take the parent's colour.
    */

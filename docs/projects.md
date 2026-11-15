@@ -101,6 +101,21 @@ conversation.
 - **Agents' @mentions never add anyone:** agents name each other in passing all the time (the lesson of 13 Nov).
 - An agent that joins gets the last 5 messages first, then the new one.
 
+### Rooms (Can, 15 Nov)
+
+A room is a project addressed only as `#name`: the way sub-work is made, optionally under one project. Everything else
+(members, add/leave, visibility, notify, pins, archiving, tasks, checklist, pages) is as for projects.
+
+- **Names:** lowercase slugs with at least one letter (`#8351` stays a message reference), unique across the bus and
+  never a project's name, so `#x` and `@@x` never mean two places. A room is only `#name`, a project only `@@name`;
+  the other form is refused with the right one.
+- **Making one:** a group DM's ⋯ menu → "Turn into a room" (name, optional parent project; it stays private, its
+  members chose each other); writing to a new `#name` creates an open room, as `@@name` does a project. Agents:
+  `to: "#name"`, `op=room` (`name`, optional `parent`).
+- **Parents:** projects only, one level; a room is never a parent. A project's Sub-groups panel lists its rooms; the
+  sidebar lists your rooms with your projects.
+- **In text:** `#name` links to the room when it exists; other `#words` stay plain.
+
 ### Wake lists
 
 A message does not start a turn by default (Can, 15 Nov). Every agent of the conversation gets it; only those on its

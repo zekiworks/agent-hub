@@ -31,19 +31,36 @@ export function mentionNodes(text: string): Node[] {
 
 // ---- Message references (#n) ----
 
-const REF_RE = /(^|[^\w#&])#(\d{1,7})(?!\w)/g;
+/** "#1234" (a message) or "#name" (a room, Can 15 Nov: linked only when such a room exists; other #words stay text). */
+const REF_RE = /(^|[^\w#&])#(\d{1,7}|[a-z0-9][a-z0-9_-]*)(?![\w-])/g;
 
 function refNodes(text: string): Node[] {
   const out: Node[] = [];
   let last = 0;
   for (const match of text.matchAll(REF_RE)) {
+    const ref = match[2] ?? "";
+    const room = /[a-z]/.test(ref) ? roomNamed(ref) : undefined;
+    if (/[a-z]/.test(ref) && !room) continue;
     const start = (match.index ?? 0) + (match[1] ?? "").length;
     if (start > last) out.push(document.createTextNode(text.slice(last, start)));
-    out.push(refLink(Number(match[2])));
-    last = start + 1 + (match[2] ?? "").length;
+    out.push(room ? roomLink(room) : refLink(Number(ref)));
+    last = start + 1 + ref.length;
   }
   if (last < text.length) out.push(document.createTextNode(text.slice(last)));
   return out;
+}
+
+function roomNamed(name: string): Conversation | undefined {
+  for (const c of state.conversations.values()) if (c.kind === "project" && c.room && c.name === name) return c;
+  return undefined;
+}
+
+/** "#name" as a link to the room. */
+function roomLink(room: Conversation): HTMLAnchorElement {
+  const a = h("a", "msg-ref", `#${room.name}`);
+  a.href = `#/c/${encodeURIComponent(room.id)}`;
+  a.title = room.topic ?? `Room #${room.name}`;
+  return a;
 }
 
 /**

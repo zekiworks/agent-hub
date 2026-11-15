@@ -223,7 +223,7 @@ export function hasProjectColor(conv: Conversation): boolean {
 /** "all", a project's "@@name", or the members: everyone but me (all of them if I am not a member). */
 export function conversationTitle(conv: Conversation): string {
   if (conv.kind === "all") return "all";
-  if (conv.kind === "project" && conv.name) return `@@${conv.name}`;
+  if (conv.kind === "project" && conv.name) return conv.room ? `#${conv.name}` : `@@${conv.name}`;
   const others = conv.members.filter((id) => id !== state.me);
   return nameList(others.length > 0 ? others : conv.members);
 }

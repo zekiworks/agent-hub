@@ -84,7 +84,7 @@ export function renderHeader(): void {
         : conv.kind === "project" && conv.visibility !== "open"
           ? " Ask a member to add you."
           : " You are viewing; you join when you send a message.";
-    const project = conv.kind === "project" ? `${conv.topic ? `${conv.topic} · ` : ""}${conv.visibility ?? "open"} project · ` : "";
+    const project = conv.kind === "project" ? `${conv.topic ? `${conv.topic} · ` : ""}${conv.visibility ?? "open"} ${conv.room ? "room" : "project"} · ` : "";
     const level = conv.notify?.[state.me];
     const notify = level ? ` Your notifications: ${level === "mentions" ? "mentions only" : "none"}.` : "";
     const archived = conv.archived ? " Archived: writing in it brings it back." : "";
@@ -115,7 +115,7 @@ function renderSubgroups(conv: Conversation): void {
       link.addEventListener("click", () => navigate({ kind: "conversation", id: child.id }));
       // A group DM's title already names its members.
       const description =
-        child.kind === "project" ? (child.topic ?? `${child.visibility ?? "open"} project`) : `group DM · ${child.members.length} members`;
+        child.kind === "project" ? (child.topic ?? `${child.visibility ?? "open"} ${child.room ? "room" : "project"}`) : `group DM · ${child.members.length} members`;
       const unread = state.unread.get(child.id) ?? 0;
       li.append(link, h("span", "subgroup-desc", ` — ${description}${unread > 0 ? ` · ${unread} unread` : ""}`));
       if (!child.members.includes(state.me)) li.append(h("span", "subgroup-desc", " · you're not in it"));

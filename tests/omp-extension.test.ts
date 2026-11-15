@@ -358,6 +358,18 @@ test("tasks through the tool: the assignee is told it is theirs, accepts and fin
   beta.ws.close();
 });
 
+test("rooms through the tool: write to #name creates and reuses it; op=room turns a group into one under a project", async () => {
+  const alpha = await startSession("alpha");
+  await post({ from: "carol", to: "@@infra", text: "a project" });
+  const { conversation } = await post({ from: "carol", to: "@{alpha,uma}", text: "plan" });
+  await alpha.injectedWith("plan"); // connected
+  const made = await alpha.run({ op: "write", to: "#nightly", message: "first in the room" });
+  expect(made.content[0]!.text).toMatch(/^Sent to #nightly \(conversation g_\w+, message #\d+\)/);
+  const turned = await alpha.run({ op: "room", to: "@{carol,uma}", name: "plan", parent: "@@infra" });
+  expect(turned.content[0]!.text).toStartWith(`Now room #plan under @@infra, private (${conversation.id}). Write to it as #plan.`);
+  expect((await alpha.run({ op: "history", to: "#plan", limit: 5 })).content[0]!.text).toContain("plan");
+});
+
 test("reply answers a message by its number, into that message's conversation", async () => {
   const alpha = await startSession("alpha");
   const beta = await rawAgent("beta");
@@ -401,7 +413,7 @@ test("conversation ops: write to @@project, projects, invite, notify and leave, 
   expect(await text({ op: "notify", to: "@@benchmarks", level: "mentions" })).toContain("Notifications there: mentions");
   expect(await text({ op: "projects" })).toContain("you are in it (notify: mentions)");
   await expect(alpha.run({ op: "notify", to: "@@benchmarks" })).rejects.toThrow(/notify needs `level`/);
-  await expect(alpha.run({ op: "invite", to: "@@nothing-here", ids: ["beta"] })).rejects.toThrow(/No project "nothing-here"/);
+  await expect(alpha.run({ op: "invite", to: "@@nothing-here", ids: ["beta"] })).rejects.toThrow(/No project "@@nothing-here"/);
 
   // A sub-project: the top level counts it under its root; parent= lists it.
   await text({ op: "write", to: "@@reading", message: "reading starts" });
