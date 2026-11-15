@@ -130,7 +130,7 @@ function memberRequest(ctx: BusContext, req: Request, body: Record<string, unkno
   return { writer, conversation };
 }
 
-/** POST /api/conversations/:id/{members,leave,notify,project,parent,archive,delete}; null for any other path. */
+/** POST /api/conversations/:id/{members,leave,notify,pin,project,parent,archive,delete}; null for any other path. */
 export async function handleConversationRoute(
   ctx: BusContext,
   req: Request,
@@ -151,6 +151,15 @@ export async function handleConversationRoute(
     case "leave": {
       const { writer, conversation } = memberRequest(ctx, req, body, id);
       return { conversation: leave(ctx, conversation, writer.id) };
+    }
+    case "pin": {
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      const pinned = (body as { pinned?: unknown }).pinned;
+      if (typeof pinned !== "boolean") throw new HttpError(400, "pinned must be true or false");
+      if (conversation.kind !== "project" && conversation.kind !== "group") throw new HttpError(400, "Projects and group DMs can be pinned");
+      db.setPinned(conversation.id, writer.id, pinned);
+      ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
     }
     case "notify": {
       const { writer, conversation } = memberRequest(ctx, req, body, id);

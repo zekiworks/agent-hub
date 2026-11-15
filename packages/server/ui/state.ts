@@ -105,12 +105,20 @@ export function isDmWithAgent(conv: Conversation): boolean {
 const byLast = (a: Conversation, b: Conversation) => b.lastMessageAt - a.lastMessageAt;
 
 /** The sidebar's Projects list: `all`, then the projects I am in, by last message; archived ones left out. */
+/** I pinned `conv`: it sorts first in my sidebar. */
+export function pinnedByMe(conv: Conversation): boolean {
+  return !!conv.pinnedBy?.includes(state.me);
+}
+
+/** The Projects list: the projects I pinned (Can, 15 Nov: first, no section of their own), then `all`, then the rest. */
 export function sortedConversations(): Conversation[] {
   const all = state.conversations.get(ALL_CONVERSATION_ID);
   const mine = Array.from(state.conversations.values())
     .filter((c) => c.kind === "project" && !c.archived && c.members.includes(state.me))
     .sort(byLast);
-  return all ? [all, ...mine] : mine;
+  const pinned = mine.filter(pinnedByMe);
+  const rest = mine.filter((c) => !pinnedByMe(c));
+  return [...pinned, ...(all ? [all] : []), ...rest];
 }
 
 /** The sidebar's Groups list: the group DMs I am in, and DMs with people (DMs with agents are their Agents rows). */

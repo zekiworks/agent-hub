@@ -1,7 +1,8 @@
 // The sidebar: agents (a row is my DM with it), mentions, projects and group DMs, their filters and toggles.
 import type { Conversation, Participant } from "@agent-bus/protocol";
 import { dom } from "./dom";
-import { agentDetail, nameList, relativeTime } from "./format";
+import { postJson } from "./api";
+import { agentDetail, errorText, nameList, relativeTime } from "./format";
 import { h } from "./html";
 import { renderAgentPanel } from "./live";
 import { applyTitle, renderNotifyButton } from "./notify";
@@ -20,6 +21,7 @@ import {
   INCLUDE_OFFLINE_KEY,
   isCurrent,
   passesFilter,
+  pinnedByMe,
   sortedConversations,
   state,
   UNREAD_ONLY_KEY,
@@ -195,7 +197,32 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   button.title = conv.kind === "all" ? "Delivered to every agent" : `Members: ${nameList(conv.members)}`;
   button.addEventListener("click", () => navigate({ kind: "conversation", id: conv.id }));
   li.append(button);
+  if (conv.kind === "project" && conv.members.includes(state.me)) li.append(pinButton(conv));
   return li;
+}
+
+/** 📌 on a project of mine: a toggle that sorts it first in my Projects (kept on the bus, so on every device). */
+function pinButton(conv: Conversation): HTMLButtonElement {
+  const pinned = pinnedByMe(conv);
+  const pin = h("button", pinned ? "pin-btn pinned" : "pin-btn", "📌");
+  pin.type = "button";
+  pin.title = pinned ? "Unpin" : "Pin to the top of Projects";
+  pin.setAttribute("aria-pressed", pinned ? "true" : "false");
+  pin.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const pinnedBy = (conv.pinnedBy ?? []).filter((id) => id !== state.me);
+    const next = { ...conv, pinnedBy: pinned ? pinnedBy : [...pinnedBy, state.me] };
+    state.conversations.set(conv.id, next);
+    renderSidebar();
+    try {
+      await postJson(`/api/conversations/${encodeURIComponent(conv.id)}/pin`, { from: state.me, pinned: !pinned });
+    } catch (error) {
+      state.conversations.set(conv.id, conv);
+      renderSidebar();
+      alert(`Could not ${pinned ? "unpin" : "pin"} it: ${errorText(error)}`);
+    }
+  });
+  return pin;
 }
 
 /** The open draft of a new project or group DM ("new — not sent yet"); a draft DM with an agent is its Agents row. */

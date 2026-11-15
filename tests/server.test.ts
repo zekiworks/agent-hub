@@ -638,6 +638,22 @@ describe("delivery", () => {
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@benchmarks}", text: "x" })).status).toBe(400);
   });
 
+  test("pins are per member: a member pins a project for themselves; others' lists are unchanged", async () => {
+    await joinPath("/tmp/x/alpha");
+    const project = await send({ from: "carol", to: "@@pinme", text: "x" });
+    await send({ from: "uma", conversationId: project.conversation.id, text: "me too" });
+    const pin = (pinned: boolean, from = "carol", id = project.conversation.id) => postJson(bus, `/api/conversations/${id}/pin`, { from, pinned });
+    expect((await answeredConversation(await pin(true))).pinnedBy).toEqual(["carol"]);
+    expect((await answeredConversation(await pin(true, "uma"))).pinnedBy).toEqual(["carol", "uma"]);
+    expect((await answeredConversation(await pin(false))).pinnedBy).toEqual(["uma"]);
+    // Members only; DMs and @all have nothing to pin.
+    const other = await send({ from: "carol", to: "@@other", text: "x" });
+    expect((await pin(true, "uma", other.conversation.id)).status).toBe(403);
+    const dm = await send({ from: "carol", to: "@alpha", text: "x" });
+    expect((await pin(true, "carol", dm.conversation.id)).status).toBe(400);
+    expect((await pin("yes" as unknown as boolean)).status).toBe(400);
+  });
+
   test("a checklist: its owner agent publishes markdown, people tick items, ticks survive a republish", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const project = await send({ from: alpha.id, to: "@@alpha", text: "my page" });
