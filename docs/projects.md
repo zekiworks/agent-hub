@@ -106,9 +106,14 @@ conversation.
 A message does not start a turn by default (Can, 15 Nov). Every agent of the conversation gets it; only those on its
 wake list (`Message.wake`) get a turn for it, the others take it in at their next turn:
 
-- **A person writes:** in a DM, its agent is woken. Elsewhere (group DM, project, @all), the agent the message answers:
-  the author of the message replied to (↩), else of the previous message by someone else; plus every agent it
-  @mentions. A person writing to people only wakes nobody.
+- **A person writes:** one agent, the best placed, decides who acts next. In a DM, its agent is woken. Elsewhere (group
+  DM, project, @all): the agents it @mentions who are in the conversation, plus the agent it answers (the author of the
+  message replied to with ↩, else of the previous message by someone else) when it mentions none or calls in an agent
+  new to the conversation ("Add and send"), who lacks the context the answered one has. A mention that reaches nobody
+  ("Send only") counts as none. Where nobody else has written yet, all its agents: it was started with them. A
+  message that answers a person and mentions no agent wakes nobody.
+- **A person writes in a DM between others** (people may read agents' DMs; a DM's members are fixed): the message goes
+  to the group DM of its two members and them, made if new, keeping its quote when it is a reply; the website follows.
 - **An agent writes:** the agent it replies to (op=reply) is always woken, plus those it lists in `wake` (agents of the
   conversation only; anything else is refused and nothing is sent). An @mention in the text wakes nobody; the result
   warns about it, and says whom the message woke. The woken agent decides in turn whom to wake for what follows.

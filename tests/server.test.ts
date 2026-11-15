@@ -348,29 +348,55 @@ describe("sessions and harnesses", () => {
 });
 
 describe("delivery", () => {
-  test("a person's message wakes its DM's agent, else the agent it answers and those it mentions", async () => {
+  test("a person's message wakes its DM's agent; elsewhere those it mentions, the answered agent when needed", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
-    const wakes = async (body: Record<string, unknown>) => {
-      const { message } = await send(body);
-      expect(message.wake).toBeDefined();
-      return { alpha: (await alpha.client.take("deliver")).wake, beta: (await beta.client.take("deliver")).wake, message };
-    };
-    // Nobody answered, nobody mentioned: delivered to both, a turn for neither.
-    const hello = await wakes({ from: "carol", to: "@all", text: "hello" });
-    expect([hello.alpha, hello.beta]).toEqual([false, false]);
-    // Mentioned.
-    expect(await wakes({ from: "carol", to: "@all", text: "@beta look" })).toMatchObject({ alpha: false, beta: true });
-    // The previous message by someone else is alpha's: carol's next one answers alpha.
+    const both = async () => ({ alpha: (await alpha.client.take("deliver")).wake, beta: (await beta.client.take("deliver")).wake });
+    // Nobody else has written here yet: the conversation was started with them, so all its agents.
+    await send({ from: "carol", to: "@all", text: "hello" });
+    expect(await both()).toEqual({ alpha: true, beta: true });
+    // Then it answers the previous message's author.
     const asked = await send({ from: alpha.id, to: "@all", text: "anyone?", wake: [] });
     await beta.client.take("deliver");
-    expect(asked.message.wake).toEqual([]);
-    expect(await wakes({ from: "carol", to: "@all", text: "me" })).toMatchObject({ alpha: true, beta: false });
+    await send({ from: "carol", to: "@all", text: "me" });
+    expect(await both()).toEqual({ alpha: true, beta: false });
+    // A mentioned member, who has the context: only it.
+    await send({ from: "carol", to: "@all", text: "@beta look" });
+    expect(await both()).toEqual({ alpha: false, beta: true });
     // A reply answers its message's author, whoever wrote last.
-    expect(await wakes({ from: "carol", replyToSeq: asked.message.seq, text: "again" })).toMatchObject({ alpha: true, beta: false });
+    await send({ from: "carol", replyToSeq: asked.message.seq, text: "again" });
+    expect(await both()).toEqual({ alpha: true, beta: false });
     // A DM wakes its agent.
     await send({ from: "carol", to: "@beta", text: "dm" });
     expect((await beta.client.take("deliver")).wake).toBe(true);
+  });
+
+  test("a person calling in an agent new to the conversation also wakes the one it answers; a mention reaching nobody wakes that one", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const group = await send({ from: "carol", to: "@{alpha,uma}", text: "plan" });
+    await alpha.client.take("deliver");
+    await send({ from: alpha.id, conversationId: group.conversation.id, text: "my plan", wake: [] });
+    // "Send only": beta is not added, so the mention reaches nobody and alpha, who has the context, is woken.
+    const only = await send({ from: "carol", conversationId: group.conversation.id, text: "I thought @beta would do that" });
+    expect(only.message.wake).toEqual(["alpha"]);
+    await alpha.client.take("deliver");
+    // "Add and send": beta joins with the last messages, and both are woken.
+    const added = await send({ from: "carol", conversationId: group.conversation.id, text: "@beta would do that", addMentioned: true });
+    expect(added.message.wake).toEqual(["alpha", "beta"]);
+  });
+
+  test("a person replying to a message of a DM they are not in writes in the group DM of its members and them, quoting it", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const dm = await send({ from: alpha.id, to: "@beta", text: "about carol's plan", wake: ["beta"] });
+    await beta.client.take("deliver");
+    const reply = await send({ from: "carol", replyToSeq: dm.message.seq, text: "that's my call" });
+    expect(reply.conversation).toMatchObject({ kind: "group", members: ["alpha", "beta", "carol"] });
+    expect(reply.message.quote?.seq).toBe(dm.message.seq);
+    expect(reply.message.wake).toEqual(["alpha"]); // it answers alpha
+    // Again: the same group, not a new one.
+    expect((await send({ from: "carol", replyToSeq: dm.message.seq, text: "and" })).conversation.id).toBe(reply.conversation.id);
   });
 
   test("an agent's message wakes those it lists and the agent it replies to; members only; no list: the old rule", async () => {

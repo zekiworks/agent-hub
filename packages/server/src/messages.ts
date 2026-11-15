@@ -163,6 +163,12 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     const existing = db.getConversation(body.conversationId);
     if (!existing) throw new HttpError(404, `Unknown conversation "${body.conversationId}"`);
     conversation = existing;
+    // A person answering a DM between others (people may read agents' DMs; its members are fixed) writes in the group
+    // DM of its members and them, made if new; a reply keeps its quote (Can, 15 Nov).
+    if (conversation.kind === "dm" && writer.kind === "human" && !conversation.members.includes(writer.id)) {
+      if (!canRead(ctx, conversation, writer)) throw new HttpError(404, `Unknown conversation "${conversation.id}"`);
+      conversation = db.groupDmOf([writer.id, ...conversation.members], now);
+    }
     if (conversation.kind !== "all" && !conversation.members.includes(writer.id)) {
       // A person may join a group DM or project they can read; an agent only an open project.
       const joinable =
@@ -212,8 +218,9 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     return { message, conversation: left };
   }
   // A person can add whoever they @mention (the website asks first: "Add and send" or "Send only").
+  let newcomers: string[] = [];
   if (body.addMentioned === true && writer.kind === "human") {
-    const newcomers = mentionedParticipants(ctx, text).filter((id) => !conversation.members.includes(id));
+    newcomers = mentionedParticipants(ctx, text).filter((id) => !conversation.members.includes(id));
     if (newcomers.length > 0) conversation = addMembers(ctx, conversation, newcomers);
   }
   // A reply to a message one session of an agent wrote goes back to that session.
@@ -252,7 +259,7 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
   // Every agent of the conversation (for @all, every agent): the online ones get it now, the offline ones when they are
   // back, until it expires. Only those on the wake list get a turn for it.
   const recipients = recipientsFor(ctx, conversation, writer.id).map((p) => p.id);
-  const wake = wakeList(ctx, writer, body.wake, conversation, recipients, text, replyToSeq);
+  const wake = wakeList(ctx, writer, body.wake, conversation, recipients, text, replyToSeq, newcomers);
   const message = db.insertMessage({
     conversationId: conversation.id,
     from: writer.id,
@@ -277,9 +284,11 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
 }
 
 /**
- * The agents a message wakes (Can, 15 Nov). A person's: in a DM, its agent; elsewhere the agent it answers (the author
- * of the message replied to, else of the previous message by someone else) and the agents it @mentions. An agent's: the agent it replies to
- * (replyToSeq) and its list, members only; list left out (an older tool): undefined, the old rule.
+ * The agents a message wakes (Can, 15 Nov): one agent, the best placed, decides who acts next. A person's: in a DM, its
+ * agent. Elsewhere the agents it @mentions, plus the agent it answers (the author of the message replied to, else of the
+ * previous message by someone else) when it mentions none or calls in an agent new to the conversation (who lacks the
+ * context the answered one has); where nobody else has written yet, all its agents. An agent's: the agent it replies
+ * to (replyToSeq) and its list, members only; list left out (an older tool): undefined, the old rule.
  */
 function wakeList(
   ctx: BusContext,
@@ -288,12 +297,16 @@ function wakeList(
   conversation: Conversation,
   recipients: string[],
   text: string,
-  replyToSeq: number | undefined
+  replyToSeq: number | undefined,
+  newcomers: readonly string[]
 ): string[] | undefined {
   if (writer.kind === "human") {
     if (conversation.kind === "dm") return recipients;
     const answered = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq)?.from : ctx.db.lastAuthorBesides(conversation.id, writer.id);
-    return recipients.filter((id) => id === answered || mentions(text, id));
+    if (answered === undefined) return recipients; // a conversation started with them: they are meant
+    const mentioned = recipients.filter((id) => mentions(text, id));
+    const withAnswered = mentioned.length === 0 || mentioned.some((id) => newcomers.includes(id));
+    return recipients.filter((id) => mentioned.includes(id) || (withAnswered && id === answered));
   }
   if (given === undefined || given === null) return undefined;
   if (!Array.isArray(given) || !given.every((id) => typeof id === "string")) throw new HttpError(400, "wake must be a list of agent ids");

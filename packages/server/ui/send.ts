@@ -64,7 +64,9 @@ export async function postToView(view: View, text: string, fileIds: string[]): P
   // Groups not loaded yet (e.g. a draft that just became a group) get their history fetched.
   if (!state.caches.has(res.conversation.id)) void loadMessages(res.conversation.id);
   receive(res.message, res.conversation);
-  if (view.kind === "draft") navigate({ kind: "conversation", id: res.conversation.id });
+  // A draft became a conversation, or the bus put it elsewhere (a person writing in a DM between others goes to the
+  // group DM of its members and them): follow it there.
+  if (view.kind === "draft" || res.conversation.id !== view.id) navigate({ kind: "conversation", id: res.conversation.id });
 }
 
 async function send(): Promise<void> {
