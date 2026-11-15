@@ -2,6 +2,7 @@
 // messages as text.
 import type { AgentSettings } from "@agent-bus/protocol";
 import { postJson } from "./api";
+import { closeWindowButton } from "./dialogs";
 import { dom } from "./dom";
 import { errorText } from "./format";
 import { h } from "./html";
@@ -55,7 +56,8 @@ function render(): void {
       "Measured by compactor on CPU with FLEURS: English, 100 recordings (14 Nov); Turkish, 50 recordings (6 Nov, " +
         "with Whisper large-v3, the larger sibling of the turbo the bus runs). Lower is better."
     ),
-    note
+    note,
+    closeWindowButton(dom.settingsDialog)
   );
 }
 

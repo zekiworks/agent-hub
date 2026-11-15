@@ -1864,6 +1864,11 @@ ul.md-list ul.md-list { list-style: circle; }
   gap: 8px;
 }
 
+/* "Close window" at the bottom of every dialog (dialogs.ts). */
+.close-window-row {
+  margin-top: 16px;
+}
+
 .btn {
   padding: 7px 14px;
   border: 1px solid var(--border);

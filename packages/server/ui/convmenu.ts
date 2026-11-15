@@ -2,6 +2,7 @@
 // DM into a project, a project's topic, visibility and name, archiving (POST /api/conversations/:id/…).
 import type { Conversation, ConversationResponse, NotifyLevel, ProjectVisibility } from "@agent-bus/protocol";
 import { postJson } from "./api";
+import { closeWindowButton } from "./dialogs";
 import { dom } from "./dom";
 import { errorText, nameList } from "./format";
 import { h } from "./html";
@@ -147,7 +148,7 @@ function render(): void {
     const footer = h("div", "dialog-actions");
     footer.append(
       button(conv.archived ? "Bring back" : "Archive", () => void act(conv, "archive", { archived: !conv.archived })),
-      button("Leave", () => {
+      button(conv.kind === "project" ? "Leave project" : "Leave group", () => {
         if (confirm(`Leave ${conversationTitle(conv)}? You stop getting its messages; a member can add you again.`)) void act(conv, "leave", {});
       })
     );
@@ -183,7 +184,7 @@ function render(): void {
   const error = h("div", "composer-error");
   error.setAttribute("role", "alert");
   error.hidden = true;
-  body.push(error);
+  body.push(error, closeWindowButton(dom.convDialog));
   dom.convDialog.replaceChildren(...body);
 }
 
