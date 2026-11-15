@@ -328,6 +328,8 @@ export interface StateResponse {
   conversations: Conversation[];
   /** Configured human ids, for the website's profile picker. */
   humans: string[];
+  /** Agents' pages the website shows as right-pane tabs, served at /ext/<name>/<key>/ (`serve --ext`). */
+  extensions?: string[];
 }
 
 /**

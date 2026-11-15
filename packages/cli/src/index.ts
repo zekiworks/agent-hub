@@ -8,7 +8,7 @@ import { runTicketed } from "./run";
 
 const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR] --humans carol,uma
                        [--https-port 7843 --tls-cert FILE --tls-key FILE] [--gpudash URL] [--forget-offline-days 15]
-                       [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL]
+                       [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL] [--ext NAME=URL]…
        agent-bus invite HUMAN [--data-dir DIR] [--url https://HOST:7843]
        agent-bus agents [--data-dir DIR]
        agent-bus approve|deny CODE [--data-dir DIR]
@@ -48,6 +48,8 @@ serve:
   --tls-key     PEM private key for --https-port
   --gpudash     gpudash's URL (e.g. http://127.0.0.1:3420): the resource schedule reads what runs on each GPU
   --stt-url     Speech-to-text service (packages/stt, e.g. http://127.0.0.1:7810): voice messages get their text
+  --ext         An agent's own web page shown as a tab of the website's right pane (e.g. gpudash=http://127.0.0.1:3420;
+                repeatable): served at /ext/NAME/ to signed-in people only
   --tts-url     Text-to-speech server (llama-server with LFM3-Audio, e.g. http://127.0.0.1:9941): ▶ reads messages aloud
   --forget-offline-days  Forget agents offline this many days (default 15; 0 keeps them forever)
   --public-url  Another address the website is reachable at (e.g. https://bariton.tailnet.ts.net through tailscale
@@ -110,6 +112,13 @@ function parseServeArgs(args: string[]): BusServerOptions {
       case "--tts-url":
         options.ttsUrl = value;
         break;
+      case "--ext": {
+        const eq = value.indexOf("=");
+        const name = value.slice(0, eq);
+        if (eq < 1 || !/^[a-z0-9][a-z0-9_-]*$/.test(name)) throw new Error(`--ext wants name=url, got "${value}"`);
+        (options.extensions ??= {})[name] = value.slice(eq + 1);
+        break;
+      }
       case "--public-url":
         (options.publicUrls ??= []).push(value.replace(/\/+$/, ""));
         break;

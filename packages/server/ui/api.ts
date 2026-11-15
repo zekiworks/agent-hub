@@ -17,6 +17,11 @@ export function fileUrl(fileId: string): string {
   return `/api/files/${encodeURIComponent(fileId)}${fileKey ? `?k=${encodeURIComponent(fileKey)}` : ""}`;
 }
 
+/** Where an agent's page configured with `serve --ext NAME=URL` is served; the key rides in the path (frames send no header). */
+export function extensionUrl(name: string): string {
+  return `/ext/${encodeURIComponent(name)}/${encodeURIComponent(fileKey)}/`;
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const session = localStorage.getItem(SESSION_KEY);
   const headers = new Headers(init?.headers);

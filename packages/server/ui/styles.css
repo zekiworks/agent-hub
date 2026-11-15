@@ -178,6 +178,15 @@ button:disabled {
   display: none;
 }
 
+/* An agent's own page (agentpages.ts), filling the pane. */
+.agent-page {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--panel);
+}
+
 .pane-pad {
   padding: 14px 16px;
 }

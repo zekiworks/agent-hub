@@ -24,6 +24,7 @@ import { getChecklist, putChecklist, tickChecklist } from "./checklists";
 import { getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, postMessage } from "./messages";
 import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
+import { forwardExtension } from "./extensions";
 import { postSpeech } from "./speech";
 import { Website } from "./website";
 
@@ -48,6 +49,8 @@ export interface BusServerOptions {
   sttUrl?: string;
   /** A text-to-speech server (llama-server with LFM3-Audio, e.g. http://127.0.0.1:9941) that reads messages aloud. */
   ttsUrl?: string;
+  /** Agents' own pages shown in the website's right pane: name → local URL (`--ext gpudash=http://127.0.0.1:3420`). */
+  extensions?: Record<string, string>;
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
   forgetOfflineDays?: number;
   /** Projects and group DMs quiet this many days, pinned by nobody, are archived (Can, 15 Nov). 0: never. Default 3. */
@@ -188,7 +191,12 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
         .listConversations()
         .filter((c) => mayRead(ctx, c, viewer) || canSee(ctx, c, viewer))
         .map((c) => (mayRead(ctx, c, viewer) ? c : { ...c, preview: true as const }));
-      const state: StateResponse = { participants: ctx.hub.listParticipants(), conversations, humans };
+      const state: StateResponse = {
+        participants: ctx.hub.listParticipants(),
+        conversations,
+        humans,
+        ...(options.extensions && Object.keys(options.extensions).length > 0 ? { extensions: Object.keys(options.extensions) } : {}),
+      };
       return json(state);
     }
     if (method === "GET" && pathname === "/api/inbox") return json(getInbox(ctx, url));
@@ -266,6 +274,10 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
           const viewer: SocketData = { kind: "viewer", signedIn: reader !== undefined, ...(reader?.kind === "human" ? { human: reader.id } : {}) };
           if (srv.upgrade(req, { data: viewer })) return undefined;
           return json({ error: "Expected a WebSocket upgrade" }, 400);
+        }
+        if (pathname.startsWith("/ext/")) {
+          const forwarded = await forwardExtension(req, url, options.extensions ?? {}, auth);
+          if (forwarded) return forwarded;
         }
         if (pathname.startsWith("/api/")) {
           try {

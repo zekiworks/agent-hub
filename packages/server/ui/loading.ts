@@ -1,4 +1,5 @@
 // Loading state and messages from the server, and recording each new message (socket or POST response).
+import { registerAgentPages } from "./agentpages";
 import type { Conversation, Message, MessagesResponse, StateResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { showError } from "./composer";
@@ -17,6 +18,7 @@ export async function loadState(): Promise<void> {
   state.humans = res.humans;
   state.participants = res.participants;
   state.conversations = new Map(res.conversations.map((c) => [c.id, c]));
+  registerAgentPages(res.extensions ?? []);
 }
 
 export async function loadMessages(conversationId: string): Promise<void> {
