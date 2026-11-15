@@ -3,6 +3,7 @@ import type { ViewerServerFrame } from "@agent-bus/protocol";
 import { api, PROFILE_KEY, setFileKey } from "./api";
 import { hideError, setReplyTo, showError, updateComposerState } from "./composer";
 import { dom, PHONE, scrollToBottom } from "./dom";
+import { rememberAddress, restoreAddress, takeDraftLink } from "./compose";
 import { loadDraft } from "./drafts";
 import { errorText } from "./format";
 import "./group";
@@ -63,7 +64,10 @@ function applyView(view: View): void {
   }
 }
 
-window.addEventListener("hashchange", () => applyView(parseHash()));
+window.addEventListener("hashchange", () => {
+  takeDraftLink();
+  applyView(parseHash());
+});
 
 /** Opens the conversation of message `seq` (loading earlier pages as needed), scrolls to it and flashes it. */
 async function showMessage(seq: number): Promise<void> {
@@ -187,6 +191,7 @@ async function boot(): Promise<void> {
   try {
     signedIn = await loadAuth();
     if (!signedIn) {
+      rememberAddress();
       location.replace("/auth");
       return;
     }
@@ -212,6 +217,8 @@ async function boot(): Promise<void> {
     },
     onFrame: handleFrame,
   });
+  restoreAddress();
+  takeDraftLink();
   // Phones opened without a conversation in the address start on the conversation list.
   const startOnList = location.hash === "";
   applyView(parseHash());

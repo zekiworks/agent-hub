@@ -3,15 +3,12 @@
 // owner reads the ticks back. Its tab shows only where a list exists.
 import type { Checklist } from "@agent-bus/protocol";
 import { postJson, SESSION_KEY } from "./api";
-import { autosize, updateComposerState } from "./composer";
-import { dom } from "./dom";
-import { saveDraft } from "./drafts";
+import { prefill } from "./compose";
 import { errorText, relativeTime } from "./format";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
 import { refreshPane, registerExtension, renderPane } from "./pane";
-import { navigate, viewHash } from "./routing";
-import { state, type View } from "./state";
+import { state } from "./state";
 import { mentionNodes } from "./text";
 
 /** One line of markdown, inline (bold, code, links, #n, @mentions), as the website renders messages (Can, 15 Nov). */
@@ -21,28 +18,9 @@ function inline(text: string): Node[] {
   return nodes.length === 1 && only instanceof HTMLElement && only.classList.contains("md-p") ? Array.from(only.childNodes) : nodes;
 }
 
-/**
- * ↩ on an item (Can, 15 Nov): opens the list's conversation with the item quoted at the top of the message box, so
- * what is sent reaches its owner with the item it answers. Text already in the box stays below the quote.
- */
+/** ↩ on an item (Can, 15 Nov): opens the list's conversation with the item quoted at the top of the message box. */
 function replyToItem(conversationId: string, item: string): void {
-  const view: View = { kind: "conversation", id: conversationId };
-  const quote = () => {
-    const rest = dom.input.value.trim();
-    dom.input.value = `> ${item}\n\n${rest}`;
-    saveDraft(view, dom.input.value);
-    autosize();
-    updateComposerState();
-    dom.input.focus();
-    dom.input.setSelectionRange(dom.input.value.length, dom.input.value.length);
-  };
-  if (location.hash === viewHash(view)) {
-    quote();
-    return;
-  }
-  // Switching conversations loads that one's draft into the box: the quote goes in after that.
-  window.addEventListener("hashchange", () => setTimeout(quote, 0), { once: true });
-  navigate(view);
+  prefill({ kind: "conversation", id: conversationId }, `> ${item}\n\n`);
 }
 
 /** Per conversation: its list, none, or loading (no entry: not asked yet). */

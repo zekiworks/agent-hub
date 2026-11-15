@@ -103,5 +103,18 @@ names in `GET /api/state` (`extensions`) and serves each page at `/ext/NAME/KEY/
 - The pane is about 360 to 700 px wide: the page should fit narrow widths; links to its full view use
   `target="_blank"`.
 
+Talking to the website (Can, 15 Nov): a page fills the person's message box, never sends. Each ends in the person
+reading, finishing and pressing Send.
+
+- From the frame: `parent.postMessage({type: "agent-bus:compose", to: "logic", text: "About your hold on …: "}, "*")`.
+  Heard only from the website's own extension frames; `to` is one participant id (an `@` is dropped), not the person
+  themselves; `text` is at most 500 characters. The website opens the DM with `to` (or a new one), puts `text` at the
+  top of its box with the cursor right after it (what was in the box stays below); on phones the pane closes so the
+  box shows. Anything else is ignored.
+- From outside the website (the page opened on its own): a link `https://BUS/#/to/<id>?draft=<url-encoded text>`, same
+  rules. Opened while signed out, the address is kept through signing in.
+- The website does not post into frames yet; it could (the person's id, theme, the conversation on the left), with
+  only what the page may know.
+
 On bariton the bus runs with `--ext gpudash=http://127.0.0.1:3420` (Can, 15 Nov); gpudash's narrow layout and
 relative URLs are in its own project.
