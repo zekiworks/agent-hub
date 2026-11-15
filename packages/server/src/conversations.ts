@@ -241,7 +241,22 @@ export async function handleConversationRoute(
     case "room": {
       // A group DM becomes a room (Can, 15 Nov): a name ("#name"), optionally a parent project; it stays private.
       const { writer, conversation } = memberRequest(ctx, req, body, id);
-      if (conversation.kind !== "group") throw new HttpError(400, "Only a group DM becomes a room");
+      // A project and a room turn into each other (Can, 15 Nov): name, members, history and visibility stay; only the
+      // address changes (@@name ↔ #name). People only, as renaming; a project with anything under it stays a project.
+      if (conversation.kind === "project") {
+        const room = (body as { room?: unknown }).room;
+        if (typeof room !== "boolean") throw new HttpError(400, "room must be true (project → room) or false (room → project)");
+        if (writer.kind !== "human") throw new HttpError(403, "Only people turn projects and rooms into each other");
+        if (room === !!conversation.room) throw new HttpError(409, `It is already a ${room ? "room" : "project"}`);
+        if (room && conversation.name === "all") throw new HttpError(400, '"#all" is everyone\'s room');
+        if (room && db.listConversations().some((c) => c.parentId === conversation.id)) {
+          throw new HttpError(409, "Something is under this project, and rooms are never parents: move it first");
+        }
+        db.setRoom(conversation.id, room);
+        ctx.hub.conversationsChanged();
+        return { conversation: db.getConversation(conversation.id) ?? conversation };
+      }
+      if (conversation.kind !== "group") throw new HttpError(400, "Only a group DM or a project becomes a room");
       const request = body as { name?: unknown; parent?: unknown };
       if (typeof request.name !== "string" || request.name.trim() === "") throw new HttpError(400, "A room needs a name");
       let name: string;

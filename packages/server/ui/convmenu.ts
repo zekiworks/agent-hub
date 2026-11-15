@@ -164,6 +164,23 @@ function render(): void {
       const row4 = h("div", "conv-row");
       row4.append(rename, button("Rename", () => void act(conv, "project", { name: rename.value.trim().toLowerCase() })));
       body.push(row4);
+      // Room ↔ project (Can, 15 Nov): only the address changes; a project with something under it stays a project.
+      const hasChildren = Array.from(state.conversations.values()).some((c) => c.parentId === conv.id);
+      if (conv.room) {
+        body.push(
+          h("p", "dialog-hint", `As a project it is @@${conv.name}: a place of its own; name, members and history stay.`),
+          button("Turn into a project", () => {
+            if (confirm(`Turn #${conv.name} into the project @@${conv.name}? Agents then write to @@${conv.name}.`)) void act(conv, "room", { room: false });
+          })
+        );
+      } else if (!hasChildren) {
+        body.push(
+          h("p", "dialog-hint", `As a room it is #${conv.name}: sub-work, which can go under another project.`),
+          button("Turn into a room", () => {
+            if (confirm(`Turn @@${conv.name} into the room #${conv.name}? Agents then write to #${conv.name}.`)) void act(conv, "room", { room: true });
+          })
+        );
+      }
     }
 
     const footer = h("div", "dialog-actions");

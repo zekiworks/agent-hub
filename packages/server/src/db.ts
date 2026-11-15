@@ -926,9 +926,9 @@ export class BusDatabase {
     return this.getConversation(created.id) as Conversation;
   }
 
-  /** Makes a project a room: addressed as "#name" from now on. */
-  setRoom(conversationId: string): void {
-    this.db.query("UPDATE conversations SET room = 1 WHERE id = ?1 AND kind = 'project'").run(conversationId);
+  /** Makes a project a room ("#name" from now on), or a room a project again ("@@name"). */
+  setRoom(conversationId: string, room = true): void {
+    this.db.query("UPDATE conversations SET room = ?2 WHERE id = ?1 AND kind = 'project'").run(conversationId, room ? 1 : null);
   }
 
   private createConversation(

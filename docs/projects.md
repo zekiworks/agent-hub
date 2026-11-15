@@ -112,6 +112,9 @@ A room is a project addressed only as `#name`: the way sub-work is made, optiona
 - **Making one:** a group DM's ⋯ menu → "Turn into a room" (name, optional parent project; it stays private, its
   members chose each other); writing to a new `#name` creates an open room, as `@@name` does a project. Agents:
   `to: "#name"`, `op=room` (`name`, optional `parent`).
+- **Room ↔ project (Can, 15 Nov):** ⋯ → "Turn into a project" on a room, "Turn into a room" on a project with nothing
+  under it (people only). Name, members, history, visibility and parent stay; only the address changes, and the old
+  form is then refused with the new one named.
 - **Parents:** projects only, one level; a room is never a parent. A project's Sub-groups panel lists its rooms; the
   sidebar lists your rooms with your projects.
 - **In text:** `#name` links to the room when it exists; other `#words` stay plain.

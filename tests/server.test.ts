@@ -797,6 +797,16 @@ describe("delivery", () => {
       kind: "project", room: true, name: "plan", visibility: "private", parentName: "infra", members: ["alpha", "carol", "uma"],
     });
     expect((await send({ from: "carol", to: "#plan", text: "in the room" })).conversation.id).toBe(group.conversation.id);
+    // A room and a project turn into each other (people only): only the address changes.
+    const back = (room: boolean, from = "carol") => postJson(bus, `/api/conversations/${group.conversation.id}/room`, { from, room });
+    expect((await back(false, alpha.id)).status).toBe(403);
+    const turned = await answeredConversation(await back(false));
+    expect(turned).toMatchObject({ kind: "project", name: "plan", visibility: "private", parentName: "infra" });
+    expect(turned.room).toBeUndefined();
+    expect((await back(false)).status).toBe(409); // already one
+    expect((await postJson(bus, "/api/messages", { from: "carol", to: "#plan", text: "x" })).status).toBe(409);
+    expect((await send({ from: "carol", to: "@@plan", text: "now a project" })).conversation.id).toBe(group.conversation.id);
+    expect((await answeredConversation(await back(true))).room).toBe(true);
     // Nothing goes under a room, even named by its id.
     const project = await send({ from: "carol", to: "@@infra", text: "again" });
     expect((await postJson(bus, `/api/conversations/${project.conversation.id}/parent`, { from: "carol", parent: made.conversation.id })).status).toBe(409);
