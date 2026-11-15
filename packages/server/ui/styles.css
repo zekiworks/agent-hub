@@ -537,18 +537,13 @@ button:disabled {
   font-weight: 600;
 }
 
-.agent-panel {
-  max-width: var(--column);
-  margin-top: 10px;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--panel-raised);
+/* Live (live.ts): the agent's status, then its live output, filling the pane. */
+.live-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   font-size: 13px;
-}
-
-.agent-panel[hidden] {
-  display: none;
 }
 
 .agent-panel-list {
@@ -584,19 +579,12 @@ button:disabled {
   color: var(--success);
 }
 
-.agent-output-head .link-btn {
-  font-size: 12px;
-}
-
 .agent-output {
-  max-height: 40vh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   margin-top: 6px;
   padding-right: 4px;
-}
-
-.agent-output[hidden] {
-  display: none;
 }
 
 .act {
@@ -2356,8 +2344,7 @@ ul.md-list ul.md-list { list-style: circle; }
     color: var(--accent);
   }
 
-  .main:not(.show-details) .conv-subtitle,
-  .main:not(.show-details) .agent-panel {
+  .main:not(.show-details) .conv-subtitle {
     display: none;
   }
 

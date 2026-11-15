@@ -1,7 +1,7 @@
 # The right pane: extensions (design)
 
 Status: Can's ideas of 14 Nov 2026. Built so far: the pane with its extension system, **File** and **Shared** (14 Nov),
-**Checklist** (15 Nov). Progress and Live in the pane come next (build order below).
+**Checklist** and **Live** (15 Nov). Progress comes next (build order below).
 
 ## How an extension plugs in (built)
 
@@ -18,7 +18,7 @@ The website's right pane holds extensions. Which tabs show depends on what the m
 | Main panel | Tabs |
 |---|---|
 | A conversation | **File** (the viewer for an opened attachment: markdown, plain text, images), **Shared** (every file shared in it) |
-| An agent's page | **Live** (its live output, moved here), **Progress** (its long tasks), plus the panels it switched on (below) |
+| An agent's page | **Live** (built: its status, session chips and live output; streamed only while this tab is visible and the browser tab is in front), **Progress** (its long tasks), plus the panels it switched on (below) |
 
 ## Shared files
 
@@ -72,4 +72,4 @@ Further types (Board: a markdown page the agent keeps up to date, …) as needs 
 1. Shared files (small, no new storage).
 2. Progress: storage, `op=progress`, the tab with notes, estimate and charts.
 3. Checklist for Ali.
-4. Live moved into the pane.
+4. Live moved into the pane (done 15 Nov).

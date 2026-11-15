@@ -1,19 +1,29 @@
-// The status panel and live output of the agent whose page is open (output streamed only while watched).
+// Right-pane extension "Live": the status and live output of the agent whose page is open (its DM). The output is
+// streamed only while the Live tab is visible and the browser tab is in front (Can, 15 Nov: moved out of the header).
 import type { ActivityEvent, AgentSession, ViewerServerFrame } from "@agent-bus/protocol";
-import { dom } from "./dom";
 import { elapsed, relativeTime, shortPath } from "./format";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
+import { registerExtension } from "./pane";
 import { sendViewer } from "./socket";
 import { currentDirectAgent, state } from "./state";
 import { mentionNodes } from "./text";
 
-const LIVE_OUTPUT_KEY = "agent-bus.liveOutput";
 /** If the agent sends no replay within this long, its session predates live output. */
 const NO_STREAM_AFTER_MS = 3000;
 
+/** The extension's own elements: the status list, then the live output under a small head. */
+const info = h("div", "live-info");
+const outputNote = h("span", "agent-output-note");
+const outputHead = h("div", "agent-output-head");
+outputHead.append(h("span", "", "Live output"), outputNote);
+const output = h("div", "agent-output");
+const root = h("div", "live-pane pane-pad");
+root.append(info, outputHead, output);
+
 const live = {
-  enabled: localStorage.getItem(LIVE_OUTPUT_KEY) !== "off",
+  /** The Live tab is visible (pane open on it). */
+  visible: false,
   /** Agent the server was last told this page watches. */
   sent: null as string | null,
   agentId: null as string | null,
@@ -51,7 +61,7 @@ function sessionChips(agentId: string, sessions: AgentSession[]): HTMLElement {
       else chosen.set(agentId, s.n);
       live.entries.clear();
       live.replayed = false;
-      renderAgentPanel();
+      renderLive();
       syncWatch(true);
     });
     row.append(chip);
@@ -59,12 +69,16 @@ function sessionChips(agentId: string, sessions: AgentSession[]): HTMLElement {
   return row;
 }
 
-/** Status panel at the top of an agent's own page (its one-to-one conversation or draft). */
-export function renderAgentPanel(): void {
+/** The agent whose page is open (its DM, or a draft to it), if it is an agent. */
+function pageAgent() {
   const agentId = currentDirectAgent();
-  const agent = agentId ? state.participants.find((p) => p.id === agentId && p.kind === "agent") : undefined;
+  return agentId ? state.participants.find((p) => p.id === agentId && p.kind === "agent") : undefined;
+}
+
+/** Draws the status of the agent whose page is open (called on every sidebar redraw: status changes live). */
+export function renderLive(): void {
+  const agent = pageAgent();
   if (!agent) {
-    dom.agentPanel.hidden = true;
     syncWatch();
     return;
   }
@@ -99,15 +113,14 @@ export function renderAgentPanel(): void {
     dd.append(value);
     list.append(h("dt", "", label), dd);
   }
-  dom.agentInfo.replaceChildren(list);
-  dom.agentPanel.hidden = false;
+  info.replaceChildren(list);
   syncWatch();
   renderLiveOutput();
 }
 
-/** The agent to watch now: its page is open, the tab is visible and live output is not hidden. */
+/** The agent to watch now: its page is open, the Live tab is visible and the browser tab is in front. */
 function wantedWatch(): string | null {
-  if (!live.enabled || document.visibilityState !== "visible" || dom.agentPanel.hidden) return null;
+  if (!live.visible || document.visibilityState !== "visible") return null;
   const agentId = currentDirectAgent();
   const agent = agentId ? state.participants.find((p) => p.id === agentId) : undefined;
   return agent?.online ? agent.id : null;
@@ -181,20 +194,14 @@ function renderActivityEntry(event: ActivityEvent): HTMLElement {
 }
 
 function renderLiveOutput(): void {
-  dom.agentOutputToggle.textContent = live.enabled ? "Hide" : "Show";
-  dom.agentOutput.hidden = !live.enabled;
-  if (!live.enabled) {
-    dom.agentOutputNote.textContent = "hidden";
-    return;
-  }
   if (live.agentId === null) {
-    dom.agentOutputNote.textContent = "";
-    dom.agentOutput.replaceChildren(h("div", "act-note", "Shown while the agent is online."));
+    outputNote.textContent = "";
+    output.replaceChildren(h("div", "act-note", "Shown while the agent is online."));
     return;
   }
   if (!live.replayed) {
-    dom.agentOutputNote.textContent = "";
-    dom.agentOutput.replaceChildren(
+    outputNote.textContent = "";
+    output.replaceChildren(
       h(
         "div",
         "act-note",
@@ -205,8 +212,8 @@ function renderLiveOutput(): void {
     );
     return;
   }
-  dom.agentOutputNote.textContent = "live";
-  const box = dom.agentOutput;
+  outputNote.textContent = "live";
+  const box = output;
   const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   const entries = [...live.entries.values()];
   box.replaceChildren(
@@ -215,10 +222,20 @@ function renderLiveOutput(): void {
   if (stick) box.scrollTop = box.scrollHeight;
 }
 
-dom.agentOutputToggle.addEventListener("click", () => {
-  live.enabled = !live.enabled;
-  localStorage.setItem(LIVE_OUTPUT_KEY, live.enabled ? "on" : "off");
-  syncWatch();
-  renderLiveOutput();
-});
 document.addEventListener("visibilitychange", () => syncWatch());
+
+registerExtension({
+  id: "live",
+  order: 0,
+  title: () => "Live",
+  applies: () => pageAgent() !== undefined,
+  render: (body) => {
+    if (root.parentElement !== body) body.replaceChildren(root);
+    renderLive();
+  },
+  shown: (visible) => {
+    live.visible = visible;
+    syncWatch();
+    if (visible) renderLive();
+  },
+});

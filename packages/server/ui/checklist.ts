@@ -82,7 +82,7 @@ function line(conversationId: string, list: Checklist, raw: string): HTMLElement
 
 registerExtension({
   id: "checklist",
-  order: 0,
+  order: 5,
   title: () => "Checklist",
   applies: (view) => {
     if (view.kind !== "conversation") return false;

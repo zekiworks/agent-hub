@@ -4,7 +4,7 @@ import { dom } from "./dom";
 import { postJson } from "./api";
 import { agentDetail, errorText, nameList, relativeTime } from "./format";
 import { h } from "./html";
-import { renderAgentPanel } from "./live";
+import { renderLive } from "./live";
 import { applyTitle, renderNotifyButton } from "./notify";
 import { renderBackBadge } from "./phones";
 import { navigate } from "./routing";
@@ -61,7 +61,7 @@ export function renderSidebar(): void {
   renderOfflineToggle();
   renderConversationList();
   renderAgentList();
-  renderAgentPanel();
+  renderLive();
   renderWorkingLine();
   renderNotifyButton();
   applyTitle();

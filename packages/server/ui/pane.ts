@@ -18,6 +18,8 @@ export interface PaneExtension {
    * `refreshPane(id)`; not on tab switches or every redraw of the page, so what it shows keeps its scroll position.
    */
   render(body: HTMLElement): void;
+  /** Its tab became visible (true) or stopped being visible (false): e.g. Live streams only while seen. */
+  shown?(visible: boolean): void;
 }
 
 const extensions: PaneExtension[] = [];
@@ -27,6 +29,17 @@ const OPEN_KEY = "agent-bus.paneOpen";
 const TAB_KEY = "agent-bus.paneTab";
 let open = localStorage.getItem(OPEN_KEY) === "1";
 let tab = localStorage.getItem(TAB_KEY) ?? "";
+
+/** The extension whose tab is visible now, if any (for `shown`). */
+let visibleId: string | undefined;
+
+function setVisible(id: string | undefined): void {
+  if (id === visibleId) return;
+  const before = extensions.find((e) => e.id === visibleId);
+  visibleId = id;
+  before?.shown?.(false);
+  extensions.find((e) => e.id === id)?.shown?.(true);
+}
 
 /** Each extension's part of the pane's body (kept while hidden: switching tabs keeps scroll positions). */
 const hosts = new Map<string, HTMLElement>();
@@ -91,6 +104,7 @@ export function renderPane(): void {
   dom.paneBtn.setAttribute("aria-pressed", current ? "true" : "false");
   if (!current) {
     dom.paneTabs.replaceChildren();
+    setVisible(undefined);
     return;
   }
   dom.paneTabs.replaceChildren(
@@ -107,9 +121,11 @@ export function renderPane(): void {
   const host = hostOf(current.id);
   host.hidden = false;
   const view = viewHash(state.view);
-  if (drawnFor.get(current.id) === view) return;
-  drawnFor.set(current.id, view);
-  current.render(host);
+  if (drawnFor.get(current.id) !== view) {
+    drawnFor.set(current.id, view);
+    current.render(host);
+  }
+  setVisible(current.id);
 }
 
 dom.paneBtn.addEventListener("click", () => {
