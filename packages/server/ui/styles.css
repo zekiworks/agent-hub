@@ -442,6 +442,27 @@ button:disabled {
   color: var(--sidebar-muted);
 }
 
+/* A heading that folds its section (sidebar.ts: Agents): looks like the heading text. */
+.side-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.side-toggle:hover {
+  color: var(--sidebar-text);
+}
+
+#agent-list[hidden],
+.unread-toggle[hidden] {
+  display: none;
+}
+
 .side-count {
   text-transform: none;
   letter-spacing: 0;

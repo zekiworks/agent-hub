@@ -297,7 +297,21 @@ function renderFilterNote(hidden: Conversation[]): void {
   dom.convFilter.hidden = false;
 }
 
+/** The Agents section folded (Can, 15 Nov), per browser. Unread DMs from agents still show under Mentions. */
+const AGENTS_FOLDED_KEY = "agent-bus.agentsFolded";
+let agentsFolded = localStorage.getItem(AGENTS_FOLDED_KEY) === "1";
+
+dom.agentsToggle.addEventListener("click", () => {
+  agentsFolded = !agentsFolded;
+  localStorage.setItem(AGENTS_FOLDED_KEY, agentsFolded ? "1" : "0");
+  renderAgentList();
+});
+
 function renderAgentList(): void {
+  dom.agentsToggle.textContent = `${agentsFolded ? "▸" : "▾"} Agents`;
+  dom.agentsToggle.setAttribute("aria-expanded", agentsFolded ? "false" : "true");
+  dom.agentList.hidden = agentsFolded;
+  dom.offlineBtn.hidden = agentsFolded;
   const all = agents();
   // Agents seen in the last two minutes stay listed (dimmed while offline): an agent that keeps reconnecting would
   // otherwise blink in and out and shift every row below it.

@@ -18,6 +18,7 @@ export const dom = {
   mentionList: el<HTMLUListElement>("mention-list"),
   mentionCount: el<HTMLSpanElement>("mention-count"),
   agentList: el<HTMLUListElement>("agent-list"),
+  agentsToggle: el<HTMLButtonElement>("agents-toggle"),
   agentCount: el<HTMLSpanElement>("agent-count"),
   main: el<HTMLElement>("main"),
   convTitle: el<HTMLHeadingElement>("conv-title"),
