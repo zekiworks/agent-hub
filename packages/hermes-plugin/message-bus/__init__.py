@@ -26,6 +26,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from .live_view import LiveView
+
 logger = logging.getLogger("plugins.message-bus")
 
 TOOL_NAME = "message-bus"
@@ -373,9 +375,16 @@ class GatewayBridge:
         self.held: dict[int, str] = {}
         self.outstanding: set[int] = set()
         self.outstanding_at = 0.0
+        self.live_view = LiveView()
 
     def start(self) -> None:
         threading.Thread(target=self._run, name="message-bus", daemon=True).start()
+
+    def observe(self, hook: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            getattr(self.live_view, hook)(*args, **kwargs)
+        except Exception:
+            logger.debug("message-bus: live observer failed", exc_info=True)
 
     def _gateway_live(self) -> bool:
         manager = getattr(self.ctx, "_manager", None)
@@ -413,6 +422,8 @@ class GatewayBridge:
                             logger.warning("message-bus: could not handle a frame: %s", err)
             except Exception as err:  # reconnect on any transport failure
                 logger.warning("message-bus connection lost: %s (retrying in %.0fs)", err, delay)
+            self.observe("detach", self.ws)
+            self.ws = None
             # Back off unless the connection had stayed up a while (a join that drops at once is not a recovery).
             if connected_at is not None and time.monotonic() - connected_at >= STABLE_CONNECTION_S:
                 delay = 1.0
@@ -434,6 +445,9 @@ class GatewayBridge:
             STATE_DIR.mkdir(parents=True, exist_ok=True)
             self.client.id_file.write_text(frame["id"])
             logger.info("message-bus: joined as @%s", frame["id"])
+            self.observe("attach", self.loop, ws)
+        elif kind == "watch":
+            self.observe("set_watching", frame.get("on") is True)
         elif kind == "deliver":
             await self._deliver(ws, frame)
         elif kind in ("receipt", "expired"):
@@ -652,4 +666,17 @@ def register(ctx: Any) -> None:
         return
     bridge = GatewayBridge(ctx, client, str(session_key))
     ctx.register_hook("pre_llm_call", bridge.pre_llm_call)
+    # Optional observers must never inject context, return a tool directive, or
+    # fail the existing delivery path when a Live View observer is unavailable.
+    def observer(hook):
+        def observe(**kwargs):
+            bridge.observe(hook, **kwargs)
+        return observe
+
+    for hook in ("pre_llm_call", "post_llm_call", "on_session_end", "pre_tool_call", "post_tool_call",
+                 "on_stream_delta", "on_stream_end", "on_interim_message"):
+        try:
+            ctx.register_hook(hook, observer(hook))
+        except (ValueError, KeyError):
+            logger.warning("message-bus: Hermes does not support Live View hook %s", hook)
     bridge.start()
