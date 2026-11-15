@@ -25,6 +25,7 @@ import { getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, p
 import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
 import { forwardExtension } from "./extensions";
+import { getTasks, taskAction } from "./tasks";
 import { postSpeech } from "./speech";
 import { Website } from "./website";
 
@@ -206,6 +207,9 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 7));
       return json(db.stats(Date.now() - days * 86_400_000, days));
     }
+    if (method === "GET" && pathname === "/api/tasks") return json(getTasks(ctx, url, viewer.kind === "human" ? viewer.id : undefined));
+    const taskMatch = /^\/api\/tasks\/(\d+)\/(accept|done|reject|withdraw|read)$/.exec(pathname);
+    if (method === "POST" && taskMatch?.[1] && taskMatch[2]) return json(await taskAction(ctx, req, Number(taskMatch[1]), taskMatch[2]));
     const checklistMatch = /^\/api\/conversations\/([^/]+)\/checklist(\/tick)?$/.exec(pathname);
     if (checklistMatch?.[1]) {
       const id = decodeURIComponent(checklistMatch[1]);

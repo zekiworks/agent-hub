@@ -21,6 +21,7 @@
       <button id="stats-btn" type="button" class="link-btn" title="Messages written and agent turns started, per participant">Stats</button>
       <button id="gpu-btn" type="button" class="link-btn" title="Who holds which GPU, and book one">GPUs</button>
       <button id="notify-btn" type="button" class="link-btn notify-btn" hidden></button>
+      <button id="inbox-btn" type="button" class="inbox-topbtn" title="Inbox: tasks for you and tasks you assigned">✉</button>
       <label class="profile" title="Who you are on the bus">
         <span class="profile-label">You are</span>
         <select id="profile-select"></select>
@@ -123,6 +124,12 @@
         <div id="voice-bar" class="voice-bar" role="status" hidden></div>
         <div class="composer-row">
           <button id="attach-btn" type="button" class="icon-btn" title="Attach files (or drop them here)">📎</button>
+          <select id="task-select" class="task-select" title="Send as a task for those you @mention (in a DM: the other member)">
+            <option value="" selected>Message</option>
+            <option value="task">Task</option>
+            <option value="approval">Approval</option>
+            <option value="chore">Chore</option>
+          </select>
           <input id="file-input" type="file" multiple hidden />
           <div id="composer-input-wrap" class="composer-input-wrap">
             <ul id="mention-menu" class="mention-menu" role="listbox" hidden></ul>

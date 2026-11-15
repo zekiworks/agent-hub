@@ -1,5 +1,5 @@
 // The conversations page (index.html): wires the modules together, routes between views and boots.
-import type { ViewerServerFrame } from "@agent-bus/protocol";
+import type { Conversation, Message, ViewerServerFrame } from "@agent-bus/protocol";
 import { api, PROFILE_KEY, setFileKey } from "./api";
 import { hideError, setReplyTo, showError, updateComposerState } from "./composer";
 import { dom, PHONE, scrollToBottom } from "./dom";
@@ -15,11 +15,12 @@ import { loadAgentRequests } from "./machines";
 import { closeMention, updateMention } from "./mentions";
 import { setDetails, setPhoneList } from "./phones";
 import { askProfile } from "./profile";
-import { applyReceipt, renderAll, showEmpty } from "./render";
+import { applyReceipt, renderAll, renderMessages, showEmpty } from "./render";
 import { navigate, parseHash, viewHash } from "./routing";
 import "./send";
 import "./convmenu";
 import { checklistChanged } from "./checklist";
+import { refreshInbox } from "./inbox";
 import "./files";
 import "./settings";
 import "./stats";
@@ -62,6 +63,19 @@ function applyView(view: View): void {
     loadDraft();
     scrollToBottom();
   }
+}
+
+/** A task's state changed: the conversation shows the message as it is now, and the inbox refreshes. */
+function taskChanged(message: Message, conversation: Conversation): void {
+  state.conversations.set(conversation.id, conversation);
+  const cache = state.caches.get(conversation.id);
+  const i = cache?.messages.findIndex((m) => m.seq === message.seq) ?? -1;
+  if (cache && i >= 0) {
+    // Keep receipts the page already tracks live; the task is what changed.
+    cache.messages[i] = { ...cache.messages[i], ...message, receipts: cache.messages[i]?.receipts ?? message.receipts };
+    if (isCurrent(conversation.id)) renderMessages();
+  }
+  void refreshInbox();
 }
 
 window.addEventListener("hashchange", () => {
@@ -123,6 +137,10 @@ function handleFrame(frame: ViewerServerFrame): void {
       break;
     case "message":
       receive(frame.message, frame.conversation);
+      if (frame.message.task) void refreshInbox();
+      break;
+    case "task":
+      taskChanged(frame.message, frame.conversation);
       break;
     case "checklist":
       checklistChanged(frame.conversationId);
@@ -229,6 +247,7 @@ async function boot(): Promise<void> {
     // On phones the keyboard should open only when the box is tapped.
     if (!PHONE.matches) dom.input.focus();
     void refreshUnread();
+    void refreshInbox();
   }
 }
 

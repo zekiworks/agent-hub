@@ -96,6 +96,8 @@ export const dom = {
   statsBody: el<HTMLTableSectionElement>("stats-body"),
   statsDaily: el<HTMLUListElement>("stats-daily"),
   gpuBtn: el<HTMLButtonElement>("gpu-btn"),
+  inboxBtn: el<HTMLButtonElement>("inbox-btn"),
+  taskSelect: el<HTMLSelectElement>("task-select"),
   gpuDialog: el<HTMLDialogElement>("gpu-dialog"),
   gpuClose: el<HTMLButtonElement>("gpu-close"),
   gpuList: el<HTMLUListElement>("gpu-list"),

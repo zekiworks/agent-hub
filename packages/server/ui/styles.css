@@ -381,6 +381,148 @@ button:disabled {
   margin-top: 14px;
 }
 
+/* Tasks (inbox.ts): the ✉ button (yellow: open tasks; red: some unread), the Inbox tab, and the line under a task. */
+.inbox-topbtn {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.inbox-topbtn.inbox-open {
+  border-color: var(--warning);
+  background: rgb(227 165 71 / 0.18);
+}
+
+.inbox-topbtn.inbox-unread {
+  border-color: var(--error);
+  background: rgb(239 68 68 / 0.2);
+}
+
+.inbox-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.inbox-box {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.inbox-box.active {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.inbox-closed {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inbox-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inbox-item {
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.inbox-item.inbox-unread {
+  box-shadow: inset 3px 0 0 var(--error);
+  padding-left: 8px;
+}
+
+.inbox-head,
+.inbox-where,
+.inbox-when {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inbox-text {
+  margin: 4px 0;
+}
+
+.inbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.inbox-btn {
+  padding: 3px 10px;
+  font-size: 13px;
+}
+
+.inbox-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-label {
+  font-weight: 650;
+  margin-right: 4px;
+}
+
+.task-type-approval .task-label,
+.task-label.task-type-approval {
+  color: var(--warning);
+}
+
+.msg-task {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.task-states {
+  font-size: 12px;
+}
+
+.task-open,
+.task-accepted {
+  color: var(--warning);
+}
+
+.task-done {
+  color: var(--success);
+}
+
+.task-rejected {
+  color: var(--error);
+}
+
+.task-withdrawn {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.task-select {
+  flex: none;
+  max-width: 96px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .topbar {
   grid-area: top;
   display: flex;

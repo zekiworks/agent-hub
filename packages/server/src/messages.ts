@@ -16,6 +16,7 @@ import {
 import type { BusContext } from "./context";
 import { addMembers, canRead, canSee, checkedProjectName, leave, mayRead, type Reader } from "./conversations";
 import { DEFAULT_HOLD_MS, type ParticipantRecord } from "./db";
+import { newTask } from "./tasks";
 import { HttpError, readJsonObject } from "./http";
 
 const MAX_TEXT_LENGTH = 100_000;
@@ -46,7 +47,7 @@ function mentionedParticipants(ctx: BusContext, text: string): string[] {
 }
 
 /** Agents a new message goes to: every agent for `all`, else the conversation's agents; never the writer. */
-function recipientsFor(ctx: BusContext, conversation: Conversation, writerId: string): ParticipantRecord[] {
+export function recipientsFor(ctx: BusContext, conversation: Conversation, writerId: string): ParticipantRecord[] {
   return (
     conversation.kind === "all"
       ? ctx.db.listAgents()
@@ -259,7 +260,11 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
   // Every agent of the conversation (for @all, every agent): the online ones get it now, the offline ones when they are
   // back, until it expires. Only those on the wake list get a turn for it.
   const recipients = recipientsFor(ctx, conversation, writer.id).map((p) => p.id);
-  const wake = wakeList(ctx, writer, body.wake, conversation, recipients, text, replyToSeq, newcomers);
+  const task = newTask(ctx, body.task, writer, conversation, mentionedIds(text));
+  const listed = wakeList(ctx, writer, body.wake, conversation, recipients, text, replyToSeq, newcomers);
+  // A task wakes the agents it is assigned to.
+  const assigned = task ? task.assignees.map((a) => a.id).filter((id) => recipients.includes(id)) : [];
+  const wake = listed && assigned.length > 0 ? [...new Set([...listed, ...assigned])] : listed;
   const message = db.insertMessage({
     conversationId: conversation.id,
     from: writer.id,
@@ -274,6 +279,7 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     ...(fromSession === undefined ? {} : { fromSession }),
     ...(verified === undefined ? {} : { verified }),
     ...(wake ? { wake } : {}),
+    ...(task ? { task } : {}),
   });
   if (writer.kind === "human") db.touchParticipant(writer.id, now);
   const updated = db.getConversation(conversation.id);

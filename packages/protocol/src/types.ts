@@ -141,6 +141,32 @@ export interface FileRef {
   sha256: string;
 }
 
+/** What a task asks for (Can, 15 Nov): an approval is decided by people only, signed in with a passkey. */
+export type TaskType = "task" | "approval" | "chore";
+
+/** Where one assignee is with a task. "withdrawn": its assigner took it back while it was open or accepted. */
+export type TaskState = "open" | "accepted" | "done" | "rejected" | "withdrawn";
+
+/** One assignee of a task and their part of it. */
+export interface TaskAssignee {
+  id: string;
+  state: TaskState;
+  /** When the state last changed (absent while open). */
+  at?: number;
+  /** Rejecting or withdrawing may say why. */
+  reason?: string;
+  /** People's decisions: made from a signed-in (passkey) session. Required for approvals. */
+  verified?: boolean;
+  /** People: when they first saw it in their inbox (unread until then). */
+  readAt?: number;
+}
+
+/** A message marked as a task: its seq is the task's id; the message text is what is asked and never changes. */
+export interface Task {
+  type: TaskType;
+  assignees: TaskAssignee[];
+}
+
 export interface Message {
   /** Global, monotonic. */
   seq: number;
@@ -160,6 +186,8 @@ export interface Message {
   quote?: Quote;
   /** The writing agent's session number, when it had several live sessions. */
   fromSession?: number;
+  /** Set when the message is a task (Task): the inbox of each assignee lists it. */
+  task?: Task;
   /**
    * The agents it wakes (starts a turn for); the others take it in at their next turn (Can, 15 Nov). A person's message
    * wakes, in a DM, its agent; elsewhere the agent it answers (the replied-to message's author, else the previous
@@ -236,6 +264,8 @@ export type AgentServerFrame =
       replyTo: string;
       /** false = deliver quietly (no new turn); see AgentSettings.all. */
       wake: boolean;
+      /** Tasks open or accepted for the recipient (the delivery footer reminds it). */
+      openTasks?: number;
       /** Held while the recipient was offline, and handed over now it is back: it may be old (see createdAt). */
       held?: boolean;
     }
@@ -291,6 +321,8 @@ export type ViewerServerFrame =
   | { type: "conversations" }
   /** A conversation's checklist changed (GET /api/conversations/:id/checklist has it). */
   | { type: "checklist"; conversationId: string }
+  /** A task's state changed: the message as it is now (its `task`). */
+  | { type: "task"; message: Message; conversation: Conversation }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
   | ExpiredFrame
@@ -406,6 +438,21 @@ export interface TickRequest {
   done: boolean;
 }
 
+/** POST /api/tasks/:seq/{accept,done,reject,withdraw,read}: one participant's step on a task. */
+export interface TaskActionRequest {
+  from: string;
+  reason?: string;
+}
+
+/** GET /api/tasks?for=<id>&box=mine|assigned&state=open|all: tasks with their conversations, newest first. */
+export interface TasksResponse {
+  messages: Message[];
+  conversations: Conversation[];
+  /** For `for`: tasks still open or accepted for them, and how many of those they have not seen. */
+  open: number;
+  unread: number;
+}
+
 /** A file shared in a conversation, with the message that shared it. */
 export interface SharedFile {
   file: FileRef;
@@ -449,6 +496,11 @@ export interface PostMessageRequest {
   toSession?: number;
   /** How long to hold it for recipients that are offline, in hours (default 1, at most 168). */
   holdHours?: number;
+  /**
+   * Makes the message a task. `assignees`: members who are to do it (default: those the text @mentions, else the other
+   * member of a DM). Assigned agents are woken. Approvals can only be assigned to people.
+   */
+  task?: { type?: TaskType; assignees?: string[] };
   /**
    * Agents only: the agents of the conversation this message wakes besides the one it replies to, who always is
    * (Message.wake); `[]`: only that one. Left out: the old rule, for tools from before wake lists. People's lists are

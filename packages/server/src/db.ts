@@ -19,6 +19,7 @@ import {
   type ProjectVisibility,
   type Quote,
   type Checklist,
+  type Task,
   type Receipt,
   type SharedFile,
   type StatsResponse,
@@ -63,6 +64,8 @@ export interface NewMessage {
   verified?: boolean;
   /** The agents it wakes (Message.wake); absent: the old rule. */
   wake?: string[];
+  /** Makes it a task (Message.task). */
+  task?: Task;
   /** Until when it is held for offline recipients. */
   expiresAt: number;
 }
@@ -128,6 +131,7 @@ interface MessageRow {
   from_session: number | null;
   expires_at: number | null;
   wake_json?: string | null;
+  task_json?: string | null;
 }
 
 interface FileRow {
@@ -318,6 +322,7 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
     ...(row.verified === null || row.verified === undefined ? {} : { verified: row.verified === 1 }),
     ...(row.from_session === null || row.from_session === undefined ? {} : { fromSession: row.from_session }),
     ...(row.wake_json ? { wake: JSON.parse(row.wake_json) as string[] } : {}),
+    ...(row.task_json ? { task: JSON.parse(row.task_json) as Task } : {}),
     expiresAt: expiresAt(row),
   };
 }
@@ -364,6 +369,8 @@ export class BusDatabase {
     // Databases created before sessions lack the columns (null: no session chosen / the agent had one session).
     // Databases created before wake lists lack the column (null: the old rule).
     if (!messageColumns.some((c) => c.name === "wake_json")) this.db.exec("ALTER TABLE messages ADD COLUMN wake_json TEXT");
+    // Databases created before tasks lack the column (null: an ordinary message).
+    if (!messageColumns.some((c) => c.name === "task_json")) this.db.exec("ALTER TABLE messages ADD COLUMN task_json TEXT");
     if (!messageColumns.some((c) => c.name === "from_session")) {
       this.db.exec("ALTER TABLE messages ADD COLUMN from_session INTEGER");
     }
@@ -1094,8 +1101,8 @@ export class BusDatabase {
     return this.db.transaction((): Message => {
       const result = this.db
         .query(
-          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
+          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json, task_json)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`
         )
         .run(
           id,
@@ -1109,7 +1116,8 @@ export class BusDatabase {
           input.verified === undefined ? null : input.verified ? 1 : 0,
           input.fromSession ?? null,
           input.expiresAt,
-          input.wake ? JSON.stringify(input.wake) : null
+          input.wake ? JSON.stringify(input.wake) : null,
+          input.task ? JSON.stringify(input.task) : null
         );
       const seq = Number(result.lastInsertRowid);
       const addReceipt = this.db.query("INSERT INTO receipts (seq, recipient, delivered_at, session) VALUES (?1, ?2, NULL, ?3)");
@@ -1135,9 +1143,47 @@ export class BusDatabase {
         ...(input.verified === undefined ? {} : { verified: input.verified }),
         ...(input.fromSession === undefined ? {} : { fromSession: input.fromSession }),
         ...(input.wake ? { wake: input.wake } : {}),
+        ...(input.task ? { task: input.task } : {}),
         expiresAt: input.expiresAt,
       };
     })();
+  }
+
+  /** Replaces a task's state (the message text never changes). */
+  setTask(seq: number, task: Task): void {
+    this.db.query("UPDATE messages SET task_json = ?2 WHERE seq = ?1 AND task_json IS NOT NULL").run(seq, JSON.stringify(task));
+  }
+
+  /**
+   * Tasks, newest first: `box` "mine" for those assigned to `id`, "assigned" for those it wrote; `openOnly` keeps those
+   * with an assignee (of `id`'s, for mine) still open or accepted.
+   */
+  tasksOf(id: string, box: "mine" | "assigned", openOnly: boolean, limit: number): Message[] {
+    const live = `EXISTS (SELECT 1 FROM json_each(m.task_json, '$.assignees') a
+      WHERE json_extract(a.value, '$.state') IN ('open', 'accepted')${box === "mine" ? " AND json_extract(a.value, '$.id') = ?1" : ""})`;
+    const whose =
+      box === "mine"
+        ? "EXISTS (SELECT 1 FROM json_each(m.task_json, '$.assignees') a WHERE json_extract(a.value, '$.id') = ?1)"
+        : "m.from_id = ?1";
+    const rows = this.db
+      .query<MessageRow, [string, number]>(
+        `SELECT m.* FROM messages m WHERE m.task_json IS NOT NULL AND ${whose}${openOnly ? ` AND ${live}` : ""} ORDER BY m.seq DESC LIMIT ?2`
+      )
+      .all(id, limit);
+    return this.withReceipts(rows);
+  }
+
+  /** Tasks open or accepted for `id`, and how many of those it has not read. */
+  openTaskCounts(id: string): { open: number; unread: number } {
+    const row = this.db
+      .query<{ open: number; unread: number }, [string]>(
+        `SELECT COUNT(*) AS open, SUM(json_extract(a.value, '$.readAt') IS NULL) AS unread
+         FROM messages m, json_each(m.task_json, '$.assignees') a
+         WHERE m.task_json IS NOT NULL AND json_extract(a.value, '$.id') = ?1
+           AND json_extract(a.value, '$.state') IN ('open', 'accepted')`
+      )
+      .get(id);
+    return { open: row?.open ?? 0, unread: row?.unread ?? 0 };
   }
 
   /** Who wrote the latest message of `conversationId` not written by `notFrom` (a person's message answers it). */

@@ -317,6 +317,12 @@ export class Hub {
   }
 
   /** Members or a conversation's settings changed: viewers refetch GET /api/state (coalesced). */
+  /** A task's state changed: its conversation's viewers get the message as it is now. */
+  taskChanged(message: Message, conversation: Conversation): void {
+    const frame = JSON.stringify({ type: "task", message, conversation } satisfies ViewerServerFrame);
+    for (const ws of this.viewersOf(conversation)) ws.send(frame);
+  }
+
   /** A conversation's checklist changed: its viewers fetch it again. */
   checklistChanged(conversation: Conversation): void {
     const frame = JSON.stringify({ type: "checklist", conversationId: conversation.id } satisfies ViewerServerFrame);
@@ -487,6 +493,7 @@ export class Hub {
       conversation,
       replyTo: replyAddress(conversation, recipient.id),
       wake: shouldWake(conversation, message, recipient.id, recipient.settings),
+      openTasks: this.db.openTaskCounts(recipient.id).open,
       ...(held ? { held } : {}),
     };
   }

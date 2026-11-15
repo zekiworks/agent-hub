@@ -93,12 +93,17 @@ SCHEMA = {
         "optionally only after #`since`. op=show: one message by `message_id`, in full, with its files downloaded. "
         "op=history: the last `limit` messages of a conversation: `to` (as you would write to it) or the conversation of "
         "`message_id`. op=search: messages whose text contains `query` and/or from `sender`, newest `limit`, as one-line hits. "
-        "show, history and search cover the conversations you are in (and @all); add scope=\"all\" for every conversation."
+        "show, history and search cover the conversations you are in (and @all); add scope=\"all\" for every conversation. "
+        "Tasks (same as packages/client/src/tool.ts): write/reply with `task` (task, approval, chore) and `assignees` "
+        "makes the message a task (its #number is the task id); its agents are woken. Approvals go to people. Assigned to "
+        "you: op=accept, op=done, op=reject (`reason`) with `message_id`; op=withdraw takes back one you assigned; "
+        "op=tasks lists yours (box=\"assigned\" for those you assigned; scope=\"all\" includes closed ones)."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "op": {"type": "string", "enum": ["reply", "write", "send", "set", "inbox", "show", "history", "search"],
+            "op": {"type": "string", "enum": ["reply", "write", "send", "set", "inbox", "show", "history", "search",
+                                               "tasks", "accept", "done", "reject", "withdraw"],
                    "description": "reply/write/send a message, set a setting, or read: inbox, show, history, search"},
             "message_id": {"type": "integer", "description": "a message's #number (reply, show, history)"},
             "to": {"type": "string", "description": "\"@all\", \"@id\", \"@{id1,id2}\" (\"@{@@project,id1,id2}\" for the group under that project) or \"@@project\" (write/send, history)"},
@@ -116,6 +121,14 @@ SCHEMA = {
             "wake": {"type": "array", "items": {"type": "string"},
                      "description": "reply/write/send: agent ids of the conversation to start a turn for now, besides the "
                                     "one you reply to (always woken); default none: the others read it at their next turn"},
+            "task": {"type": "string", "enum": ["task", "approval", "chore"],
+                     "description": "reply/write/send: make the message a task of this type for `assignees` (approvals: people only)"},
+            "assignees": {"type": "array", "items": {"type": "string"},
+                          "description": "with `task`: who is to do it, members of the conversation (default: those you "
+                                         "@mention, else the other member of a DM)"},
+            "reason": {"type": "string", "description": "reject, withdraw, done: why, or what came of it"},
+            "box": {"type": "string", "enum": ["mine", "assigned"],
+                    "description": "tasks: \"mine\" (default: assigned to you) or \"assigned\" (written by you)"},
             "hold_hours": {"type": "number",
                            "description": "reply/write: how long the bus keeps it for recipients that are offline, in hours "
                                           "(default 1, at most 168); after that it expires for them"},
@@ -242,7 +255,31 @@ def describe_receipts(receipts: list[dict]) -> str:
     return "; ".join(p for p in parts if p)
 
 
-def format_delivery(frame: dict, saved_files: list[str]) -> str:
+def task_of(args: dict) -> dict | None:
+    """The `task` of a write from the tool's arguments (PostMessageRequest.task)."""
+    if not args.get("task"):
+        return None
+    return {"type": args["task"], **({"assignees": list(args["assignees"])} if args.get("assignees") else {})}
+
+
+def task_states(message: dict) -> str:
+    """Same as taskStates in packages/client/src/tool.ts."""
+    task = message.get("task")
+    if not task:
+        return ""
+    parts = [f"@{a['id']}: {a['state']}" + (f" ({a['reason']})" if a.get("reason") else "") for a in task["assignees"]]
+    return f"For {'; '.join(parts)}."
+
+
+def format_task(message: dict, conversation: dict | None) -> str:
+    """One line of op=tasks (formatTask in tool.ts)."""
+    text = " ".join(message["text"].split())
+    where = _conversation_label(conversation) if conversation else message["conversationId"]
+    short = text if len(text) <= 160 else text[:159] + "…"
+    return f"#{message['seq']} {message['task']['type']} from @{message['from']} in {where}: {short} — {task_states(message)}"
+
+
+def format_delivery(frame: dict, saved_files: list[str], me: str | None = None) -> str:
     """Same text the omp extension injects (packages/omp-extension/src/index.ts formatDelivery)."""
     message, conversation = frame["message"], frame["conversation"]
     where = _conversation_label(conversation)
@@ -260,7 +297,17 @@ def format_delivery(frame: dict, saved_files: list[str]) -> str:
     for i, f in enumerate(message.get("files") or []):
         local = saved_files[i] if i < len(saved_files) else f["name"]
         lines.append(f"File: {local} ({defang_headers(f['name'])}, {f['size']} B, sha256 {f['sha256'][:12]}…)")
+    task = message.get("task")
+    mine = next((a for a in task["assignees"] if a["id"] == me), None) if task else None
+    if task and mine and mine["state"] in ("open", "accepted"):
+        lines.append(f"(Task #{message['seq']} for you ({task['type']}): {TOOL_NAME} op=accept, op=done or op=reject "
+                     f"with message_id {message['seq']}; reason optional.)")
+    elif task:
+        lines.append(f"(Task #{message['seq']} ({task['type']}) for {', '.join('@' + a['id'] for a in task['assignees'])}.)")
     lines.append(reply_footer(frame))
+    if frame.get("openTasks"):
+        n = frame["openTasks"]
+        lines.append(f"(You have {n} open task{'' if n == 1 else 's'}: {TOOL_NAME} op=tasks.)")
     return "\n".join(lines)
 
 
@@ -317,9 +364,11 @@ class BusClient:
             raise RuntimeError(f"message bus at {self.url} unreachable: {err.reason}") from None
 
     def write(self, target: dict, text: str, wake: list[str], file_ids: list[str] | None = None,
-              hold_hours: float | None = None) -> dict:
-        """`target` is {"to": "@x"} or {"replyToSeq": n} (answer message n in its conversation); `wake` as in tool.ts."""
+              hold_hours: float | None = None, task: dict | None = None) -> dict:
+        """`target` is {"to": "@x"} or {"replyToSeq": n} (answer message n in its conversation); `wake`, `task` as in tool.ts."""
         body = {"from": self.my_id(), **target, "text": text, "wake": wake}
+        if task:
+            body["task"] = task
         if file_ids:
             body["fileIds"] = file_ids
         if hold_hours is not None:
@@ -337,6 +386,11 @@ class BusClient:
     def set(self, key: str, value: str) -> dict:
         body = {"from": self.my_id(), "key": key, "value": value}
         return self._request("POST", "/api/settings", json.dumps(body).encode())
+
+    def task_action(self, seq: int, action: str, reason: str | None) -> dict:
+        """One step on task #seq (accept, done, reject, withdraw), as in BusConnection.taskAction."""
+        body = {"from": self.my_id(), **({"reason": reason} if reason else {})}
+        return self._request("POST", f"/api/tasks/{seq}/{action}", json.dumps(body).encode())
 
     def get(self, path: str, params: dict) -> dict:
         """GET a reading endpoint (no turns for anyone); None values are left out."""
@@ -506,7 +560,7 @@ class GatewayBridge:
         files = frame["message"].get("files") or []
         dest = STATE_DIR / "received" / self.client.my_id()
         saved = [await self._download(f, dest, frame["message"]["seq"]) for f in files]
-        text = format_delivery(frame, saved)
+        text = format_delivery(frame, saved, self.client.my_id())
         seq = frame["message"]["seq"]
         if not frame.get("wake"):
             with self.unseen_lock:
@@ -622,13 +676,13 @@ def register(ctx: Any) -> None:
             if args.get("message_id") is None or not (args.get("message") or args.get("files")):
                 raise ValueError("reply needs `message_id` and `message` (or `files`).")
             refs = [client.upload(p) for p in args.get("files") or []]
-            res = client.write({"replyToSeq": int(args["message_id"])}, args.get("message") or "", list(args.get("wake") or []), [r["id"] for r in refs], args.get("hold_hours"))
+            res = client.write({"replyToSeq": int(args["message_id"])}, args.get("message") or "", list(args.get("wake") or []), [r["id"] for r in refs], args.get("hold_hours"), task_of(args))
             return sent(f"Replied to #{args['message_id']}", res)
         if op in ("write", "send"):
             if not args.get("to") or not (args.get("files") if op == "send" else args.get("message") or args.get("files")):
                 raise ValueError("send needs `to` and `files`." if op == "send" else "write needs `to` and `message` (or `files`).")
             refs = [client.upload(p) for p in args.get("files") or []]
-            res = client.write({"to": args["to"]}, args.get("message") or "", list(args.get("wake") or []), [r["id"] for r in refs], args.get("hold_hours"))
+            res = client.write({"to": args["to"]}, args.get("message") or "", list(args.get("wake") or []), [r["id"] for r in refs], args.get("hold_hours"), task_of(args))
             return sent(f"Sent to {args['to']}", res)
         if op == "set":
             if not args.get("key") or args.get("value") is None:
@@ -681,7 +735,22 @@ def register(ctx: Any) -> None:
             text, dropped = within_budget([format_search_hit(m, by_id, args.get("query") or "") for m in res["messages"]], "\n")
             more = f" ({dropped} older ones left out)" if dropped else ""
             return f"{len(res['messages'])} matching messages, oldest first{more}:\n{text}\n (you are @{me})"
-        raise ValueError("op must be reply, write, send, set, inbox, show, history or search.")
+        if op == "tasks":
+            box = "assigned" if args.get("box") == "assigned" else "mine"
+            res = client.get("/api/tasks", {"for": me, "box": box, "state": "all" if scope == "all" else "open"})
+            by_id = {c["id"]: c for c in res["conversations"]}
+            head = f"{len(res['messages'])} task(s) you assigned" if box == "assigned" else f"{res['open']} open task(s) for you"
+            if not res["messages"]:
+                return f"{head}. (you are @{me})"
+            return f"{head}:\n\n" + "\n".join(format_task(m, by_id.get(m["conversationId"])) for m in res["messages"]) + f"\n (you are @{me})"
+        if op in ("accept", "done", "reject", "withdraw"):
+            if args.get("message_id") is None:
+                raise ValueError(f"{op} needs `message_id` (the task's #number).")
+            res = client.task_action(int(args["message_id"]), op, args.get("reason"))
+            word = {"accept": "accepted", "done": "done", "reject": "rejected", "withdraw": "withdrawn"}[op]
+            return (f"#{args['message_id']} {word}; the conversation got the step as a reply. "
+                    f"{task_states(res['message'])} (you are @{me})")
+        raise ValueError("op must be reply, write, send, set, inbox, show, history, search, tasks, accept, done, reject or withdraw.")
 
     ctx.register_tool(name=TOOL_NAME, toolset="message_bus", schema=SCHEMA, handler=handle,
                       description=SCHEMA["description"], emoji="📨")

@@ -58,9 +58,12 @@ export async function postToView(view: View, text: string, fileIds: string[]): P
   if (session !== undefined) request.toSession = session;
   const hold = holdHours();
   if (hold !== undefined) request.holdHours = hold;
+  const taskType = dom.taskSelect.value;
+  if (taskType === "task" || taskType === "approval" || taskType === "chore") request.task = { type: taskType };
 
   const res = await postJson<PostMessageResponse>("/api/messages", request);
   setReplyTo(undefined);
+  dom.taskSelect.value = "";
   // Groups not loaded yet (e.g. a draft that just became a group) get their history fetched.
   if (!state.caches.has(res.conversation.id)) void loadMessages(res.conversation.id);
   receive(res.message, res.conversation);

@@ -7,7 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { conversationLabel, defangHeaders, deliveryHeader, describeReceipts, formatTime, parseAddress, provenanceMark, quoteLine, senderLabel } from "../../protocol/src/address";
 import type { Reservation, ReservationResponse, Resource, ResourcesResponse } from "../../protocol/src/resources";
-import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptEvent } from "../../protocol/src/types";
+import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptEvent, TaskType } from "../../protocol/src/types";
 import type { BusConnection, Delivery } from "./connection";
 
 export const TOOL_NAME = "message-bus";
@@ -35,7 +35,12 @@ export interface MessageBusToolParams {
     | "leave"
     | "notify"
     | "project"
-    | "parent";
+    | "parent"
+    | "tasks"
+    | "accept"
+    | "done"
+    | "reject"
+    | "withdraw";
   message_id?: number;
   to?: string;
   message?: string;
@@ -49,6 +54,10 @@ export interface MessageBusToolParams {
   scope?: "mine" | "all";
   hold_hours?: number;
   wake?: string[];
+  task?: TaskType;
+  assignees?: string[];
+  reason?: string;
+  box?: "mine" | "assigned";
   resource?: string;
   reservation?: string;
   hours?: number;
@@ -79,6 +88,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     enum: [
       "reply", "write", "send", "set", "inbox", "show", "history", "search",
       "projects", "invite", "leave", "notify", "project", "parent",
+      "tasks", "accept", "done", "reject", "withdraw",
       "resources", "servers", "reserve", "release", "extend", "mode", "subscribe", "unsubscribe",
     ],
     description:
@@ -105,6 +115,10 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     type: "string[]",
     description: "reply/write/send: agent ids of the conversation to start a turn for now, besides the one you reply to (always woken); default none: the others read it at their next turn",
   },
+  { name: "task", type: "string", enum: ["task", "approval", "chore"], description: "reply/write/send: make the message a task of this type for `assignees` (approvals: people only)" },
+  { name: "assignees", type: "string[]", description: "with `task`: who is to do it, members of the conversation (default: those you @mention, else the other member of a DM)" },
+  { name: "reason", type: "string", description: "reject, withdraw, done: why, or what came of it (shown in the conversation)" },
+  { name: "box", type: "string", enum: ["mine", "assigned"], description: 'tasks: "mine" (default: assigned to you) or "assigned" (written by you)' },
   { name: "resource", type: "string", description: 'a resource: its label ("host1 GPU 2"), GPU uuid prefix or id (resources, reserve, release); subscribe: a host name, to hear only about its GPUs' },
   { name: "reservation", type: "string", description: "a reservation id, r_… (release, extend, mode)" },
   { name: "hours", type: "number", description: "how long (reserve) or how much longer from now (extend), at most 48" },
@@ -178,6 +192,11 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "or the conversation of `message_id`. " +
     "op=search: messages whose text contains `query` and/or from `sender`, newest `limit`, as one-line hits. " +
     "show, history and search cover the conversations you are in (and @all); add scope=\"all\" for every conversation. " +
+    "Tasks: write/reply with `task` (task, approval, chore) and `assignees` makes the message a task (its #number is the " +
+    "task id); its agents are woken. Approvals go to people, who decide them signed in. Assigned to you: op=accept (on " +
+    "it), op=done, op=reject (`reason`) with `message_id`; op=withdraw takes back one you assigned; op=tasks lists yours " +
+    "(box=\"assigned\" for those you assigned; scope=\"all\" includes closed ones). Each step is posted in the " +
+    "conversation as a reply to the task and wakes who assigned it. " +
     "Conversations: op=projects lists the top level you can see: root projects (yours, open, discoverable) and your group DMs under no project, each with how many sub-groups it has; with `parent` (\"@@name\") it lists that project's sub-groups. " +
     "op=invite (`to` or `message_id` for the conversation, `ids`) adds others to a group DM or project; they get its " +
     "last 5 messages. op=leave leaves one. op=notify (`level`: none) mutes a conversation for you: no message there " +
@@ -236,11 +255,33 @@ export async function deliveryText(conn: BusConnection, delivery: Delivery): Pro
       }
     }
   }
-  return formatDelivery(delivery, saved);
+  return formatDelivery(delivery, saved, conn.id ?? undefined);
 }
 
-/** Text injected into the session for one delivery; `savedFiles` are local paths of its attachments. */
-export function formatDelivery(delivery: Delivery, savedFiles: string[]): string {
+/** The options of conn.write from the tool's arguments. */
+function writeOpts(params: MessageBusToolParams, refs: FileRef[]): Parameters<BusConnection["write"]>[2] {
+  return {
+    wake: params.wake ?? [],
+    fileIds: refs.map((r) => r.id),
+    ...(params.hold_hours === undefined ? {} : { holdHours: params.hold_hours }),
+    ...(params.task ? { task: { type: params.task, ...(params.assignees ? { assignees: params.assignees } : {}) } } : {}),
+  };
+}
+
+/** "for @beta: accepted; @carol: open" */
+function taskStates(message: Message): string {
+  return message.task ? `For ${message.task.assignees.map((a) => `@${a.id}: ${a.state}${a.reason ? ` (${a.reason})` : ""}`).join("; ")}.` : "";
+}
+
+/** One line of op=tasks. */
+function formatTask(message: Message, conversation: Conversation | undefined): string {
+  const text = message.text.replace(/\s+/g, " ").trim();
+  const where = conversation ? conversationLabel(conversation) : message.conversationId;
+  return `#${message.seq} ${message.task?.type ?? "task"} from @${message.from} in ${where}: ${text.length > 160 ? `${text.slice(0, 159)}…` : text} — ${taskStates(message)}`;
+}
+
+/** Text injected into the session for one delivery; `savedFiles` are local paths of its attachments; `me` its recipient. */
+export function formatDelivery(delivery: Delivery, savedFiles: string[], me?: string): string {
   const { message, conversation, replyTo } = delivery;
   const where = conversationLabel(conversation);
   const lines = [deliveryHeader(message.seq, senderLabel(message), where, message.createdAt, message.verified)];
@@ -252,7 +293,15 @@ export function formatDelivery(delivery: Delivery, savedFiles: string[]): string
   message.files.forEach((file, i) => {
     lines.push(`File: ${savedFiles[i] ?? file.name} (${defangHeaders(file.name)}, ${file.size} B, sha256 ${file.sha256.slice(0, 12)}…)`);
   });
+  const task = message.task;
+  const mine = task?.assignees.find((a) => a.id === me);
+  if (task && mine && (mine.state === "open" || mine.state === "accepted")) {
+    lines.push(`(Task #${message.seq} for you (${task.type}): ${TOOL_NAME} op=accept, op=done or op=reject with message_id ${message.seq}; reason optional.)`);
+  } else if (task) {
+    lines.push(`(Task #${message.seq} (${task.type}) for ${task.assignees.map((a) => `@${a.id}`).join(", ")}.)`);
+  }
   lines.push(replyFooter(delivery));
+  if (delivery.openTasks) lines.push(`(You have ${delivery.openTasks} open task${delivery.openTasks === 1 ? "" : "s"}: ${TOOL_NAME} op=tasks.)`);
   return lines.join("\n");
 }
 
@@ -486,18 +535,18 @@ export class BusTool {
           throw new Error("reply needs `message_id` and `message` (or `files`).");
         }
         const refs = await upload(params.files ?? []);
-        const res = await conn.write({ replyToSeq: params.message_id }, params.message ?? "", params.wake ?? [], refs.map((r) => r.id), params.hold_hours);
+        const res = await conn.write({ replyToSeq: params.message_id }, params.message ?? "", writeOpts(params, refs));
         return sent(`Replied to #${params.message_id}`, res);
       }
       case "write": {
         if (!params.to || (!params.message && !params.files?.length)) throw new Error("write needs `to` and `message` (or `files`).");
         const refs = await upload(params.files ?? []);
-        return sent(`Sent to ${params.to}`, await conn.write({ to: params.to }, params.message ?? "", params.wake ?? [], refs.map((r) => r.id), params.hold_hours));
+        return sent(`Sent to ${params.to}`, await conn.write({ to: params.to }, params.message ?? "", writeOpts(params, refs)));
       }
       case "send": {
         if (!params.to || !params.files?.length) throw new Error("send needs `to` and `files`.");
         const refs = await upload(params.files);
-        const res = await conn.write({ to: params.to }, params.message ?? "", params.wake ?? [], refs.map((r) => r.id), params.hold_hours);
+        const res = await conn.write({ to: params.to }, params.message ?? "", writeOpts(params, refs));
         return sent(`Sent to ${params.to}`, res);
       }
       case "set": {
@@ -580,6 +629,21 @@ export class BusTool {
         if (!params.reservation || params.hours === undefined) throw new Error("extend needs `reservation` and `hours`.");
         const res = await conn.schedule(`/api/reservations/${encodeURIComponent(params.reservation)}/extend`, { hours: params.hours });
         return result(`Extended: ${formatReservation(res.reservation, res.resource)}.`);
+      }
+      case "tasks": {
+        const res = await conn.tasks(params.box ?? "mine", params.scope === "all" ? "all" : "open");
+        const byId = new Map(res.conversations.map((c) => [c.id, c]));
+        const head = params.box === "assigned" ? `${res.messages.length} task(s) you assigned` : `${res.open} open task(s) for you`;
+        if (res.messages.length === 0) return result(`${head}.`);
+        return result(`${head}:\n\n${res.messages.map((m) => formatTask(m, byId.get(m.conversationId))).join("\n")}`);
+      }
+      case "accept":
+      case "done":
+      case "reject":
+      case "withdraw": {
+        if (params.message_id === undefined) throw new Error(`${params.op} needs \`message_id\` (the task's #number).`);
+        const res = await conn.taskAction(params.message_id, params.op, params.reason);
+        return result(`#${params.message_id} ${params.op === "accept" ? "accepted" : params.op === "done" ? "done" : params.op === "reject" ? "rejected" : "withdrawn"}; the conversation got the step as a reply. ${taskStates(res.message)}`);
       }
       case "projects": {
         // Top level by default (root projects and group DMs under no project); with `parent`, what is under that project.

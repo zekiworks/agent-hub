@@ -337,6 +337,27 @@ test("sessions started in the temp directory do not join unless AGENT_BUS_JOIN_F
   expect(participants.some((p) => p.id === "scratch")).toBe(false);
 });
 
+test("tasks through the tool: the assignee is told it is theirs, accepts and finishes it; op=tasks lists them; an agent assigns one", async () => {
+  const alpha = await startSession("alpha");
+  const beta = await rawAgent("beta");
+
+  const { message } = await post({ from: "carol", to: "@alpha", text: "rotate the logs", task: {} });
+  const delivered = await alpha.injectedWith("rotate the logs");
+  expect(delivered.content).toContain(`(Task #${message.seq} for you (task): message-bus op=accept, op=done or op=reject with message_id ${message.seq}; reason optional.)`);
+  expect(delivered.content).toEndWith("(You have 1 open task: message-bus op=tasks.)");
+  expect((await alpha.run({ op: "tasks" })).content[0]!.text).toMatch(new RegExp(`^1 open task\\(s\\) for you:\\n\\n#${message.seq} task from @carol in .*: rotate the logs — For @alpha: open\\.`));
+  expect((await alpha.run({ op: "accept", message_id: message.seq })).content[0]!.text).toContain("For @alpha: accepted.");
+  expect((await alpha.run({ op: "done", message_id: message.seq, reason: "rotated, 2 GB freed" })).content[0]!.text).toContain("For @alpha: done (rotated, 2 GB freed).");
+  expect((await alpha.run({ op: "tasks" })).content[0]!.text).toStartWith("0 open task(s) for you.");
+
+  // An agent assigns a chore to another agent: it is woken, and told the task is its own.
+  const sent = await alpha.run({ op: "write", to: "@beta", message: "please re-index", task: "chore" });
+  expect(sent.content[0]!.text).toContain("woke @beta");
+  const forBeta = await beta.delivered("please re-index");
+  expect([forBeta.wake, forBeta.message.task?.assignees]).toEqual([true, [{ id: "beta", state: "open" }]]);
+  beta.ws.close();
+});
+
 test("reply answers a message by its number, into that message's conversation", async () => {
   const alpha = await startSession("alpha");
   const beta = await rawAgent("beta");

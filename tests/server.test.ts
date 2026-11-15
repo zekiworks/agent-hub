@@ -8,6 +8,7 @@ import { BusDatabase } from "../packages/server/src/db";
 import type {
   AgentServerFrame,
   Checklist,
+  TasksResponse,
   Conversation,
   FileRef,
   Message,
@@ -766,6 +767,59 @@ describe("delivery", () => {
     const dm = await send({ from: "carol", to: "@alpha", text: "x" });
     expect((await pin(true, "carol", dm.conversation.id)).status).toBe(400);
     expect((await pin("yes" as unknown as boolean)).status).toBe(400);
+  });
+
+  test("tasks: assigned by mention or DM, they wake their agents; assignees accept/finish/reject, the assigner withdraws; each step replies in the conversation", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const act = (seq: number, action: string, from: string, reason?: string) =>
+      postJson(bus, `/api/tasks/${seq}/${action}`, { from, ...(reason ? { reason } : {}) });
+    const tasks = async (who: string, box = "mine", state = "open") =>
+      (await busFetch(bus, `/api/tasks?for=${who}&box=${box}&state=${state}`, {}, who === "carol" || who === "uma" ? who : undefined)).json() as Promise<TasksResponse>;
+
+    // In a group, the @mentioned member is the assignee, and an agent assignee is woken even if listed in nobody's wake.
+    const group = await send({ from: "carol", to: "@{alpha,beta}", text: "plan" });
+    await alpha.client.take("deliver");
+    await beta.client.take("deliver");
+    await send({ from: alpha.id, conversationId: group.conversation.id, text: "plan done", wake: [] });
+    await beta.client.take("deliver");
+    const t = await send({ from: "carol", conversationId: group.conversation.id, text: "@beta please rerun 7", task: { type: "chore" } });
+    expect(t.message.task).toEqual({ type: "chore", assignees: [{ id: "beta", state: "open" }] });
+    expect((await beta.client.take("deliver")).openTasks).toBe(1);
+    expect((await alpha.client.take("deliver")).wake).toBe(false); // not its task
+    expect(await tasks("beta")).toMatchObject({ open: 1, unread: 1 });
+    // Nobody named: refused; agents cannot approve; approvals go to people only.
+    expect((await postJson(bus, "/api/messages", { from: "carol", conversationId: group.conversation.id, text: "someone do it", task: {} })).status).toBe(400);
+    expect((await postJson(bus, "/api/messages", { from: alpha.id, conversationId: group.conversation.id, text: "@beta approve?", task: { type: "approval" } })).status).toBe(400);
+
+    // The assignee accepts (informs, wakes nobody), then finishes (wakes the assigner if an agent).
+    expect((await act(t.message.seq, "done", "alpha")).status).toBe(403); // not assigned
+    expect((await act(t.message.seq, "accept", beta.id)).status).toBe(200);
+    const accepted = await alpha.client.take("deliver");
+    expect([accepted.message.text, accepted.message.quote?.seq, accepted.wake]).toEqual(["Accepted: on it.", t.message.seq, false]);
+    expect((await act(t.message.seq, "done", beta.id)).status).toBe(200);
+    expect((await alpha.client.take("deliver")).message.text).toBe("✓ Done.");
+    expect((await act(t.message.seq, "reject", beta.id)).status).toBe(409); // already done
+    expect(await tasks("beta")).toMatchObject({ open: 0, messages: [] });
+    expect((await tasks("beta", "mine", "all")).messages[0]?.task?.assignees[0]).toMatchObject({ id: "beta", state: "done" });
+
+    // An agent assigns a person an approval in a DM; only that person, signed in, decides it; the agent is woken by it.
+    const ask = await send({ from: alpha.id, to: "@carol", text: "May I delete run 3?", task: { type: "approval" } });
+    expect(ask.message.task?.assignees).toEqual([{ id: "carol", state: "open" }]);
+    expect((await tasks("carol")).unread).toBe(1);
+    await act(ask.message.seq, "read", "carol");
+    expect(await tasks("carol")).toMatchObject({ open: 1, unread: 0 });
+    expect((await act(ask.message.seq, "reject", "carol", "keep it until Monday")).status).toBe(200);
+    const denied = await alpha.client.take("deliver");
+    expect([denied.message.text, denied.wake, denied.message.verified]).toEqual(["✕ Denied. keep it until Monday", true, true]);
+    expect((await tasks(alpha.id, "assigned", "all")).messages[0]?.task?.assignees[0]).toMatchObject({ state: "rejected", reason: "keep it until Monday", verified: true });
+
+    // The assigner withdraws an open task: its agent assignees are told and woken.
+    const w = await send({ from: "carol", to: "@beta", text: "check the logs", task: {} });
+    await beta.client.take("deliver");
+    expect((await act(w.message.seq, "withdraw", beta.id)).status).toBe(403);
+    expect((await act(w.message.seq, "withdraw", "carol", "not needed")).status).toBe(200);
+    expect(await beta.client.take("deliver")).toMatchObject({ wake: true, message: { text: "Withdrawn. not needed" } });
   });
 
   test("a checklist: its owner publishes markdown with assignees; only owner and assignees tick; ticks survive a republish", async () => {

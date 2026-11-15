@@ -9,6 +9,7 @@ import { renderMarkdown } from "./markdown";
 import { setTitleBase } from "./notify";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
+import { renderTaskBadge } from "./inbox";
 import { updateJump } from "./jump";
 import { renderPane } from "./pane";
 import { renderSpeaking, speakButton } from "./speak";
@@ -224,6 +225,8 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
     for (const file of message.files) files.append(renderFile(file));
     li.append(files);
   }
+  const badge = renderTaskBadge(message);
+  if (badge) li.append(badge);
   const receipts = renderReceipts(message);
   if (receipts) li.append(receipts);
   // Last: on phones it is a row under the message (on wider screens it floats top right).

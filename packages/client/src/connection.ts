@@ -16,9 +16,11 @@ import type {
   FileRef,
   Message,
   Participant,
+  PostMessageRequest,
   PostMessageResponse,
   ReceiptEvent,
   StateResponse,
+  TasksResponse,
 } from "../../protocol/src/types";
 import type { GpuSubscription, ReservationResponse, ResourcesResponse } from "../../protocol/src/resources";
 
@@ -265,20 +267,34 @@ export class BusConnection {
   /**
    * Posts to an address (`{ to: "@x" }`) or into the conversation of a message being answered (`{ replyToSeq }`).
    * `wake`: the agents it starts a turn for besides the one replied to (Message.wake). `holdHours`: how long the bus
-   * holds it for recipients that are offline (default 1).
+   * holds it for recipients that are offline (default 1). `task`: makes it a task (PostMessageRequest.task).
    */
   write(
     target: { to: string } | { replyToSeq: number },
     text: string,
-    wake: string[],
-    fileIds?: string[],
-    holdHours?: number
+    opts: { wake: string[]; fileIds?: string[]; holdHours?: number; task?: PostMessageRequest["task"] }
   ): Promise<PostMessageResponse> {
     const from = this.requireId();
+    const { wake, fileIds, holdHours, task } = opts;
     return this.request<PostMessageResponse>("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from, ...target, text, wake, fileIds, ...(holdHours === undefined ? {} : { holdHours }) }),
+      body: JSON.stringify({ from, ...target, text, wake, fileIds, ...(holdHours === undefined ? {} : { holdHours }), ...(task ? { task } : {}) }),
+    });
+  }
+
+  /** Tasks for this agent (`mine`) or written by it (`assigned`); open ones, or all. */
+  tasks(box: "mine" | "assigned", state: "open" | "all"): Promise<TasksResponse> {
+    const qs = new URLSearchParams({ for: this.requireId(), box, state });
+    return this.request<TasksResponse>(`/api/tasks?${qs}`, { method: "GET" });
+  }
+
+  /** One step on task #seq: accept, done, reject (its assignee) or withdraw (who assigned it). */
+  taskAction(seq: number, action: "accept" | "done" | "reject" | "withdraw", reason?: string): Promise<{ message: Message }> {
+    return this.request<{ message: Message }>(`/api/tasks/${seq}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: this.requireId(), ...(reason ? { reason } : {}) }),
     });
   }
 

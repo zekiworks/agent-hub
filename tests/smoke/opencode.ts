@@ -169,7 +169,7 @@ try {
   other.connect();
   await until(() => other!.connected, "other agent");
   const quietStart = requests.length;
-  await other.write({ to: "@all" }, "quiet broadcast smoke", []);
+  await other.write({ to: "@all" }, "quiet broadcast smoke", { wake: [] });
   await Bun.sleep(500);
   assert.equal(requests.length, quietStart, "agent broadcast must not wake an idle session");
   await api(`/api/session/${sessionID}/prompt`, { text: "flush quiet smoke" });
