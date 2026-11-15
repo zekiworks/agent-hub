@@ -39,14 +39,20 @@ function playing(): boolean {
 }
 
 /** Sentences of `text` with their offsets: up to . ! ? … or a line break, short ones joined to the next. */
-function sentencesOf(text: string): Sentence[] {
+/**
+ * The sentences of `text` (offsets from `offset`): split at . ! ? … and line breaks; a piece under 25 characters joins
+ * the next. Called per block (paragraph, list item, heading), so a sentence never runs from one block into the next:
+ * a heading ending in ":" was read and highlighted together with the list item under it (Ümit, 15 Nov).
+ */
+function sentencesOf(text: string, offset = 0): Sentence[] {
   const out: Sentence[] = [];
-  const re = /[^.!?…\n]*(?:[.!?…]+|\n|$)/g;
+  // A mark ends a sentence only before a space or the end: "v1.3", "Qwen3.5-4B" and "02:42" stay whole.
+  const re = /(?:[^.!?…\n]|[.!?…](?![\s.!?…]|$))*(?:[.!?…]+|\n|$)/g;
   let pending: Sentence | undefined;
   for (const match of text.matchAll(re)) {
     const raw = match[0];
     if (raw === "") continue;
-    const start = match.index ?? 0;
+    const start = offset + (match.index ?? 0);
     const piece = { start, end: start + raw.length, text: raw };
     pending = pending ? { start: pending.start, end: piece.end, text: pending.text + raw } : piece;
     if (pending.text.trim().length >= 25) {
@@ -59,6 +65,34 @@ function sentencesOf(text: string): Sentence[] {
 }
 
 /** The text of message `seq` as shown, or "" when it is not on screen. */
+/** Blocks of rendered markdown (markdown.ts: paragraphs are div.md-p); a <br> inside one also breaks. */
+const BLOCKS = "div.md-p, p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, td, th";
+
+/**
+ * The sentences of a shown message, block by block. Offsets are into the element's textContent, which runs its blocks
+ * together without a break ("Done and on the site:Small decision models…"), so blocks are found from its text nodes.
+ */
+function sentencesOfShown(root: HTMLElement): Sentence[] {
+  const blocks: Array<{ start: number; text: string; block: Element | null }> = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  let offset = 0;
+  let broken = false;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      if ((node as Element).tagName === "BR") broken = true;
+      continue;
+    }
+    const text = node.textContent ?? "";
+    const block = node.parentElement?.closest(BLOCKS) ?? null;
+    const last = blocks.at(-1);
+    if (last && last.block === block && !broken) last.text += text;
+    else blocks.push({ start: offset, text, block });
+    broken = false;
+    offset += text.length;
+  }
+  return blocks.flatMap((b) => sentencesOf(b.text, b.start));
+}
+
 function shownText(seq: number): HTMLElement | null {
   return dom.messageList.querySelector<HTMLElement>(`[data-seq="${seq}"] .msg-text`);
 }
@@ -228,8 +262,8 @@ export function speakButton(message: Message): HTMLButtonElement {
     if (current?.seq === message.seq) return togglePause();
     forget();
     // The text as shown (without markdown signs), so what is highlighted is what is heard.
-    const shown = shownText(message.seq)?.textContent ?? message.text;
-    const sentences = sentencesOf(shown);
+    const shown = shownText(message.seq);
+    const sentences = shown ? sentencesOfShown(shown) : sentencesOf(message.text);
     if (sentences.length === 0) return;
     // An Audio made inside the click may play after the await (Safari allows sound only from a user's gesture).
     const audio = new Audio();
