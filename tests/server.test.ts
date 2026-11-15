@@ -500,14 +500,17 @@ describe("delivery", () => {
     expect((await send({ from: alpha.id, to: "@carol", text: "back" })).conversation.id).toBe(dm.conversation.id);
   });
 
-  test("a DM is fixed at two: nobody joins it by writing, nobody leaves it", async () => {
+  test("a DM is fixed at two: writing in it from outside goes to a group DM (people) or is refused (agents); nobody leaves", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
+    const gamma = await joinPath("/tmp/x/gamma");
     const started = await send({ from: alpha.id, to: `@${beta.id}`, text: "hi beta" });
     expect((await beta.client.take("deliver")).replyTo).toBe("@alpha");
-    const intruder = await post({ from: "uma", conversationId: started.conversation.id, text: "did you read this?" });
-    expect(intruder.status).toBe(403);
-    expect(await errorOf(intruder)).toContain("not in this DM");
+    const person = await send({ from: "uma", conversationId: started.conversation.id, text: "did you read this?" });
+    expect(person.conversation).toMatchObject({ kind: "group", members: ["alpha", "beta", "uma"] });
+    const agent = await post({ from: gamma.id, conversationId: started.conversation.id, text: "me too" });
+    expect(agent.status).toBe(403);
+    expect(await errorOf(agent)).toContain("not in this DM");
     const left = await postJson(bus, `/api/conversations/${started.conversation.id}/leave`, { from: alpha.id });
     expect(left.status).toBe(400);
     // An agent saying "exit" in a DM is an ordinary message.

@@ -178,12 +178,14 @@ test("delivers like the composer: idle starts a turn, busy queues a follow-up, u
   const alpha = await startSession("alpha");
   const beta = await rawAgent("beta");
 
-  // A person's @all wakes the agents it mentions; the others take it in at their next turn.
+  // A person's @all wakes the agents it mentions (after beta wrote: before that, it would wake all its agents).
+  await post({ from: "beta", to: "@all", text: "beta is here" });
+  await alpha.injectedWith("beta is here");
   const { message: standup } = await post({ from: "carol", to: "@all", text: "@alpha standup in 5" });
   const sent = new Date(standup.createdAt).toISOString().slice(0, 16).replace("T", " "); // tests run in UTC (setup.ts)
   expect(await alpha.injectedWith("standup in 5")).toEqual({
     via: "user",
-    content: `[message-bus] #1 @carol (verified) → @all · ${sent}\n@alpha standup in 5\n(Reply only if they need something from you: message-bus reply, message_id 1 → @all.)`,
+    content: `[message-bus] #${standup.seq} @carol (verified) → @all · ${sent}\n@alpha standup in 5\n(Reply only if they need something from you: message-bus reply, message_id ${standup.seq} → @all.)`,
     deliverAs: undefined,
   });
   await post({ from: "carol", to: "@all", text: "lunch is here" });
