@@ -58,6 +58,7 @@ RECONNECT_MAX_S = 30.0
 STABLE_CONNECTION_S = 30.0  # a connection that lasted this long resets the reconnect backoff
 RECEIPT_WAIT_MS = 5000  # how long write/send wait for recipients' harnesses to accept the message
 HOLD_MAX_S = 900  # inject held messages anyway when the previous injection has not been seen for this long
+HISTORY_SCAN = 40  # pre_llm_call looks for steered deliveries among this many latest history messages
 
 # Group messages written from this process whose recipients were still pending when the tool returned;
 # the gateway bridge turns their later receipt frames into quiet notes (same process: Discord turns run
@@ -627,10 +628,20 @@ class GatewayBridge:
         if flush:
             asyncio.run_coroutine_threadsafe(self._flush(), loop)
 
-    def pre_llm_call(self, session_id: str = "", user_message: Any = None, **_: Any) -> dict | None:
-        """Reports deliveries in this turn's user message as seen; quiet ones ride along with the bus session's next turn."""
+    def pre_llm_call(self, session_id: str = "", user_message: Any = None, conversation_history: Any = None,
+                     **_: Any) -> dict | None:
+        """Reports deliveries in this turn's user message as seen; quiet ones ride along with the bus session's next turn.
+
+        A batch the gateway steered into a turn already running reaches the model as a user message of that turn, so
+        it shows up in a later turn's conversation_history, not in its user_message: the user messages at the end of
+        the history count too, or the next batch would wait for the HOLD_MAX_S watchdog (zeki #9291).
+        """
         if self.unseen:
             self._report_seen(json.dumps(user_message, default=str))
+        if self.unseen and isinstance(conversation_history, list):
+            recent = [m.get("content") for m in conversation_history[-HISTORY_SCAN:] if isinstance(m, dict) and m.get("role") == "user"]
+            if recent:
+                self._report_seen(json.dumps(recent, default=str))
         if not self.quiet or session_id != self._session_id():
             return None
         with self.quiet_lock:
