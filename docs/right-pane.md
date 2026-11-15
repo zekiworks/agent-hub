@@ -87,9 +87,11 @@ replaces it) and assignees (`assignees` in the PUT body; kept when left out); on
 
 ## Agents' own pages (built)
 
-An agent that keeps its own web page (gpudash's dashboard, a progress board) can show it as a pane tab on every
-view: `agent-bus serve --ext NAME=URL` (repeatable), e.g. `--ext gpudash=http://127.0.0.1:3420`. The bus lists the
-names in `GET /api/state` (`extensions`) and serves each page at `/ext/NAME/KEY/…`, forwarding to `URL/…`:
+An agent that keeps its own web page (gpudash's dashboard, a progress board) can show it as a pane tab. The page
+belongs to NAME (Can, 15 Nov): its tab shows in the project @@NAME and in the DM with agent NAME, and like every tab
+stays in the pane while other conversations are opened on the left. Configured with `agent-bus serve --ext
+NAME=URL` (repeatable), e.g. `--ext gpudash=http://127.0.0.1:3420`. The bus lists the names in `GET /api/state`
+(`extensions`) and serves each page at `/ext/NAME/KEY/…`, forwarding to `URL/…`:
 
 - Signed-in people only. A frame cannot send the session header, so the key rides in the path: the signed file key
   the website already holds (a day long, and only while its person's session lasts). A page that uses relative URLs
@@ -97,7 +99,7 @@ names in `GET /api/state` (`extensions`) and serves each page at `/ext/NAME/KEY/
   slash is redirected to the slashed address.
 - GET and HEAD only; server-sent event streams pass through unbuffered. Only the page's content headers come back
   (no cookies); CORS is open, since the frame runs without the website's origin.
-- The tab, named NAME, holds the page in a frame with `sandbox="allow-scripts allow-popups
+- The tab, named NAME (in @@NAME and NAME's DM), holds the page in a frame with `sandbox="allow-scripts allow-popups
   allow-popups-to-escape-sandbox"` and `allow="clipboard-write"`: scripts run, but the page cannot read the website's
   storage or session. The frame is drawn once and kept while conversations change, so a live page does not reload.
 - The pane is about 360 to 700 px wide: the page should fit narrow widths; links to its full view use
