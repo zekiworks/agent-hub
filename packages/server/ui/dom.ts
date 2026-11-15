@@ -10,6 +10,8 @@ export const dom = {
   conversationList: el<HTMLUListElement>("conversation-list"),
   groupList: el<HTMLUListElement>("group-list"),
   roomList: el<HTMLUListElement>("room-list"),
+  otherRoomsBtn: el<HTMLButtonElement>("other-rooms-btn"),
+  otherRoomsList: el<HTMLUListElement>("other-rooms-list"),
   otherGroupsBtn: el<HTMLButtonElement>("other-groups-btn"),
   otherGroupsList: el<HTMLUListElement>("other-groups-list"),
   newProjectBtn: el<HTMLButtonElement>("new-project-btn"),

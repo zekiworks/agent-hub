@@ -291,10 +291,22 @@ function draftItem(): HTMLLIElement | undefined {
   return li;
 }
 
+let otherRoomsOpen = false;
+dom.otherRoomsBtn.addEventListener("click", () => {
+  otherRoomsOpen = !otherRoomsOpen;
+  renderSidebar();
+});
+
 function renderConversationList(): void {
   renderMentionList();
   const rooms = sortedRooms().filter((c) => !hasMention(c) && passesFilter(c));
   dom.roomList.replaceChildren(...rooms.map(conversationItem));
+  // Rooms I am not in (open or discoverable ones, and my archived ones), folded like Other projects.
+  const otherRooms = browsableProjects(true);
+  dom.otherRoomsBtn.hidden = otherRooms.length === 0;
+  dom.otherRoomsBtn.textContent = `${otherRoomsOpen ? "▾" : "▸"} Other rooms (${otherRooms.length})`;
+  dom.otherRoomsList.hidden = !otherRoomsOpen || otherRooms.length === 0;
+  dom.otherRoomsList.replaceChildren(...(otherRoomsOpen ? otherRooms.map(conversationItem) : []));
   const conversations = sortedConversations().filter((c) => !hasMention(c));
   const shown = conversations.filter(passesFilter);
   renderFilterNote(conversations.filter((c) => !passesFilter(c)));

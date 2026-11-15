@@ -149,9 +149,9 @@ export function otherGroups(): Conversation[] {
 }
 
 /** "Other projects": the projects I can see and am not in (open or discoverable), archived ones last. */
-export function browsableProjects(): Conversation[] {
+export function browsableProjects(rooms = false): Conversation[] {
   return Array.from(state.conversations.values())
-    .filter((c) => c.kind === "project" && !c.members.includes(state.me) && !pinnedByMe(c))
+    .filter((c) => c.kind === "project" && !!c.room === rooms && !c.members.includes(state.me) && !pinnedByMe(c))
     .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || b.lastMessageAt - a.lastMessageAt);
 }
 
