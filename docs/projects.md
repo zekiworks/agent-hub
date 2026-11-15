@@ -115,6 +115,9 @@ A room is a project addressed only as `#name`: the way sub-work is made, optiona
 - **Parents:** projects only, one level; a room is never a parent. A project's Sub-groups panel lists its rooms; the
   sidebar lists your rooms with your projects.
 - **In text:** `#name` links to the room when it exists; other `#words` stay plain.
+- **Sidebar (Can, 15 Nov):** a Rooms section right under Agents: your pinned rooms, `#all` (everyone's room; `#all`
+  is another way to write `@all`), then your other rooms. Every project, room and group entry has a ⋯ menu with Pin
+  (first in its section, kept per person) and, for members, Archive.
 
 ### Wake lists
 

@@ -18,7 +18,8 @@ const MAX_ID_CHARS = 48;
  */
 export function parseAddress(input: string): ParsedAddress {
   if (input.trim().startsWith("@@")) return { kind: "project", name: projectName(input.trim().slice(2)) };
-  // "#name": a room (Can, 15 Nov). A name of digits only is a message number, never a room.
+  // "#name": a room (Can, 15 Nov). A name of digits only is a message number, never a room; "#all" is @all.
+  if (input.trim().toLowerCase() === "#all") return { kind: "all" };
   if (input.trim().startsWith("#")) return { kind: "project", name: roomName(input.trim().slice(1)), room: true };
   const raw = input.trim().replace(/^@/, "");
   if (raw.toLowerCase() === "all") return { kind: "all" };
@@ -49,6 +50,7 @@ export function parseAddress(input: string): ParsedAddress {
 export function roomName(input: string): string {
   const name = projectName(input);
   if (!/[a-z]/.test(name)) throw new Error(`Invalid room name "${input}": it needs a letter ("#${name}" is a message number)`);
+  if (name === "all") throw new Error('"#all" is everyone\'s room (@all); pick another name');
   return name;
 }
 

@@ -9,6 +9,7 @@ export const dom = {
   offlineBtn: el<HTMLButtonElement>("offline-btn"),
   conversationList: el<HTMLUListElement>("conversation-list"),
   groupList: el<HTMLUListElement>("group-list"),
+  roomList: el<HTMLUListElement>("room-list"),
   otherGroupsBtn: el<HTMLButtonElement>("other-groups-btn"),
   otherGroupsList: el<HTMLUListElement>("other-groups-list"),
   newProjectBtn: el<HTMLButtonElement>("new-project-btn"),

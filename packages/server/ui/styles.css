@@ -2188,54 +2188,90 @@ ul.md-list ul.md-list { list-style: circle; }
   color: var(--project-color, var(--accent));
 }
 
-/* 📌 on a project of mine (sidebar.ts pinButton): on hover, and always once pinned or on touch screens. Over the
- * entry's top right; its time hides while the pin shows there. */
-#conversation-list li,
-#browse-list li {
+/* ⋯ on a project, room or group (sidebar.ts entryMenuButton): on hover, faint on touch screens; over the entry's top
+ * right, where its time hides while it shows. A pinned entry keeps a 📌 there. */
+.side-list li {
   position: relative;
 }
 
-.pin-btn {
+.entry-btn,
+.pin-mark {
   position: absolute;
   top: 4px;
   right: 6px;
-  padding: 2px 4px;
+  padding: 2px 6px;
   border: 0;
   border-radius: 4px;
   background: transparent;
-  font-size: 13px;
+  color: var(--sidebar-text);
+  font-size: 14px;
   line-height: 1;
+}
+
+.entry-btn {
   opacity: 0;
-  filter: grayscale(1);
   cursor: pointer;
 }
 
-#conversation-list li:hover .pin-btn,
-#browse-list li:hover .pin-btn,
-.pin-btn:focus-visible {
-  opacity: 0.6;
+.side-list li:hover .entry-btn,
+.entry-btn:focus-visible {
+  opacity: 0.8;
 }
 
-.pin-btn:hover {
-  opacity: 1 !important;
+.entry-btn:hover {
+  opacity: 1;
   background: var(--hover);
 }
 
-.pin-btn.pinned {
-  opacity: 1;
-  filter: none;
+.pin-mark {
+  font-size: 12px;
+  pointer-events: none;
 }
 
-#conversation-list li:hover .side-item-time,
-#browse-list li:hover .side-item-time,
-#conversation-list li:has(.pin-btn.pinned) .side-item-time {
+.side-list li:hover .pin-mark {
+  visibility: hidden;
+}
+
+.side-list li:has(.entry-btn):hover .side-item-time,
+.side-list li:has(.pin-mark) .side-item-time {
   visibility: hidden;
 }
 
 @media (hover: none) {
-  .pin-btn {
+  .entry-btn {
     opacity: 0.5;
   }
+
+  .pin-mark {
+    right: 28px;
+  }
+}
+
+.entry-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-raised);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
+}
+
+.entry-menu-item {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.entry-menu-item:hover {
+  background: var(--hover);
 }
 
 .conv-item.conv-muted {

@@ -23,6 +23,7 @@ import {
   passesFilter,
   pinnedByMe,
   sortedConversations,
+  sortedRooms,
   state,
   UNREAD_ONLY_KEY,
 } from "./state";
@@ -197,32 +198,80 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   button.title = conv.kind === "all" ? "Delivered to every agent" : `Members: ${nameList(conv.members)}`;
   button.addEventListener("click", () => navigate({ kind: "conversation", id: conv.id }));
   li.append(button);
-  if (conv.kind === "project") li.append(pinButton(conv));
+  if (conv.kind === "project" || conv.kind === "group") {
+    if (pinnedByMe(conv)) li.append(h("span", "pin-mark", "📌"));
+    li.append(entryMenuButton(conv));
+  }
   return li;
 }
 
-/** 📌 on a project, mine or not: a toggle that sorts it first in my Projects (kept on the bus, so on every device). */
-function pinButton(conv: Conversation): HTMLButtonElement {
-  const pinned = pinnedByMe(conv);
-  const pin = h("button", pinned ? "pin-btn pinned" : "pin-btn", "📌");
-  pin.type = "button";
-  pin.title = pinned ? "Unpin" : "Pin to the top of Projects";
-  pin.setAttribute("aria-pressed", pinned ? "true" : "false");
-  pin.addEventListener("click", async (event) => {
-    event.stopPropagation();
-    const pinnedBy = (conv.pinnedBy ?? []).filter((id) => id !== state.me);
-    const next = { ...conv, pinnedBy: pinned ? pinnedBy : [...pinnedBy, state.me] };
-    state.conversations.set(conv.id, next);
+/** Pins (or unpins) `conv` for me: first in its section, on every device (kept on the bus). */
+async function setPinned(conv: Conversation, pinned: boolean): Promise<void> {
+  const others = (conv.pinnedBy ?? []).filter((id) => id !== state.me);
+  state.conversations.set(conv.id, { ...conv, pinnedBy: pinned ? [...others, state.me] : others });
+  renderSidebar();
+  try {
+    await postJson(`/api/conversations/${encodeURIComponent(conv.id)}/pin`, { from: state.me, pinned });
+  } catch (error) {
+    state.conversations.set(conv.id, conv);
     renderSidebar();
-    try {
-      await postJson(`/api/conversations/${encodeURIComponent(conv.id)}/pin`, { from: state.me, pinned: !pinned });
-    } catch (error) {
-      state.conversations.set(conv.id, conv);
-      renderSidebar();
-      alert(`Could not ${pinned ? "unpin" : "pin"} it: ${errorText(error)}`);
-    }
+    alert(`Could not ${pinned ? "pin" : "unpin"} it: ${errorText(error)}`);
+  }
+}
+
+async function setArchived(conv: Conversation, archived: boolean): Promise<void> {
+  try {
+    await postJson(`/api/conversations/${encodeURIComponent(conv.id)}/archive`, { from: state.me, archived });
+  } catch (error) {
+    alert(`Could not ${archived ? "archive" : "bring back"} it: ${errorText(error)}`);
+  }
+}
+
+/** The open entry menu, if any (one at a time). */
+let openEntryMenu: HTMLElement | undefined;
+
+function closeEntryMenu(): void {
+  openEntryMenu?.remove();
+  openEntryMenu = undefined;
+}
+
+document.addEventListener("click", closeEntryMenu);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeEntryMenu();
+});
+
+/** ⋯ on a project, room or group in the sidebar (Can, 15 Nov): Pin/Unpin, and Archive for its members. */
+function entryMenuButton(conv: Conversation): HTMLButtonElement {
+  const btn = h("button", "entry-btn", "⋯");
+  btn.type = "button";
+  btn.title = "Pin or archive";
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const wasOpen = openEntryMenu?.dataset.conv === conv.id;
+    closeEntryMenu();
+    if (wasOpen) return;
+    const menu = h("div", "entry-menu");
+    menu.dataset.conv = conv.id;
+    const item = (label: string, run: () => void) => {
+      const b = h("button", "entry-menu-item", label);
+      b.type = "button";
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeEntryMenu();
+        run();
+      });
+      menu.append(b);
+    };
+    const pinned = pinnedByMe(conv);
+    item(pinned ? "Unpin" : "Pin to the top", () => void setPinned(conv, !pinned));
+    if (conv.members.includes(state.me)) item(conv.archived ? "Bring back (unarchive)" : "Archive", () => void setArchived(conv, !conv.archived));
+    const r = btn.getBoundingClientRect();
+    menu.style.top = `${Math.round(r.bottom + 4)}px`;
+    menu.style.left = `${Math.round(Math.max(8, r.right - 180))}px`;
+    document.body.append(menu);
+    openEntryMenu = menu;
   });
-  return pin;
+  return btn;
 }
 
 /** The open draft of a new project or group DM ("new — not sent yet"); a draft DM with an agent is its Agents row. */
@@ -244,6 +293,8 @@ function draftItem(): HTMLLIElement | undefined {
 
 function renderConversationList(): void {
   renderMentionList();
+  const rooms = sortedRooms().filter((c) => !hasMention(c) && passesFilter(c));
+  dom.roomList.replaceChildren(...rooms.map(conversationItem));
   const conversations = sortedConversations().filter((c) => !hasMention(c));
   const shown = conversations.filter(passesFilter);
   renderFilterNote(conversations.filter((c) => !passesFilter(c)));

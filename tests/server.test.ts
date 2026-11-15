@@ -784,11 +784,14 @@ describe("delivery", () => {
     await send({ from: "carol", to: "@@infra", text: "a project" });
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "#infra", text: "x" })).status).toBe(409);
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "#8351", text: "x" })).status).toBe(400);
+    // "#all" is everyone's room: @all; no room takes the name.
+    expect((await send({ from: "carol", to: "#all", text: "hello all" })).conversation.id).toBe("all");
     // A group becomes a room with a name and a parent project; it stays private; its address is #name.
     const group = await send({ from: "carol", to: "@{alpha,uma}", text: "plan" });
     await alpha.client.take("deliver");
     const room = (body: Record<string, unknown>) => postJson(bus, `/api/conversations/${group.conversation.id}/room`, { from: "carol", ...body });
     expect((await room({ name: "infra" })).status).toBe(409); // a project's name
+    expect((await room({ name: "all" })).status).toBe(400);
     expect((await room({ name: "plan", parent: "#nightly" })).status).toBe(404); // rooms are never parents
     expect(await answeredConversation(await room({ name: "#Plan", parent: "@@infra" }))).toMatchObject({
       kind: "project", room: true, name: "plan", visibility: "private", parentName: "infra", members: ["alpha", "carol", "uma"],

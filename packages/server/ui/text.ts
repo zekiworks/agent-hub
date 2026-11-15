@@ -1,5 +1,5 @@
 // Inline nodes of message text: @mentions highlighted, #n message references linked.
-import { mentionedIds, mentionSpans, type Conversation, type Message } from "@agent-bus/protocol";
+import { ALL_CONVERSATION_ID, mentionedIds, mentionSpans, type Conversation, type Message } from "@agent-bus/protocol";
 import { api } from "./api";
 import { dom } from "./dom";
 import { errorText } from "./format";
@@ -39,7 +39,7 @@ function refNodes(text: string): Node[] {
   let last = 0;
   for (const match of text.matchAll(REF_RE)) {
     const ref = match[2] ?? "";
-    const room = /[a-z]/.test(ref) ? roomNamed(ref) : undefined;
+    const room = ref === "all" ? state.conversations.get(ALL_CONVERSATION_ID) : /[a-z]/.test(ref) ? roomNamed(ref) : undefined;
     if (/[a-z]/.test(ref) && !room) continue;
     const start = (match.index ?? 0) + (match[1] ?? "").length;
     if (start > last) out.push(document.createTextNode(text.slice(last, start)));
@@ -57,9 +57,9 @@ function roomNamed(name: string): Conversation | undefined {
 
 /** "#name" as a link to the room. */
 function roomLink(room: Conversation): HTMLAnchorElement {
-  const a = h("a", "msg-ref", `#${room.name}`);
+  const a = h("a", "msg-ref", room.kind === "all" ? "#all" : `#${room.name}`);
   a.href = `#/c/${encodeURIComponent(room.id)}`;
-  a.title = room.topic ?? `Room #${room.name}`;
+  a.title = room.topic ?? (room.kind === "all" ? "Everyone's room" : `Room #${room.name}`);
   return a;
 }
 

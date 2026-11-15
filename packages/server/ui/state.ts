@@ -115,13 +115,19 @@ export function pinnedByMe(conv: Conversation): boolean {
  * then my other projects.
  */
 export function sortedConversations(): Conversation[] {
-  const all = state.conversations.get(ALL_CONVERSATION_ID);
   const projects = Array.from(state.conversations.values())
-    .filter((c) => c.kind === "project" && !c.archived)
+    .filter((c) => c.kind === "project" && !c.room && !c.archived)
     .sort(byLast);
-  const pinned = projects.filter(pinnedByMe);
-  const rest = projects.filter((c) => !pinnedByMe(c) && c.members.includes(state.me));
-  return [...pinned, ...(all ? [all] : []), ...rest];
+  return [...projects.filter(pinnedByMe), ...projects.filter((c) => !pinnedByMe(c) && c.members.includes(state.me))];
+}
+
+/** The Rooms section (Can, 15 Nov: under Agents; #all is one): pinned rooms, then #all, then my other rooms. */
+export function sortedRooms(): Conversation[] {
+  const all = state.conversations.get(ALL_CONVERSATION_ID);
+  const rooms = Array.from(state.conversations.values())
+    .filter((c) => c.kind === "project" && c.room && !c.archived)
+    .sort(byLast);
+  return [...rooms.filter(pinnedByMe), ...(all ? [all] : []), ...rooms.filter((c) => !pinnedByMe(c) && c.members.includes(state.me))];
 }
 
 /** The sidebar's Groups list: the group DMs I am in, and DMs with people (DMs with agents are their Agents rows). */
@@ -222,7 +228,7 @@ export function hasProjectColor(conv: Conversation): boolean {
 
 /** "all", a project's "@@name", or the members: everyone but me (all of them if I am not a member). */
 export function conversationTitle(conv: Conversation): string {
-  if (conv.kind === "all") return "all";
+  if (conv.kind === "all") return "#all"; // a room, everyone's (Can, 15 Nov)
   if (conv.kind === "project" && conv.name) return conv.room ? `#${conv.name}` : `@@${conv.name}`;
   const others = conv.members.filter((id) => id !== state.me);
   return nameList(others.length > 0 ? others : conv.members);
