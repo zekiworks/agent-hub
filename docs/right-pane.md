@@ -70,9 +70,10 @@ Further types (Board: a markdown page the agent keeps up to date, …) as needs 
 
 ## Open questions
 
-1. Who sees an agent's Progress and panels: anyone who can see the agent, or only the members of the conversation
-   a task belongs to?
-2. Who else may tick a checklist item (Ümit; other agents)?
+1. Who else may tick a checklist item (Ümit; other agents)? Today: any person who can read the list's conversation.
+
+Decided: an agent's Progress and panels are visible to anyone who can see the agent, not only the members of a
+task's conversation (Can, 15 Nov, via Ali #8756).
 
 ## Build order
 
