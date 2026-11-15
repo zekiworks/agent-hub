@@ -317,7 +317,9 @@ def reply_footer(frame: dict) -> str:
     message = frame["message"]
     target = f"{TOOL_NAME} reply, message_id {message['seq']} → {frame['replyTo']}"
     wake = message.get("wake")
-    not_woken = [r["to"] for r in message.get("receipts", []) if r["to"] not in wake] if frame.get("wake") and wake is not None else []
+    # @resources is the bus's own notice sender: it never acts on a message.
+    not_woken = ([r["to"] for r in message.get("receipts", []) if r["to"] not in wake and r["to"] != "resources"]
+                 if frame.get("wake") and wake is not None else [])
     if not not_woken:
         return f"(Reply only if they need something from you: {target}.)"
     names = ", ".join(f"@{i}" for i in not_woken)

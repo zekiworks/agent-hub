@@ -6,7 +6,7 @@ import { realpathSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { conversationLabel, defangHeaders, deliveryHeader, describeReceipts, formatTime, parseAddress, provenanceMark, quoteLine, senderLabel } from "../../protocol/src/address";
-import type { Reservation, ReservationResponse, Resource, ResourcesResponse } from "../../protocol/src/resources";
+import { RESOURCES_AGENT_ID, type Reservation, type ReservationResponse, type Resource, type ResourcesResponse } from "../../protocol/src/resources";
 import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptEvent, TaskType } from "../../protocol/src/types";
 import type { BusConnection, Delivery } from "./connection";
 
@@ -313,7 +313,8 @@ export function replyFooter(delivery: Delivery): string {
   const { message, replyTo } = delivery;
   const target = `${TOOL_NAME} reply, message_id ${message.seq} → ${replyTo}`;
   const wake = message.wake;
-  const notWoken = delivery.wake && wake ? message.receipts.map((r) => r.to).filter((id) => !wake.includes(id)) : [];
+  // @resources is the bus's own notice sender: it never acts on a message.
+  const notWoken = delivery.wake && wake ? message.receipts.map((r) => r.to).filter((id) => !wake.includes(id) && id !== RESOURCES_AGENT_ID) : [];
   if (notWoken.length === 0) return `(Reply only if they need something from you: ${target}.)`;
   const names = notWoken.map((id) => `@${id}`).join(", ");
   return (
