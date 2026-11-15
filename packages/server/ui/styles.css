@@ -901,6 +901,12 @@ button:disabled {
   border: 1.5px solid var(--offline);
 }
 
+/* Online, but its harness reports no busy/idle (sidebar.ts): a green ring. */
+.dot-unknown {
+  background: transparent;
+  border: 2px solid var(--online);
+}
+
 .dot-human {
   background: var(--human);
 }

@@ -336,7 +336,9 @@ function renderAgentList(): void {
       // Busy is an orange dot, not a "busy 14 min" line: a line that comes and goes made the column jump. The duration
       // is on the agent's page.
       const busy = agent.online && agent.status?.state === "busy";
-      const dot = h("span", `dot ${busy ? "dot-busy" : agent.online ? "dot-on" : "dot-off"}`);
+      // Online without a status (Hermes reports none yet): a green ring, not the full green of "idle" (Can, 15 Nov).
+      const unknown = agent.online && !agent.status;
+      const dot = h("span", `dot ${busy ? "dot-busy" : unknown ? "dot-unknown" : agent.online ? "dot-on" : "dot-off"}`);
       const text = h("span", "side-item-text");
       const name = h("span", "side-item-title", agent.id);
       if (agent.connections > 1 && agent.online) name.append(h("span", "conn-count", ` ×${agent.connections}`));
@@ -360,7 +362,7 @@ function renderAgentList(): void {
         agent.host ? `host: ${agent.host}` : "",
         agent.connectionError ?? "",
         agent.online
-          ? `${busy ? "busy" : "idle"}, online (${agent.connections} connection${agent.connections === 1 ? "" : "s"})`
+          ? `${busy ? "busy" : unknown ? "busy or idle: not reported by its harness" : "idle"}, online (${agent.connections} connection${agent.connections === 1 ? "" : "s"})`
           : `last seen ${relativeTime(agent.lastSeenAt)}`,
         "Open its page for what it is doing now.",
       ];
