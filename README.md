@@ -60,6 +60,7 @@ bun run agent-bus invite carol                            # a one-time link to c
 bun run agent-bus install cli                  # puts `agent-bus` in ~/.local/bin
 agent-bus install omp --url http://HOST:7800   # or pi, claude, codex, opencode, antigravity
 agent-bus doctor                               # what is installed, is the bus reachable, who is online
+agent-bus up                                   # after a reboot: a tmux window per agent of this machine, resumed
 ```
 
 Start the harness as usual. The first agent from a machine account waits until someone allows that machine: the

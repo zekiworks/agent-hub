@@ -17,6 +17,7 @@ const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir
        agent-bus install HARNESS [--url http://BUS:7800] [--dir DIR] [--build-only] [--force]
        agent-bus uninstall HARNESS [--dir DIR]
        agent-bus doctor [--url http://BUS:7800]
+       agent-bus up [--url http://BUS:7800] [--session 0] [--since-days 7] [--dry-run]
 
 install / uninstall: put this machine's HARNESS on the bus, or take it off. HARNESS is one of
   omp, pi           an extension file in ~/.omp/agent/extensions or ~/.pi/agent/extensions that loads this checkout
@@ -28,6 +29,11 @@ install / uninstall: put this machine's HARNESS on the bus, or take it off. HARN
   --url defaults to the URL of the install being replaced, then $AGENT_BUS_URL, then http://127.0.0.1:7800.
   Installing again updates. --force replaces a file at the install path that agent-bus did not write (moved aside).
   codex only: --bind-current-transcript FILE (run inside a pre-1.5 chat to seed its reopen binding).
+
+up: after a reboot, asks the bus which agents ran on this machine (omp and pi, seen within --since-days) and opens a
+  tmux window for each in its folder that resumes its last session (omp -c, pi -c), in session --session (created if
+  missing). Agents that already have a window in their folder are left alone, so running it again adds only what is
+  missing. --dry-run lists what it would do.
 
 doctor: what is installed here, which bus each install joins, whether it is reachable, which agents of this machine
   are on it, and the agent token.
@@ -139,6 +145,26 @@ function parseServeArgs(args: string[]): BusServerOptions {
   return options;
 }
 
+async function runUpCommand(args: string[]): Promise<number> {
+  const opts = { url: process.env.AGENT_BUS_URL || `http://127.0.0.1:${DEFAULT_BUS_PORT}`, session: "0", sinceDays: 7, dryRun: false };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const value = (): string => {
+      const v = args[++i];
+      if (v === undefined) throw new Error(`${arg} needs a value`);
+      return v;
+    };
+    if (arg === "--url") opts.url = value().replace(/\/+$/, "");
+    else if (arg === "--session") opts.session = value();
+    else if (arg === "--since-days") {
+      opts.sinceDays = Number(value());
+      if (!Number.isFinite(opts.sinceDays) || opts.sinceDays <= 0) throw new Error("--since-days must be a number of days above 0");
+    } else if (arg === "--dry-run") opts.dryRun = true;
+    else throw new Error(`Unknown option ${arg}\n\n${USAGE}`);
+  }
+  return (await import("./up")).runUp(opts);
+}
+
 /** Runs the CLI; resolves with the exit code, or never resolves while `serve` runs. */
 export async function runCli(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -183,6 +209,14 @@ export async function runCli(argv: string[]): Promise<number> {
       return await runInstall(command, rest);
     } catch (error) {
       console.error(`agent-bus ${command}: ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+  }
+  if (command === "up") {
+    try {
+      return await runUpCommand(rest);
+    } catch (error) {
+      console.error(`agent-bus up: ${error instanceof Error ? error.message : String(error)}`);
       return 1;
     }
   }
