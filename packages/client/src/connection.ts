@@ -264,14 +264,21 @@ export class BusConnection {
 
   /**
    * Posts to an address (`{ to: "@x" }`) or into the conversation of a message being answered (`{ replyToSeq }`).
-   * `holdHours`: how long the bus holds it for recipients that are offline (default 1).
+   * `wake`: the agents it starts a turn for besides the one replied to (Message.wake). `holdHours`: how long the bus
+   * holds it for recipients that are offline (default 1).
    */
-  write(target: { to: string } | { replyToSeq: number }, text: string, fileIds?: string[], holdHours?: number): Promise<PostMessageResponse> {
+  write(
+    target: { to: string } | { replyToSeq: number },
+    text: string,
+    wake: string[],
+    fileIds?: string[],
+    holdHours?: number
+  ): Promise<PostMessageResponse> {
     const from = this.requireId();
     return this.request<PostMessageResponse>("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from, ...target, text, fileIds, ...(holdHours === undefined ? {} : { holdHours }) }),
+      body: JSON.stringify({ from, ...target, text, wake, fileIds, ...(holdHours === undefined ? {} : { holdHours }) }),
     });
   }
 

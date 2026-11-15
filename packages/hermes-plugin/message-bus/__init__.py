@@ -69,9 +69,10 @@ SCHEMA = {
     "name": TOOL_NAME,
     "description": (
         "Talk to the other agents and the humans on the shared message bus. "
-        # Same text as the cost note in packages/omp-extension/src/index.ts.
-        "Every message you send starts a paid model turn for each agent it reaches (@all reaches every agent), so use "
-        "the bus sparingly: write only when the recipients need it (a result, a decision, a question, a claim or release "
+        # Same text as the cost note in packages/client/src/tool.ts.
+        "A message starts a paid model turn only for the agents it wakes: the one you reply to (op=reply), and those you "
+        "list in `wake`; every other agent of the conversation takes it in at its next turn. Wake only those who must "
+        "act on it now. Mentioning @id in the text wakes nobody. Use the bus sparingly: write only when the recipients need it (a result, a decision, a question, a claim or release "
         "of a shared resource). Do not send acknowledgements, thanks or \"noted/received\" messages, and do not restate "
         "other agents' messages; not replying is the default. Send to the fewest recipients who need it: @id or @{ids} "
         "rather than @all, and only the agents who have to read or act on it. Messages for you "
@@ -86,8 +87,7 @@ SCHEMA = {
         "group DM with exactly them) or \"@@name\" (project `name`: joined if open, created if new), plus `message` "
         "and/or `files` (local paths). Naming someone in a message's text does not add them. op=send: the same "
         "as write, with `files` required. Unknown arguments are rejected and nothing is sent; every result says what the "
-        "bus stored (text length, file names). op=set: `key` + `value`; settings: all = wake | quiet (whether @all messages "
-        "from other agents start a turn for you; default quiet). "
+        "bus stored (text length, file names). "
         "Reading (no turns for anyone, only your own tokens): op=inbox: messages sent to you, newest `limit` (default 20), "
         "optionally only after #`since`. op=show: one message by `message_id`, in full, with its files downloaded. "
         "op=history: the last `limit` messages of a conversation: `to` (as you would write to it) or the conversation of "
@@ -112,6 +112,9 @@ SCHEMA = {
             "limit": {"type": "integer", "description": "how many messages, default 20, at most 100 (inbox, history, search)"},
             "scope": {"type": "string", "enum": ["mine", "all"],
                       "description": "\"mine\" (default): your conversations and @all; \"all\": every conversation"},
+            "wake": {"type": "array", "items": {"type": "string"},
+                     "description": "reply/write/send: agent ids of the conversation to start a turn for now, besides the "
+                                    "one you reply to (always woken); default none: the others read it at their next turn"},
             "hold_hours": {"type": "number",
                            "description": "reply/write: how long the bus keeps it for recipients that are offline, in hours "
                                           "(default 1, at most 168); after that it expires for them"},
@@ -297,9 +300,10 @@ class BusClient:
         except urllib.error.URLError as err:
             raise RuntimeError(f"message bus at {self.url} unreachable: {err.reason}") from None
 
-    def write(self, target: dict, text: str, file_ids: list[str] | None = None, hold_hours: float | None = None) -> dict:
-        """`target` is {"to": "@x"} or {"replyToSeq": n} (answer message n in its conversation)."""
-        body = {"from": self.my_id(), **target, "text": text}
+    def write(self, target: dict, text: str, wake: list[str], file_ids: list[str] | None = None,
+              hold_hours: float | None = None) -> dict:
+        """`target` is {"to": "@x"} or {"replyToSeq": n} (answer message n in its conversation); `wake` as in tool.ts."""
+        body = {"from": self.my_id(), **target, "text": text, "wake": wake}
         if file_ids:
             body["fileIds"] = file_ids
         if hold_hours is not None:
@@ -590,20 +594,25 @@ def register(ctx: Any) -> None:
         def sent(what: str, res: dict) -> str:
             # Same as packages/client/src/tool.ts: references a person of the conversation cannot open are named.
             warnings = "".join(f"\nWARNING: {w}." for w in res.get("warnings", []))
+            woke = ""
+            if res["message"]["receipts"]:
+                wake = res["message"].get("wake") or []
+                woke = (f"; woke {', '.join('@' + w for w in wake)}" if wake
+                        else "; woke nobody (its agents read it at their next turn)")
             return (f"{what} (conversation {res['conversation']['id']}, message #{res['message']['seq']}): "
-                    f"{contents(res)}; {client.delivery_status(res)}. (you are @{client.my_id()}){warnings}")
+                    f"{contents(res)}; {client.delivery_status(res)}{woke}. (you are @{client.my_id()}){warnings}")
 
         if op == "reply":
             if args.get("message_id") is None or not (args.get("message") or args.get("files")):
                 raise ValueError("reply needs `message_id` and `message` (or `files`).")
             refs = [client.upload(p) for p in args.get("files") or []]
-            res = client.write({"replyToSeq": int(args["message_id"])}, args.get("message") or "", [r["id"] for r in refs], args.get("hold_hours"))
+            res = client.write({"replyToSeq": int(args["message_id"])}, args.get("message") or "", list(args.get("wake") or []), [r["id"] for r in refs], args.get("hold_hours"))
             return sent(f"Replied to #{args['message_id']}", res)
         if op in ("write", "send"):
             if not args.get("to") or not (args.get("files") if op == "send" else args.get("message") or args.get("files")):
                 raise ValueError("send needs `to` and `files`." if op == "send" else "write needs `to` and `message` (or `files`).")
             refs = [client.upload(p) for p in args.get("files") or []]
-            res = client.write({"to": args["to"]}, args.get("message") or "", [r["id"] for r in refs], args.get("hold_hours"))
+            res = client.write({"to": args["to"]}, args.get("message") or "", list(args.get("wake") or []), [r["id"] for r in refs], args.get("hold_hours"))
             return sent(f"Sent to {args['to']}", res)
         if op == "set":
             if not args.get("key") or args.get("value") is None:

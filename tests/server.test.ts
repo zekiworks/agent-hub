@@ -348,14 +348,59 @@ describe("sessions and harnesses", () => {
 });
 
 describe("delivery", () => {
-  test("@all from a human wakes", async () => {
-    const one = await joinPath("/tmp/x/alpha");
-    const { message } = await send({ from: "carol", to: "@all", text: "hello" });
-    const frame = await one.client.take("deliver");
-    expect(frame.message.id).toBe(message.id);
-    expect(frame.conversation.id).toBe("all");
-    expect(frame.replyTo).toBe("@all");
-    expect(frame.wake).toBe(true);
+  test("a person's message wakes its DM's agent, else the agent it answers and those it mentions", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const wakes = async (body: Record<string, unknown>) => {
+      const { message } = await send(body);
+      expect(message.wake).toBeDefined();
+      return { alpha: (await alpha.client.take("deliver")).wake, beta: (await beta.client.take("deliver")).wake, message };
+    };
+    // Nobody answered, nobody mentioned: delivered to both, a turn for neither.
+    const hello = await wakes({ from: "carol", to: "@all", text: "hello" });
+    expect([hello.alpha, hello.beta]).toEqual([false, false]);
+    // Mentioned.
+    expect(await wakes({ from: "carol", to: "@all", text: "@beta look" })).toMatchObject({ alpha: false, beta: true });
+    // The previous message by someone else is alpha's: carol's next one answers alpha.
+    const asked = await send({ from: alpha.id, to: "@all", text: "anyone?", wake: [] });
+    await beta.client.take("deliver");
+    expect(asked.message.wake).toEqual([]);
+    expect(await wakes({ from: "carol", to: "@all", text: "me" })).toMatchObject({ alpha: true, beta: false });
+    // A reply answers its message's author, whoever wrote last.
+    expect(await wakes({ from: "carol", replyToSeq: asked.message.seq, text: "again" })).toMatchObject({ alpha: true, beta: false });
+    // A DM wakes its agent.
+    await send({ from: "carol", to: "@beta", text: "dm" });
+    expect((await beta.client.take("deliver")).wake).toBe(true);
+  });
+
+  test("an agent's message wakes those it lists and the agent it replies to; members only; no list: the old rule", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const gamma = await joinPath("/tmp/x/gamma");
+    const group = await send({ from: alpha.id, to: "@{beta,gamma}", text: "plan", wake: ["@Beta"] });
+    expect(group.message.wake).toEqual(["beta"]);
+    expect((await beta.client.take("deliver")).wake).toBe(true);
+    expect((await gamma.client.take("deliver")).wake).toBe(false);
+    const reply = await send({ from: gamma.id, replyToSeq: group.message.seq, text: "ok", wake: [] });
+    expect(reply.message.wake).toEqual(["alpha"]);
+    await beta.client.take("deliver");
+    expect((await alpha.client.take("deliver")).wake).toBe(true);
+    // An @mention alone wakes nobody; the writer is told.
+    const mention = await send({ from: alpha.id, conversationId: group.conversation.id, text: "@gamma see above", wake: [] });
+    expect(mention.warnings).toEqual(["@gamma is mentioned but not in wake: it reads this at its next turn, no turn now"]);
+    await beta.client.take("deliver");
+    expect((await gamma.client.take("deliver")).wake).toBe(false);
+    // Only agents of the conversation; nothing is sent otherwise.
+    expect((await postJson(bus, "/api/messages", { from: alpha.id, conversationId: group.conversation.id, text: "x", wake: ["carol"] })).status).toBe(400);
+    // A muted member is never woken, even when listed.
+    await postJson(bus, `/api/conversations/${group.conversation.id}/notify`, { from: beta.id, level: "none" });
+    await send({ from: alpha.id, conversationId: group.conversation.id, text: "y", wake: ["beta", "gamma"] });
+    expect((await beta.client.take("deliver")).wake).toBe(false);
+    expect((await gamma.client.take("deliver")).wake).toBe(true);
+    // An older tool sends no list: the old rule (a group wakes its members).
+    const old = await send({ from: alpha.id, conversationId: group.conversation.id, text: "z" });
+    expect(old.message.wake).toBeUndefined();
+    expect((await gamma.client.take("deliver")).wake).toBe(true);
   });
 
   test("@all from an agent is quiet by default and wakes after the setting", async () => {
@@ -416,7 +461,6 @@ describe("delivery", () => {
     expect(first.conversation.addressed).toEqual(["alpha", "beta", "carol"]);
     const toAlpha = await alpha.client.take("deliver");
     expect(toAlpha.replyTo).toBe("@{beta,carol}");
-    expect(toAlpha.wake).toBe(true);
     expect((await beta.client.take("deliver")).replyTo).toBe("@{alpha,carol}");
 
     // The same agents without the person: their own DM, not the group.
@@ -519,18 +563,15 @@ describe("delivery", () => {
     expect(word.conversation.members).toContain("uma");
   });
 
-  test("notifications per member: mentions wakes only on @mention, none never; DMs always wake", async () => {
+  test("notify none mutes a member: never woken, even when answered or mentioned; DMs cannot be muted", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const project = await send({ from: "carol", to: "@@notify-test", text: "start" });
     await send({ from: alpha.id, to: "@@notify-test", text: "in" });
     expect((await alpha.client.take("deliver")).message.text).toBe("start"); // context on joining
-    const set = await postJson(bus, `/api/conversations/${project.conversation.id}/notify`, { from: alpha.id, level: "mentions" });
-    expect((await answeredConversation(set)).notify).toEqual({ alpha: "mentions" });
-    await send({ from: "carol", conversationId: project.conversation.id, text: "plain" });
-    expect((await alpha.client.take("deliver")).wake).toBe(false);
     await send({ from: "carol", conversationId: project.conversation.id, text: "@alpha look" });
     expect((await alpha.client.take("deliver")).wake).toBe(true);
-    await postJson(bus, `/api/conversations/${project.conversation.id}/notify`, { from: alpha.id, level: "none" });
+    const set = await postJson(bus, `/api/conversations/${project.conversation.id}/notify`, { from: alpha.id, level: "none" });
+    expect((await answeredConversation(set)).notify).toEqual({ alpha: "none" });
     await send({ from: "carol", conversationId: project.conversation.id, text: "@alpha again" });
     expect((await alpha.client.take("deliver")).wake).toBe(false);
     const dm = await send({ from: "carol", to: "@alpha", text: "dm" });

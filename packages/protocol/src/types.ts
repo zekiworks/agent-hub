@@ -161,6 +161,13 @@ export interface Message {
   /** The writing agent's session number, when it had several live sessions. */
   fromSession?: number;
   /**
+   * The agents it wakes (starts a turn for); the others take it in at their next turn (Can, 15 Nov). A person's message
+   * wakes, in a DM, its agent; elsewhere the agent it answers (the replied-to message's author, else the previous
+   * message's) and the agents it @mentions; an agent's wakes the agent it replies to and those it lists. Absent: written before wake lists, or by an agent's older tool, which
+   * follows the old rule (every agent, or per the notify settings).
+   */
+  wake?: string[];
+  /**
    * Until when the bus holds it for recipients that are offline (default an hour after it was written; the writer
    * may choose longer). A recipient that has not received it by then never will: its receipt is `expired`.
    */
@@ -442,6 +449,12 @@ export interface PostMessageRequest {
   toSession?: number;
   /** How long to hold it for recipients that are offline, in hours (default 1, at most 168). */
   holdHours?: number;
+  /**
+   * Agents only: the agents of the conversation this message wakes besides the one it replies to, who always is
+   * (Message.wake); `[]`: only that one. Left out: the old rule, for tools from before wake lists. People's lists are
+   * made by the bus.
+   */
+  wake?: string[];
   /**
    * People only, in a group DM or project: add the participants the text @mentions who are not members before
    * sending (agents get the last 5 messages first). Default false: mentions alone add nobody.

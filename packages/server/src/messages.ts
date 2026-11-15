@@ -3,6 +3,7 @@
 import {
   ALL_CONVERSATION_ID,
   mentionedIds,
+  mentions,
   RESOURCES_AGENT_ID,
   type Conversation,
   type FileRef,
@@ -248,6 +249,10 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     holdMs = body.holdHours * 3600_000;
   }
 
+  // Every agent of the conversation (for @all, every agent): the online ones get it now, the offline ones when they are
+  // back, until it expires. Only those on the wake list get a turn for it.
+  const recipients = recipientsFor(ctx, conversation, writer.id).map((p) => p.id);
+  const wake = wakeList(ctx, writer, body.wake, conversation, recipients, text, replyToSeq);
   const message = db.insertMessage({
     conversationId: conversation.id,
     from: writer.id,
@@ -255,21 +260,61 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     text,
     files,
     createdAt: now,
-    // Every agent of the conversation (for @all, every agent): the online ones get it now, the offline ones when they
-    // are back, until it expires.
-    recipients: recipientsFor(ctx, conversation, writer.id).map((p) => p.id),
+    recipients,
     expiresAt: now + holdMs,
     replyToSeq,
     ...(sessions.size > 0 ? { sessions } : {}),
     ...(fromSession === undefined ? {} : { fromSession }),
     ...(verified === undefined ? {} : { verified }),
+    ...(wake ? { wake } : {}),
   });
   if (writer.kind === "human") db.touchParticipant(writer.id, now);
   const updated = db.getConversation(conversation.id);
   if (!updated) throw new Error(`Conversation ${conversation.id} vanished`);
   hub.publishMessage(message, updated);
-  const warnings = writer.kind === "agent" ? unreadableRefs(ctx, text, updated) : [];
+  const warnings = writer.kind === "agent" ? [...unreadableRefs(ctx, text, updated), ...unwokenMentions(text, recipients, wake)] : [];
   return { message, conversation: updated, ...(warnings.length > 0 ? { warnings } : {}) };
+}
+
+/**
+ * The agents a message wakes (Can, 15 Nov). A person's: in a DM, its agent; elsewhere the agent it answers (the author
+ * of the message replied to, else of the previous message by someone else) and the agents it @mentions. An agent's: the agent it replies to
+ * (replyToSeq) and its list, members only; list left out (an older tool): undefined, the old rule.
+ */
+function wakeList(
+  ctx: BusContext,
+  writer: ParticipantRecord,
+  given: unknown,
+  conversation: Conversation,
+  recipients: string[],
+  text: string,
+  replyToSeq: number | undefined
+): string[] | undefined {
+  if (writer.kind === "human") {
+    if (conversation.kind === "dm") return recipients;
+    const answered = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq)?.from : ctx.db.lastAuthorBesides(conversation.id, writer.id);
+    return recipients.filter((id) => id === answered || mentions(text, id));
+  }
+  if (given === undefined || given === null) return undefined;
+  if (!Array.isArray(given) || !given.every((id) => typeof id === "string")) throw new HttpError(400, "wake must be a list of agent ids");
+  const wake = [...new Set(given.map((id: string) => id.trim().replace(/^@/, "").toLowerCase()).filter(Boolean))];
+  const outside = wake.filter((id) => !recipients.includes(id));
+  if (outside.length > 0) {
+    throw new HttpError(
+      400,
+      `wake names agents of this conversation; ${outside.map((id) => `@${id}`).join(", ")} ${outside.length > 1 ? "are" : "is"} not one (or a person, or you). Nothing was sent.`
+    );
+  }
+  const repliedTo = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq)?.from : undefined;
+  return repliedTo && recipients.includes(repliedTo) && !wake.includes(repliedTo) ? [repliedTo, ...wake] : wake;
+}
+
+/** An agent @mentions an agent its wake list leaves out: said, since the mention alone wakes nobody. */
+function unwokenMentions(text: string, recipients: string[], wake: string[] | undefined): string[] {
+  if (!wake) return [];
+  return recipients
+    .filter((id) => !wake.includes(id) && mentions(text, id))
+    .map((id) => `@${id} is mentioned but not in wake: it reads this at its next turn, no turn now`);
 }
 
 /** "#n" message references, as the website links them (ui/text.ts REF_RE). */

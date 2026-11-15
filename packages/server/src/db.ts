@@ -61,6 +61,8 @@ export interface NewMessage {
   replyToSeq?: number;
   /** Human messages while authentication is on: written from a signed-in session (true) or not (false). */
   verified?: boolean;
+  /** The agents it wakes (Message.wake); absent: the old rule. */
+  wake?: string[];
   /** Until when it is held for offline recipients. */
   expiresAt: number;
 }
@@ -125,6 +127,7 @@ interface MessageRow {
   verified: number | null;
   from_session: number | null;
   expires_at: number | null;
+  wake_json?: string | null;
 }
 
 interface FileRow {
@@ -314,6 +317,7 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
     ...(quote ? { quote } : {}),
     ...(row.verified === null || row.verified === undefined ? {} : { verified: row.verified === 1 }),
     ...(row.from_session === null || row.from_session === undefined ? {} : { fromSession: row.from_session }),
+    ...(row.wake_json ? { wake: JSON.parse(row.wake_json) as string[] } : {}),
     expiresAt: expiresAt(row),
   };
 }
@@ -358,6 +362,8 @@ export class BusDatabase {
       this.db.exec("ALTER TABLE participants ADD COLUMN token_hash TEXT");
     }
     // Databases created before sessions lack the columns (null: no session chosen / the agent had one session).
+    // Databases created before wake lists lack the column (null: the old rule).
+    if (!messageColumns.some((c) => c.name === "wake_json")) this.db.exec("ALTER TABLE messages ADD COLUMN wake_json TEXT");
     if (!messageColumns.some((c) => c.name === "from_session")) {
       this.db.exec("ALTER TABLE messages ADD COLUMN from_session INTEGER");
     }
@@ -497,14 +503,17 @@ export class BusDatabase {
   }
 
   /**
-   * Messages written since `since`, and their deliveries split into woke/quiet by the wake rule (`shouldWake`): only
-   * @all from an agent is quiet, for recipients whose `all` setting is quiet (the default, also for forgotten agents).
+   * Messages written since `since`, and their deliveries split into woke/quiet by the wake rule (`shouldWake`): a
+   * message with a wake list woke those listed; before wake lists only @all from an agent was quiet, for recipients
+   * whose `all` setting is quiet (the default, also for forgotten agents).
    */
   stats(since: number, days: number): StatsResponse {
     const deliveries = `
       SELECT r.recipient, m.from_id, m.created_at,
-        NOT (c.kind = 'all' AND m.from_kind = 'agent'
-             AND COALESCE(json_extract(p.settings_json, '$.all'), 'quiet') = 'quiet') AS woke
+        CASE WHEN m.wake_json IS NOT NULL
+          THEN EXISTS (SELECT 1 FROM json_each(m.wake_json) w WHERE w.value = r.recipient)
+          ELSE NOT (c.kind = 'all' AND m.from_kind = 'agent'
+                    AND COALESCE(json_extract(p.settings_json, '$.all'), 'quiet') = 'quiet') END AS woke
       FROM receipts r
       JOIN messages m ON m.seq = r.seq
       JOIN conversations c ON c.id = m.conversation_id
@@ -1085,8 +1094,8 @@ export class BusDatabase {
     return this.db.transaction((): Message => {
       const result = this.db
         .query(
-          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
+          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
         )
         .run(
           id,
@@ -1099,7 +1108,8 @@ export class BusDatabase {
           input.replyToSeq ?? null,
           input.verified === undefined ? null : input.verified ? 1 : 0,
           input.fromSession ?? null,
-          input.expiresAt
+          input.expiresAt,
+          input.wake ? JSON.stringify(input.wake) : null
         );
       const seq = Number(result.lastInsertRowid);
       const addReceipt = this.db.query("INSERT INTO receipts (seq, recipient, delivered_at, session) VALUES (?1, ?2, NULL, ?3)");
@@ -1124,9 +1134,19 @@ export class BusDatabase {
         ...(quote ? { quote } : {}),
         ...(input.verified === undefined ? {} : { verified: input.verified }),
         ...(input.fromSession === undefined ? {} : { fromSession: input.fromSession }),
+        ...(input.wake ? { wake: input.wake } : {}),
         expiresAt: input.expiresAt,
       };
     })();
+  }
+
+  /** Who wrote the latest message of `conversationId` not written by `notFrom` (a person's message answers it). */
+  lastAuthorBesides(conversationId: string, notFrom: string): string | undefined {
+    return this.db
+      .query<{ from_id: string }, [string, string]>(
+        "SELECT from_id FROM messages WHERE conversation_id = ?1 AND from_id != ?2 ORDER BY seq DESC LIMIT 1"
+      )
+      .get(conversationId, notFrom)?.from_id;
   }
 
   /** Quotes for the given message seqs (one query). */

@@ -262,6 +262,8 @@ function renderReceipts(message: Message): HTMLDivElement | null {
         ]
           .filter(Boolean)
           .join(" · ");
+  // Whom it started a turn for (Can, 15 Nov: wake lists); the other agents take it in at their next turn.
+  if (message.wake) el.textContent += message.wake.length > 0 ? ` · woke ${message.wake.join(", ")}` : " · woke nobody";
   el.title = receipts
     .map((r) =>
       r.deliveredAt !== null
@@ -271,6 +273,7 @@ function renderReceipts(message: Message): HTMLDivElement | null {
           : `${label(r)}: not delivered yet; held until ${fullFormat.format(message.expiresAt)}`
     )
     .join("\n");
+  if (message.wake) el.title += "\nWoken (a turn now): " + (message.wake.join(", ") || "nobody; the agents read it at their next turn");
   return el;
 }
 

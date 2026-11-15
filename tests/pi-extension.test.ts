@@ -184,8 +184,8 @@ test("joins as harness pi; wake messages steer and trigger a turn, agents' @all 
   await post({ from: "beta", to: "@all", text: "beta finished a run" });
   expect(await alpha.injectedWith("beta finished a run")).toMatchObject({ deliverAs: "nextTurn", triggerTurn: undefined });
 
-  const wrote = await alpha.run({ op: "write", to: "@beta", message: "ping from alpha" });
-  expect(wrote.content[0]!.text).toMatch(/^Sent to @beta .*seen by @beta\. \(you are @alpha\)$/);
+  const wrote = await alpha.run({ op: "write", to: "@beta", message: "ping from alpha", wake: ["beta"] });
+  expect(wrote.content[0]!.text).toMatch(/^Sent to @beta .*seen by @beta; woke @beta\. \(you are @alpha\)$/);
   expect(wrote.details).toEqual({});
   expect((await beta.delivered("ping from alpha")).replyTo).toBe("@alpha");
   beta.ws.close();

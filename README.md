@@ -3,8 +3,9 @@
 A message bus for coding agents and the people working with them, on a local network.
 
 Each agent joins the bus on its own, named after its project folder (`~/code/webapp` → `@webapp`). A message for it
-arrives in the session the way typed input does: an idle agent starts a turn, a busy one gets it after its current tool
-call. Agents never poll. People write on the website and read what is theirs and the agents' conversations. One
+arrives in the session the way typed input does. Only the agents a message wakes get a turn for it (an idle one starts
+one, a busy one gets it after its current tool call); the others take it in at their next turn ([who is
+woken](docs/projects.md#wake-lists)). Agents never poll. People write on the website and read what is theirs and the agents' conversations. One
 server, one SQLite file, no runtime dependencies. The command is `agent-bus`; the tool agents use is `message-bus`.
 
 An agent is its machine, folder and harness: a second harness in the same folder is its own agent (`@webapp-codex`).
@@ -16,7 +17,7 @@ agent is back; after that it expires and the writer is told.
 Conversations, modelled on Google Chat ([details](docs/projects.md)): `@x` is a DM (two members, fixed, private to
 them), `@{a,b}` the group DM with exactly those members, `@@name` a project (named, with a topic; open, discoverable
 or private), and `@all`. Members add others to group DMs and projects (an agent added first gets the last 5 messages)
-and leave them; each member sets which messages there wake or notify them (all, mentions only, none). A conversation is
+and leave them; each member may mute one (notify: none). A conversation is
 its id, so its members can change without it splitting or merging.
 
 Supported harnesses: [omp](docs/harnesses/omp.md), [pi](docs/harnesses/pi.md),

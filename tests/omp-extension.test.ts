@@ -174,17 +174,20 @@ afterEach(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-test("delivers like the composer: idle starts a turn, busy queues a follow-up, agents' @all is quiet", async () => {
+test("delivers like the composer: idle starts a turn, busy queues a follow-up, unwoken messages wait for the next turn", async () => {
   const alpha = await startSession("alpha");
   const beta = await rawAgent("beta");
 
-  const { message: standup } = await post({ from: "carol", to: "@all", text: "standup in 5" });
+  // A person's @all wakes the agents it mentions; the others take it in at their next turn.
+  const { message: standup } = await post({ from: "carol", to: "@all", text: "@alpha standup in 5" });
   const sent = new Date(standup.createdAt).toISOString().slice(0, 16).replace("T", " "); // tests run in UTC (setup.ts)
   expect(await alpha.injectedWith("standup in 5")).toEqual({
     via: "user",
-    content: `[message-bus] #1 @carol (verified) → @all · ${sent}\nstandup in 5\n(Reply only if they need something from you: message-bus reply, message_id 1 → @all.)`,
+    content: `[message-bus] #1 @carol (verified) → @all · ${sent}\n@alpha standup in 5\n(Reply only if they need something from you: message-bus reply, message_id 1 → @all.)`,
     deliverAs: undefined,
   });
+  await post({ from: "carol", to: "@all", text: "lunch is here" });
+  expect(await alpha.injectedWith("lunch is here")).toMatchObject({ via: "message", deliverAs: "nextTurn" });
 
   alpha.idle = false;
   await post({ from: "uma", to: "@alpha", text: "check the logs" });
@@ -210,11 +213,16 @@ test("tool write/send reach other agents; received files are saved locally", asy
   const alpha = await startSession("alpha");
   const beta = await rawAgent("beta");
 
-  const wrote = await alpha.run({ op: "write", to: "@beta", message: "ping from alpha" });
+  const wrote = await alpha.run({ op: "write", to: "@beta", message: "ping from alpha", wake: ["beta"] });
   expect(wrote.content[0]!.text).toMatch(
-    /^Sent to @beta \(conversation g_\w+, message #\d+\): text 15 chars; seen by @beta\. \(you are @alpha\)$/
+    /^Sent to @beta \(conversation g_\w+, message #\d+\): text 15 chars; seen by @beta; woke @beta\. \(you are @alpha\)$/
   );
   const dm = await beta.delivered("ping from alpha");
+  expect(dm.wake).toBe(true);
+  // Without `wake` it reaches beta without a turn, and the result says so.
+  const quiet = await alpha.run({ op: "write", to: "@beta", message: "fyi only" });
+  expect(quiet.content[0]!.text).toContain("woke nobody (its agents read it at their next turn)");
+  expect((await beta.delivered("fyi only")).wake).toBe(false);
   expect(dm.replyTo).toBe("@alpha");
   expect(dm.conversation.addressed).toEqual(["alpha", "beta"]);
 
@@ -230,7 +238,7 @@ test("tool write/send reach other agents; received files are saved locally", asy
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, "results: 42\n");
   const sent = await alpha.run({ op: "send", to: "@{beta,carol}", files: ["report.txt"], message: "the report" });
-  expect(sent.content[0]!.text).toContain("): text 10 chars, 1 file: report.txt; seen by @beta.");
+  expect(sent.content[0]!.text).toContain("): text 10 chars, 1 file: report.txt; seen by @beta; woke nobody");
   const withFile = await beta.delivered("the report");
   expect(withFile.message.files.map((f) => [f.name, f.size])).toEqual([["report.txt", 12]]);
   expect(withFile.replyTo).toBe("@{alpha,carol}");
@@ -336,7 +344,7 @@ test("reply answers a message by its number, into that message's conversation", 
   await alpha.injectedWith("please check run 7");
   const replied = await alpha.run({ op: "reply", message_id: message.seq, message: "run 7 is fine" });
   expect(replied.content[0]!.text).toMatch(
-    new RegExp(`^Replied to #${message.seq} \\(conversation ${message.conversationId}, message #\\d+\\): text 13 chars; seen by @beta\\.`)
+    new RegExp(`^Replied to #${message.seq} \\(conversation ${message.conversationId}, message #\\d+\\): text 13 chars; seen by @beta; woke @beta\\.`) // the one replied to is always woken
   );
   expect((await beta.delivered("run 7 is fine")).conversation.id).toBe(message.conversationId);
 

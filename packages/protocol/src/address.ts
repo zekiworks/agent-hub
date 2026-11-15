@@ -121,10 +121,12 @@ export function mentions(text: string, id: string): boolean {
  */
 export function shouldWake(
   conversation: Pick<Conversation, "kind" | "notify">,
-  message: { fromKind: ParticipantKind; text: string },
+  message: { fromKind: ParticipantKind; text: string; wake?: readonly string[] },
   recipientId: string,
   recipientSettings: AgentSettings
 ): boolean {
+  // A wake list decides (Can, 15 Nov); a member who muted the conversation is never woken.
+  if (message.wake) return message.wake.includes(recipientId) && conversation.notify?.[recipientId] !== "none";
   if (conversation.kind === "all") return !(message.fromKind === "agent" && recipientSettings.all === "quiet");
   const level = conversation.notify?.[recipientId] ?? "all";
   return level === "all" || (level === "mentions" && mentions(message.text, recipientId));

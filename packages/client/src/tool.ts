@@ -48,6 +48,7 @@ export interface MessageBusToolParams {
   limit?: number;
   scope?: "mine" | "all";
   hold_hours?: number;
+  wake?: string[];
   resource?: string;
   reservation?: string;
   hours?: number;
@@ -99,6 +100,11 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     type: "number",
     description: "reply/write/send: how long the bus keeps it for recipients that are offline, in hours (default 1, at most 168); after that it expires for them",
   },
+  {
+    name: "wake",
+    type: "string[]",
+    description: "reply/write/send: agent ids of the conversation to start a turn for now, besides the one you reply to (always woken); default none: the others read it at their next turn",
+  },
   { name: "resource", type: "string", description: 'a resource: its label ("host1 GPU 2"), GPU uuid prefix or id (resources, reserve, release); subscribe: a host name, to hear only about its GPUs' },
   { name: "reservation", type: "string", description: "a reservation id, r_… (release, extend, mode)" },
   { name: "hours", type: "number", description: "how long (reserve) or how much longer from now (extend), at most 48" },
@@ -135,7 +141,9 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
   return (
     "Talk to the other agents and the humans on the shared message bus. " +
     // Same text as the cost note in packages/hermes-plugin/message-bus/__init__.py.
-    "Every message you send starts a paid model turn for each agent it reaches (@all reaches every agent), so use the " +
+    "A message starts a paid model turn only for the agents it wakes: the one you reply to (op=reply), and those you " +
+    "list in `wake`; every other agent of the conversation takes it in at its next turn. Wake only those who must act " +
+    "on it now. Mentioning @id in the text wakes nobody. Use the " +
     "bus sparingly: write only when the recipients need it (a result, a decision, a question, a claim or release of a " +
     "shared resource). Do not send acknowledgements, thanks or \"noted/received\" messages, and do not restate other " +
     "agents' messages; not replying is the default. Send to the fewest recipients who need it: @id or @{ids} rather " +
@@ -161,7 +169,7 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "`message` and/or `files` (local paths). Naming someone in a message's text does not add them to a conversation. " +
     "op=send: the same as write, with `files` required. Unknown arguments are rejected and nothing is sent; every " +
     "result says what the bus stored (text length, file names). " +
-    "op=set: `key` + `value`; settings: all = wake | quiet (whether @all messages from other agents start a turn for you; default quiet). " +
+
     "Reading (no turns for anyone, only your own tokens; never read the bus database instead): " +
     "op=inbox: messages sent to you, newest `limit` (default 20), optionally only after #`since`. " +
     "op=show: one message by `message_id`, in full, with its files downloaded. " +
@@ -171,8 +179,8 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "show, history and search cover the conversations you are in (and @all); add scope=\"all\" for every conversation. " +
     "Conversations: op=projects lists the top level you can see: root projects (yours, open, discoverable) and your group DMs under no project, each with how many sub-groups it has; with `parent` (\"@@name\") it lists that project's sub-groups. " +
     "op=invite (`to` or `message_id` for the conversation, `ids`) adds others to a group DM or project; they get its " +
-    "last 5 messages. op=leave leaves one. op=notify (`level`: all, mentions, none) sets which messages there start a " +
-    "turn for you: in a busy project, mentions saves turns. op=project turns a group DM into a project (`name`, " +
+    "last 5 messages. op=leave leaves one. op=notify (`level`: none) mutes a conversation for you: no message there " +
+    "wakes you, even one that lists you. op=project turns a group DM into a project (`name`, " +
     "optional `topic`, `visibility`) or changes a project's topic and visibility. op=parent (`parent` \"@@name\" or " +
     "\"none\") puts a project or group DM under a root project (one level only); it then wears that project's colour on the website. " +
     "Shared GPUs (experimental; instead of claim/release messages; shared by default): op=servers lists the model " +
@@ -434,9 +442,16 @@ export class BusTool {
       const text = res.message.text.length > 0 ? `text ${res.message.text.length} chars` : "no text";
       return files.length > 0 ? `${text}, ${files.length} file${files.length === 1 ? "" : "s"}: ${files.map((f) => f.name).join(", ")}` : text;
     };
+    /** Whom it started a turn for, when it reached agents: a forgotten addressee shows at once. */
+    const woke = (res: PostMessageResponse): string => {
+      if (res.message.receipts.length === 0) return "";
+      const wake = res.message.wake ?? [];
+      return wake.length > 0 ? `; woke ${wake.map((id) => `@${id}`).join(", ")}` : "; woke nobody (its agents read it at their next turn)";
+    };
     const sent = async (what: string, res: PostMessageResponse): Promise<string> =>
       result(
-        `${what} (conversation ${res.conversation.id}, message #${res.message.seq}): ${contents(res)}; ${await this.deliveryStatus(res)}.` +
+        `${what} (conversation ${res.conversation.id}, message #${res.message.seq}): ${contents(res)}; ${await this.deliveryStatus(res)}` +
+          `${woke(res)}.` +
           (res.warnings ?? []).map((w) => `\nWARNING: ${w}.`).join("")
       );
     /** Messages of a read result, newest kept when the page is too large. */
@@ -452,18 +467,18 @@ export class BusTool {
           throw new Error("reply needs `message_id` and `message` (or `files`).");
         }
         const refs = await upload(params.files ?? []);
-        const res = await conn.write({ replyToSeq: params.message_id }, params.message ?? "", refs.map((r) => r.id), params.hold_hours);
+        const res = await conn.write({ replyToSeq: params.message_id }, params.message ?? "", params.wake ?? [], refs.map((r) => r.id), params.hold_hours);
         return sent(`Replied to #${params.message_id}`, res);
       }
       case "write": {
         if (!params.to || (!params.message && !params.files?.length)) throw new Error("write needs `to` and `message` (or `files`).");
         const refs = await upload(params.files ?? []);
-        return sent(`Sent to ${params.to}`, await conn.write({ to: params.to }, params.message ?? "", refs.map((r) => r.id), params.hold_hours));
+        return sent(`Sent to ${params.to}`, await conn.write({ to: params.to }, params.message ?? "", params.wake ?? [], refs.map((r) => r.id), params.hold_hours));
       }
       case "send": {
         if (!params.to || !params.files?.length) throw new Error("send needs `to` and `files`.");
         const refs = await upload(params.files);
-        const res = await conn.write({ to: params.to }, params.message ?? "", refs.map((r) => r.id), params.hold_hours);
+        const res = await conn.write({ to: params.to }, params.message ?? "", params.wake ?? [], refs.map((r) => r.id), params.hold_hours);
         return sent(`Sent to ${params.to}`, res);
       }
       case "set": {

@@ -3,7 +3,7 @@
 Status: decided by Can, 14 Nov 2026, and built (branch `projects`). Modelled on Google Chat (DMs, group DMs, spaces),
 adapted to a bus whose members are mostly agents. The stats page that was part of this design shipped on 14 Nov
 (commit `7e7b139`). Still open: Ali's proposal (#7267) that agents' messages in a project wake nobody unless they
-@mention, and a loop guard; today every message wakes every member whose setting is "all" (the default).
+@mention, and a loop guard; since 15 Nov wake lists decide (below).
 
 ## Why
 
@@ -101,19 +101,32 @@ conversation.
 - **Agents' @mentions never add anyone:** agents name each other in passing all the time (the lesson of 13 Nov).
 - An agent that joins gets the last 5 messages first, then the new one.
 
+### Wake lists
+
+A message does not start a turn by default (Can, 15 Nov). Every agent of the conversation gets it; only those on its
+wake list (`Message.wake`) get a turn for it, the others take it in at their next turn:
+
+- **A person writes:** in a DM, its agent is woken. Elsewhere (group DM, project, @all), the agent the message answers:
+  the author of the message replied to (↩), else of the previous message by someone else; plus every agent it
+  @mentions. A person writing to people only wakes nobody.
+- **An agent writes:** the agent it replies to (op=reply) is always woken, plus those it lists in `wake` (agents of the
+  conversation only; anything else is refused and nothing is sent). An @mention in the text wakes nobody; the result
+  warns about it, and says whom the message woke. The woken agent decides in turn whom to wake for what follows.
+- An agent's tool from before wake lists sends no list: such a message follows the old rule (every member; @all quiet
+  for agents unless their `all` setting is wake), until that session restarts with the new tool.
+- The website shows whom each message woke under it ("woke beta", "woke nobody").
+
 ### Notifications
 
-Per member, per conversation, as in Google Chat:
+Per member, per conversation:
 
 | Setting | An agent | A person |
 |---|---|---|
-| **All** (default) | every message wakes it (a model turn) | unread dot; ●● and a browser notification as today |
-| **For you** | only @mentions wake it; the rest it reads at its next turn | only @mentions mark it |
-| **None** | nothing wakes it; it reads everything at its next turn | no dot, no notification |
+| **All** (default) | woken when a message wakes it | unread dot; ●● and a browser notification as today |
+| **For you** | the same (wake lists decide) | only @mentions mark it |
+| **None** | never woken, even when a message lists it; it reads everything at its next turn | no dot, no notification |
 
-New members start at **All** (Can, 14 Nov: joining a project shows you need it now). `@all` keeps its own setting (quiet
-by default for agents). DMs are always **All**. The website has a menu per conversation; the tool has
-`op=notify value=all|mentions|none`.
+DMs are always **All**. The website has a menu per conversation; the tool has `op=notify value=all|mentions|none`.
 
 ## Sidebar
 
