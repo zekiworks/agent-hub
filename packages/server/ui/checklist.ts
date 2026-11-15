@@ -3,11 +3,47 @@
 // owner reads the ticks back. Its tab shows only where a list exists.
 import type { Checklist } from "@agent-bus/protocol";
 import { postJson, SESSION_KEY } from "./api";
+import { autosize, updateComposerState } from "./composer";
+import { dom } from "./dom";
+import { saveDraft } from "./drafts";
 import { errorText, relativeTime } from "./format";
 import { h } from "./html";
+import { renderMarkdown } from "./markdown";
 import { refreshPane, registerExtension, renderPane } from "./pane";
-import { state } from "./state";
+import { navigate, viewHash } from "./routing";
+import { state, type View } from "./state";
 import { mentionNodes } from "./text";
+
+/** One line of markdown, inline (bold, code, links, #n, @mentions), as the website renders messages (Can, 15 Nov). */
+function inline(text: string): Node[] {
+  const nodes = renderMarkdown(text, mentionNodes);
+  const only = nodes[0];
+  return nodes.length === 1 && only instanceof HTMLElement && only.classList.contains("md-p") ? Array.from(only.childNodes) : nodes;
+}
+
+/**
+ * ↩ on an item (Can, 15 Nov): opens the list's conversation with the item quoted at the top of the message box, so
+ * what is sent reaches its owner with the item it answers. Text already in the box stays below the quote.
+ */
+function replyToItem(conversationId: string, item: string): void {
+  const view: View = { kind: "conversation", id: conversationId };
+  const quote = () => {
+    const rest = dom.input.value.trim();
+    dom.input.value = `> ${item}\n\n${rest}`;
+    saveDraft(view, dom.input.value);
+    autosize();
+    updateComposerState();
+    dom.input.focus();
+    dom.input.setSelectionRange(dom.input.value.length, dom.input.value.length);
+  };
+  if (location.hash === viewHash(view)) {
+    quote();
+    return;
+  }
+  // Switching conversations loads that one's draft into the box: the quote goes in after that.
+  window.addEventListener("hashchange", () => setTimeout(quote, 0), { once: true });
+  navigate(view);
+}
 
 /** Per conversation: its list, none, or loading (no entry: not asked yet). */
 const lists = new Map<string, { list?: Checklist; none?: true; error?: string }>();
@@ -49,8 +85,12 @@ function line(conversationId: string, list: Checklist, raw: string): HTMLElement
     box.disabled = doneByOwner;
     const label = h("label", "check-label");
     label.append(box, h("span", "check-text"));
-    label.lastElementChild?.append(...mentionNodes(text));
-    li.append(label);
+    label.lastElementChild?.append(...inline(text));
+    const reply = h("button", "check-reply", "↩");
+    reply.type = "button";
+    reply.title = "Reply to this item: opens its conversation with the item quoted";
+    reply.addEventListener("click", () => replyToItem(conversationId, text));
+    li.append(label, reply);
     if (tick) li.append(h("span", "check-meta", `✓ ${tick.by} · ${relativeTime(tick.at)}`));
     li.classList.toggle("done", box.checked);
     box.addEventListener("change", async () => {
@@ -73,10 +113,14 @@ function line(conversationId: string, list: Checklist, raw: string): HTMLElement
     return li;
   }
   const heading = /^\s*#{1,6}\s+(.+)$/.exec(raw);
-  if (heading) return h("h4", "check-heading", heading[1]);
+  if (heading) {
+    const h4 = h("h4", "check-heading");
+    h4.append(...inline(heading[1] ?? ""));
+    return h4;
+  }
   if (!raw.trim()) return undefined;
   const p = h("p", "check-note");
-  p.append(...mentionNodes(raw.trim()));
+  p.append(...inline(raw.trim()));
   return p;
 }
 

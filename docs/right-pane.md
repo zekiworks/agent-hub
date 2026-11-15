@@ -62,6 +62,9 @@ First type, **Checklist** (built 15 Nov; Ali's list of Can's tasks on @@personal
   on its hourly run, and drops done items when it publishes next. No message per tick: that would start a paid turn
   each time.
 - Everyone viewing the conversation sees changes live; who may read the conversation may read its list.
+- Items, headings and notes take inline markdown (bold, italics, `code`, links, `#n`, `@id`). ↩ on an item opens the
+  list's conversation with the item quoted in the message box, so a reply reaches the owner with what it answers
+  (Can, 15 Nov).
 
 Further types (Board: a markdown page the agent keeps up to date, …) as needs come.
 

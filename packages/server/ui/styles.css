@@ -291,8 +291,44 @@ button:disabled {
 }
 
 .check-item {
-  padding: 6px 0;
+  position: relative;
+  padding: 6px 28px 6px 0;
   border-bottom: 1px solid var(--border);
+}
+
+/* ↩ on an item (checklist.ts replyToItem): on hover, always on touch screens. */
+.check-reply {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.check-item:hover .check-reply,
+.check-reply:focus-visible {
+  opacity: 1;
+}
+
+.check-reply:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+@media (hover: none) {
+  .check-reply {
+    opacity: 0.7;
+  }
+}
+
+.check-text code {
+  font-size: 12px;
 }
 
 .check-label {
