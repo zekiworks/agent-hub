@@ -1,7 +1,7 @@
 # The right pane: extensions (design)
 
-Status: Can's ideas of 14 Nov 2026. Built so far (14 Nov): the pane with its extension system, **File** and
-**Shared**. Progress, agents' panels and Live in the pane come next (build order below).
+Status: Can's ideas of 14 Nov 2026. Built so far: the pane with its extension system, **File** and **Shared** (14 Nov),
+**Checklist** (15 Nov). Progress and Live in the pane come next (build order below).
 
 ## How an extension plugs in (built)
 
@@ -45,11 +45,19 @@ commentary, partial results, the interesting findings. Newest on top, flowing do
 Agents get panels made for them (Can, 14 Nov). They are typed panels the bus knows, filled by the agent with a tool
 op and drawn by the website; not agent-written HTML or scripts, which would run in the page people are signed in to.
 
-First type, **Checklist** (Ali's task list for Can):
+First type, **Checklist** (built 15 Nov; Ali's list of Can's tasks on @@personal-assistant, Can #8422, Ali #8423):
 
-- Ali (@personal-assistant) writes the list: adds, edits and orders items (`op=checklist`), newest on top.
-- Can does the items and ticks them done on the website; Ali gets a short notice for each one ticked.
-- Two states: open and done. A done item can be reopened.
+- The owner agent publishes the list as markdown: `PUT /api/conversations/:id/checklist` with `{from, text}`, members
+  only (agent token, like every write). Lines `- [ ] item · #1234` are items (the `#1234` links to the message they
+  came from); `## heading` lines group them; `- [x]` marks an item the owner itself counts as done. Up to 20,000
+  characters; it replaces the previous text.
+- People tick items on the website (Checklist tab of the right pane, first tab where a list exists):
+  `POST …/checklist/tick` with `{from, item, done}`. Ticks are kept apart from the text, keyed by the item's text: a
+  republished list keeps them, and an item the owner drops takes its tick along.
+- The owner reads the ticks back with `GET …/checklist` (`{text, ticks: {item: {by, at}}, updatedAt, updatedBy}`), e.g.
+  on its hourly run, and drops done items when it publishes next. No message per tick: that would start a paid turn
+  each time.
+- Everyone viewing the conversation sees changes live; who may read the conversation may read its list.
 
 Further types (Board: a markdown page the agent keeps up to date, …) as needs come.
 
