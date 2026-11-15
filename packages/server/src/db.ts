@@ -18,6 +18,7 @@ import {
   type ParticipantKind,
   type ProjectVisibility,
   type Quote,
+  type Checklist,
   type Receipt,
   type SharedFile,
   type StatsResponse,
@@ -172,6 +173,15 @@ CREATE INDEX IF NOT EXISTS conversation_members_participant
 CREATE TABLE IF NOT EXISTS conversation_aliases (
   old_id TEXT PRIMARY KEY,
   new_id TEXT NOT NULL
+);
+
+-- A conversation's checklist (Checklist in the protocol): its owner's markdown and people's ticks, by item text.
+CREATE TABLE IF NOT EXISTS checklists (
+  conversation_id TEXT PRIMARY KEY,
+  text TEXT NOT NULL,
+  ticks_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -921,10 +931,31 @@ export class BusDatabase {
       this.db.query("DELETE FROM receipts WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM messages WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_members WHERE conversation_id = ?1").run(conversationId);
+      this.db.query("DELETE FROM checklists WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_aliases WHERE new_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversations WHERE id = ?1 AND kind = 'project'").run(conversationId);
       return n;
     })();
+  }
+
+  getChecklist(conversationId: string): Checklist | null {
+    const row = this.db
+      .query<{ text: string; ticks_json: string; updated_at: number; updated_by: string }, [string]>(
+        "SELECT text, ticks_json, updated_at, updated_by FROM checklists WHERE conversation_id = ?1"
+      )
+      .get(conversationId);
+    if (!row) return null;
+    return { text: row.text, ticks: JSON.parse(row.ticks_json) as Checklist["ticks"], updatedAt: row.updated_at, updatedBy: row.updated_by };
+  }
+
+  /** Writes a conversation's checklist (text and ticks as given). */
+  saveChecklist(conversationId: string, list: Checklist): void {
+    this.db
+      .query(
+        `INSERT INTO checklists (conversation_id, text, ticks_json, updated_at, updated_by) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(conversation_id) DO UPDATE SET text = ?2, ticks_json = ?3, updated_at = ?4, updated_by = ?5`
+      )
+      .run(conversationId, list.text, JSON.stringify(list.ticks), list.updatedAt, list.updatedBy);
   }
 
   /** Files shared in `conversationId`, newest first, without voice messages (audio named "voice-…"). */

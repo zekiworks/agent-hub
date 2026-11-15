@@ -6,6 +6,7 @@ import path from "node:path";
 import { isJsonObject, mentionedIds } from "@agent-bus/protocol";
 import type {
   AgentServerFrame,
+  Checklist,
   Conversation,
   FileRef,
   Message,
@@ -635,6 +636,42 @@ describe("delivery", () => {
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@reading,alpha}", text: "x" })).status).toBe(409);
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@nowhere,alpha}", text: "x" })).status).toBe(404);
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@benchmarks}", text: "x" })).status).toBe(400);
+  });
+
+  test("a checklist: its owner agent publishes markdown, people tick items, ticks survive a republish", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const project = await send({ from: alpha.id, to: "@@alpha", text: "my page" });
+    await send({ from: "carol", conversationId: project.conversation.id, text: "joining" });
+    const route = `/api/conversations/${project.conversation.id}/checklist`;
+    const put = (text: string, from = alpha.id) =>
+      busFetch(bus, route, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, text }) });
+    const tick = (item: string, done: boolean, from = "carol") => postJson(bus, `${route}/tick`, { from, item, done });
+    const get = async (as = "carol") => (await busFetch(bus, route, {}, as)).json() as Promise<Checklist>;
+
+    expect((await busFetch(bus, route, {}, "carol")).status).toBe(404); // none yet
+    expect((await put("## Money\n- [ ] Approve disk cleanup · #8264\n- [ ] Top up OpenRouter")).status).toBe(200);
+    expect((await tick("Approve disk cleanup · #8264", true)).status).toBe(200);
+    expect((await get()).ticks["Approve disk cleanup · #8264"]?.by).toBe("carol");
+    // Agents don't tick; unknown items are refused; non-members don't publish.
+    expect((await tick("Top up OpenRouter", true, alpha.id)).status).toBe(403);
+    expect((await tick("Not on the list", true)).status).toBe(409);
+    const beta = await joinPath("/tmp/x/beta");
+    expect((await put("- [ ] hijack", beta.id)).status).toBe(403);
+    // The owner republishes: the ticked item keeps its tick; an item dropped from the list loses its.
+    await put("## Money\n- [ ] Approve disk cleanup · #8264\n- [ ] New ask");
+    expect(Object.keys((await get()).ticks)).toEqual(["Approve disk cleanup · #8264"]);
+    await put("- [ ] New ask");
+    expect((await get()).ticks).toEqual({});
+    // Unticking.
+    await tick("New ask", true);
+    await tick("New ask", false);
+    expect((await get()).ticks).toEqual({});
+    // A person who may not read the conversation does not see its list: a private project with carol in it.
+    const hidden = await send({ from: alpha.id, to: "@@hidden", text: "x" });
+    await send({ from: "carol", conversationId: hidden.conversation.id, text: "mine too" });
+    await postJson(bus, `/api/conversations/${hidden.conversation.id}/project`, { from: "carol", visibility: "private" });
+    await busFetch(bus, `/api/conversations/${hidden.conversation.id}/checklist`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: alpha.id, text: "- [ ] secret" }) });
+    expect((await busFetch(bus, `/api/conversations/${hidden.conversation.id}/checklist`, {}, "uma")).status).toBe(404);
   });
 
   test("a conversation's shared files: newest first, without voice messages, only for those who may read it", async () => {

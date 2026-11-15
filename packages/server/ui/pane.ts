@@ -7,6 +7,8 @@ import { viewHash } from "./routing";
 
 export interface PaneExtension {
   id: string;
+  /** Place in the tab row, lowest first (modules load in no fixed order). */
+  order: number;
   /** The tab's label. */
   title(): string;
   /** Whether it has something for this view: its tab shows only then. */
@@ -43,6 +45,7 @@ function hostOf(id: string): HTMLElement {
 
 export function registerExtension(extension: PaneExtension): void {
   extensions.push(extension);
+  extensions.sort((a, b) => a.order - b.order);
 }
 
 function available(): PaneExtension[] {

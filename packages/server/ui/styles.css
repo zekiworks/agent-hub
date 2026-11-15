@@ -251,6 +251,72 @@ button:disabled {
   font-size: 13px;
 }
 
+/* Checklist: a conversation's list of tasks (checklist.ts). */
+.check-heading {
+  margin: 14px 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.check-heading:first-child {
+  margin-top: 0;
+}
+
+.check-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check-item {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.check-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.check-label input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--success);
+}
+
+.check-item.done .check-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.check-meta,
+.check-foot,
+.check-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.check-meta {
+  margin-left: 28px;
+}
+
+.check-error {
+  color: var(--error);
+  font-size: 12px;
+}
+
+.check-foot {
+  margin-top: 14px;
+}
+
 .topbar {
   grid-area: top;
   display: flex;

@@ -275,6 +275,8 @@ export type ViewerServerFrame =
   | { type: "message"; message: Message; conversation: Conversation }
   /** Conversations changed (members, notifications, a project's settings): refetch GET /api/state. */
   | { type: "conversations" }
+  /** A conversation's checklist changed (GET /api/conversations/:id/checklist has it). */
+  | { type: "checklist"; conversationId: string }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
   | ExpiredFrame
@@ -351,6 +353,33 @@ export interface ParticipantStats {
 export interface MessagesResponse {
   /** Ascending by seq. */
   messages: Message[];
+}
+
+/**
+ * A conversation's checklist (the right pane's Checklist tab; first use: Ali's list of Can's tasks). `text` is markdown
+ * its owner agent writes (PUT): `- [ ] item · #1234` lines, headings allowed. People tick items on the website; the
+ * ticks are kept apart from the text, keyed by the item's text, so a republished list keeps them, and an item the owner
+ * drops takes its tick with it.
+ */
+export interface Checklist {
+  text: string;
+  /** Item text (without "- [ ] ") → who ticked it and when. */
+  ticks: Record<string, { by: string; at: number }>;
+  updatedAt: number;
+  updatedBy: string;
+}
+
+/** PUT /api/conversations/:id/checklist: replaces the text (members only). */
+export interface PutChecklistRequest {
+  from: string;
+  text: string;
+}
+
+/** POST /api/conversations/:id/checklist/tick: people tick (or untick) one item, named by its text. */
+export interface TickRequest {
+  from: string;
+  item: string;
+  done: boolean;
 }
 
 /** A file shared in a conversation, with the message that shared it. */

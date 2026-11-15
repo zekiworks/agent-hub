@@ -86,6 +86,7 @@ export function openFile(file: FileRef): void {
 
 registerExtension({
   id: "file",
+  order: 10,
   title: () => "File",
   applies: () => opened !== undefined,
   render: (body) => {
@@ -157,6 +158,7 @@ function sharedRow(item: SharedFile): HTMLLIElement {
 
 registerExtension({
   id: "shared",
+  order: 20,
   title: () => "Shared",
   applies: (view) => view.kind === "conversation",
   render: (body) => {

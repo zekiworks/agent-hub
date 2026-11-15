@@ -18,6 +18,7 @@ import { applyReceipt, renderAll, showEmpty } from "./render";
 import { navigate, parseHash, viewHash } from "./routing";
 import "./send";
 import "./convmenu";
+import { checklistChanged } from "./checklist";
 import "./files";
 import "./settings";
 import "./stats";
@@ -118,6 +119,9 @@ function handleFrame(frame: ViewerServerFrame): void {
       break;
     case "message":
       receive(frame.message, frame.conversation);
+      break;
+    case "checklist":
+      checklistChanged(frame.conversationId);
       break;
     case "conversations":
       // Members, notifications or a project's settings changed somewhere.

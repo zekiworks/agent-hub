@@ -317,6 +317,12 @@ export class Hub {
   }
 
   /** Members or a conversation's settings changed: viewers refetch GET /api/state (coalesced). */
+  /** A conversation's checklist changed: its viewers fetch it again. */
+  checklistChanged(conversation: Conversation): void {
+    const frame = JSON.stringify({ type: "checklist", conversationId: conversation.id } satisfies ViewerServerFrame);
+    for (const ws of this.viewersOf(conversation)) ws.send(frame);
+  }
+
   conversationsChanged(): void {
     if (this.conversationsTimer || this.viewers.size === 0) return;
     this.conversationsTimer = setTimeout(() => {
