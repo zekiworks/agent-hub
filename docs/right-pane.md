@@ -5,11 +5,15 @@ Status: Can's ideas of 14 Nov 2026. Built so far: the pane with its extension sy
 
 ## How an extension plugs in (built)
 
-`packages/server/ui/pane.ts`: an extension registers `{ id, title(), applies(view), render(body) }`. Its tab shows
-while `applies` is true for the open view; `render` fills its own part of the pane when the view changes or the
-extension calls `refreshPane(id)`, never on tab switches, so scroll positions stay. `openPane(id)` opens the pane on
-it (File does so when an attachment is clicked). Open or closed and the last tab are kept per browser; ▤ in the
-conversation header opens and closes the pane, Esc closes it. On phones the pane covers the conversation.
+`packages/server/ui/pane.ts`: an extension registers `{ id, order, title(), applies(view), render(body, view),
+shown?(visible) }`. The pane is opened for a view, its source, and keeps it (Can, 15 Nov): opening another conversation
+on the left does not change the pane; only opening an extension for the open conversation does (▤, a file clicked in
+a message). While source and main panel differ, the source's name heads the pane, and a click on it opens it. Tabs
+show while `applies` is true for the source; `render` fills its own part of the pane when the source changes or the
+extension calls `refreshPane(id)`, never on tab switches, so scroll positions stay; `shown` tells it when its tab
+appears or goes (Live streams only then). Open or closed and the last tab are kept per browser; ▤ closes the pane when
+it shows the open conversation and switches it to the open conversation otherwise; Esc closes it. On phones the pane
+covers the conversation.
 
 ## One pane, tabs by context
 

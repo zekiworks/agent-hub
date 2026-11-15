@@ -103,6 +103,25 @@ button:disabled {
   display: none;
 }
 
+/* The conversation the pane shows, while it is not the one open on the left (pane.ts); a click opens it. */
+.link-btn.pane-source {
+  display: block;
+  width: 100%;
+  padding: 8px 14px 2px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-btn.pane-source[hidden] {
+  display: none;
+}
+
 .pane-head {
   display: flex;
   align-items: center;

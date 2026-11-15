@@ -90,8 +90,7 @@ registerExtension({
     if (!entry) void load(view.id);
     return !!entry?.list;
   },
-  render: (body) => {
-    const view = state.view;
+  render: (body, view) => {
     const entry = view.kind === "conversation" ? lists.get(view.id) : undefined;
     if (view.kind !== "conversation" || !entry?.list) return;
     const { list } = entry;

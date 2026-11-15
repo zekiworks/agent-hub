@@ -4,9 +4,9 @@ import type { ActivityEvent, AgentSession, ViewerServerFrame } from "@agent-bus/
 import { elapsed, relativeTime, shortPath } from "./format";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
-import { registerExtension } from "./pane";
+import { paneView, registerExtension } from "./pane";
 import { sendViewer } from "./socket";
-import { currentDirectAgent, state } from "./state";
+import { directAgentOf, state, type View } from "./state";
 import { mentionNodes } from "./text";
 
 /** If the agent sends no replay within this long, its session predates live output. */
@@ -69,10 +69,15 @@ function sessionChips(agentId: string, sessions: AgentSession[]): HTMLElement {
   return row;
 }
 
-/** The agent whose page is open (its DM, or a draft to it), if it is an agent. */
-function pageAgent() {
-  const agentId = currentDirectAgent();
+/** The agent of `view` (its DM, or a draft to it), if it is an agent. */
+function agentOf(view: View | undefined) {
+  const agentId = view ? directAgentOf(view) : undefined;
   return agentId ? state.participants.find((p) => p.id === agentId && p.kind === "agent") : undefined;
+}
+
+/** The agent the pane shows (its source may be another conversation than the open one). */
+function pageAgent() {
+  return agentOf(paneView());
 }
 
 /** Draws the status of the agent whose page is open (called on every sidebar redraw: status changes live). */
@@ -121,8 +126,7 @@ export function renderLive(): void {
 /** The agent to watch now: its page is open, the Live tab is visible and the browser tab is in front. */
 function wantedWatch(): string | null {
   if (!live.visible || document.visibilityState !== "visible") return null;
-  const agentId = currentDirectAgent();
-  const agent = agentId ? state.participants.find((p) => p.id === agentId) : undefined;
+  const agent = pageAgent();
   return agent?.online ? agent.id : null;
 }
 
@@ -228,7 +232,7 @@ registerExtension({
   id: "live",
   order: 0,
   title: () => "Live",
-  applies: () => pageAgent() !== undefined,
+  applies: (view) => agentOf(view) !== undefined,
   render: (body) => {
     if (root.parentElement !== body) body.replaceChildren(root);
     renderLive();

@@ -63,6 +63,7 @@ export const dom = {
   app: el<HTMLDivElement>("app"),
   pane: el<HTMLElement>("pane"),
   paneTabs: el<HTMLDivElement>("pane-tabs"),
+  paneSource: el<HTMLButtonElement>("pane-source"),
   paneClose: el<HTMLButtonElement>("pane-close"),
   paneBody: el<HTMLDivElement>("pane-body"),
   paneBtn: el<HTMLButtonElement>("pane-btn"),

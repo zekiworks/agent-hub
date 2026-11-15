@@ -179,8 +179,13 @@ export function isCurrent(conversationId: string): boolean {
 
 /** Agent whose direct conversation (or draft) is open. */
 export function currentDirectAgent(): string | undefined {
-  if (state.view.kind === "draft") return state.view.to.length === 1 ? state.view.to[0] : undefined;
-  const conv = state.conversations.get(state.view.id);
+  return directAgentOf(state.view);
+}
+
+/** The one agent of `view` (an agent's DM, a draft to it, or a group DM with a single agent), if any. */
+export function directAgentOf(view: View): string | undefined {
+  if (view.kind === "draft") return view.to.length === 1 ? view.to[0] : undefined;
+  const conv = state.conversations.get(view.id);
   if (!conv || conv.kind === "all" || conv.kind === "project") return undefined;
   const agentIds = new Set(agents().map((a) => a.id));
   const convAgents = conv.members.filter((id) => agentIds.has(id));

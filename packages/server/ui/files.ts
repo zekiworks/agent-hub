@@ -7,7 +7,6 @@ import { hooks } from "./hooks";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
 import { openPane, refreshPane, registerExtension } from "./pane";
-import { state } from "./state";
 import { mentionNodes } from "./text";
 
 /** Larger files are offered as a download only. */
@@ -161,8 +160,7 @@ registerExtension({
   order: 20,
   title: () => "Shared",
   applies: (view) => view.kind === "conversation",
-  render: (body) => {
-    const view = state.view;
+  render: (body, view) => {
     if (view.kind !== "conversation") return;
     const entry = lists.get(view.id);
     if (!entry) void load(view.id);
