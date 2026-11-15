@@ -2342,6 +2342,12 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 17px;
   }
 
+  /* Tapped (phones.ts): the whole title, on as many lines as it needs. */
+  .conv-title.expanded {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   .back-btn {
     display: inline-flex;
     align-items: center;

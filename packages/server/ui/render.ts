@@ -35,13 +35,23 @@ function renderProfileSelect(): void {
   dom.profileSelect.value = state.me;
 }
 
+/**
+ * Sets the header's title and the full name list shown on hover; on phones a tap unfolds a title too long for one
+ * line (Ümit, 15 Nov), and a new title starts folded again.
+ */
+function setConvTitle(title: string, names: string): void {
+  if (dom.convTitle.textContent !== title) dom.convTitle.classList.remove("expanded");
+  dom.convTitle.textContent = title;
+  dom.convTitle.title = names;
+}
+
 export function renderHeader(): void {
   const view = state.view;
   dom.convMenuBtn.hidden = true;
   dom.subgroupsPanel.hidden = true;
   if (view.kind === "draft") {
     const title = view.project !== undefined ? `@@${view.project}` : nameList(view.to);
-    dom.convTitle.textContent = title;
+    setConvTitle(title, view.project !== undefined ? title : `You and ${nameList(view.to)}`);
     dom.convSubtitle.textContent =
       view.project !== undefined
         ? `New project "${view.project}", open: anyone can find and join it — created when you send the first message.`
@@ -51,13 +61,13 @@ export function renderHeader(): void {
   }
   const conv = state.conversations.get(view.id);
   if (!conv) {
-    dom.convTitle.textContent = view.id;
+    setConvTitle(view.id, view.id);
     dom.convSubtitle.textContent = "Unknown conversation.";
     setTitleBase("Agent Bus");
     return;
   }
   const title = conversationTitle(conv);
-  dom.convTitle.textContent = title;
+  setConvTitle(title, conv.kind === "all" ? "Everyone" : `Members: ${nameList(conv.members)}`);
   // A project's colour on its title, as in the sidebar.
   dom.convTitle.style.color = hasProjectColor(conv) ? projectColor(conv) : "";
   setTitleBase(`${title} · Agent Bus`);

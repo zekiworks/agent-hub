@@ -45,3 +45,8 @@ export function renderBackBadge(): void {
   dom.backBadge.textContent = n > 99 ? "99+" : String(n);
   dom.backBadge.classList.toggle("badge-for-me", forMe);
 }
+
+// The title of a conversation with many names does not fit a phone's header: a tap unfolds it (and folds it again).
+dom.convTitle.addEventListener("click", () => {
+  if (PHONE.matches) dom.convTitle.classList.toggle("expanded");
+});
