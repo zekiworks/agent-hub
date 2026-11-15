@@ -435,7 +435,10 @@ export class BusTool {
       return files.length > 0 ? `${text}, ${files.length} file${files.length === 1 ? "" : "s"}: ${files.map((f) => f.name).join(", ")}` : text;
     };
     const sent = async (what: string, res: PostMessageResponse): Promise<string> =>
-      result(`${what} (conversation ${res.conversation.id}, message #${res.message.seq}): ${contents(res)}; ${await this.deliveryStatus(res)}.`);
+      result(
+        `${what} (conversation ${res.conversation.id}, message #${res.message.seq}): ${contents(res)}; ${await this.deliveryStatus(res)}.` +
+          (res.warnings ?? []).map((w) => `\nWARNING: ${w}.`).join("")
+      );
     /** Messages of a read result, newest kept when the page is too large. */
     const listed = (res: ReadResponse, what: string): string => {
       const byId = new Map(res.conversations.map((c) => [c.id, c]));

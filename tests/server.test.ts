@@ -639,6 +639,20 @@ describe("delivery", () => {
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@benchmarks}", text: "x" })).status).toBe(400);
   });
 
+  test("an agent citing #n a person of the conversation cannot open is warned (the message still goes); opening it says why", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const umas = await send({ from: "uma", to: "@alpha", text: "uma's own" }); // carol cannot read uma's DM
+    const mine = await send({ from: "carol", to: "@alpha", text: "carol's own" });
+    const cited = await send({ from: alpha.id, to: "@carol", text: `see #${umas.message.seq} and #${mine.message.seq}` });
+    expect(cited.warnings).toEqual([`@carol cannot open #${umas.message.seq} (it is in a conversation they are not in): quote what it says instead`]);
+    expect(cited.message.text).toContain(`#${umas.message.seq}`); // sent anyway
+    // People are not warned (they know what they can see); and carol opening it is told why, not "unknown".
+    expect((await send({ from: "carol", to: "@alpha", text: `#${umas.message.seq}?` })).warnings).toBeUndefined();
+    const res = await busFetch(bus, `/api/messages/${umas.message.seq}`, {}, "carol");
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toBe(`#${umas.message.seq} is in a conversation you are not in`);
+  });
+
   test("quiet unpinned projects and group DMs are archived; any member's message brings them back, an agent's too", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const quiet = await send({ from: alpha.id, to: "@@quiet", text: "x" });

@@ -442,6 +442,11 @@ export interface PostMessageRequest {
 export interface PostMessageResponse {
   message: Message;
   conversation: Conversation;
+  /**
+   * For agents: a `#n` in the text that a person of this conversation cannot open (it is in a conversation they are
+   * not in). The message is sent; quote what #n says instead (Can, 15 Nov: such references must not land on people).
+   */
+  warnings?: string[];
 }
 
 /** POST /api/conversations/:id/members: a member adds `ids` to its group DM or project. */

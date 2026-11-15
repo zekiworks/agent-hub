@@ -268,7 +268,31 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
   const updated = db.getConversation(conversation.id);
   if (!updated) throw new Error(`Conversation ${conversation.id} vanished`);
   hub.publishMessage(message, updated);
-  return { message, conversation: updated };
+  const warnings = writer.kind === "agent" ? unreadableRefs(ctx, text, updated) : [];
+  return { message, conversation: updated, ...(warnings.length > 0 ? { warnings } : {}) };
+}
+
+/** "#n" message references, as the website links them (ui/text.ts REF_RE). */
+const REF_RE = /(^|[^\w#&])#(\d{1,7})(?!\w)/g;
+
+/**
+ * The `#n` in `text` that a person of `conversation` cannot open, as warnings for the agent that wrote them: the
+ * website answers such a link with an error, and the person would have to chase it (Can, 15 Nov).
+ */
+function unreadableRefs(ctx: BusContext, text: string, conversation: Conversation): string[] {
+  const people = conversation.kind === "all" ? ctx.humans : conversation.members.filter((id) => ctx.hub.isHuman(id));
+  if (people.length === 0) return [];
+  const warnings: string[] = [];
+  for (const seq of new Set([...text.matchAll(REF_RE)].map((m) => Number(m[2])))) {
+    const ref = ctx.db.getMessage(seq);
+    const where = ref ? ctx.db.getConversation(ref.conversationId) : null;
+    if (!where) continue;
+    const blind = people.filter((id) => !mayRead(ctx, where, { id, kind: "human" }));
+    if (blind.length > 0) {
+      warnings.push(`${blind.map((id) => `@${id}`).join(", ")} cannot open #${seq} (it is in a conversation they are not in): quote what it says instead`);
+    }
+  }
+  return warnings;
 }
 
 /** A notice from @resources to one holder, in their own conversation with it (an agent's turn starts, as for a DM). */
@@ -341,9 +365,10 @@ export async function getMessageReceipts(
 ): Promise<{ message: Message; conversation: Conversation }> {
   const current = ctx.db.getMessage(seq);
   const own = current ? ctx.db.getConversation(current.conversationId) : null;
-  // A message the reader may not read is answered as unknown, like a conversation.
-  if (!current || !own || !mayRead(ctx, own, { ...reader, all: reader.all || url.searchParams.get("scope") === "all" })) {
-    throw new HttpError(404, `Unknown message ${seq}`);
+  if (!current || !own) throw new HttpError(404, `Unknown message ${seq}`);
+  // Numbers are sequential, so saying it exists gives nothing away; saying why spares people a dead end (Can, 15 Nov).
+  if (!mayRead(ctx, own, { ...reader, all: reader.all || url.searchParams.get("scope") === "all" })) {
+    throw new HttpError(403, `#${seq} is in a conversation you are not in`);
   }
   const withConversation = (message: Message): { message: Message; conversation: Conversation } => {
     const conversation = ctx.db.getConversation(message.conversationId);

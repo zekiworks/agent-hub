@@ -497,7 +497,7 @@ test("read ops: inbox, show, history and search, mine by default and all on requ
   await expect(alpha.run({ op: "show", message_id: privateSeq })).rejects.toThrow(/not in .*scope "all"/);
   expect(await text({ op: "show", message_id: privateSeq, scope: "all" })).toContain("gamma to beta");
   const umasSeq = (await post({ from: "uma", to: "@beta", text: "uma to beta" })).message.seq;
-  await expect(alpha.run({ op: "show", message_id: umasSeq, scope: "all" })).rejects.toThrow(/Unknown message/);
+  await expect(alpha.run({ op: "show", message_id: umasSeq, scope: "all" })).rejects.toThrow(/is in a conversation you are not in/);
 
   // carol→alpha is alpha's DM with carol; beta→{alpha,carol} the group DM of the three.
   const history = await text({ op: "history", to: "@carol", limit: 5 });

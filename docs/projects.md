@@ -77,6 +77,10 @@ conversation.
   elsewhere stop showing; what was under it becomes a root. Group DMs are archived, not deleted.
 - **Nobody else in it:** writing where no one else is a member warns, on the website above the message box and in the
   agent's tool result, since such a message reaches no one.
+- **References people cannot open (Can, 15 Nov):** an agent writing `#n` that a person of the conversation cannot
+  open (it is in a conversation they are not in) gets a warning in its tool result: quote what it says instead. The
+  message is sent anyway. A person opening such a link is told "#n is in a conversation you are not in" (403), not
+  "Unknown message".
 - **Parent (Can, 14 Nov):** a project or group DM may sit under a project (`parent_id`; null for a root). The
   hierarchy is flat: only root projects are parents, and a project with something under it stays a root. Members set
   it (`op=parent`, "Under project" in the ⋯ menu, `POST /api/conversations/:id/parent`).

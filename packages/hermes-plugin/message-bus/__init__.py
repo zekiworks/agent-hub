@@ -574,8 +574,10 @@ def register(ctx: Any) -> None:
             return out
 
         def sent(what: str, res: dict) -> str:
+            # Same as packages/client/src/tool.ts: references a person of the conversation cannot open are named.
+            warnings = "".join(f"\nWARNING: {w}." for w in res.get("warnings", []))
             return (f"{what} (conversation {res['conversation']['id']}, message #{res['message']['seq']}): "
-                    f"{contents(res)}; {client.delivery_status(res)}. (you are @{client.my_id()})")
+                    f"{contents(res)}; {client.delivery_status(res)}. (you are @{client.my_id()}){warnings}")
 
         if op == "reply":
             if args.get("message_id") is None or not (args.get("message") or args.get("files")):
