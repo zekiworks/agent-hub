@@ -132,7 +132,7 @@ function render(): void {
       body.push(h("h3", "", "Turn into a room"), h("p", "dialog-hint", "A name (#name), optionally under a project; it stays private to its members."));
       const roomName = h("input");
       roomName.type = "text";
-      roomName.placeholder = "room-name";
+      roomName.placeholder = "room-name (#room-name)";
       const roomParent = h("select");
       roomParent.append(new Option("No parent project", ""));
       for (const p of Array.from(state.conversations.values())
@@ -140,13 +140,15 @@ function render(): void {
         .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))) {
         roomParent.append(new Option(`@@${p.name}`, p.id));
       }
+      // Name on its own row: beside the parent picker it was squeezed to nothing (Can, 15 Nov).
       const row5 = h("div", "conv-row");
-      row5.append(
-        roomName,
+      row5.append(roomName);
+      const row6 = h("div", "conv-row");
+      row6.append(
         roomParent,
         button("Turn into room", () => void act(conv, "room", { name: roomName.value.trim().toLowerCase().replace(/^#/, ""), ...(roomParent.value ? { parent: roomParent.value } : {}) }), true)
       );
-      body.push(row5);
+      body.push(row5, row6);
     } else {
       body.push(h("h3", "", conv.room ? "Room" : "Project"));
       const topic = h("input");
