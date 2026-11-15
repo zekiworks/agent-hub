@@ -348,6 +348,7 @@ export function postResourcesNotice(ctx: BusContext, holder: string, text: strin
   const writer = db.ensureBuiltInAgent(RESOURCES_AGENT_ID, "bus");
   const now = Date.now();
   const conversation = db.dmOf(writer.id, holder, now);
+  const recipients = recipientsFor(ctx, conversation, writer.id).map((p) => p.id);
   const message = db.insertMessage({
     conversationId: conversation.id,
     from: writer.id,
@@ -355,8 +356,9 @@ export function postResourcesNotice(ctx: BusContext, holder: string, text: strin
     text,
     files: [],
     createdAt: now,
-    recipients: recipientsFor(ctx, conversation, writer.id).map((p) => p.id),
+    recipients,
     expiresAt: now + NOTICE_HOLD_MS,
+    wake: recipients, // the holder must act on it (wake lists, Can 15 Nov)
   });
   ctx.hub.publishMessage(message, db.getConversation(conversation.id) ?? conversation);
 }
