@@ -698,30 +698,41 @@ describe("delivery", () => {
     expect((await pin("yes" as unknown as boolean)).status).toBe(400);
   });
 
-  test("a checklist: its owner agent publishes markdown, people tick items, ticks survive a republish", async () => {
+  test("a checklist: its owner publishes markdown with assignees; only owner and assignees tick; ticks survive a republish", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const project = await send({ from: alpha.id, to: "@@alpha", text: "my page" });
     await send({ from: "carol", conversationId: project.conversation.id, text: "joining" });
+    await send({ from: "uma", conversationId: project.conversation.id, text: "me too" });
     const route = `/api/conversations/${project.conversation.id}/checklist`;
-    const put = (text: string, from = alpha.id) =>
-      busFetch(bus, route, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, text }) });
+    const put = (text: string, from = alpha.id, assignees?: string[]) =>
+      busFetch(bus, route, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from, text, ...(assignees ? { assignees } : {}) }),
+      }, from === "carol" || from === "uma" ? from : undefined); // people write with their session
     const tick = (item: string, done: boolean, from = "carol") => postJson(bus, `${route}/tick`, { from, item, done });
     const get = async (as = "carol") => (await busFetch(bus, route, {}, as)).json() as Promise<Checklist>;
 
     expect((await busFetch(bus, route, {}, "carol")).status).toBe(404); // none yet
-    expect((await put("## Money\n- [ ] Approve disk cleanup · #8264\n- [ ] Top up OpenRouter")).status).toBe(200);
+    expect((await put("## Money\n- [ ] Approve disk cleanup · #8264\n- [ ] Top up OpenRouter", alpha.id, ["@carol"])).status).toBe(200);
+    expect(await get()).toMatchObject({ owner: "alpha", assignees: ["carol"] });
+    // The assignee ticks; the owner may too; anyone else may not.
     expect((await tick("Approve disk cleanup · #8264", true)).status).toBe(200);
     expect((await get()).ticks["Approve disk cleanup · #8264"]?.by).toBe("carol");
-    // Agents don't tick; unknown items are refused; non-members don't publish.
-    expect((await tick("Top up OpenRouter", true, alpha.id)).status).toBe(403);
+    expect((await tick("Top up OpenRouter", true, alpha.id)).status).toBe(200);
+    expect((await tick("Top up OpenRouter", false, "uma")).status).toBe(403);
     expect((await tick("Not on the list", true)).status).toBe(409);
+    // Only the owner replaces it: neither another member nor an outsider.
+    expect((await put("- [ ] hijack", "carol")).status).toBe(403);
     const beta = await joinPath("/tmp/x/beta");
     expect((await put("- [ ] hijack", beta.id)).status).toBe(403);
-    // The owner republishes: the ticked item keeps its tick; an item dropped from the list loses its.
+    // The owner republishes without assignees: they stay. The ticked item keeps its tick; a dropped item loses its.
     await put("## Money\n- [ ] Approve disk cleanup · #8264\n- [ ] New ask");
+    expect(await get()).toMatchObject({ assignees: ["carol"] });
     expect(Object.keys((await get()).ticks)).toEqual(["Approve disk cleanup · #8264"]);
     await put("- [ ] New ask");
     expect((await get()).ticks).toEqual({});
+    expect((await put("- [ ] x", alpha.id, ["nobody-here"])).status).toBe(400);
     // Unticking.
     await tick("New ask", true);
     await tick("New ask", false);

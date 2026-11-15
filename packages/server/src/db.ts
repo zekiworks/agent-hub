@@ -196,7 +196,9 @@ CREATE TABLE IF NOT EXISTS checklists (
   text TEXT NOT NULL,
   ticks_json TEXT NOT NULL,
   updated_at INTEGER NOT NULL,
-  updated_by TEXT NOT NULL
+  updated_by TEXT NOT NULL,
+  owner TEXT,
+  assignees_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -368,6 +370,11 @@ export class BusDatabase {
     }
     this.seed(humans, now);
     this.migrateToProjects(now);
+    // Checklists from before owners and assignees (15 Nov): their last publisher owns them, nobody is assigned yet.
+    const checklistColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(checklists)").all();
+    if (!checklistColumns.some((c) => c.name === "owner")) {
+      this.db.exec("ALTER TABLE checklists ADD COLUMN owner TEXT; ALTER TABLE checklists ADD COLUMN assignees_json TEXT;");
+    }
     // Pins were a members' column for a short while (15 Nov, 11:30): carried over to the pins table, then unused.
     if (this.db.query<{ name: string }, []>("PRAGMA table_info(conversation_members)").all().some((c) => c.name === "pinned")) {
       this.db
@@ -978,22 +985,30 @@ export class BusDatabase {
 
   getChecklist(conversationId: string): Checklist | null {
     const row = this.db
-      .query<{ text: string; ticks_json: string; updated_at: number; updated_by: string }, [string]>(
-        "SELECT text, ticks_json, updated_at, updated_by FROM checklists WHERE conversation_id = ?1"
+      .query<{ text: string; ticks_json: string; updated_at: number; updated_by: string; owner: string | null; assignees_json: string | null }, [string]>(
+        "SELECT text, ticks_json, updated_at, updated_by, owner, assignees_json FROM checklists WHERE conversation_id = ?1"
       )
       .get(conversationId);
     if (!row) return null;
-    return { text: row.text, ticks: JSON.parse(row.ticks_json) as Checklist["ticks"], updatedAt: row.updated_at, updatedBy: row.updated_by };
+    return {
+      text: row.text,
+      ticks: JSON.parse(row.ticks_json) as Checklist["ticks"],
+      updatedAt: row.updated_at,
+      updatedBy: row.updated_by,
+      owner: row.owner ?? row.updated_by,
+      assignees: row.assignees_json ? (JSON.parse(row.assignees_json) as string[]) : [],
+    };
   }
 
   /** Writes a conversation's checklist (text and ticks as given). */
   saveChecklist(conversationId: string, list: Checklist): void {
     this.db
       .query(
-        `INSERT INTO checklists (conversation_id, text, ticks_json, updated_at, updated_by) VALUES (?1, ?2, ?3, ?4, ?5)
-         ON CONFLICT(conversation_id) DO UPDATE SET text = ?2, ticks_json = ?3, updated_at = ?4, updated_by = ?5`
+        `INSERT INTO checklists (conversation_id, text, ticks_json, updated_at, updated_by, owner, assignees_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(conversation_id) DO UPDATE SET text = ?2, ticks_json = ?3, updated_at = ?4, updated_by = ?5, owner = ?6, assignees_json = ?7`
       )
-      .run(conversationId, list.text, JSON.stringify(list.ticks), list.updatedAt, list.updatedBy);
+      .run(conversationId, list.text, JSON.stringify(list.ticks), list.updatedAt, list.updatedBy, list.owner, JSON.stringify(list.assignees));
   }
 
   /** Files shared in `conversationId`, newest first, without voice messages (audio named "voice-…"). */

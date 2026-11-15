@@ -81,8 +81,10 @@ function line(conversationId: string, list: Checklist, raw: string): HTMLElement
     const box = h("input");
     box.type = "checkbox";
     box.checked = doneByOwner || !!tick;
-    // An item its owner marked done is shown so; people tick only open ones.
-    box.disabled = doneByOwner;
+    // An item its owner marked done is shown so; only the owner and the assignees tick (Can, 15 Nov).
+    const mayTick = state.me === list.owner || list.assignees.includes(state.me);
+    box.disabled = doneByOwner || !mayTick;
+    if (!mayTick) box.title = `Only ${[list.owner, ...list.assignees].map((a) => `@${a}`).join(", ")} tick this list`;
     const label = h("label", "check-label");
     label.append(box, h("span", "check-text"));
     label.lastElementChild?.append(...inline(text));
@@ -155,7 +157,10 @@ registerExtension({
         root.append(node);
       }
     }
-    root.append(h("p", "check-foot", `Written by @${list.updatedBy}, ${relativeTime(list.updatedAt)}. Ticks go back to the bus; @${list.updatedBy} reads them.`));
+    const forWhom = list.assignees.length > 0 ? ` For ${list.assignees.map((a) => `@${a}`).join(", ")}.` : "";
+    root.append(
+      h("p", "check-foot", `@${list.owner}'s list, updated ${relativeTime(list.updatedAt)}.${forWhom} Ticks go back to the bus; @${list.owner} reads them.`)
+    );
     body.replaceChildren(root);
   },
 });

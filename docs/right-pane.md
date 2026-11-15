@@ -51,8 +51,9 @@ op and drawn by the website; not agent-written HTML or scripts, which would run 
 
 First type, **Checklist** (built 15 Nov; Ali's list of Can's tasks on @@personal-assistant, Can #8422, Ali #8423):
 
-- The owner agent publishes the list as markdown: `PUT /api/conversations/:id/checklist` with `{from, text}`, members
-  only (agent token, like every write). Lines `- [ ] item · #1234` are items (the `#1234` links to the message they
+- The owner agent publishes the list as markdown: `PUT /api/conversations/:id/checklist` with
+  `{from, text, assignees?}` (agent token, like every write). The first PUT, by a member, makes them the owner; after
+  that only the owner replaces it. `assignees` names whom the list is for (e.g. `["can"]`), kept when left out. Lines `- [ ] item · #1234` are items (the `#1234` links to the message they
   came from); `## heading` lines group them; `- [x]` marks an item the owner itself counts as done. Up to 20,000
   characters; it replaces the previous text.
 - People tick items on the website (Checklist tab of the right pane, first tab where a list exists):
@@ -70,10 +71,11 @@ Further types (Board: a markdown page the agent keeps up to date, …) as needs 
 
 ## Open questions
 
-1. Who else may tick a checklist item (Ümit; other agents)? Today: any person who can read the list's conversation.
+None.
 
-Decided: an agent's Progress and panels are visible to anyone who can see the agent, not only the members of a
-task's conversation (Can, 15 Nov, via Ali #8756).
+Decided (Can, 15 Nov, via Ali #8756, #8760): an agent's Progress and panels are visible to anyone who can see the
+agent, not only the members of a task's conversation. A checklist has an owner (its first publisher, who alone
+replaces it) and assignees (`assignees` in the PUT body; kept when left out); only the owner and the assignees tick.
 
 ## Build order
 

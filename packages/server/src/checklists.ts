@@ -46,25 +46,38 @@ export async function putChecklist(ctx: BusContext, req: Request, id: string): P
   const conversation = ctx.db.getConversation(id);
   if (!conversation) throw new HttpError(404, `Unknown conversation "${id}"`);
   if (!conversation.members.includes(from.id)) throw new HttpError(403, `@${from.id} is not in ${conversation.id}`);
-  const text = (body as Partial<PutChecklistRequest>).text;
+  const before = ctx.db.getChecklist(conversation.id);
+  // The first publisher owns the list; only they replace it.
+  if (before && before.owner !== from.id) throw new HttpError(403, `This checklist is @${before.owner}'s; only @${before.owner} replaces it`);
+  const { text, assignees } = body as Partial<PutChecklistRequest>;
   if (typeof text !== "string") throw new HttpError(400, "text must be the checklist's markdown");
   if (text.length > MAX_CHECKLIST_CHARS) throw new HttpError(400, `text is longer than ${MAX_CHECKLIST_CHARS} characters`);
+  let assigned = before?.assignees ?? [];
+  if (assignees !== undefined) {
+    if (!Array.isArray(assignees) || !assignees.every((a) => typeof a === "string")) throw new HttpError(400, "assignees must be a list of participant ids");
+    assigned = [...new Set(assignees.map((a) => a.trim().replace(/^@/, "").toLowerCase()).filter(Boolean))];
+    const unknown = assigned.filter((a) => !ctx.hub.knownParticipant(a));
+    if (unknown.length > 0) throw new HttpError(400, `Unknown participant${unknown.length > 1 ? "s" : ""} ${unknown.join(", ")}`);
+  }
   const items = new Set(checklistItems(text));
-  const ticks = Object.fromEntries(Object.entries(ctx.db.getChecklist(conversation.id)?.ticks ?? {}).filter(([item]) => items.has(item)));
-  const list: Checklist = { text, ticks, updatedAt: Date.now(), updatedBy: from.id };
+  const ticks = Object.fromEntries(Object.entries(before?.ticks ?? {}).filter(([item]) => items.has(item)));
+  const list: Checklist = { text, ticks, updatedAt: Date.now(), updatedBy: from.id, owner: before?.owner ?? from.id, assignees: assigned };
   ctx.db.saveChecklist(conversation.id, list);
   ctx.hub.checklistChanged(conversation);
   return list;
 }
 
-/** POST /api/conversations/:id/checklist/tick: a person ticks or unticks one item, named by its text. */
+/** POST /api/conversations/:id/checklist/tick: the owner or an assignee ticks or unticks one item, by its text. */
 export async function tickChecklist(ctx: BusContext, req: Request, id: string): Promise<Checklist> {
   const body = await readJsonObject(req);
   const from = writer(ctx, req, body);
-  if (from.kind !== "human") throw new HttpError(403, "Only people tick checklist items");
-  const conversation = readable(ctx, id, { id: from.id, kind: "human" });
+  const conversation = readable(ctx, id, { id: from.id, kind: from.kind === "human" ? "human" : "agent" });
   const list = ctx.db.getChecklist(conversation.id);
   if (!list) throw new HttpError(404, `${conversation.id} has no checklist`);
+  if (from.id !== list.owner && !list.assignees.includes(from.id)) {
+    const who = [list.owner, ...list.assignees].map((a) => `@${a}`).join(", ");
+    throw new HttpError(403, `Only ${who} tick this checklist`);
+  }
   const { item, done } = body as Partial<TickRequest>;
   if (typeof item !== "string" || typeof done !== "boolean") throw new HttpError(400, "Give item (its text) and done (true or false)");
   if (!checklistItems(list.text).includes(item.trim())) throw new HttpError(409, "That item is no longer on the list (it changed meanwhile)");

@@ -374,15 +374,23 @@ export interface Checklist {
   ticks: Record<string, { by: string; at: number }>;
   updatedAt: number;
   updatedBy: string;
+  /** Who first published it: only they replace it (Can, 15 Nov). */
+  owner: string;
+  /** Whom the list is for. Only the owner and these tick its items (Can, 15 Nov). */
+  assignees: string[];
 }
 
-/** PUT /api/conversations/:id/checklist: replaces the text (members only). */
+/**
+ * PUT /api/conversations/:id/checklist: the owner replaces the text (the first PUT, by a member, makes them the
+ * owner). `assignees` (participant ids) is kept as it was when left out.
+ */
 export interface PutChecklistRequest {
   from: string;
   text: string;
+  assignees?: string[];
 }
 
-/** POST /api/conversations/:id/checklist/tick: people tick (or untick) one item, named by its text. */
+/** POST /api/conversations/:id/checklist/tick: the owner or an assignee ticks (or unticks) one item, by its text. */
 export interface TickRequest {
   from: string;
   item: string;
