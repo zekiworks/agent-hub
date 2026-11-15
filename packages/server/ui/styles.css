@@ -1432,6 +1432,39 @@ ul.md-list ul.md-list { list-style: circle; }
   color: var(--warning);
 }
 
+/* ↓ back to the newest message (jump.ts): a round button centred over the list's bottom edge. */
+.jump-anchor {
+  position: relative;
+  flex: none;
+  height: 0;
+}
+
+.jump-btn {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
+  cursor: pointer;
+  z-index: 2;
+}
+
+.jump-btn:hover {
+  background: var(--hover);
+}
+
+.jump-btn[hidden] {
+  display: none;
+}
+
 /* "zeki is working ···" between the messages and the message box (Discord's typing line); fixed height, so the
  * message box does not move when it appears. */
 .working-line {

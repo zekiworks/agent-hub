@@ -9,6 +9,7 @@ import { renderMarkdown } from "./markdown";
 import { setTitleBase } from "./notify";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
+import { updateJump } from "./jump";
 import { renderPane } from "./pane";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationTitle, hasProjectColor, projectColor, state } from "./state";
@@ -154,6 +155,7 @@ export function renderMessages(): void {
   }
   dom.messageList.replaceChildren(...nodes);
   renderSpeaking();
+  updateJump();
 }
 
 function renderMessage(message: Message, continued: boolean): HTMLLIElement {
