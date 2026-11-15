@@ -323,6 +323,12 @@ export class Hub {
     for (const ws of this.viewersOf(conversation)) ws.send(frame);
   }
 
+  /** A project's Home changed: its viewers fetch it again. */
+  homeChanged(conversation: Conversation): void {
+    const frame = JSON.stringify({ type: "home", conversationId: conversation.id } satisfies ViewerServerFrame);
+    for (const ws of this.viewersOf(conversation)) ws.send(frame);
+  }
+
   /** A conversation's checklist changed: its viewers fetch it again. */
   checklistChanged(conversation: Conversation): void {
     const frame = JSON.stringify({ type: "checklist", conversationId: conversation.id } satisfies ViewerServerFrame);

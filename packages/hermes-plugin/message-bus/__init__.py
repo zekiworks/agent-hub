@@ -99,13 +99,16 @@ SCHEMA = {
         "Tasks (same as packages/client/src/tool.ts): write/reply with `task` (task, approval, chore) and `assignees` "
         "makes the message a task (its #number is the task id); its agents are woken. Approvals go to people. Assigned to "
         "you: op=accept, op=done, op=reject (`reason`) with `message_id`; op=withdraw takes back one you assigned; "
-        "op=tasks lists yours (box=\"assigned\" for those you assigned; scope=\"all\" includes closed ones)."
+        "op=tasks lists yours (box=\"assigned\" for those you assigned; scope=\"all\" includes closed ones). "
+        "Your Home: op=home (`message` = the whole markdown; without `message` it returns the current text, so you can "
+        "prepend) publishes the Home tab of your project @@<your id> (`to` for another project you are in). Newest "
+        "first: what you finished, what you work on, blockers, links to messages (#1234)."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "op": {"type": "string", "enum": ["reply", "write", "send", "set", "inbox", "show", "history", "search",
-                                               "tasks", "accept", "done", "reject", "withdraw"],
+                                               "tasks", "accept", "done", "reject", "withdraw", "home"],
                    "description": "reply/write/send a message, set a setting, or read: inbox, show, history, search"},
             "message_id": {"type": "integer", "description": "a message's #number (reply, show, history)"},
             "to": {"type": "string", "description": "\"@all\", \"@id\", \"@{id1,id2}\" (\"@{@@project,id1,id2}\" for the group under that project) or \"@@project\" (write/send, history)"},
@@ -390,6 +393,11 @@ class BusClient:
     def set(self, key: str, value: str) -> dict:
         body = {"from": self.my_id(), "key": key, "value": value}
         return self._request("POST", "/api/settings", json.dumps(body).encode())
+
+    def put_home(self, conversation_id: str, text: str) -> dict:
+        """Replaces a project's Home (PUT /api/conversations/:id/home), as BusConnection.putHome."""
+        body = {"from": self.my_id(), "text": text}
+        return self._request("PUT", f"/api/conversations/{urllib.parse.quote(conversation_id)}/home", json.dumps(body).encode())
 
     def task_action(self, seq: int, action: str, reason: str | None) -> dict:
         """One step on task #seq (accept, done, reject, withdraw), as in BusConnection.taskAction."""
@@ -764,7 +772,28 @@ def register(ctx: Any) -> None:
             word = {"accept": "accepted", "done": "done", "reject": "rejected", "withdraw": "withdrawn"}[op]
             return (f"#{args['message_id']} {word}; the conversation got the step as a reply. "
                     f"{task_states(res['message'])} (you are @{me})")
-        raise ValueError("op must be reply, write, send, set, inbox, show, history, search, tasks, accept, done, reject or withdraw.")
+        if op == "home":
+            target = (args.get("to") or f"@@{me}").strip()
+            room = target.startswith("#")
+            name = target[1:] if room else target[2:] if target.startswith("@@") else ""
+            if not name:
+                raise ValueError("home needs `to` as \"@@project\" or \"#room\" (default: your own @@<id>).")
+            state = client.get("/api/state", {"as": me})
+            project = next((c for c in state["conversations"] if c["kind"] == "project" and c.get("name") == name.lower()
+                            and bool(c.get("room")) == room), None)
+            if project is None:
+                raise ValueError(f"No project {target} that you can see. (you are @{me})")
+            if args.get("message") is None:
+                try:
+                    home = client.get(f"/api/conversations/{project['id']}/home", {"as": me})
+                except RuntimeError as err:
+                    if "no Home yet" in str(err):
+                        return f"{target} has no Home yet; publish one with op=home message=<markdown>. (you are @{me})"
+                    raise
+                return f"Home of {target} (by @{home['owner']}):\n\n{home['text']}\n (you are @{me})"
+            home = client.put_home(project["id"], args["message"])
+            return f"Published the Home of {target}: {len(home['text'])} chars; it shows in its Home tab. (you are @{me})"
+        raise ValueError("op must be reply, write, send, set, inbox, show, history, search, tasks, accept, done, reject, withdraw or home.")
 
     ctx.register_tool(name=TOOL_NAME, toolset="message_bus", schema=SCHEMA, handler=handle,
                       description=SCHEMA["description"], emoji="📨")

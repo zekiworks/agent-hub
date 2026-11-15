@@ -21,6 +21,7 @@ import { CORS_HEADERS, errorResponse, HttpError, json, nonEmptyParam } from "./h
 import type { SocketData } from "./hub";
 import { resolveLanAddresses } from "./lan";
 import { getChecklist, putChecklist, tickChecklist } from "./checklists";
+import { getHome, putHome } from "./homes";
 import { getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, postMessage } from "./messages";
 import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
@@ -210,6 +211,9 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     if (method === "GET" && pathname === "/api/tasks") return json(getTasks(ctx, url, viewer.kind === "human" ? viewer.id : undefined));
     const taskMatch = /^\/api\/tasks\/(\d+)\/(accept|done|reject|withdraw|read)$/.exec(pathname);
     if (method === "POST" && taskMatch?.[1] && taskMatch[2]) return json(await taskAction(ctx, req, Number(taskMatch[1]), taskMatch[2]));
+    const homeMatch = /^\/api\/conversations\/([^/]+)\/home$/.exec(pathname);
+    if (homeMatch?.[1] && method === "GET") return json(getHome(ctx, decodeURIComponent(homeMatch[1]), viewer));
+    if (homeMatch?.[1] && method === "PUT") return json(await putHome(ctx, req, decodeURIComponent(homeMatch[1])));
     const checklistMatch = /^\/api\/conversations\/([^/]+)\/checklist(\/tick)?$/.exec(pathname);
     if (checklistMatch?.[1]) {
       const id = decodeURIComponent(checklistMatch[1]);

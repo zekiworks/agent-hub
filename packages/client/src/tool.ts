@@ -41,7 +41,8 @@ export interface MessageBusToolParams {
     | "accept"
     | "done"
     | "reject"
-    | "withdraw";
+    | "withdraw"
+    | "home";
   message_id?: number;
   to?: string;
   message?: string;
@@ -89,7 +90,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     enum: [
       "reply", "write", "send", "set", "inbox", "show", "history", "search",
       "projects", "invite", "leave", "notify", "project", "room", "parent",
-      "tasks", "accept", "done", "reject", "withdraw",
+      "tasks", "accept", "done", "reject", "withdraw", "home",
       "resources", "servers", "reserve", "release", "extend", "mode", "subscribe", "unsubscribe",
     ],
     description:
@@ -194,6 +195,9 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "or the conversation of `message_id`. " +
     "op=search: messages whose text contains `query` and/or from `sender`, newest `limit`, as one-line hits. " +
     "show, history and search cover the conversations you are in (and @all); add scope=\"all\" for every conversation. " +
+    "Your Home: op=home (`message` = the whole markdown; without `message` it returns the current text, so you can " +
+    "prepend) publishes the Home tab of your project @@<your id> (`to` for another project you are in). Newest first: " +
+    "what you finished, what you work on, blockers, links to messages (#1234). " +
     "Tasks: write/reply with `task` (task, approval, chore) and `assignees` makes the message a task (its #number is the " +
     "task id); its agents are woken. Approvals go to people, who decide them signed in. Assigned to you: op=accept (on " +
     "it), op=done, op=reject (`reason`) with `message_id`; op=withdraw takes back one you assigned; op=tasks lists yours " +
@@ -633,6 +637,16 @@ export class BusTool {
         if (!params.reservation || params.hours === undefined) throw new Error("extend needs `reservation` and `hours`.");
         const res = await conn.schedule(`/api/reservations/${encodeURIComponent(params.reservation)}/extend`, { hours: params.hours });
         return result(`Extended: ${formatReservation(res.reservation, res.resource)}.`);
+      }
+      case "home": {
+        // Default: this agent's own project, @@<id> (Can, 15 Nov: every agent keeps a Home there).
+        const conversation = await this.conversationOf({ ...params, to: params.to ?? (params.message_id === undefined ? `@@${conn.id}` : undefined) });
+        if (params.message === undefined) {
+          const home = await conn.home(conversation.id);
+          return result(home ? `Home of ${conversationLabel(conversation)} (by @${home.owner}, ${formatTime(home.updatedAt)}):\n\n${home.text}` : `${conversationLabel(conversation)} has no Home yet; publish one with op=home message=<markdown>.`);
+        }
+        const home = await conn.putHome(conversation.id, params.message);
+        return result(`Published the Home of ${conversationLabel(conversation)}: ${home.text.length} chars; it shows in its Home tab.`);
       }
       case "tasks": {
         const res = await conn.tasks(params.box ?? "mine", params.scope === "all" ? "all" : "open");

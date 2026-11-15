@@ -326,6 +326,8 @@ export type ViewerServerFrame =
   | { type: "conversations" }
   /** A conversation's checklist changed (GET /api/conversations/:id/checklist has it). */
   | { type: "checklist"; conversationId: string }
+  /** A project's Home changed (GET /api/conversations/:id/home has it). */
+  | { type: "home"; conversationId: string }
   /** A task's state changed: the message as it is now (its `task`). */
   | { type: "task"; message: Message; conversation: Conversation }
   | { type: "participants"; participants: Participant[] }
@@ -424,6 +426,23 @@ export interface Checklist {
   owner: string;
   /** Whom the list is for. Only the owner and these tick its items (Can, 15 Nov). */
   assignees: string[];
+}
+
+/**
+ * A project's Home (Can, 15 Nov): markdown its owner agent keeps current, newest first (done, blockers, links,
+ * long-task updates); the Home tab of the right pane. Its first publisher owns it.
+ */
+export interface Home {
+  text: string;
+  owner: string;
+  updatedAt: number;
+  updatedBy: string;
+}
+
+/** PUT /api/conversations/:id/home: the owner replaces the whole text. */
+export interface PutHomeRequest {
+  from: string;
+  text: string;
 }
 
 /**

@@ -370,6 +370,17 @@ test("rooms through the tool: write to #name creates and reuses it; op=room turn
   expect((await alpha.run({ op: "history", to: "#plan", limit: 5 })).content[0]!.text).toContain("plan");
 });
 
+test("op=home: an agent publishes its Home on @@<id> and reads it back", async () => {
+  const alpha = await startSession("alpha");
+  await post({ from: "carol", to: "@alpha", text: "hello" });
+  await alpha.injectedWith("hello"); // connected
+  await alpha.run({ op: "write", to: "@@alpha", message: "my project" });
+  expect((await alpha.run({ op: "home" })).content[0]!.text).toStartWith("@@alpha has no Home yet");
+  expect((await alpha.run({ op: "home", message: "## Done\n- rooms" })).content[0]!.text).toStartWith("Published the Home of @@alpha: 15 chars");
+  expect((await alpha.run({ op: "home" })).content[0]!.text).toContain("(by @alpha, ");
+  expect((await alpha.run({ op: "home" })).content[0]!.text).toContain("## Done\n- rooms");
+});
+
 test("reply answers a message by its number, into that message's conversation", async () => {
   const alpha = await startSession("alpha");
   const beta = await rawAgent("beta");

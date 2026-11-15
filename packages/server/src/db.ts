@@ -19,6 +19,7 @@ import {
   type ProjectVisibility,
   type Quote,
   type Checklist,
+  type Home,
   type Task,
   type Receipt,
   type SharedFile,
@@ -196,6 +197,15 @@ CREATE TABLE IF NOT EXISTS pins (
   conversation_id TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   PRIMARY KEY (participant_id, conversation_id)
+);
+
+-- A project's Home (Home in the protocol): its owner agent's markdown page.
+CREATE TABLE IF NOT EXISTS homes (
+  conversation_id TEXT PRIMARY KEY,
+  text TEXT NOT NULL,
+  owner TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by TEXT NOT NULL
 );
 
 -- A conversation's checklist (Checklist in the protocol): its owner's markdown and people's ticks, by item text.
@@ -1006,11 +1016,30 @@ export class BusDatabase {
       this.db.query("DELETE FROM messages WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_members WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM checklists WHERE conversation_id = ?1").run(conversationId);
+      this.db.query("DELETE FROM homes WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM pins WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_aliases WHERE new_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversations WHERE id = ?1 AND kind = 'project'").run(conversationId);
       return n;
     })();
+  }
+
+  getHome(conversationId: string): Home | null {
+    const row = this.db
+      .query<{ text: string; owner: string; updated_at: number; updated_by: string }, [string]>(
+        "SELECT text, owner, updated_at, updated_by FROM homes WHERE conversation_id = ?1"
+      )
+      .get(conversationId);
+    return row ? { text: row.text, owner: row.owner, updatedAt: row.updated_at, updatedBy: row.updated_by } : null;
+  }
+
+  saveHome(conversationId: string, home: Home): void {
+    this.db
+      .query(
+        `INSERT INTO homes (conversation_id, text, owner, updated_at, updated_by) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(conversation_id) DO UPDATE SET text = ?2, owner = ?3, updated_at = ?4, updated_by = ?5`
+      )
+      .run(conversationId, home.text, home.owner, home.updatedAt, home.updatedBy);
   }
 
   getChecklist(conversationId: string): Checklist | null {

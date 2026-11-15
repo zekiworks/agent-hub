@@ -20,6 +20,7 @@ import { navigate, parseHash, viewHash } from "./routing";
 import "./send";
 import "./convmenu";
 import { checklistChanged } from "./checklist";
+import { homeChanged } from "./home";
 import { refreshInbox } from "./inbox";
 import "./files";
 import "./settings";
@@ -167,6 +168,9 @@ function handleFrame(frame: ViewerServerFrame): void {
       break;
     case "checklist":
       checklistChanged(frame.conversationId);
+      break;
+    case "home":
+      homeChanged(frame.conversationId);
       break;
     case "conversations":
       // Members, notifications or a project's settings changed somewhere.
