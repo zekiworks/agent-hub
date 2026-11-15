@@ -143,7 +143,8 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     // Same text as the cost note in packages/hermes-plugin/message-bus/__init__.py.
     "A message starts a paid model turn only for the agents it wakes: the one you reply to (op=reply), and those you " +
     "list in `wake`; every other agent of the conversation takes it in at its next turn. Wake only those who must act " +
-    "on it now. Mentioning @id in the text wakes nobody. Use the " +
+    "on it now. Mentioning @id in the text wakes nobody. When you are woken where other agents were not, you decide " +
+    "who acts next: the delivery names them. Use the " +
     "bus sparingly: write only when the recipients need it (a result, a decision, a question, a claim or release of a " +
     "shared resource). Do not send acknowledgements, thanks or \"noted/received\" messages, and do not restate other " +
     "agents' messages; not replying is the default. Send to the fewest recipients who need it: @id or @{ids} rather " +
@@ -251,8 +252,26 @@ export function formatDelivery(delivery: Delivery, savedFiles: string[]): string
   message.files.forEach((file, i) => {
     lines.push(`File: ${savedFiles[i] ?? file.name} (${defangHeaders(file.name)}, ${file.size} B, sha256 ${file.sha256.slice(0, 12)}…)`);
   });
-  lines.push(`(Reply only if they need something from you: ${TOOL_NAME} reply, message_id ${message.seq} → ${replyTo}.)`);
+  lines.push(replyFooter(delivery));
   return lines.join("\n");
+}
+
+/**
+ * The delivery's last line. Woken where other agents were not, the agent decides who acts next (Can, 15 Nov: wake
+ * lists route through the agent with the context), so it is told whom it may wake; otherwise replies are optional.
+ */
+export function replyFooter(delivery: Delivery): string {
+  const { message, replyTo } = delivery;
+  const target = `${TOOL_NAME} reply, message_id ${message.seq} → ${replyTo}`;
+  const wake = message.wake;
+  const notWoken = delivery.wake && wake ? message.receipts.map((r) => r.to).filter((id) => !wake.includes(id)) : [];
+  if (notWoken.length === 0) return `(Reply only if they need something from you: ${target}.)`;
+  const names = notWoken.map((id) => `@${id}`).join(", ");
+  return (
+    `(You were woken for this; ${names} here ${notWoken.length === 1 ? "was" : "were"} not. ` +
+    `${notWoken.length === 1 ? `If ${names} should act on it now, reply with \`wake\` naming it` : "If one of them should act on it now, reply with `wake` naming them"}; ` +
+    `otherwise reply only if needed. ${target}.)`
+  );
 }
 
 /** Text the session gets when a late recipient has now received one of its messages, or the message expired for it. */

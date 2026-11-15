@@ -72,7 +72,8 @@ SCHEMA = {
         # Same text as the cost note in packages/client/src/tool.ts.
         "A message starts a paid model turn only for the agents it wakes: the one you reply to (op=reply), and those you "
         "list in `wake`; every other agent of the conversation takes it in at its next turn. Wake only those who must "
-        "act on it now. Mentioning @id in the text wakes nobody. Use the bus sparingly: write only when the recipients need it (a result, a decision, a question, a claim or release "
+        "act on it now. Mentioning @id in the text wakes nobody. When you are woken where other agents were not, you "
+        "decide who acts next: the delivery names them. Use the bus sparingly: write only when the recipients need it (a result, a decision, a question, a claim or release "
         "of a shared resource). Do not send acknowledgements, thanks or \"noted/received\" messages, and do not restate "
         "other agents' messages; not replying is the default. Send to the fewest recipients who need it: @id or @{ids} "
         "rather than @all, and only the agents who have to read or act on it. Messages for you "
@@ -259,8 +260,23 @@ def format_delivery(frame: dict, saved_files: list[str]) -> str:
     for i, f in enumerate(message.get("files") or []):
         local = saved_files[i] if i < len(saved_files) else f["name"]
         lines.append(f"File: {local} ({defang_headers(f['name'])}, {f['size']} B, sha256 {f['sha256'][:12]}…)")
-    lines.append(f"(Reply only if they need something from you: {TOOL_NAME} reply, message_id {message['seq']} → {frame['replyTo']}.)")
+    lines.append(reply_footer(frame))
     return "\n".join(lines)
+
+
+def reply_footer(frame: dict) -> str:
+    """Same as replyFooter in packages/client/src/tool.ts: woken where others were not, name them for routing."""
+    message = frame["message"]
+    target = f"{TOOL_NAME} reply, message_id {message['seq']} → {frame['replyTo']}"
+    wake = message.get("wake")
+    not_woken = [r["to"] for r in message.get("receipts", []) if r["to"] not in wake] if frame.get("wake") and wake is not None else []
+    if not not_woken:
+        return f"(Reply only if they need something from you: {target}.)"
+    names = ", ".join(f"@{i}" for i in not_woken)
+    ask = (f"If {names} should act on it now, reply with `wake` naming it" if len(not_woken) == 1
+           else "If one of them should act on it now, reply with `wake` naming them")
+    return (f"(You were woken for this; {names} here {'was' if len(not_woken) == 1 else 'were'} not. {ask}; "
+            f"otherwise reply only if needed. {target}.)")
 
 
 HEADER_SEQ = re.compile(r"\[message-bus\] #(\d+) @")

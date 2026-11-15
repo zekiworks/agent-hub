@@ -120,6 +120,9 @@ wake list (`Message.wake`) get a turn for it, the others take it in at their nex
 - An agent's tool from before wake lists sends no list: such a message follows the old rule (every member; @all quiet
   for agents unless their `all` setting is wake), until that session restarts with the new tool.
 - The website shows whom each message woke under it ("woke beta", "woke nobody").
+- A woken agent routes (Can, 15 Nov): when other agents of the conversation were not woken, its delivery ends with "You
+  were woken for this; @beta here was not. If @beta should act on it now, reply with `wake` naming it; otherwise reply
+  only if needed." Elsewhere the footer stays "Reply only if they need something from you".
 
 ### Notifications
 

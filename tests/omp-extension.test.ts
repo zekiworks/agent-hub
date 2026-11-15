@@ -185,7 +185,7 @@ test("delivers like the composer: idle starts a turn, busy queues a follow-up, u
   const sent = new Date(standup.createdAt).toISOString().slice(0, 16).replace("T", " "); // tests run in UTC (setup.ts)
   expect(await alpha.injectedWith("standup in 5")).toEqual({
     via: "user",
-    content: `[message-bus] #${standup.seq} @carol (verified) → @all · ${sent}\n@alpha standup in 5\n(Reply only if they need something from you: message-bus reply, message_id ${standup.seq} → @all.)`,
+    content: `[message-bus] #${standup.seq} @carol (verified) → @all · ${sent}\n@alpha standup in 5\n(You were woken for this; @beta here was not. If @beta should act on it now, reply with \`wake\` naming it; otherwise reply only if needed. message-bus reply, message_id ${standup.seq} → @all.)`,
     deliverAs: undefined,
   });
   await post({ from: "carol", to: "@all", text: "lunch is here" });

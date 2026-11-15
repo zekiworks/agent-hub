@@ -30,6 +30,24 @@ test("a delivery held while the agent was offline says how old it is; a fresh on
   expect(text(0, true)).not.toContain("Held while");
 });
 
+test("a woken delivery names the agents not woken, so the woken one decides who acts next; others keep the plain footer", () => {
+  const conversation = { id: "g_1", kind: "group", addressed: [], members: ["alpha", "beta", "carol", "gamma"] } as never;
+  const message = (wake?: string[]) => ({
+    seq: 9, id: "m", conversationId: "g_1", from: "carol", fromKind: "human", text: "plan?", files: [], createdAt: Date.now(),
+    expiresAt: Date.now() + 60_000, receipts: [{ to: "alpha" }, { to: "beta" }, { to: "gamma" }], ...(wake ? { wake } : {}),
+  });
+  const footer = (wake: string[] | undefined, woken: boolean) =>
+    formatDelivery({ type: "deliver", message: message(wake), conversation, replyTo: "@{beta,carol,gamma}", wake: woken } as never, []).split("\n").at(-1);
+  expect(footer(["alpha"], true)).toBe(
+    "(You were woken for this; @beta, @gamma here were not. If one of them should act on it now, reply with `wake` naming them; " +
+      "otherwise reply only if needed. message-bus reply, message_id 9 → @{beta,carol,gamma}.)"
+  );
+  const plain = "(Reply only if they need something from you: message-bus reply, message_id 9 → @{beta,carol,gamma}.)";
+  expect(footer(["alpha", "beta", "gamma"], true)).toBe(plain); // nobody left to wake
+  expect(footer(["beta"], false)).toBe(plain); // not woken: no routing duty
+  expect(footer(undefined, true)).toBe(plain); // the old rule: everyone was woken
+});
+
 test("held texts go out oldest first within the budget, each delivery seen once; a long one is cut", () => {
   const seen: number[] = [];
   const unseen = new UnseenSeqs((seq) => seen.push(seq));
