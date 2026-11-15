@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { isJsonObject, mentionedIds } from "@agent-bus/protocol";
+import { BusDatabase } from "../packages/server/src/db";
 import type {
   AgentServerFrame,
   Checklist,
@@ -636,6 +637,32 @@ describe("delivery", () => {
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@reading,alpha}", text: "x" })).status).toBe(409);
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@nowhere,alpha}", text: "x" })).status).toBe(404);
     expect((await postJson(bus, "/api/messages", { from: "carol", to: "@{@@benchmarks}", text: "x" })).status).toBe(400);
+  });
+
+  test("quiet unpinned projects and group DMs are archived; any member's message brings them back, an agent's too", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const quiet = await send({ from: alpha.id, to: "@@quiet", text: "x" });
+    const pinned = await send({ from: "carol", to: "@@kept", text: "x" });
+    await postJson(bus, `/api/conversations/${pinned.conversation.id}/pin`, { from: "carol", pinned: true });
+    const group = await send({ from: "carol", to: "@{alpha,uma}", text: "x" });
+    const dm = await send({ from: "carol", to: "@alpha", text: "x" });
+    // The hourly step, with "quiet" meaning everything so far (the same database the bus uses).
+    const db = new BusDatabase(bus.dbPath, ["carol", "uma"]);
+    const archived = db.archiveIdle(Date.now() + 1000);
+    db.close();
+    expect(archived.sort()).toEqual([group.conversation.id, quiet.conversation.id].sort()); // not the pinned one, not DMs
+    const state0 = (await state("carol")).conversations;
+    expect(state0.find((c) => c.id === quiet.conversation.id)).toMatchObject({ archived: true, archivedIdle: true });
+    expect(state0.find((c) => c.id === dm.conversation.id)?.archived).toBeUndefined();
+    // An agent writing brings back what was archived for being quiet…
+    expect((await send({ from: alpha.id, conversationId: quiet.conversation.id, text: "back" })).conversation.archived).toBeUndefined();
+    // …but not what a person archived.
+    await send({ from: "carol", conversationId: quiet.conversation.id, text: "joining to archive it" });
+    expect((await postJson(bus, `/api/conversations/${quiet.conversation.id}/archive`, { from: "carol", archived: true })).status).toBe(200);
+    expect((await postJson(bus, "/api/messages", { from: alpha.id, conversationId: quiet.conversation.id, text: "x" })).status).toBe(409);
+    // Pinning a quiet-archived group brings it back.
+    const pin = await postJson(bus, `/api/conversations/${group.conversation.id}/pin`, { from: "carol", pinned: true });
+    expect((await answeredConversation(pin)).archived).toBeUndefined();
   });
 
   test("pins are per person: anyone who can see a project pins it for themselves, member or not", async () => {

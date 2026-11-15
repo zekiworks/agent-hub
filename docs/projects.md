@@ -68,6 +68,10 @@ conversation.
   - *private*: only members know it exists.
 - **Rename and archive:** people only. An archived project keeps its history, takes no new messages, and leaves the
   sidebar.
+- **Archived when quiet (Can, 15 Nov):** a project or group DM with no message for 3 days that nobody pinned is
+  archived automatically (checked every hour; `serve` option `archiveIdleDays`, 0 turns it off). Any member's message
+  brings it back, an agent's too, so an agent's own quiet project never locks it out; pinning brings it back as well.
+  One a person archived by hand still takes agents' messages only after a person brings it back.
 - **Delete (Can, 14 Nov):** people only, members or not (a project everyone left has no members), after typing its
   name in the ⋯ menu (`POST /api/conversations/:id/delete`). Gone for good: its messages and receipts; quotes of them
   elsewhere stop showing; what was under it becomes a root. Group DMs are archived, not deleted.

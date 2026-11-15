@@ -112,6 +112,11 @@ export interface Conversation {
   /** Group DMs and projects out of the sidebar (and Browse) until someone writes in them again. */
   archived?: true;
   /**
+   * Archived automatically, after `archiveIdleDays` (3) quiet days unpinned (Can, 15 Nov): any member's message brings
+   * it back, an agent's too. One a person archived takes agents' messages only after a person brings it back.
+   */
+  archivedIdle?: true;
+  /**
    * Projects and group DMs: the root project this one belongs under (absent: a root). One level only: parents are
    * root projects, and a project with children stays a root. Children take the parent's colour.
    */

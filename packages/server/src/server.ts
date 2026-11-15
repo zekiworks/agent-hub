@@ -50,6 +50,8 @@ export interface BusServerOptions {
   ttsUrl?: string;
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
   forgetOfflineDays?: number;
+  /** Projects and group DMs quiet this many days, pinned by nobody, are archived (Can, 15 Nov). 0: never. Default 3. */
+  archiveIdleDays?: number;
   /**
    * Other addresses the website is reachable at (e.g. https://host.tailnet.ts.net through `tailscale serve`); offered
    * first when a person adds a device by QR code.
@@ -127,6 +129,15 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
   const forgetOfflineDays = options.forgetOfflineDays ?? 15;
   forgetOfflineAgents(ctx, forgetOfflineDays);
   const forgetTimer = setInterval(() => forgetOfflineAgents(ctx, forgetOfflineDays), 3600_000);
+
+  /** Quiet, unpinned projects and group DMs are archived: checked at start and every hour. */
+  const archiveIdleDays = options.archiveIdleDays ?? 3;
+  const archiveIdle = (): void => {
+    if (archiveIdleDays <= 0) return;
+    if (db.archiveIdle(Date.now() - archiveIdleDays * 86_400_000).length > 0) ctx.hub.conversationsChanged();
+  };
+  archiveIdle();
+  const archiveTimer = setInterval(archiveIdle, 3600_000);
 
   const schedule = new ScheduleService(ctx, options.gpudash);
   const website = new Website();
@@ -311,6 +322,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       ctx.hub.stop();
       schedule.stop();
       clearInterval(forgetTimer);
+      clearInterval(archiveTimer);
       clearInterval(settleTimer);
       clearInterval(expiryTimer);
       await Promise.all([server.stop(true), secure?.stop(true)]);

@@ -784,6 +784,7 @@ export class BusDatabase {
       ...(row.topic !== null ? { topic: row.topic } : {}),
       ...(kind === "project" ? { visibility: toVisibility(row.visibility) } : {}),
       ...(row.archived ? { archived: true as const } : {}),
+      ...(row.archived === 2 ? { archivedIdle: true as const } : {}),
       ...(row.parent_id ? { parentId: row.parent_id } : {}),
       ...(row.parent_id && row.parent_name ? { parentName: row.parent_name } : {}),
       ...(Object.keys(notify).length > 0 ? { notify } : {}),
@@ -1020,6 +1021,22 @@ export class BusDatabase {
         .query("INSERT OR IGNORE INTO pins (participant_id, conversation_id, created_at) VALUES (?1, ?2, ?3)")
         .run(participantId, conversationId, Date.now());
     } else this.db.query("DELETE FROM pins WHERE participant_id = ?1 AND conversation_id = ?2").run(participantId, conversationId);
+  }
+
+  /**
+   * Archives the projects and group DMs whose last message is older than `before` and that nobody pinned (archived =
+   * 2: automatically; 1 is a person's archive). Returns their ids.
+   */
+  archiveIdle(before: number): string[] {
+    return this.db
+      .query<{ id: string }, [number]>(
+        `UPDATE conversations SET archived = 2
+         WHERE kind IN ('project', 'group') AND archived IS NULL AND last_message_at < ?1
+           AND NOT EXISTS (SELECT 1 FROM pins p WHERE p.conversation_id = conversations.id)
+         RETURNING id`
+      )
+      .all(before)
+      .map((r) => r.id);
   }
 
   setArchived(conversationId: string, archived: boolean): void {

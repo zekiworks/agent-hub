@@ -166,6 +166,8 @@ export async function handleConversationRoute(
       if (typeof pinned !== "boolean") throw new HttpError(400, "pinned must be true or false");
       if (conversation.kind !== "project" && conversation.kind !== "group") throw new HttpError(400, "Projects and group DMs can be pinned");
       db.setPinned(conversation.id, writer.id, pinned);
+      // Pinning one archived for being quiet brings it back (a pinned one is never archived that way).
+      if (pinned && conversation.archivedIdle) db.setArchived(conversation.id, false);
       ctx.hub.conversationsChanged();
       return { conversation: db.getConversation(conversation.id) ?? conversation };
     }

@@ -186,7 +186,8 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     }
   }
   if (conversation.archived) {
-    if (writer.kind !== "human") {
+    // Archived for being quiet: any member's message brings it back. Archived by a person: agents wait for a person.
+    if (writer.kind !== "human" && !conversation.archivedIdle) {
       throw new HttpError(409, `${conversation.name ? `Project "${conversation.name}"` : `Conversation ${conversation.id}`} is archived; a person can bring it back by writing in it`);
     }
     db.setArchived(conversation.id, false);
