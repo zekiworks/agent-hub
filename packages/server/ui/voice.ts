@@ -56,6 +56,9 @@ function viewLabel(view: View): string {
   return conv ? conversationTitle(conv) : "the conversation it started in";
 }
 
+/** Escape or 🎤 again while the microphone is still opening: the recording must not begin (codex-ui #10631). */
+let startCancelled = false;
+
 let recording: Recording | undefined;
 /** The microphone is being opened (the permission prompt may be up). */
 let opening = false;
@@ -148,6 +151,7 @@ async function start(): Promise<void> {
   hideError();
   hideStatus();
   opening = true;
+  startCancelled = false;
   try {
     let stream: MediaStream;
     try {
@@ -162,6 +166,10 @@ async function start(): Promise<void> {
       );
       return;
     }
+    const quit = (): void => {
+      for (const track of stream.getTracks()) track.stop();
+    };
+    if (startCancelled) return quit();
     const audio = new AudioContext();
     await audio.resume().catch(() => undefined);
     const analyser = audio.createAnalyser();
@@ -190,6 +198,12 @@ async function start(): Promise<void> {
     // Recording from the first moment, so no sound can be cut off; the silence before it costs nothing.
     recorder.start();
     await waitForSignal(audio, analyser);
+    if (startCancelled) {
+      recorder.stop();
+      quit();
+      void audio.close();
+      return;
+    }
     rec.startedAt = Date.now();
     recording = rec;
   } finally {
@@ -213,11 +227,11 @@ async function waitForSignal(audio: AudioContext, analyser: AnalyserNode): Promi
   const data = new Uint8Array(analyser.fftSize);
   const until = Date.now() + SIGNAL_WAIT_MS;
   let told = false;
-  while (Date.now() < until) {
+  while (Date.now() < until && !startCancelled) {
     analyser.getByteTimeDomainData(data);
     if (data.some((v) => v !== 128)) break;
     if (!told && Date.now() > until - SIGNAL_WAIT_MS + 300) {
-      showStatus("Waiting for the microphone… (headsets take a moment)");
+      showStatus("Waiting for the microphone… (headsets take a moment; Esc or 🎤 again cancels)");
       told = true;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -299,6 +313,12 @@ dom.voiceBtn.addEventListener("pointerdown", (event) => {
   event.preventDefault(); // no text selection or long-press menu on phones
   // 🎤 again during a click-started recording sends it.
   if (recording && state.voiceLatched) return void stop(false);
+  // 🎤 again while the microphone is still starting cancels it.
+  if (opening) {
+    startCancelled = true;
+    hideStatus();
+    return;
+  }
   dom.voiceBtn.setPointerCapture(event.pointerId);
   held = true;
   void start();
@@ -347,8 +367,14 @@ dom.composer.addEventListener(
 );
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && recording) {
+  if (event.key !== "Escape") return;
+  if (recording) {
     event.preventDefault();
     void stop(true);
+  } else if (opening) {
+    // Still starting (permission prompt, or waiting for the microphone): cancelled before it began (codex-ui #10631).
+    event.preventDefault();
+    startCancelled = true;
+    hideStatus();
   }
 });
