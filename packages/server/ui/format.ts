@@ -2,6 +2,11 @@
 import type { Participant } from "@agent-bus/protocol";
 
 export function errorText(err: unknown): string {
+  // fetch() failing outright (offline, the bus restarting) says "Failed to fetch" / "Load failed" / "NetworkError…":
+  // say what it means for the person (launch check, 16 Nov).
+  if (err instanceof TypeError && /fetch|load failed|network/i.test(err.message)) {
+    return "No connection to the bus right now (offline, or it is restarting). Nothing was lost: try again in a moment.";
+  }
   return err instanceof Error ? err.message : String(err);
 }
 
