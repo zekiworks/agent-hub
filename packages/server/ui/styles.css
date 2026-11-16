@@ -345,20 +345,36 @@ button:disabled {
   border-color: var(--accent);
 }
 
-/* The open global item reads as a tab (#10696, Can and Ümit): its top-bar entry and the Workspace's heading share one
- * tint, the entry with an accent lower edge, the heading with an accent upper edge. Follows ‹ › (the class goes with
- * the item); gone when an entity's tools are shown. Desktop only: on phones the Workspace's heading names it. */
+/* The top bar's launchers (agentpages.ts): a row as tall as the band, so an open one can run down as a tab. */
+.launchers {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  gap: 14px;
+}
+
+/* The open global item reads as a tab (#10696, Can and Ümit): its top-bar entry runs down to the bottom of the band and
+ * meets the Workspace's heading in one tint (one opaque colour, so both sides match; codex-ui #10762), an accent edge
+ * on the tab's top. Follows ‹ › (the class goes with the item); gone when an entity's tools are shown. Desktop only:
+ * on phones the Workspace's heading names it. */
 @media (min-width: 1101px) {
   .app.ws-global .launcher-btn.active,
   .app.ws-global .inbox-topbtn.active {
+    position: relative;
+    z-index: 1;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    margin: -8px 0 -9px; /* the band's padding and its bottom border */
+    padding: 0 12px;
+    border: 0;
     border-radius: 6px 6px 0 0;
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    box-shadow: inset 0 -2px 0 var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+    box-shadow: inset 0 2px 0 var(--accent);
   }
 
   .app.ws-global .ws-head {
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    box-shadow: inset 0 2px 0 var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   }
 }
 
