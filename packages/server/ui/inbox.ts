@@ -75,13 +75,7 @@ function replyTo(message: Message): void {
   navigate(view);
 }
 
-async function step(message: Message, action: "accept" | "done" | "reject" | "withdraw", note: HTMLElement): Promise<void> {
-  let reason: string | undefined;
-  if (action === "reject" || action === "withdraw") {
-    const answer = prompt(action === "reject" ? "Why? (optional; shown in the conversation)" : "Why withdraw it? (optional)");
-    if (answer === null) return;
-    reason = answer.trim() || undefined;
-  }
+async function step(message: Message, action: "accept" | "done" | "reject" | "withdraw", note: HTMLElement, reason?: string): Promise<void> {
   note.textContent = "…";
   try {
     await postJson(`/api/tasks/${message.seq}/${action}`, { from: state.me, ...(reason ? { reason } : {}) });
@@ -139,13 +133,33 @@ function renderCard(message: Message, conversation: Conversation | undefined): H
   };
   const mine = task.assignees.find((a) => a.id === state.me);
   const live = (s: string) => s === "open" || s === "accepted";
+  /**
+   * ✕ / Withdraw ask for an optional reason in the card itself, not with prompt(): on phones prompt() can be missing,
+   * and its Cancel silently dropped the step (Ümit, 16 Nov: "Deny doesn't work").
+   */
+  const withReason = (action: "reject" | "withdraw", label: string) => {
+    const form = h("div", "inbox-reason");
+    const input = h("input");
+    input.type = "text";
+    input.placeholder = action === "reject" ? "Why? (optional, shown in the conversation)" : "Why? (optional)";
+    const go = h("button", "btn btn-primary inbox-btn", label);
+    go.type = "button";
+    go.addEventListener("click", () => void step(message, action, note, input.value.trim() || undefined));
+    const cancel = h("button", "btn inbox-btn", "Cancel");
+    cancel.type = "button";
+    cancel.addEventListener("click", () => form.remove());
+    form.append(input, go, cancel);
+    actions.before(form);
+    input.focus();
+  };
   if (box === "mine" && mine && live(mine.state)) {
     if (mine.state === "open") button("On it", "Accept: you are working on it", () => void step(message, "accept", note));
     button(task.type === "approval" ? "✓ Approve" : "✓ Done", task.type === "approval" ? "Approve (signed in: it counts)" : "Mark it done", () => void step(message, "done", note));
-    button(task.type === "approval" ? "✕ Deny" : "✕ Reject", "Reject it, with a reason if you like", () => void step(message, "reject", note));
+    const deny = task.type === "approval" ? "✕ Deny" : "✕ Reject";
+    button(deny, "Reject it, with a reason if you like", () => withReason("reject", deny));
   }
   if (box === "assigned" && task.assignees.some((a) => live(a.state))) {
-    button("Withdraw", "Take the task back", () => void step(message, "withdraw", note));
+    button("Withdraw", "Take the task back", () => withReason("withdraw", "Withdraw"));
   }
   button("↩", "Reply to it in its conversation (quotes it)", () => replyTo(message));
   actions.append(note);
