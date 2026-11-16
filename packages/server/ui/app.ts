@@ -1,6 +1,7 @@
 // The conversations page (index.html): wires the modules together, routes between views and boots.
 import { QUOTE_TEXT_CHARS, type Conversation, type Message, type ViewerServerFrame } from "@agent-bus/protocol";
 import { api, PROFILE_KEY, setFileKey } from "./api";
+import { bookmarksChanged } from "./bookmarks";
 import { hideError, setReplyTo, showError, updateComposerState } from "./composer";
 import { dom, PHONE, scrollToBottom } from "./dom";
 import { rememberAddress, restoreAddress, takeDraftLink } from "./compose";
@@ -30,7 +31,8 @@ import "./voice";
 import { renderSidebar } from "./sidebar";
 import { connectViewer, setLinkStatus } from "./socket";
 import { draftConversation, isCurrent, state, type View } from "./state";
-import { flashMessage, fetchMessage, shownMessage } from "./text";
+import { flashMessage, fetchMessage, forgetFetched, shownMessage } from "./text";
+import { refreshPane } from "./pane";
 import { loadReadMarkers, markRead, refreshUnread } from "./unread";
 
 // ---- Routing (#/c/<id>, #/to/<a,b>) ----
@@ -85,6 +87,9 @@ function taskChanged(message: Message, conversation: Conversation): void {
  * new text (an empty quote with no files reads "message deleted").
  */
 function messageChanged(message: Message, conversation: Conversation): void {
+  // A bookmark or #number tooltip of it asks the bus again (it fetched the old text).
+  forgetFetched(message.seq);
+  if (state.bookmarks.some((b) => b.seq === message.seq)) refreshPane("bookmarks");
   const cache = state.caches.get(conversation.id);
   if (!cache) return;
   const quote = message.text.length > QUOTE_TEXT_CHARS ? `${message.text.slice(0, QUOTE_TEXT_CHARS - 1)}…` : message.text;
@@ -187,6 +192,9 @@ function handleFrame(frame: ViewerServerFrame): void {
       break;
     case "changed":
       messageChanged(frame.message, frame.conversation);
+      break;
+    case "bookmarks":
+      bookmarksChanged(frame.bookmarks);
       break;
     case "checklist":
       checklistChanged(frame.conversationId);

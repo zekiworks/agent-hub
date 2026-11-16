@@ -118,6 +118,11 @@ export function fetchMessage(seq: number): Promise<MessageWithConversation> {
   return pending;
 }
 
+/** Message `seq` changed (edited or deleted, Ümit #10890): the next fetch asks the bus again. */
+export function forgetFetched(seq: number): void {
+  refFetches.delete(seq);
+}
+
 /** Tooltip for "#n": sender, conversation and the start of the text. */
 async function refSummary(seq: number): Promise<string> {
   try {

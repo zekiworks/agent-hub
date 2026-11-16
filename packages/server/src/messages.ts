@@ -5,6 +5,7 @@ import {
   mentionedIds,
   mentions,
   RESOURCES_AGENT_ID,
+  type Bookmark,
   type Conversation,
   type FileRef,
   type Message,
@@ -488,4 +489,28 @@ export async function changeMessage(ctx: BusContext, req: Request, seq: number, 
   const changed = ctx.db.getMessage(seq) ?? message;
   ctx.hub.messageChanged(changed, conversation);
   return { message: changed };
+}
+
+/**
+ * POST /api/bookmarks {from, seq, bookmarked} (Can #11065): a person saves a message they can read in their own list,
+ * or drops it. Only people, signed in as themselves; only they see the list.
+ */
+export async function postBookmark(ctx: BusContext, req: Request): Promise<{ bookmarks: Bookmark[] }> {
+  const body = await readJsonObject(req);
+  if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+  const who = ctx.hub.knownParticipant(body.from.trim().toLowerCase());
+  if (!who) throw new HttpError(400, `Unknown participant "${body.from}"`);
+  if (who.kind !== "human") throw new HttpError(403, "Bookmarks are people's");
+  ctx.checkWriter(req, who);
+  if (typeof body.seq !== "number" || !Number.isSafeInteger(body.seq)) throw new HttpError(400, "seq must be a message number");
+  if (typeof body.bookmarked !== "boolean") throw new HttpError(400, "bookmarked must be true or false");
+  if (body.bookmarked) {
+    const message = ctx.db.getMessage(body.seq);
+    const conversation = message ? ctx.db.getConversation(message.conversationId) : null;
+    if (!message || !conversation || !mayRead(ctx, conversation, { id: who.id, kind: "human" })) throw new HttpError(404, `Unknown message ${body.seq}`);
+  }
+  ctx.db.setBookmark(who.id, body.seq, body.bookmarked);
+  const bookmarks = ctx.db.bookmarksOf(who.id);
+  ctx.hub.bookmarksChanged(who.id, bookmarks);
+  return { bookmarks };
 }

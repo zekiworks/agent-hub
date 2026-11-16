@@ -22,7 +22,7 @@ import type { SocketData } from "./hub";
 import { resolveLanAddresses } from "./lan";
 import { getChecklist, putChecklist, tickChecklist } from "./checklists";
 import { getHome, putHome } from "./homes";
-import { changeMessage, getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, postMessage } from "./messages";
+import { changeMessage, getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, postBookmark, postMessage } from "./messages";
 import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
 import { forwardExtension } from "./extensions";
@@ -202,7 +202,9 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       const conversations = db
         .listConversations()
         .filter((c) => mayRead(ctx, c, viewer) || canSee(ctx, c, viewer))
-        .map((c) => (mayRead(ctx, c, viewer) ? c : { ...c, preview: true as const }));
+        // A preview (a discoverable project the viewer is not in) shows name, topic and members, not what is pinned
+        // there: pins are for those who read it (Can #11054: everyone's Pinned list is built from this).
+        .map((c) => (mayRead(ctx, c, viewer) ? c : { ...c, preview: true as const, pinnedMessages: undefined }));
       const state: StateResponse = {
         participants: ctx.hub.listParticipants(),
         conversations,
@@ -210,6 +212,8 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
         ...(options.extensions && Object.keys(options.extensions).length > 0 ? { extensions: Object.keys(options.extensions) } : {}),
         ...(options.launchers && Object.keys(options.launchers).length > 0 ? { launchers: options.launchers } : {}),
         ...(options.gpudash ? { gpuBooking: true as const } : {}),
+        // A person's own bookmarks (Can #11065): theirs alone, in their own state.
+        ...(viewer.kind === "human" ? { bookmarks: db.bookmarksOf(viewer.id) } : {}),
       };
       return json(state);
     }
@@ -245,6 +249,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       if (answer) return json(answer);
     }
     if (method === "POST" && pathname === "/api/messages") return json(await postMessage(ctx, req));
+    if (method === "POST" && pathname === "/api/bookmarks") return json(await postBookmark(ctx, req));
     const messageMatch = /^\/api\/messages\/(\d+)$/.exec(pathname);
     if (method === "GET" && messageMatch?.[1]) return json(await getMessageReceipts(ctx, Number(messageMatch[1]), url, viewer));
     // The writer edits or deletes one of its messages (Ümit #10890).

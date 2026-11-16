@@ -932,6 +932,23 @@ describe("delivery", () => {
     expect((await back.client.take("deliver")).message.id).toBe(sentinel.message.id);
   });
 
+  test("a person's bookmarks are their own: only messages they can read, only people, invisible to others", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const open = await send({ from: "carol", to: "#crew", text: "worth keeping" });
+    const secret = await send({ from: "carol", to: "@{alpha}", text: "between carol and alpha" });
+    const mark = (from: string, seq: number, bookmarked = true) => postJson(bus, "/api/bookmarks", { from, seq, bookmarked });
+    const saved = (await (await mark("uma", open.message.seq)).json()) as { bookmarks: Array<{ seq: number }> };
+    expect(saved.bookmarks.map((b) => b.seq)).toEqual([open.message.seq]);
+    expect((await mark("uma", open.message.seq)).status).toBe(200); // twice: once
+    expect((await state("uma")).bookmarks?.map((b) => b.seq)).toEqual([open.message.seq]);
+    expect((await state("carol")).bookmarks ?? []).toEqual([]); // not carol's
+    expect((await mark("uma", secret.message.seq)).status).toBe(404); // a conversation uma can't read
+    expect((await mark(alpha.id, open.message.seq)).status).toBe(403); // people only
+    expect((await (await mark("uma", open.message.seq, false)).json()) as { bookmarks: unknown[] }).toEqual({ bookmarks: [] });
+    // The message itself was never touched.
+    expect((await getJson<{ message: Message }>(bus, `/api/messages/${open.message.seq}`, "carol")).message.text).toBe("worth keeping");
+  });
+
   test("a room's name people read (title) changes without its address: #address keeps reaching it; people only; empty clears", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const room = await send({ from: "carol", to: "#model-research", text: "start" });

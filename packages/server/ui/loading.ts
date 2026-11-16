@@ -19,6 +19,7 @@ export async function loadState(): Promise<void> {
   state.humans = res.humans;
   state.participants = res.participants;
   state.conversations = new Map(res.conversations.map((c) => [c.id, c]));
+  state.bookmarks = res.bookmarks ?? [];
   registerAgentPages(res.extensions ?? [], res.launchers ?? {});
   // GPU booking only where the bus knows GPUs (`serve --gpudash`); a fresh install has none (launch check, 16 Nov).
   dom.gpuBtn.hidden = !res.gpuBooking;

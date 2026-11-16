@@ -17,6 +17,7 @@ import {
   type NotifyLevel,
   type ParticipantKind,
   type PinnedMessage,
+  type Bookmark,
   type ProjectVisibility,
   type Quote,
   type Checklist,
@@ -231,6 +232,14 @@ CREATE TABLE IF NOT EXISTS pinned_messages (
   pinned_by TEXT NOT NULL,
   pinned_at INTEGER NOT NULL,
   PRIMARY KEY (conversation_id, seq)
+);
+
+-- A person's own bookmarks (Can #11065): messages saved for themselves; nobody else sees them.
+CREATE TABLE IF NOT EXISTS bookmarks (
+  participant_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (participant_id, seq)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -836,7 +845,8 @@ export class BusDatabase {
   private pinnedOf(conversationId: string): PinnedMessage[] {
     return this.db
       .query<{ seq: number; pinned_by: string; pinned_at: number }, [string]>(
-        "SELECT seq, pinned_by, pinned_at FROM pinned_messages WHERE conversation_id = ?1 ORDER BY pinned_at"
+        // Pins in the same millisecond keep the order they were made in (rowid).
+        "SELECT seq, pinned_by, pinned_at FROM pinned_messages WHERE conversation_id = ?1 ORDER BY pinned_at, rowid"
       )
       .all(conversationId)
       .map((p) => ({ seq: p.seq, by: p.pinned_by, at: p.pinned_at }));
@@ -851,6 +861,19 @@ export class BusDatabase {
     } else {
       this.db.query("DELETE FROM pinned_messages WHERE conversation_id = ?1 AND seq = ?2").run(conversationId, seq);
     }
+  }
+
+  /** `participantId`'s own bookmarks, newest first (Can #11065). */
+  bookmarksOf(participantId: string): Bookmark[] {
+    return this.db
+      .query<{ seq: number; at: number }, [string]>("SELECT seq, at FROM bookmarks WHERE participant_id = ?1 ORDER BY at DESC, rowid DESC")
+      .all(participantId);
+  }
+
+  /** Saves (or drops) message `seq` in `participantId`'s own bookmarks; the message itself is never touched. */
+  setBookmark(participantId: string, seq: number, bookmarked: boolean, now = Date.now()): void {
+    if (bookmarked) this.db.query("INSERT OR IGNORE INTO bookmarks (participant_id, seq, at) VALUES (?1, ?2, ?3)").run(participantId, seq, now);
+    else this.db.query("DELETE FROM bookmarks WHERE participant_id = ?1 AND seq = ?2").run(participantId, seq);
   }
 
   private toConversation(row: ConversationRow, members: MemberRow[], pins: string[], pinned: PinnedMessage[] = []): Conversation {
@@ -917,7 +940,7 @@ export class BusDatabase {
     const pinned = new Map<string, PinnedMessage[]>();
     for (const p of this.db
       .query<{ conversation_id: string; seq: number; pinned_by: string; pinned_at: number }, []>(
-        "SELECT conversation_id, seq, pinned_by, pinned_at FROM pinned_messages ORDER BY pinned_at"
+        "SELECT conversation_id, seq, pinned_by, pinned_at FROM pinned_messages ORDER BY pinned_at, rowid"
       )
       .all()) {
       pinned.set(p.conversation_id, [...(pinned.get(p.conversation_id) ?? []), { seq: p.seq, by: p.pinned_by, at: p.pinned_at }]);
@@ -1072,6 +1095,7 @@ export class BusDatabase {
       const { n } = this.db.query("SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?1").get(conversationId) as { n: number };
       this.db.query("UPDATE conversations SET parent_id = NULL WHERE parent_id = ?1").run(conversationId);
       this.db.query("DELETE FROM receipts WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
+      this.db.query("DELETE FROM bookmarks WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM messages WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_members WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM checklists WHERE conversation_id = ?1").run(conversationId);

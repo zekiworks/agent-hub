@@ -384,6 +384,8 @@ export type ViewerServerFrame =
   | { type: "task"; message: Message; conversation: Conversation }
   /** A message was edited or deleted by its writer: the message as it is now (replies quoting it refresh too). */
   | { type: "changed"; message: Message; conversation: Conversation }
+  /** The viewer's own bookmarks changed (another of their pages, or this one): the list as it is now. */
+  | { type: "bookmarks"; bookmarks: Bookmark[] }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
   | ExpiredFrame
@@ -435,6 +437,21 @@ export interface StateResponse {
   launchers?: Record<string, string>;
   /** The bus books GPUs (`serve --gpudash URL`): the website offers GPU booking under Tools. */
   gpuBooking?: true;
+  /** The signed-in person's own bookmarks (Can #11065), newest first; only people have them. */
+  bookmarks?: Bookmark[];
+}
+
+/** A message a person saved for themselves (Can #11065): only they see it; the message itself is not touched. */
+export interface Bookmark {
+  seq: number;
+  at: number;
+}
+
+/** POST /api/bookmarks: a person saves (or drops) a message they can read in their own list. */
+export interface BookmarkRequest {
+  from: string;
+  seq: number;
+  bookmarked: boolean;
 }
 
 /**

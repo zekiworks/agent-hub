@@ -15,6 +15,7 @@ import { renderTaskBadge } from "./inbox";
 import { updateJump } from "./jump";
 import { renderPane } from "./pane";
 import { isPinned, setMessagePinned } from "./pins";
+import { bookmarkButton, isBookmarked } from "./bookmarks";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, projectColor, state } from "./state";
 import { flashMessage, mentionNodes, mentionsMe, shownMessage } from "./text";
@@ -215,6 +216,8 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   const deleted = !!message.deletedAt;
   if (message.text && !deleted) actions.append(speakButton(message), copyButton(message));
   actions.append(copyIdButton(message));
+  // ☆ saves it in my own bookmarks, ★ drops it (Can #11065); a deleted one keeps its ★ so it can still be dropped here.
+  if (!deleted || isBookmarked(message.seq)) actions.append(bookmarkButton(message));
   // 📌 for members: pins the message in its conversation, or unpins it (#10757).
   if (!deleted && state.conversations.get(message.conversationId)?.members.includes(state.me)) actions.append(pinButton(message));
   // ✎ 🗑 on my own messages (Ümit #10890).

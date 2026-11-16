@@ -42,6 +42,8 @@
     <aside class="sidebar">
       <!-- Your inbox, always reachable (#10107); opens in the Workspace. -->
       <button id="inbox-row" type="button" class="side-inbox" hidden>✉ Your inbox <span id="inbox-row-count" class="side-count"></span></button>
+      <!-- Your own bookmarks, across rooms (bookmarks.ts; Can #11065): opens in the Workspace. -->
+      <button id="bookmarks-row" type="button" class="side-inbox" hidden>☆ Bookmarks <span id="bookmarks-row-count" class="side-count"></span></button>
       <section class="side-section">
         <div class="side-heading">
           <button id="agents-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the agent list">▾ Agents</button>
@@ -108,6 +110,7 @@
         </div>
         <!-- Phones: after a task opened its message from Your inbox, the way back to it (inbox.ts). -->
         <button id="inbox-return" type="button" class="link-btn inbox-return" hidden>‹ ✉ Back to your inbox</button>
+        <button id="bookmarks-return" type="button" class="link-btn inbox-return" hidden>‹ ☆ Back to bookmarks</button>
         <div id="conv-subtitle" class="conv-subtitle"></div>
         <details id="subgroups-panel" class="subgroups-panel" open hidden>
           <summary id="subgroups-summary"></summary>

@@ -164,7 +164,7 @@ function conversationItem(conv: Conversation): HTMLLIElement {
         : [
             ...(conv.kind === "project" && conv.title ? [conversationAddress(conv) ?? ""] : []),
             ...(conv.kind === "project" && conv.topic ? [conv.topic] : []),
-            `${conv.members.length} members`,
+            `${conv.members.length} member${conv.members.length === 1 ? "" : "s"}`,
           ];
   if (conv.kind !== "all" && !conv.members.includes(state.me)) parts.push("you're not in it");
   if (conv.archived) parts.push("archived");

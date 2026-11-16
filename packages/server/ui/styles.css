@@ -363,8 +363,9 @@ button:disabled {
   font-size: 13px;
 }
 
-/* 📌 on a message that is pinned: lit, so the state shows without hovering the header. */
-.msg-pin-btn.pinned {
+/* 📌 on a message that is pinned, ★ on one in my bookmarks (bookmarks.ts): lit, so the state shows at a glance. */
+.msg-pin-btn.pinned,
+.msg-bookmark-btn.bookmarked {
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1px var(--accent);
 }

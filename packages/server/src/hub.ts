@@ -6,6 +6,7 @@ import {
   type AgentServerFrame,
   type AgentSession,
   type AgentStatus,
+  type Bookmark,
   type Conversation,
   type ExpiredFrame,
   type Message,
@@ -524,6 +525,12 @@ export class Hub {
     for (const ws of this.viewersOf(conversation)) ws.send(frame);
     // A deleted message leaves the pinned list, which is part of the conversation.
     if (message.deletedAt) this.conversationsChanged();
+  }
+
+  /** `human`'s own bookmarks changed (Can #11065): only their own open pages hear of it. */
+  bookmarksChanged(human: string, bookmarks: Bookmark[]): void {
+    const frame = JSON.stringify({ type: "bookmarks", bookmarks } satisfies ViewerServerFrame);
+    for (const ws of this.viewers) if (ws.data.kind === "viewer" && ws.data.human === human) ws.send(frame);
   }
 
   /** Records `agentId`'s ack/seen of `seq` and tells viewers, the writer's agent connections and receipt waiters. */
