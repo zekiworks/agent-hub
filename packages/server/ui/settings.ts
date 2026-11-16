@@ -42,6 +42,7 @@ function render(): void {
   });
   dom.settingsDialog.replaceChildren(
     head,
+    voiceLanguageSetting(me?.settings.voiceLanguage),
     h("h3", "", "Voice messages in English are written by"),
     select,
     h(
@@ -60,6 +61,34 @@ function render(): void {
     routingSetting(),
     closeWindowButton(dom.settingsDialog)
   );
+}
+
+/** The language of my voice messages (codex-ui #10803): only mine change; the bus's rule is the default. */
+function voiceLanguageSetting(current: AgentSettings["voiceLanguage"]): HTMLElement {
+  const select = h("select");
+  for (const [value, label] of [
+    ["default", "Turkish, unless clearly English (the bus's rule)"],
+    ["en", "English"],
+    ["tr", "Turkish"],
+    ["auto", "Detect for each message"],
+  ] as const) {
+    const option = h("option", "", label);
+    option.value = value;
+    select.append(option);
+  }
+  select.value = current ?? "default";
+  const note = h("p", "dialog-hint", "Short messages are where the rule guesses wrong most; setting your language avoids that.");
+  select.addEventListener("change", async () => {
+    try {
+      await postJson("/api/settings", { from: state.me, key: "voiceLanguage", value: select.value });
+      note.textContent = "Saved: your next voice message uses it.";
+    } catch (err) {
+      note.textContent = errorText(err);
+    }
+  });
+  const section = h("div");
+  section.append(h("h3", "", "My voice messages are in"), select, note);
+  return section;
 }
 
 /** Whether "✓ · woke compactor" lines show under every message (on), or only when something is wrong or on hover. */

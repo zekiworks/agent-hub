@@ -880,6 +880,26 @@ describe("delivery", () => {
     expect(later.message.receipts.map((r) => r.to)).toEqual(["alpha"]);
   });
 
+  test("members pin and unpin a conversation's messages; outsiders and other conversations' messages are refused; unpinning keeps the message", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const room = await send({ from: "carol", to: "#crew", text: "first" });
+    const second = await send({ from: "carol", conversationId: room.conversation.id, text: "second" });
+    const elsewhere = await send({ from: "uma", to: "#other", text: "not here" });
+    await postJson(bus, `/api/conversations/${room.conversation.id}/members`, { from: "carol", ids: ["alpha"] });
+    const pin = (from: string, seq: number, pinned = true) => postJson(bus, `/api/conversations/${room.conversation.id}/pinned`, { from, seq, pinned });
+    const pinned = async (res: Response) => (await answeredConversation(res)).pinnedMessages?.map((p) => [p.seq, p.by]) ?? [];
+    expect(await pinned(await pin("carol", second.message.seq))).toEqual([[second.message.seq, "carol"]]);
+    expect(await pinned(await pin(alpha.id, room.message.seq))).toEqual([[second.message.seq, "carol"], [room.message.seq, "alpha"]]); // agents may pin; oldest pin first
+    expect(await pinned(await pin("carol", second.message.seq))).toEqual([[second.message.seq, "carol"], [room.message.seq, "alpha"]]); // twice: once
+    expect((await pin("uma", second.message.seq)).status).toBe(403); // not a member
+    expect((await pin("carol", elsewhere.message.seq)).status).toBe(404); // not this conversation's
+    expect(await pinned(await pin("carol", second.message.seq, false))).toEqual([[room.message.seq, "alpha"]]);
+    // The unpinned message is still there, unchanged.
+    expect((await getJson<{ message: Message }>(bus, `/api/messages/${second.message.seq}`, "carol")).message.text).toBe("second");
+    // Everyone who reads the room sees the pins in its listing.
+    expect((await state("carol")).conversations.find((c) => c.id === room.conversation.id)?.pinnedMessages?.map((p) => p.seq)).toEqual([room.message.seq]);
+  });
+
   test("a room's name people read (title) changes without its address: #address keeps reaching it; people only; empty clears", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const room = await send({ from: "carol", to: "#model-research", text: "start" });

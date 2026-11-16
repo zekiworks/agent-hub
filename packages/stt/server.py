@@ -108,6 +108,8 @@ class Handler(BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         hotwords = " ".join(query.get("hotwords", []))[:1000] or None
         english_by_liquid = query.get("english", [""])[0] == "liquid" and bool(LIQUID_URL)
+        # The speaker's own setting (codex-ui #10803): a language code, or "auto" for Whisper's own guess.
+        asked = query.get("language", [""])[0]
         size = int(self.headers.get("Content-Length") or 0)
         if size <= 0 or size > MAX_BYTES:
             return self.reply(400, {"error": f"body must be 1 byte to {MAX_BYTES} bytes of audio"})
@@ -117,7 +119,9 @@ class Handler(BaseHTTPRequestHandler):
             samples = decode(audio)
             with lock:
                 language = None
-                if LANGUAGES:
+                if asked and asked != "auto":
+                    language = asked
+                elif LANGUAGES and asked != "auto":
                     _, _, probabilities = model.detect_language(samples, vad_filter=True)
                     scores = dict(probabilities)
                     other = max(LANGUAGES[1:], key=lambda code: scores.get(code, 0.0), default=None)

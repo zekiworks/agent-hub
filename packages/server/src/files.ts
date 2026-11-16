@@ -92,7 +92,10 @@ export async function transcribeFile(
     // The bus's own names (agents, people), so speech-to-text writes "message-bus" and "compactor", not look-alike words.
     const names = ctx.hub.knownIds().join(" ");
     const query = new URLSearchParams({ hotwords: names });
-    if (asker && ctx.db.getParticipant(asker)?.settings.englishSpeech === "liquid") query.set("english", "liquid");
+    const settings = asker ? ctx.db.getParticipant(asker)?.settings : undefined;
+    if (settings?.englishSpeech === "liquid") query.set("english", "liquid");
+    // The person's own voice language, if set (codex-ui #10803); otherwise the service's rule.
+    if (settings?.voiceLanguage) query.set("language", settings.voiceLanguage);
     res = await fetch(`${sttUrl.replace(/\/+$/, "")}/transcribe?${query}`, { method: "POST", body: Bun.file(blobPath) });
   } catch (error) {
     throw new HttpError(502, `Speech-to-text service unreachable: ${error instanceof Error ? error.message : String(error)}`);

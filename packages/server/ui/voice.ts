@@ -8,6 +8,7 @@ import { api } from "./api";
 import { hideError, showError, updateComposerState } from "./composer";
 import { dom } from "./dom";
 import { errorText, nameList } from "./format";
+import { h } from "./html";
 import { viewHash } from "./routing";
 import { postToView, uploadFile } from "./send";
 import { conversationTitle, state, type View } from "./state";
@@ -43,9 +44,7 @@ interface Recording {
   /** Where it goes: the conversation it was started in, even if another one is open by the time it is sent (codex-ui
    * #10593: it went to whatever was open at Send, after the asynchronous stop). */
   view: View;
-  /** The level meter works (its AudioContext runs), so `heard` can be trusted. */
-  listening: boolean;
-  /** Anything but exact silence has come from the microphone. */
+  /** The level meter has seen anything but exact silence (a shortcut: then the recording is not checked for silence). */
   heard: boolean;
   /** The microphone has sent something (or SIGNAL_WAIT_MS passed): the timer runs from here. */
   live: boolean;
@@ -198,7 +197,6 @@ async function start(): Promise<void> {
       lastLevelAt: 0,
       frame: 0,
       view,
-      listening: audio.state === "running",
       heard: false,
       live: false,
     };
@@ -273,14 +271,48 @@ async function stop(cancel: boolean): Promise<void> {
   void rec.audio.close();
   if (cancel) return;
   if (duration < MIN_RECORDING_MS) return showStatus("Too short: click 🎤, speak, then press Send.");
-  // Nothing at all came from the microphone (not quiet: exact silence), so there is nothing to send.
-  if (rec.listening && !rec.heard && rec.levels.length > 0) {
-    return showError("The microphone sent only silence, so nothing was sent. If you use AirPods or another headset, check it is the selected microphone, or try the built-in one.");
-  }
   const type = rec.recorder.mimeType || rec.chunks[0]?.type || "audio/webm";
   const ext = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
   const stamp = new Date(rec.startedAt).toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
-  await send(new File(rec.chunks, `voice-${stamp}.${ext}`, { type: type.split(";")[0] }), duration, rec.view);
+  const file = new File(rec.chunks, `voice-${stamp}.${ext}`, { type: type.split(";")[0] });
+  // Silence is judged from the recording itself, not the level meter (Ümit #10810: the meter can read nothing while
+  // the recorder hears her, e.g. Safari). Even then the recording is kept: she can send it anyway or discard it.
+  if (!rec.heard && (await recordingIsSilent(file))) return offerSilent(file, duration, rec.view);
+  await send(file, duration, rec.view);
+}
+
+/**
+ * True only when the recording decodes and no sample rises above −120 dBFS (Opus decodes digital silence to values
+ * around 1e-34, not exact zeros); one that does not decode here counts as sound.
+ */
+async function recordingIsSilent(file: File): Promise<boolean> {
+  try {
+    const audio = await new OfflineAudioContext(1, 1, 16000).decodeAudioData(await file.arrayBuffer());
+    for (let c = 0; c < audio.numberOfChannels; c++) if (audio.getChannelData(c).some((v) => Math.abs(v) > 1e-6)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A silent recording: say so, keep it, and offer to send it anyway or discard it. */
+function offerSilent(file: File, duration: number, view: View): void {
+  const again = h("button", "link-btn", "Send anyway");
+  again.type = "button";
+  const drop = h("button", "link-btn", "Discard");
+  drop.type = "button";
+  dom.voiceBar.replaceChildren(
+    "The recording is silent (nothing reached the microphone). If you use AirPods or another headset, check it is the selected microphone. ",
+    again,
+    " · ",
+    drop
+  );
+  dom.voiceBar.hidden = false;
+  again.addEventListener("click", () => {
+    hideStatus();
+    void send(file, duration, view);
+  });
+  drop.addEventListener("click", hideStatus);
 }
 
 async function send(file: File, duration: number, view: View): Promise<void> {

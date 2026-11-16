@@ -18,6 +18,12 @@ export interface AgentSettings {
    * Audio for what Whisper judges English (as good, faster; Whisper keeps every other language).
    */
   englishSpeech?: "whisper" | "liquid";
+  /**
+   * People: the language of their voice messages (codex-ui #10803, Ümit testing in English). Absent: the bus's rule
+   * (Turkish unless Whisper is near-certain it is English); "en" or "tr": always that language; "auto": Whisper's own
+   * guess. Only this person's voice messages change.
+   */
+  voiceLanguage?: "en" | "tr" | "auto";
 }
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = { all: "quiet" };
@@ -138,10 +144,29 @@ export interface Conversation {
   notify?: Record<string, Exclude<NotifyLevel, "all">>;
   /** Who pinned it (members or not): it sorts first in their own sidebar (Can, 15 Nov). */
   pinnedBy?: string[];
+  /**
+   * Messages pinned in this conversation (#10757), oldest pin first: references, never copies. The header's 📌 counts
+   * them, together with the conversation's checklist.
+   */
+  pinnedMessages?: PinnedMessage[];
   /** A discoverable project the reader is not in: its name, topic and members only, not its messages. */
   preview?: true;
   createdAt: number;
   lastMessageAt: number;
+}
+
+/** A message pinned in its conversation: which one, who pinned it, when. */
+export interface PinnedMessage {
+  seq: number;
+  by: string;
+  at: number;
+}
+
+/** POST /api/conversations/:id/pinned: a member pins (or unpins) one of the conversation's messages. */
+export interface PinMessageRequest {
+  from: string;
+  seq: number;
+  pinned: boolean;
 }
 
 export interface FileRef {

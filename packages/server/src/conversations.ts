@@ -13,6 +13,7 @@ import {
   type NotifyLevel,
   type NotifyRequest,
   type ParentRequest,
+  type PinMessageRequest,
   type ProjectRequest,
   type ProjectVisibility,
 } from "@agent-bus/protocol";
@@ -186,6 +187,18 @@ export async function handleConversationRoute(
       if (!target) throw new HttpError(400, "id must be the agent to remove");
       if (ctx.hub.isHuman(target)) throw new HttpError(400, "People leave by themselves; only agents are removed");
       return { conversation: leave(ctx, conversation, target) };
+    }
+    case "pinned": {
+      // A member pins (or unpins) one of this conversation's messages (#10757): a reference, the message stays as it is.
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      const request = body as Partial<PinMessageRequest>;
+      if (typeof request.seq !== "number" || !Number.isSafeInteger(request.seq)) throw new HttpError(400, "seq must be a message number");
+      if (typeof request.pinned !== "boolean") throw new HttpError(400, "pinned must be true or false");
+      const message = db.getMessage(request.seq);
+      if (!message || message.conversationId !== conversation.id) throw new HttpError(404, `#${request.seq} is not in this conversation`);
+      db.setMessagePinned(conversation.id, request.seq, writer.id, request.pinned);
+      ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
     }
     case "pin": {
       // Not only members: a project seen under "Other projects" can be pinned too (Can, 15 Nov).

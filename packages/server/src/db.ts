@@ -16,6 +16,7 @@ import {
   type Message,
   type NotifyLevel,
   type ParticipantKind,
+  type PinnedMessage,
   type ProjectVisibility,
   type Quote,
   type Checklist,
@@ -221,6 +222,15 @@ CREATE TABLE IF NOT EXISTS checklists (
   assignees_json TEXT
 );
 
+-- Messages pinned in their conversation (#10757): a reference, never a copy; unpinning keeps the message.
+CREATE TABLE IF NOT EXISTS pinned_messages (
+  conversation_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  pinned_by TEXT NOT NULL,
+  pinned_at INTEGER NOT NULL,
+  PRIMARY KEY (conversation_id, seq)
+);
+
 CREATE TABLE IF NOT EXISTS messages (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   id TEXT NOT NULL UNIQUE,
@@ -261,7 +271,8 @@ function parseSettings(json: string): AgentSettings {
   if (!isJsonObject(parsed)) return { ...DEFAULT_AGENT_SETTINGS };
   const all = parsed.all === "wake" || parsed.all === "quiet" ? parsed.all : DEFAULT_AGENT_SETTINGS.all;
   const englishSpeech = parsed.englishSpeech === "whisper" || parsed.englishSpeech === "liquid" ? parsed.englishSpeech : undefined;
-  return { all, ...(englishSpeech ? { englishSpeech } : {}) };
+  const voiceLanguage = parsed.voiceLanguage === "en" || parsed.voiceLanguage === "tr" || parsed.voiceLanguage === "auto" ? parsed.voiceLanguage : undefined;
+  return { all, ...(englishSpeech ? { englishSpeech } : {}), ...(voiceLanguage ? { voiceLanguage } : {}) };
 }
 
 function parseFiles(json: string): FileRef[] {
@@ -815,7 +826,27 @@ export class BusDatabase {
       .map((p) => p.participant_id);
   }
 
-  private toConversation(row: ConversationRow, members: MemberRow[], pins: string[]): Conversation {
+  private pinnedOf(conversationId: string): PinnedMessage[] {
+    return this.db
+      .query<{ seq: number; pinned_by: string; pinned_at: number }, [string]>(
+        "SELECT seq, pinned_by, pinned_at FROM pinned_messages WHERE conversation_id = ?1 ORDER BY pinned_at"
+      )
+      .all(conversationId)
+      .map((p) => ({ seq: p.seq, by: p.pinned_by, at: p.pinned_at }));
+  }
+
+  /** Pins (or unpins) message `seq` in its conversation; the message itself is never touched. */
+  setMessagePinned(conversationId: string, seq: number, by: string, pinned: boolean, now = Date.now()): void {
+    if (pinned) {
+      this.db
+        .query("INSERT OR IGNORE INTO pinned_messages (conversation_id, seq, pinned_by, pinned_at) VALUES (?1, ?2, ?3, ?4)")
+        .run(conversationId, seq, by, now);
+    } else {
+      this.db.query("DELETE FROM pinned_messages WHERE conversation_id = ?1 AND seq = ?2").run(conversationId, seq);
+    }
+  }
+
+  private toConversation(row: ConversationRow, members: MemberRow[], pins: string[], pinned: PinnedMessage[] = []): Conversation {
     const kind: ConversationKind = row.kind === "dm" || row.kind === "group" || row.kind === "project" ? row.kind : "all";
     const notify: Record<string, "mentions" | "none"> = {};
     for (const m of members) if (m.notify === "mentions" || m.notify === "none") notify[m.participant_id] = m.notify;
@@ -835,6 +866,7 @@ export class BusDatabase {
       ...(row.parent_id && row.parent_name ? { parentName: row.parent_name } : {}),
       ...(Object.keys(notify).length > 0 ? { notify } : {}),
       ...(pins.length > 0 ? { pinnedBy: pins } : {}),
+      ...(pinned.length > 0 ? { pinnedMessages: pinned } : {}),
       createdAt: row.created_at,
       lastMessageAt: row.last_message_at,
     };
@@ -848,7 +880,7 @@ export class BusDatabase {
     const row = this.db
       .query<ConversationRow, [string]>(`SELECT c.*, ${PARENT_NAME} FROM conversations c WHERE c.id = ?1`)
       .get(alias?.new_id ?? id);
-    return row ? this.toConversation(row, this.membersOf(row.id), this.pinsOf(row.id)) : null;
+    return row ? this.toConversation(row, this.membersOf(row.id), this.pinsOf(row.id), this.pinnedOf(row.id)) : null;
   }
 
   /** Every conversation: `all` first, then by lastMessageAt desc. Who may see which is the server's business. */
@@ -875,7 +907,15 @@ export class BusDatabase {
       .all()) {
       pins.set(p.conversation_id, [...(pins.get(p.conversation_id) ?? []), p.participant_id]);
     }
-    return rows.map((row) => this.toConversation(row, members.get(row.id) ?? [], pins.get(row.id) ?? []));
+    const pinned = new Map<string, PinnedMessage[]>();
+    for (const p of this.db
+      .query<{ conversation_id: string; seq: number; pinned_by: string; pinned_at: number }, []>(
+        "SELECT conversation_id, seq, pinned_by, pinned_at FROM pinned_messages ORDER BY pinned_at"
+      )
+      .all()) {
+      pinned.set(p.conversation_id, [...(pinned.get(p.conversation_id) ?? []), { seq: p.seq, by: p.pinned_by, at: p.pinned_at }]);
+    }
+    return rows.map((row) => this.toConversation(row, members.get(row.id) ?? [], pins.get(row.id) ?? [], pinned.get(row.id) ?? []));
   }
 
   /**
@@ -1030,6 +1070,7 @@ export class BusDatabase {
       this.db.query("DELETE FROM checklists WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM homes WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM pins WHERE conversation_id = ?1").run(conversationId);
+      this.db.query("DELETE FROM pinned_messages WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_aliases WHERE new_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversations WHERE id = ?1 AND kind = 'project'").run(conversationId);
       return n;

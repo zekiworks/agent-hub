@@ -4,7 +4,7 @@ import { renderFile } from "./attachments";
 import { BRAND } from "./brand";
 import { setReplyTo, updateComposerState } from "./composer";
 import { dom, PHONE } from "./dom";
-import { dayFormat, dayKey, fullFormat, nameList, timeFormat } from "./format";
+import { dayFormat, dayKey, errorText, fullFormat, nameList, timeFormat } from "./format";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
 import { setTitleBase } from "./notify";
@@ -13,6 +13,7 @@ import { renderSidebar } from "./sidebar";
 import { renderTaskBadge } from "./inbox";
 import { updateJump } from "./jump";
 import { renderPane } from "./pane";
+import { isPinned, setMessagePinned } from "./pins";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, projectColor, state } from "./state";
 import { flashMessage, mentionNodes, mentionsMe, shownMessage } from "./text";
@@ -206,6 +207,8 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   const actions = h("div", "msg-actions");
   if (message.text) actions.append(speakButton(message), copyButton(message));
   actions.append(copyIdButton(message));
+  // 📌 for members: pins the message in its conversation, or unpins it (#10757).
+  if (state.conversations.get(message.conversationId)?.members.includes(state.me)) actions.append(pinButton(message));
   const replyBtn = h("button", "msg-action-btn msg-reply-btn", "↩ ");
   replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";
@@ -357,6 +360,24 @@ function copyButton(message: Message): HTMLButtonElement {
 /** "#10228" to the clipboard (Can, #10228): the number stays easy to share while it is drawn quietly. */
 function copyIdButton(message: Message): HTMLButtonElement {
   return copier("#", `Copy the message's number (#${message.seq})`, () => `#${message.seq}`);
+}
+
+/** 📌 on a message: pinned (filled, "Unpin") or not; the header's pin and the Pinned list follow (#10757). */
+function pinButton(message: Message): HTMLButtonElement {
+  const pinned = isPinned(message);
+  const button = h("button", `msg-action-btn msg-pin-btn${pinned ? " pinned" : ""}`, "📌");
+  button.type = "button";
+  button.title = pinned ? "Unpin it from this conversation (the message stays)" : "Pin it to this conversation (📌 at the top right)";
+  button.setAttribute("aria-label", pinned ? `Unpin message #${message.seq}` : `Pin message #${message.seq}`);
+  button.setAttribute("aria-pressed", pinned ? "true" : "false");
+  button.addEventListener("click", () => {
+    button.disabled = true;
+    setMessagePinned(message, !pinned).catch((error) => {
+      button.disabled = false;
+      button.title = `Not ${pinned ? "unpinned" : "pinned"}: ${errorText(error)}`;
+    });
+  });
+  return button;
 }
 
 function actionsOwner(message: Message): Element | null {

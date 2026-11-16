@@ -279,11 +279,16 @@ export async function postSetting(ctx: BusContext, req: Request): Promise<{ part
   if (!participant) throw new HttpError(400, "from must be a participant id; settings are per participant");
   ctx.checkWriter(req, participant);
   if (participant.kind === "human") {
-    // People have one setting: who writes their English voice messages.
-    if (body.key !== "englishSpeech" || (body.value !== "whisper" && body.value !== "liquid")) {
-      throw new HttpError(400, 'People\'s setting is englishSpeech: "whisper" or "liquid"');
+    // People's settings: who writes their English voice messages, and the language of their voice messages.
+    let settings: AgentSettings;
+    if (body.key === "englishSpeech" && (body.value === "whisper" || body.value === "liquid")) {
+      settings = { ...participant.settings, englishSpeech: body.value };
+    } else if (body.key === "voiceLanguage" && (body.value === "en" || body.value === "tr" || body.value === "auto" || body.value === "default")) {
+      const { voiceLanguage: _, ...rest } = participant.settings;
+      settings = body.value === "default" ? rest : { ...rest, voiceLanguage: body.value };
+    } else {
+      throw new HttpError(400, 'People\'s settings: englishSpeech ("whisper" or "liquid"), voiceLanguage ("en", "tr", "auto" or "default")');
     }
-    const settings: AgentSettings = { ...participant.settings, englishSpeech: body.value };
     ctx.db.setSettings(participant.id, settings);
     ctx.hub.broadcastParticipants();
     return { participant: ctx.hub.toParticipant({ ...participant, settings }) };
