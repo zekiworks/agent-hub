@@ -45,7 +45,7 @@ function place(position: Position | undefined): void {
   if (!box) return;
   box.classList.toggle("moved", !!position);
   if (!position) {
-    box.style.left = box.style.top = box.style.right = "";
+    box.style.left = box.style.top = box.style.right = box.style.maxHeight = "";
     return;
   }
   // The visible part of the page: on phones the keyboard shrinks only the visual viewport (codex-ui #10841).
@@ -54,8 +54,11 @@ function place(position: Position | undefined): void {
   const bottom = vv ? vv.offsetTop + vv.height : innerHeight;
   const left = vv?.offsetLeft ?? 0;
   const right = vv ? vv.offsetLeft + vv.width : innerWidth;
-  const r = box.getBoundingClientRect();
   const composerTop = dom.composer.getBoundingClientRect().top || bottom;
+  // All the height between the top and the message box, not the default place's cap (codex-ui #10843: in landscape
+  // that left 80 px); longer text scrolls inside, so More, Reset position and ✕ stay reachable.
+  box.style.maxHeight = `${Math.max(80, Math.min(bottom, composerTop) - top - 16)}px`;
+  const r = box.getBoundingClientRect();
   const maxX = Math.max(left + 8, right - r.width - 8);
   const maxY = Math.max(top + 8, Math.min(bottom, composerTop) - r.height - 8);
   box.style.left = `${Math.round(Math.min(Math.max(position.x, left + 8), maxX))}px`;
