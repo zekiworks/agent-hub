@@ -1111,6 +1111,26 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
+/* A conversation's second line: what it is and its members, then the time of the last message at the end
+   (sidebar.ts; Can #10852). The description is cut first, never the time. */
+.side-item-second {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.side-item-second .side-item-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Keyboard focus shows the whole name, which a tooltip does not (codex-ui #10854); hover has the tooltip. */
+.side-item:focus-visible .side-item-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .agent-status {
   font-size: 12px;
   font-weight: 600;

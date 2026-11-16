@@ -154,32 +154,35 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   button.type = "button";
   if (isCurrent(conv.id)) button.classList.add("active");
   const title = h("span", "side-item-title", conversationTitle(conv));
-  // A named room or project also shows its address, so two similar names stay apart (#10623).
-  const address = conv.kind === "project" && conv.title ? `${conversationAddress(conv)} · ` : "";
-  const what =
-    conv.kind === "project"
-      ? address + (conv.topic ?? `${conv.visibility ?? "open"} ${conv.room ? "room" : "project"}`)
-      : conv.kind === "group"
-        ? "group DM"
-        : conv.kind === "dm"
-          ? "DM"
-          : "everyone";
-  const meta = h(
-    "span",
-    "side-item-detail",
+  // Second line (Can #10855, codex-ui #10856): no room type or privacy, that is for the room's details. A named room or
+  // project shows its address, so two similar names stay apart (#10623); then its topic, if it has one, and the members.
+  const parts =
     conv.kind === "all"
-      ? what
-      : `${what} · ${conv.members.length} members${conv.members.includes(state.me) ? "" : " · you're not in it"}${conv.archived ? " · archived" : ""}`
-  );
+      ? ["everyone"]
+      : conv.kind === "dm"
+        ? ["DM"]
+        : [
+            ...(conv.kind === "project" && conv.title ? [conversationAddress(conv) ?? ""] : []),
+            ...(conv.kind === "project" && conv.topic ? [conv.topic] : []),
+            `${conv.members.length} members`,
+          ];
+  if (conv.kind !== "all" && !conv.members.includes(state.me)) parts.push("you're not in it");
+  if (conv.archived) parts.push("archived");
+  const meta = h("span", "side-item-detail", parts.join(" · "));
   if (hasProjectColor(conv)) {
     button.classList.add("conv-project");
     button.style.setProperty("--project-color", projectColor(conv));
   }
   if (conv.notify?.[state.me]) button.classList.add("conv-muted");
   const text = h("span", "side-item-text");
-  text.append(title, meta);
-  button.append(text);
+  // The time of the last message goes on the second line, at its end (Can #10852: in the first it hid the names);
+  // there the description and member count give way to it.
+  const second = h("span", "side-item-second");
+  second.append(meta);
   const unread = state.unread.get(conv.id) ?? 0;
+  if (unread === 0 && conv.lastMessageAt > 0) second.append(h("span", "side-item-time", relativeTime(conv.lastMessageAt)));
+  text.append(title, second);
+  button.append(text);
   if (unread > 0) {
     button.append(h("span", "badge", unread > 99 ? "99+" : String(unread)));
     if (hasMention(conv)) {
@@ -193,8 +196,9 @@ function conversationItem(conv: Conversation): HTMLLIElement {
       button.append(dot);
     }
   }
-  else if (conv.lastMessageAt > 0) button.append(h("span", "side-item-time", relativeTime(conv.lastMessageAt)));
-  button.title = conv.kind === "all" ? "Delivered to every agent" : `Members: ${nameList(conv.members)}`;
+  // The whole name first: a long one is cut off in the list (Can #10852).
+  button.title =
+    conv.kind === "all" ? "#all: delivered to every agent" : `${conversationTitle(conv)}\nMembers: ${nameList(conv.members)}`;
   button.addEventListener("click", () => navigate({ kind: "conversation", id: conv.id }));
   li.append(button);
   if (conv.kind === "project" || conv.kind === "group") {
