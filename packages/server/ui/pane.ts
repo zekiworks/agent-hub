@@ -350,27 +350,62 @@ const WIDTH_KEY = "agent-bus.workspaceWidth";
 const MIN_WIDTH = 320;
 /** The conversation keeps at least this much (its message box must stay usable). */
 const MIN_MAIN = 420;
+/** The Workspace's width now: the dragged one, or the default's actual size. */
+function currentWidth(): number {
+  return parseInt(dom.app.style.getPropertyValue("--ws-width"), 10) || Math.round(dom.pane.getBoundingClientRect().width) || 420;
+}
+
 function setWidth(px: number): void {
   const max = Math.max(MIN_WIDTH, innerWidth - 280 - MIN_MAIN);
-  dom.app.style.setProperty("--ws-width", `${Math.round(Math.min(Math.max(px, MIN_WIDTH), max))}px`);
+  const width = Math.round(Math.min(Math.max(px, MIN_WIDTH), max));
+  dom.app.style.setProperty("--ws-width", `${width}px`);
+  dom.wsResize.setAttribute("aria-valuenow", String(width));
+  dom.wsResize.setAttribute("aria-valuemin", String(MIN_WIDTH));
+  dom.wsResize.setAttribute("aria-valuemax", String(max));
+  dom.wsReset.hidden = false;
 }
+
+function saveWidth(): void {
+  const width = parseInt(dom.app.style.getPropertyValue("--ws-width"), 10);
+  if (width > 0) localStorage.setItem(WIDTH_KEY, String(width));
+}
+
+function resetWidth(): void {
+  localStorage.removeItem(WIDTH_KEY);
+  dom.app.style.removeProperty("--ws-width");
+  dom.wsResize.removeAttribute("aria-valuenow");
+  dom.wsReset.hidden = true;
+}
+
 const savedWidth = Number(localStorage.getItem(WIDTH_KEY));
 if (savedWidth > 0) setWidth(savedWidth);
+
+// Dragging: a drag ends however the pointer goes away (up, cancelled by the system, capture lost), once (#10400).
 dom.wsResize.addEventListener("pointerdown", (event) => {
   event.preventDefault();
   dom.wsResize.setPointerCapture(event.pointerId);
   dom.app.classList.add("ws-resizing");
   const move = (e: PointerEvent) => setWidth(innerWidth - e.clientX);
-  const up = () => {
+  const finish = () => {
     dom.wsResize.removeEventListener("pointermove", move);
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"] as const) dom.wsResize.removeEventListener(type, finish);
     dom.app.classList.remove("ws-resizing");
-    const width = parseInt(dom.app.style.getPropertyValue("--ws-width"), 10);
-    if (width > 0) localStorage.setItem(WIDTH_KEY, String(width));
+    saveWidth();
   };
   dom.wsResize.addEventListener("pointermove", move);
-  dom.wsResize.addEventListener("pointerup", up, { once: true });
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"] as const) dom.wsResize.addEventListener(type, finish);
 });
-dom.wsResize.addEventListener("dblclick", () => {
-  localStorage.removeItem(WIDTH_KEY);
-  dom.app.style.removeProperty("--ws-width");
+// Keyboard (#10400): the edge is a focusable separator; ← widens, → narrows (16 px a step), Home or "Reset width" gives
+// the default back. Double-click does too.
+dom.wsResize.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    setWidth(currentWidth() + (event.key === "ArrowLeft" ? 16 : -16));
+    saveWidth();
+  } else if (event.key === "Home") {
+    event.preventDefault();
+    resetWidth();
+  }
 });
+dom.wsResize.addEventListener("dblclick", resetWidth);
+dom.wsReset.addEventListener("click", resetWidth);

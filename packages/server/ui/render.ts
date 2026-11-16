@@ -361,7 +361,66 @@ function actionsOwner(message: Message): Element | null {
   return dom.messageList.querySelector(`[data-seq="${message.seq}"]`);
 }
 
-/** A message action that copies `text()` and says "Copied" (✓) for a moment. */
+/** One polite live region for copy results, so screen readers hear "Copied #12" or why not (#10401). */
+let announcer: HTMLElement | undefined;
+function announce(text: string): void {
+  if (!announcer) {
+    announcer = h("div", "visually-hidden");
+    announcer.setAttribute("aria-live", "polite");
+    document.body.append(announcer);
+  }
+  announcer.textContent = "";
+  setTimeout(() => (announcer ? (announcer.textContent = text) : undefined), 30);
+}
+
+/** Copies `value`: the Clipboard API, else a selected hidden text box (plain http, older browsers). Whether it worked. */
+async function copyText(value: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    const box = h("textarea");
+    box.value = value;
+    box.style.position = "fixed";
+    box.style.opacity = "0";
+    document.body.append(box);
+    box.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    }
+    box.remove();
+    return copied;
+  }
+}
+
+/** Copying was blocked: the text in a selected box under the message, to copy by hand; ✕ or Esc closes it. */
+function manualCopy(near: Element | null, value: string): void {
+  if (!near) return;
+  near.querySelector(".copy-manual")?.remove();
+  const row = h("div", "copy-manual");
+  const field = h("input");
+  field.readOnly = true;
+  field.value = value;
+  field.setAttribute("aria-label", "Text to copy");
+  const close = h("button", "link-btn", "✕");
+  close.type = "button";
+  close.title = "Close";
+  close.addEventListener("click", () => row.remove());
+  field.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    row.remove();
+  });
+  row.append(h("span", "copy-manual-hint", "Not copied automatically; copy it from here:"), field, close);
+  near.append(row);
+  field.focus();
+  field.select();
+}
+
+/** A message action that copies `text()`: ✓ "Copied" only when it was (#10401), else the text to copy by hand. */
 function copier(label: string, title: string, text: () => string): HTMLButtonElement {
   const button = h("button", "msg-action-btn msg-copy-btn", label);
   button.type = "button";
@@ -369,21 +428,12 @@ function copier(label: string, title: string, text: () => string): HTMLButtonEle
   button.setAttribute("aria-label", title);
   button.addEventListener("click", async () => {
     const value = text();
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      // Without clipboard access (plain http, older browsers): copy from a selected hidden text box.
-      const box = h("textarea");
-      box.value = value;
-      box.style.position = "fixed";
-      box.style.opacity = "0";
-      document.body.append(box);
-      box.select();
-      document.execCommand("copy");
-      box.remove();
-    }
-    button.textContent = "✓";
-    button.title = "Copied";
+    const copied = await copyText(value);
+    const short = value.length > 40 ? `${value.slice(0, 39)}…` : value;
+    button.textContent = copied ? "✓" : "✕";
+    button.title = copied ? "Copied" : "Not copied";
+    announce(copied ? `Copied ${short}` : "Not copied automatically: the text is selected below the message, copy it from there");
+    if (!copied) manualCopy(button.closest(".msg"), value);
     setTimeout(() => {
       button.textContent = label;
       button.title = title;

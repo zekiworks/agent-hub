@@ -177,9 +177,9 @@
 
     <!-- The Workspace (pane.ts, docs/right-pane.md): one item at a time, an entity's tabs or a global view. -->
     <aside id="pane" class="pane" hidden>
-      <div id="ws-resize" class="ws-resize" title="Drag to resize; double-click for the default width"></div>
+      <div id="ws-resize" class="ws-resize" role="separator" aria-orientation="vertical" aria-label="Workspace width" tabindex="0" title="Drag, or ← / → with the keyboard, to resize; double-click or Home for the default width"></div>
       <div class="ws-head">
-        <div class="ws-label">Workspace</div>
+        <div class="ws-label">Workspace <button id="ws-reset" type="button" class="link-btn ws-reset" title="Back to the default width" hidden>Reset width</button></div>
         <div class="ws-titlebar">
           <button id="ws-back" type="button" class="icon-btn ws-nav" aria-label="Previous workspace item" title="Previous">‹</button>
           <button id="ws-forward" type="button" class="icon-btn ws-nav" aria-label="Next workspace item" title="Next">›</button>
@@ -254,35 +254,49 @@
     <ul id="stats-daily" class="stats-daily"></ul>
   </dialog>
 
+  <!-- GPU booking (gpus.ts). Opened for one action from a Workspace page, it leads with that (#10403): the focus line,
+       then that action's section; the other sections follow and the fleet list folds. -->
   <dialog id="gpu-dialog" class="dialog gpu-dialog">
     <div class="gpu-head">
       <h2>GPU booking</h2>
       <button type="button" id="gpu-close" class="link-btn" title="Close (Esc)">✕</button>
     </div>
-    <p class="dialog-hint">Who holds what now and next. A booking is the claim; release it when you are done.</p>
-    <ul id="gpu-list" class="gpu-list"></ul>
-    <h3>Your bookings</h3>
-    <ul id="gpu-mine" class="gpu-list"></ul>
-    <label class="gpu-subscribe"><input id="gpu-subscribe" type="checkbox" /> Tell me when a GPU is free (no booking, nothing computing for 15 min)</label>
-    <h3>Book</h3>
-    <form id="gpu-form" class="gpu-form">
-      <label>Resource <select id="gpu-resource" required></select></label>
-      <label>Start
-        <select id="gpu-start">
-          <option value="now" selected>now</option>
-          <option value="next">as soon as it is free (queue)</option>
-          <option value="at">at…</option>
-        </select>
-      </label>
-      <label id="gpu-at-label" hidden>At <input id="gpu-at" type="datetime-local" /></label>
-      <label>Hours <input id="gpu-hours" type="number" min="0.5" max="48" step="0.5" value="4" required /></label>
-      <label class="gpu-purpose">Purpose <input id="gpu-purpose" type="text" placeholder="one line: what it is for" required /></label>
-      <label class="gpu-private"><input id="gpu-private" type="checkbox" /> Private (others should not send requests to it)</label>
-      <div id="gpu-error" class="composer-error" role="alert" hidden></div>
-      <div class="dialog-actions">
-        <button type="submit" id="gpu-book" class="btn btn-primary">Book</button>
-      </div>
-    </form>
+    <p id="gpu-focus" class="gpu-focus" hidden></p>
+    <div id="gpu-error" class="composer-error" role="alert" hidden></div>
+    <section id="gpu-sec-fleet" class="gpu-sec">
+      <details id="gpu-fleet" open>
+        <summary id="gpu-fleet-summary">All GPUs</summary>
+        <p class="dialog-hint">Who holds what now and next. A booking is the claim; release it when you are done.</p>
+        <ul id="gpu-list" class="gpu-list"></ul>
+      </details>
+    </section>
+    <section id="gpu-sec-mine" class="gpu-sec">
+      <h3>Your bookings</h3>
+      <ul id="gpu-mine" class="gpu-list"></ul>
+    </section>
+    <section id="gpu-sec-subscribe" class="gpu-sec">
+      <label class="gpu-subscribe"><input id="gpu-subscribe" type="checkbox" /> Tell me when a GPU is free (no booking, nothing computing for 15 min)</label>
+    </section>
+    <section id="gpu-sec-book" class="gpu-sec">
+      <h3>Book</h3>
+      <form id="gpu-form" class="gpu-form">
+        <label>Resource <select id="gpu-resource" required></select></label>
+        <label>Start
+          <select id="gpu-start">
+            <option value="now" selected>now</option>
+            <option value="next">as soon as it is free (queue)</option>
+            <option value="at">at…</option>
+          </select>
+        </label>
+        <label id="gpu-at-label" hidden>At <input id="gpu-at" type="datetime-local" /></label>
+        <label>Hours <input id="gpu-hours" type="number" min="0.5" max="48" step="0.5" value="4" required /></label>
+        <label class="gpu-purpose">Purpose <input id="gpu-purpose" type="text" placeholder="one line: what it is for" required /></label>
+        <label class="gpu-private"><input id="gpu-private" type="checkbox" /> Private (others should not send requests to it)</label>
+        <div class="dialog-actions">
+          <button type="submit" id="gpu-book" class="btn btn-primary">Book</button>
+        </div>
+      </form>
+    </section>
   </dialog>
 
   <script type="module" src="/app.js"></script>

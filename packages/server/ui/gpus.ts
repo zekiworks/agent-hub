@@ -40,6 +40,7 @@ function render(): void {
   const open = listing.reservations.filter((r) => OPEN[r.state]);
   const byResource = (id: string) => open.filter((r) => r.resourceId === id).sort((a, b) => (a.start ?? Infinity) - (b.start ?? Infinity));
   const resources = [...listing.resources].sort((a, b) => Number(a.kind !== "gpu") - Number(b.kind !== "gpu") || a.label.localeCompare(b.label));
+  dom.gpuFleetSummary.textContent = `All GPUs (${resources.length})`;
   dom.gpuList.replaceChildren(
     ...resources.map((resource) => {
       const li = h("li", "gpu-row");
@@ -138,64 +139,111 @@ export function resourcesChanged(): void {
   if (dom.gpuDialog.open) void load().catch(() => undefined);
 }
 
-function openDialog(): Promise<void> {
+type GpuAction = "book" | "release" | "extend" | "mode" | "subscribe";
+const ACTIONS: readonly GpuAction[] = ["book", "release", "extend", "mode", "subscribe"];
+
+/** The section that leads when a page asked for an action (#10403). */
+const SECTION: Record<GpuAction, string> = {
+  book: "gpu-sec-book",
+  release: "gpu-sec-mine",
+  extend: "gpu-sec-mine",
+  mode: "gpu-sec-mine",
+  subscribe: "gpu-sec-subscribe",
+};
+/** The usual order, opened from Tools. */
+const SECTIONS = ["gpu-sec-fleet", "gpu-sec-mine", "gpu-sec-subscribe", "gpu-sec-book"];
+
+/**
+ * Opens the dialog: for one asked action, led by it (its section first, the fleet folded last); opened from Tools,
+ * the whole overview in the usual order. The sections move in the page itself, so Tab follows what is seen.
+ */
+function openDialog(action?: GpuAction): Promise<void> {
   hideError();
+  const order = action ? [SECTION[action], ...SECTIONS.filter((id) => id !== SECTION[action] && id !== "gpu-sec-fleet"), "gpu-sec-fleet"] : SECTIONS;
+  for (const id of order) {
+    const section = document.getElementById(id);
+    if (section) dom.gpuDialog.append(section);
+  }
+  dom.gpuFleet.open = !action;
+  dom.gpuFocus.hidden = true;
   if (!dom.gpuDialog.open) dom.gpuDialog.showModal();
   return load().catch((err) => showError(errorText(err)));
 }
 
-dom.gpuBtn.addEventListener("click", () => void openDialog());
+dom.gpuBtn.addEventListener("click", () => {
+  askingFrame = undefined;
+  void openDialog();
+});
 dom.gpuClose.addEventListener("click", () => dom.gpuDialog.close());
 
-type GpuAction = "book" | "release" | "extend" | "mode" | "subscribe";
-const ACTIONS: readonly GpuAction[] = ["book", "release", "extend", "mode", "subscribe"];
-
-/** Draws the eye to one control of the dialog, without pressing it: the person does that. */
-function point(element: Element | null | undefined): void {
+/** Draws the eye to `target` and puts the keyboard on `control` (#10402): the person presses it, nothing else does. */
+function point(target: Element | null | undefined, control: HTMLElement | null | undefined = target as HTMLElement): void {
   for (const old of dom.gpuDialog.querySelectorAll(".gpu-pointed")) old.classList.remove("gpu-pointed");
-  if (!(element instanceof HTMLElement)) return;
-  element.classList.add("gpu-pointed");
-  element.scrollIntoView({ block: "center" });
-  element.focus();
+  if (!(target instanceof HTMLElement)) return;
+  target.classList.add("gpu-pointed");
+  target.scrollIntoView({ block: "nearest" });
+  control?.focus();
+}
+
+function lead(text: string): void {
+  dom.gpuFocus.textContent = text;
+  dom.gpuFocus.hidden = false;
 }
 
 /**
- * A page in the Workspace asked for `action` (#10194): the dialog opens at that GPU (book) or that hold of yours
- * (release, extend, mode), or at the notices switch (subscribe). Nothing happens until the person clicks; a GPU or hold
- * that is not there (any more), or not yours, says so.
+ * A page in the Workspace asked for `action` (#10194): the dialog opens led by it (#10403), a line naming it and its
+ * GPU, then that GPU's form (book), that hold of yours with its buttons (release, extend, mode) or the notices switch
+ * (subscribe). Nothing happens until the person clicks; a GPU or hold that is not there (any more), or not yours, says so.
  */
 async function openAt(action: GpuAction, resource: string | undefined, reservation: string | undefined): Promise<void> {
-  await openDialog();
+  await openDialog(action);
   if (!listing) return;
-  if (action === "subscribe") return point(dom.gpuSubscribe.closest("label") ?? dom.gpuSubscribe);
+  if (action === "subscribe") {
+    lead("Get a notice when a GPU is free");
+    return point(dom.gpuSubscribe.closest("label"), dom.gpuSubscribe);
+  }
   if (action === "book") {
     const wanted = listing.resources.find((r) => r.id === resource || r.label === resource);
     if (resource && !wanted) return showError(`That GPU ("${resource}") is no longer there.`);
     if (wanted) dom.gpuResource.value = wanted.id;
+    lead(`Book ${wanted?.label ?? "a GPU"}`);
     return point(dom.gpuPurpose);
   }
+  const hold = listing.reservations.find((r) => r.id === reservation);
   const row = reservation ? dom.gpuMine.querySelector(`[data-reservation="${CSS.escape(reservation)}"]`) : null;
-  if (!row) return showError("That hold is no longer there, or it is not yours.");
+  if (!hold || !row) return showError("That hold is no longer there, or it is not yours.");
+  const where = listing.resources.find((r) => r.id === hold.resourceId)?.label ?? hold.resourceId;
+  const verb = action === "extend" ? "Extend by 2 h" : action === "mode" ? (hold.private ? "Make shared" : "Make private") : "Release";
+  lead(`${verb}: your hold on ${where}`);
   const label = action === "extend" ? "+2 h" : action === "mode" ? "Make" : undefined;
   const buttons = [...row.querySelectorAll<HTMLButtonElement>("button")];
-  point(label ? buttons.find((b) => b.textContent?.startsWith(label)) : buttons.find((b) => /^(Release|Cancel)$/.test(b.textContent ?? "")));
+  const button = label ? buttons.find((b) => b.textContent?.startsWith(label)) : buttons.find((b) => /^(Release|Cancel)$/.test(b.textContent ?? ""));
+  point(button);
 }
+
+/** The page that asked, so the keyboard goes back to it when the dialog closes (#10402). */
+let askingFrame: HTMLIFrameElement | undefined;
 
 // Only a frame the website made for a Workspace page may ask, and only to open the dialog (agentpages.ts).
 window.addEventListener("message", (event) => {
   const frames = [...document.querySelectorAll<HTMLIFrameElement>("iframe.agent-page")];
-  if (!frames.some((f) => f.contentWindow === event.source)) return;
+  const frame = frames.find((f) => f.contentWindow === event.source);
+  if (!frame) return;
   const data = event.data as { type?: unknown; action?: unknown; resource?: unknown; reservation?: unknown } | null;
   if (data?.type !== "agent-bus:gpu" || !ACTIONS.includes(data.action as GpuAction)) return;
   const text = (v: unknown) => (typeof v === "string" && v.length <= 200 ? v : undefined);
+  askingFrame = frame;
   void openAt(data.action as GpuAction, text(data.resource), text(data.reservation));
 });
 
-// When the dialog closes, the pages refresh what they show of the schedule at once.
+// When the dialog closes, the pages refresh what they show of the schedule at once; the one that asked gets the
+// keyboard back (inside it, its own button keeps its focus).
 dom.gpuDialog.addEventListener("close", () => {
   for (const frame of document.querySelectorAll<HTMLIFrameElement>("iframe.agent-page")) {
     frame.contentWindow?.postMessage({ type: "agent-bus:resources-changed" }, "*");
   }
+  if (askingFrame?.isConnected) askingFrame.focus();
+  askingFrame = undefined;
 });
 dom.gpuSubscribe.addEventListener("change", async () => {
   hideError();
