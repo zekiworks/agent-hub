@@ -1,13 +1,17 @@
 // `agent-bus up`: after a reboot, brings this machine's agents back in tmux, the way Can did it by hand: ask the bus
-// which agents ran here, then for each one a window in its folder that resumes its last session (`omp -c`, `pi -c`).
+// which agents ran here, then for each one a window in its folder that resumes its last session (`omp -c`, `pi -c`,
+// `codex resume --last`).
 // Each window is a login shell with the command typed in, so the shell stays when the command exits.
 import { existsSync, realpathSync } from "node:fs";
 import { hostname } from "node:os";
 import type { Participant, StateResponse } from "@agent-bus/protocol";
 import { agentToken } from "../../client/src/connection";
 
-/** How each harness resumes the previous session of a folder. Others are listed as skipped. */
-const RESUME: Record<string, string> = { omp: "omp -c", pi: "pi -c" };
+/**
+ * How each harness resumes the previous session of a folder. Others are listed as skipped.
+ * `codex resume --last` picks the newest session of the current folder (it filters by cwd unless `--all`).
+ */
+const RESUME: Record<string, string> = { omp: "omp -c", pi: "pi -c", codex: "codex resume --last" };
 
 export interface UpOptions {
   url: string;
