@@ -9,6 +9,7 @@ import { runTicketed } from "./run";
 const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR] --humans carol,uma
                        [--https-port 7843 --tls-cert FILE --tls-key FILE] [--gpudash URL] [--forget-offline-days 15]
                        [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL] [--ext NAME=URL[,launcher=LABEL]]…
+                       [--brand-name NAME [--brand-logo FILE] [--brand-icon FILE]]
        agent-bus invite HUMAN [--data-dir DIR] [--url https://HOST:7843]
        agent-bus agents [--data-dir DIR]
        agent-bus approve|deny CODE [--data-dir DIR]
@@ -52,6 +53,8 @@ serve:
                 NAME=URL: a tab of the project @@NAME and of agent NAME's DM (e.g. compactor=http://127.0.0.1:8899);
                 NAME=URL,launcher=LABEL: a global item opened from the top bar (e.g. gpudash=http://127.0.0.1:3420,launcher=GPUs)
   --tts-url     Text-to-speech server (llama-server with LFM3-Audio, e.g. http://127.0.0.1:9941): ▶ reads messages aloud
+  --brand-name  The website's name instead of "Agent Bus" (e.g. "Hilde Hub"); --brand-logo: the header's mark and home-screen
+                icon (an image file); --brand-icon: the browser tab's icon (a small PNG)
   --forget-offline-days  Forget agents offline this many days (default 15; 0 keeps them forever)
   --public-url  Another address the website is reachable at (e.g. https://bariton.tailnet.ts.net through tailscale
                 serve); offered first for linking a device by QR code. Repeatable.
@@ -124,6 +127,15 @@ function parseServeArgs(args: string[]): BusServerOptions {
           if (!extra.startsWith("launcher=") || extra.length <= 9) throw new Error(`--ext ${name}: unknown option "${extra}" (only launcher=Label)`);
           (options.launchers ??= {})[name] = extra.slice(9);
         }
+        break;
+      }
+      case "--brand-name":
+        options.brand = { ...options.brand, name: value };
+        break;
+      case "--brand-logo":
+      case "--brand-icon": {
+        if (!existsSync(value)) throw new Error(`${flag}: no file "${value}"`);
+        options.brand = { name: options.brand?.name ?? "Agent Bus", ...options.brand, [flag === "--brand-logo" ? "logo" : "icon"]: path.resolve(value) };
         break;
       }
       case "--public-url":

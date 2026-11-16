@@ -28,7 +28,7 @@ import { ScheduleService } from "./schedule-routes";
 import { forwardExtension } from "./extensions";
 import { getTasks, taskAction } from "./tasks";
 import { postSpeech } from "./speech";
-import { Website } from "./website";
+import { type Brand, Website } from "./website";
 
 export interface BusServerOptions {
   host?: string;
@@ -55,6 +55,8 @@ export interface BusServerOptions {
   extensions?: Record<string, string>;
   /** Which of them are global, opened by a top-bar launcher: name → its label (`--ext gpudash=…,launcher=GPUs`). */
   launchers?: Record<string, string>;
+  /** This bus's name and pictures on the website (`--brand-name "Hilde Hub" --brand-logo FILE --brand-icon FILE`). */
+  brand?: Brand;
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
   forgetOfflineDays?: number;
   /** Projects and group DMs quiet this many days, pinned by nobody, are archived (Can, 15 Nov). 0: never. Default 3. */
@@ -147,7 +149,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
   const archiveTimer = setInterval(archiveIdle, 3600_000);
 
   const schedule = new ScheduleService(ctx, options.gpudash);
-  const website = new Website();
+  const website = new Website(options.brand);
   const sockets = socketHandlers(ctx);
   // Decisions made on the host (`agent-bus approve`, `deny`) reach the waiting and connected agents within seconds.
   const settleTimer = setInterval(() => sockets.settleAll(), 2000);

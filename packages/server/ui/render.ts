@@ -1,6 +1,7 @@
 // The main pane: header and messages (with quotes, receipts, attachments), and renderAll.
 import { senderLabel, type Conversation, type Message, type Quote, type ReceiptEvent } from "@agent-bus/protocol";
 import { renderFile } from "./attachments";
+import { BRAND } from "./brand";
 import { setReplyTo, updateComposerState } from "./composer";
 import { dom, PHONE } from "./dom";
 import { dayFormat, dayKey, fullFormat, nameList, timeFormat } from "./format";
@@ -13,7 +14,7 @@ import { renderTaskBadge } from "./inbox";
 import { updateJump } from "./jump";
 import { renderPane } from "./pane";
 import { renderSpeaking, speakButton } from "./speak";
-import { conversationTitle, hasProjectColor, projectColor, state } from "./state";
+import { conversationTitle, projectColor, state } from "./state";
 import { flashMessage, mentionNodes, mentionsMe, shownMessage } from "./text";
 
 export function renderAll(): void {
@@ -57,21 +58,20 @@ export function renderHeader(): void {
       view.project !== undefined
         ? `New project "${view.project}", open: anyone can find and join it — created when you send the first message.`
         : `New conversation between you and ${nameList(view.to)} — created when you send the first message.`;
-    setTitleBase(`${title} · Agent Bus`);
+    setTitleBase(`${title} · ${BRAND}`);
     return;
   }
   const conv = state.conversations.get(view.id);
   if (!conv) {
     setConvTitle(view.id, view.id);
     dom.convSubtitle.textContent = "Unknown conversation.";
-    setTitleBase("Agent Bus");
+    setTitleBase(BRAND);
     return;
   }
   const title = conversationTitle(conv);
   setConvTitle(title, conv.kind === "all" ? "Everyone" : `Members: ${nameList(conv.members)}`);
-  // A project's colour on its title, as in the sidebar.
-  dom.convTitle.style.color = hasProjectColor(conv) ? projectColor(conv) : "";
-  setTitleBase(`${title} · Agent Bus`);
+  // The title in the text colour (#10099): a project's colour is its band in the list and the Workspace's shared tint.
+  setTitleBase(`${title} · ${BRAND}`);
   dom.convMenuBtn.hidden = conv.kind === "all" || conv.kind === "dm";
   if (conv.kind === "all") {
     dom.convSubtitle.textContent = "Everyone. Every agent receives what is written here.";
@@ -203,6 +203,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   // (no hover) after tapping the message. Clicking Reply again cancels.
   const actions = h("div", "msg-actions");
   if (message.text) actions.append(speakButton(message), copyButton(message));
+  actions.append(copyIdButton(message));
   const replyBtn = h("button", "msg-action-btn msg-reply-btn", "↩ ");
   replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";
@@ -345,18 +346,35 @@ function renderQuote(quote: Quote): HTMLButtonElement {
  * themselves.
  */
 function copyButton(message: Message): HTMLButtonElement {
-  const button = h("button", "msg-action-btn msg-copy-btn", "⧉");
+  return copier("⧉", "Copy the whole message", () => {
+    const shown = actionsOwner(message)?.querySelector<HTMLElement>(".msg-text");
+    return shown?.innerText.trim() || message.text;
+  });
+}
+
+/** "#10228" to the clipboard (Can, #10228): the number stays easy to share while it is drawn quietly. */
+function copyIdButton(message: Message): HTMLButtonElement {
+  return copier("#", `Copy the message's number (#${message.seq})`, () => `#${message.seq}`);
+}
+
+function actionsOwner(message: Message): Element | null {
+  return dom.messageList.querySelector(`[data-seq="${message.seq}"]`);
+}
+
+/** A message action that copies `text()` and says "Copied" (✓) for a moment. */
+function copier(label: string, title: string, text: () => string): HTMLButtonElement {
+  const button = h("button", "msg-action-btn msg-copy-btn", label);
   button.type = "button";
-  button.title = "Copy the whole message";
+  button.title = title;
+  button.setAttribute("aria-label", title);
   button.addEventListener("click", async () => {
-    const shown = button.closest(".msg")?.querySelector<HTMLElement>(".msg-text");
-    const text = shown?.innerText.trim() || message.text;
+    const value = text();
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(value);
     } catch {
       // Without clipboard access (plain http, older browsers): copy from a selected hidden text box.
       const box = h("textarea");
-      box.value = text;
+      box.value = value;
       box.style.position = "fixed";
       box.style.opacity = "0";
       document.body.append(box);
@@ -367,8 +385,8 @@ function copyButton(message: Message): HTMLButtonElement {
     button.textContent = "✓";
     button.title = "Copied";
     setTimeout(() => {
-      button.textContent = "⧉";
-      button.title = "Copy the whole message";
+      button.textContent = label;
+      button.title = title;
     }, 1500);
   });
   return button;

@@ -1,6 +1,7 @@
 // Browser notifications for the ●● messages (mentions of me, conversations of two), and the tab title and icon that
 // show how many are unread.
 import type { Conversation, Message } from "@agent-bus/protocol";
+import { BRAND, BRAND_ICON } from "./brand";
 import { dom } from "./dom";
 import { el } from "./html";
 import { navigate } from "./routing";
@@ -52,7 +53,7 @@ export function notify(message: Message, conv: Conversation): void {
   });
 }
 
-let titleBase = "Agent Bus";
+let titleBase = BRAND;
 
 /** Tab icon: the header's ⇄ mark; a red dot while messages for me are unread. */
 function faviconHref(attention: boolean): string {
@@ -66,6 +67,35 @@ function faviconHref(attention: boolean): string {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
+/** With this bus's own tab icon (`--brand-icon`): the icon, the red dot drawn over it while messages are unread. */
+let brandIcon: HTMLImageElement | undefined;
+function setBrandFavicon(link: HTMLLinkElement, attention: boolean): void {
+  if (!BRAND_ICON) return;
+  if (!attention) {
+    link.href = BRAND_ICON;
+    return;
+  }
+  const draw = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 32;
+    const g = canvas.getContext("2d");
+    if (!g || !brandIcon) return;
+    g.drawImage(brandIcon, 0, 0, 32, 32);
+    g.beginPath();
+    g.arc(26, 6, 6, 0, Math.PI * 2);
+    g.fillStyle = "#e5484d";
+    g.fill();
+    g.lineWidth = 2;
+    g.strokeStyle = "#fff";
+    g.stroke();
+    if (faviconState) link.href = canvas.toDataURL("image/png");
+  };
+  if (brandIcon?.complete) return draw();
+  brandIcon = new Image();
+  brandIcon.addEventListener("load", draw, { once: true });
+  brandIcon.src = BRAND_ICON;
+}
+
 let faviconState: boolean | undefined;
 
 export function applyTitle(): void {
@@ -76,7 +106,9 @@ export function applyTitle(): void {
   document.title = n > 0 ? `${urgent > 0 ? "●●" : "●"} (${n}) ${titleBase}` : titleBase;
   if (faviconState !== n > 0) {
     faviconState = n > 0;
-    el<HTMLLinkElement>("favicon").href = faviconHref(faviconState);
+    const link = el<HTMLLinkElement>("favicon");
+    if (BRAND_ICON) setBrandFavicon(link, faviconState);
+    else link.href = faviconHref(faviconState);
   }
 }
 

@@ -1,5 +1,5 @@
-// The Settings dialog: a person's own settings (POST /api/settings). One so far: who writes their English voice
-// messages as text.
+// The Settings dialog: a person's own settings. On the bus (POST /api/settings): who writes their English voice
+// messages as text. In this browser: whether the routing lines under messages show (#10096).
 import type { AgentSettings } from "@agent-bus/protocol";
 import { postJson } from "./api";
 import { closeWindowButton } from "./dialogs";
@@ -57,8 +57,40 @@ function render(): void {
         "with Whisper large-v3, the larger sibling of the turbo the bus runs). Lower is better."
     ),
     note,
+    routingSetting(),
     closeWindowButton(dom.settingsDialog)
   );
+}
+
+/** Whether "✓ · woke compactor" lines show under every message (on), or only when something is wrong or on hover. */
+const ROUTING_KEY = "agent-bus.showRouting";
+function applyRouting(): void {
+  dom.app.classList.toggle("routing-hidden", localStorage.getItem(ROUTING_KEY) === "0");
+}
+applyRouting();
+
+function routingSetting(): HTMLElement {
+  const box = h("input");
+  box.type = "checkbox";
+  box.checked = localStorage.getItem(ROUTING_KEY) !== "0";
+  box.addEventListener("change", () => {
+    localStorage.setItem(ROUTING_KEY, box.checked ? "1" : "0");
+    applyRouting();
+  });
+  const label = h("label", "settings-check");
+  label.append(box, " Show routing details under messages (✓ delivered, who it woke)");
+  const section = h("div", "");
+  section.append(
+    h("h3", "", "Messages"),
+    label,
+    h(
+      "p",
+      "dialog-hint",
+      "Off: those lines appear when you hover or tap a message. Messages still waiting, held or expired always show " +
+        "theirs. Only this browser; nothing changes for who gets or is woken by a message."
+    )
+  );
+  return section;
 }
 
 dom.settingsBtn.addEventListener("click", () => {

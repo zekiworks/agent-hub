@@ -1,31 +1,36 @@
+/* Colours: Hilde Reader's (#10089; its audiobook_tts_web.py theme): charcoal surfaces, warm white text, lilac for
+   selection, links and focus (--accent), copper only for primary actions (--primary: Send, primary buttons), leaf green
+   for online. No blue. */
 :root {
   color-scheme: dark;
-  --bg: #161a22;
-  --panel: #1c212b;
-  --panel-raised: #232a36;
-  --hover: #202631;
-  --input: #12161d;
-  --sidebar: #11151c;
-  --sidebar-hover: #1c222d;
-  --sidebar-active: #2a3243;
-  --sidebar-text: #d7dbe3;
-  --sidebar-muted: #8c94a6;
-  --text: #dde2ea;
-  --muted: #8f98aa;
-  --border: #2c3341;
-  --accent: #5b8cff;
-  --accent-strong: #4a7af0;
-  --accent-soft: #233357;
-  --human: #f0a456;
-  --human-soft: #2b2419;
-  --human-soft-hover: #33291c;
-  --agent: #7aa7ff;
-  --agent-soft: #1f2a42;
-  --online: #22c55e;
-  --offline: #6b7280;
-  --error: #ff8a80;
-  --error-soft: #3a1e1e;
-  --success: #5cc98a;
+  --bg: #1b1b1b;
+  --panel: #242424;
+  --panel-raised: #2e2e2e;
+  --hover: #383838;
+  --input: #161616;
+  --sidebar: #161616;
+  --sidebar-hover: #242424;
+  --sidebar-active: #2e2e2e;
+  --sidebar-text: #faf8f5;
+  --sidebar-muted: #bdb8b1;
+  --text: #faf8f5;
+  --muted: #bdb8b1;
+  --border: #3a3a3a;
+  --accent: #b8a6dc;
+  --accent-strong: #a593cc;
+  --accent-soft: color-mix(in srgb, #b8a6dc 16%, transparent);
+  --primary: #d89068;
+  --primary-ink: #1b1b1b;
+  --human: #e2b48f;
+  --human-soft: color-mix(in srgb, #d89068 12%, transparent);
+  --human-soft-hover: color-mix(in srgb, #d89068 18%, transparent);
+  --agent: #c9bde6;
+  --agent-soft: color-mix(in srgb, #b8a6dc 14%, transparent);
+  --online: #9cc48a;
+  --offline: #8b8f98;
+  --error: #e5534b;
+  --error-soft: color-mix(in srgb, #e5534b 16%, transparent);
+  --success: #9cc48a;
   --warning: #e3a547;
   --highlight: #4a3f14;
   --shadow: rgba(0, 0, 0, 0.45);
@@ -714,8 +719,8 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 650;
-  font-size: 16px;
+  font-weight: 600;
+  font-size: 17px;
 }
 
 .brand-mark {
@@ -725,8 +730,22 @@ button:disabled {
   height: 26px;
   border-radius: 6px;
   background: var(--accent);
-  color: #fff;
+  color: var(--primary-ink);
   font-size: 14px;
+}
+
+/* A configured mark (`--brand-logo`, e.g. Hilde's copper leaf), contained as in Hilde Reader's header: never cropped. */
+.brand-logo {
+  width: 24px;
+  height: 28px;
+  object-fit: contain;
+  flex: none;
+}
+
+/* "Hilde Hub": the first word semibold, the rest regular in a lighter gray, as "Hilde Reader". */
+.brand-rest {
+  font-weight: 400;
+  color: #c9ccd2;
 }
 
 .topbar-spacer {
@@ -890,9 +909,11 @@ button:disabled {
   background: var(--sidebar-hover);
 }
 
+/* The open conversation: a raised row with a lilac edge (#10099), clear without colour on the name. */
 .side-item.active {
   background: var(--sidebar-active);
-  color: #fff;
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--text);
 }
 
 .side-item.offline .side-item-title {
@@ -1215,7 +1236,7 @@ button:disabled {
 
 .dot-on {
   background: var(--online);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--online) 25%, transparent);
 }
 
 .dot-busy {
@@ -1248,7 +1269,7 @@ button:disabled {
 }
 
 .sidebar .link-btn {
-  color: #93b0ff;
+  color: var(--accent);
   text-transform: none;
   letter-spacing: 0;
 }
@@ -1471,12 +1492,13 @@ button:disabled {
   border-left-color: var(--human);
 }
 
+/* Your own messages: on the same neutral surface as the rest (#10094: no broad fill), a thin copper line instead. */
 .msg-mine {
-  background: var(--human-soft);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--human) 55%, transparent);
 }
 
 .msg-mine:hover {
-  background: var(--human-soft-hover);
+  background: var(--hover);
 }
 
 /* Messages from others that mention the viewer (@me, @{…,me}): a gold bar on the left and a warm background, as in
@@ -1526,24 +1548,22 @@ button:disabled {
   border-radius: 4px;
 }
 
-.kind-agent {
-  background: var(--agent-soft);
-  color: var(--agent);
-}
-
+/* HUMAN / AGENT: a quiet word after the name, not a coloured chip (#10094). */
+.kind-agent,
 .kind-human {
-  background: var(--human-soft);
-  color: var(--human);
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  font-weight: 600;
+  opacity: 0.75;
 }
 
-.msg-mine .kind-human {
-  background: var(--panel-raised);
-}
-
+/* #123 and the time: secondary, smaller and paler than the name and the text. */
 .msg-seq,
 .msg-time {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
+  opacity: 0.8;
 }
 
 /* ▶ read aloud and ↩ Reply, top right of a message: on hover, on phones after a tap, and while replying to it. */
@@ -1853,7 +1873,7 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .lightbox::backdrop {
-  background: rgba(10, 12, 18, 0.88);
+  background: rgba(16, 16, 16, 0.88);
 }
 
 .lightbox img {
@@ -1868,27 +1888,41 @@ ul.md-list ul.md-list { list-style: circle; }
   align-items: center;
   gap: 14px;
   font-size: 13px;
-  color: #e6e8ee;
+  color: var(--text);
 }
 
 .lightbox-bar .link-btn {
-  color: #93b0ff;
+  color: var(--accent);
   cursor: pointer;
 }
 
 .lightbox-hint {
-  color: #9aa1b2;
+  color: var(--muted);
 }
 
 .msg-receipts {
   margin-top: 3px;
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
   cursor: default;
 }
 
 .msg-receipts.receipts-delivered {
-  color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
+}
+
+/* "Show routing details" off (settings.ts, #10096): a delivered message's line shows on hover or tap only; one still
+   waiting, held or expired keeps it. */
+.app.routing-hidden .msg:not(:hover):not(.msg-tapped) .msg-receipts.receipts-delivered {
+  display: none;
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
 }
 
 .msg-receipts.receipts-pending {
@@ -2129,13 +2163,13 @@ ul.md-list ul.md-list { list-style: circle; }
   padding: 0 18px;
   border: 0;
   border-radius: var(--radius);
-  background: var(--accent);
-  color: #fff;
+  background: var(--primary);
+  color: var(--primary-ink);
   font-weight: 650;
 }
 
 .send-btn:disabled {
-  background: var(--accent-soft);
+  background: var(--panel-raised);
   color: var(--muted);
 }
 
@@ -2188,7 +2222,7 @@ ul.md-list ul.md-list { list-style: circle; }
   place-items: center;
   border: 2px dashed var(--accent);
   border-radius: 12px;
-  background: rgba(22, 26, 34, 0.9);
+  background: rgba(27, 27, 27, 0.9);
   color: var(--accent);
   font-size: 18px;
   font-weight: 650;
@@ -2206,7 +2240,7 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .dialog::backdrop {
-  background: rgba(15, 20, 30, 0.55);
+  background: rgba(16, 16, 16, 0.6);
 }
 
 .dialog h2 {
@@ -2360,13 +2394,13 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .btn-primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-ink);
 }
 
 .btn-primary:hover {
-  background: var(--accent-strong);
+  background: color-mix(in srgb, var(--primary) 88%, white);
 }
 
 /* The GPUs dialog: schedule per resource, your bookings, the booking form. */
@@ -2428,8 +2462,9 @@ ul.md-list ul.md-list { list-style: circle; }
   background: var(--project-color, var(--accent));
 }
 
+/* The name in the text colour (#10099); the band alone carries the project's colour. */
 .conv-item.conv-project .side-item-title {
-  color: var(--project-color, var(--accent));
+  color: var(--sidebar-text);
 }
 
 /* ⋯ on a project, room or group (sidebar.ts entryMenuButton): on hover, faint on touch screens; over the entry's top
@@ -2785,10 +2820,16 @@ ul.md-list ul.md-list { list-style: circle; }
     display: none;
   }
 
-  /* Settings, Stats, GPUs, notifications and "You are" do not fit one phone-wide row: they wrap under the brand. */
+  /* The phone's top bar (codex-ui #10248: three busy rows): brand, then Settings, Tools, GPUs, notifications and ✉ under
+     it. "#…" (also …/#/m/1234) and "You are" (set when signing in) stay on wider screens only. */
   .topbar {
     flex-wrap: wrap;
     gap: 8px 14px;
+  }
+
+  #goto-btn,
+  .topbar .profile {
+    display: none;
   }
 
   .app.phone-list {
