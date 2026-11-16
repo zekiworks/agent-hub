@@ -3018,6 +3018,40 @@ ul.md-list ul.md-list { list-style: circle; }
     min-height: 44px;
   }
 
+  /* The GPU booking form (codex-ui #10274): fields, checkbox rows and hold buttons a thumb can hit; 16 px text so iOS
+     does not zoom into the fields. */
+  .gpu-form select,
+  .gpu-form input:not([type="checkbox"]),
+  .gpu-subscribe,
+  .gpu-form .gpu-private,
+  .gpu-action,
+  #gpu-book,
+  #gpu-close {
+    min-height: 44px;
+  }
+
+  .gpu-form select,
+  .gpu-form input:not([type="checkbox"]) {
+    font-size: 16px;
+  }
+
+  .gpu-subscribe,
+  .gpu-form .gpu-private {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .gpu-subscribe input,
+  .gpu-form .gpu-private input {
+    width: 22px;
+    height: 22px;
+  }
+
+  #gpu-close {
+    min-width: 44px;
+  }
+
   .composer .send-btn {
     height: 48px;
     min-width: 56px;
