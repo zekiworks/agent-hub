@@ -4,6 +4,7 @@ import {
   formatAddress,
   mentionedIds,
   type FileRef,
+  type Message,
   type PostMessageRequest,
   type PostMessageResponse,
 } from "@agent-bus/protocol";
@@ -32,11 +33,13 @@ export async function uploadFile(file: File): Promise<FileRef> {
  * Posts `text` and `fileIds` to `view` (as a reply when one is picked there, to the session picked on an agent's
  * page, kept for the chosen hours), shows it, and clears the reply. Typed text and staged files are the caller's.
  */
-export async function postToView(view: View, text: string, fileIds: string[]): Promise<void> {
+export async function postToView(view: View, text: string, fileIds: string[], fixedReply?: { reply: Message | undefined }): Promise<void> {
+  // A voice message brings the reply chosen when it was started (codex-ui #10825); typed text uses the current one.
+  const replyTo = fixedReply ? fixedReply.reply : state.replyTo;
   const request: PostMessageRequest = { from: state.me, text };
   if (fileIds.length > 0) request.fileIds = fileIds;
-  if (state.replyTo && view.kind === "conversation" && state.replyTo.conversationId === view.id) {
-    request.replyToSeq = state.replyTo.seq;
+  if (replyTo && view.kind === "conversation" && replyTo.conversationId === view.id) {
+    request.replyToSeq = replyTo.seq;
   } else if (view.kind === "draft") request.to = view.project !== undefined ? `@@${view.project}` : formatAddress(view.to);
   else if (view.id === ALL_CONVERSATION_ID) request.to = "@all";
   else request.conversationId = view.id;
@@ -62,8 +65,11 @@ export async function postToView(view: View, text: string, fileIds: string[]): P
   if (taskType === "task" || taskType === "approval" || taskType === "chore") request.task = { type: taskType };
 
   const res = await postJson<PostMessageResponse>("/api/messages", request);
-  setReplyTo(undefined);
-  dom.taskSelect.value = "";
+  // Clear the reply this message answered, not a newer one chosen meanwhile; the task picker belongs to typed text.
+  if (!fixedReply || (state.replyTo && replyTo && state.replyTo.seq === replyTo.seq && state.replyTo.conversationId === replyTo.conversationId)) {
+    setReplyTo(undefined);
+  }
+  if (!fixedReply) dom.taskSelect.value = "";
   // Groups not loaded yet (e.g. a draft that just became a group) get their history fetched.
   if (!state.caches.has(res.conversation.id)) void loadMessages(res.conversation.id);
   receive(res.message, res.conversation);
