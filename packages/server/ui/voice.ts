@@ -143,67 +143,69 @@ async function start(): Promise<void> {
     showError("This browser cannot record audio here (it needs https and microphone access).");
     return;
   }
+  // Where it goes is decided at the tap, not after the permission prompt or the microphone's start-up (codex-ui #10622).
+  const view = state.view;
   hideError();
   hideStatus();
   opening = true;
-  let stream: MediaStream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (err) {
-    // Blocked or refused: say how to allow it (iPhone Safari: aA → Website Settings), not the browser's wording.
-    const blocked = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "SecurityError");
-    showError(
-      blocked
-        ? "The microphone is not allowed for this site. On the iPhone: aA (left of the address) → Website Settings → Microphone → Allow; elsewhere, the lock or site settings next to the address. Then tap 🎤 again."
-        : `No microphone: ${errorText(err)}`
-    );
-    return;
-  } finally {
-    opening = false;
-  }
-  const audio = new AudioContext();
-  await audio.resume().catch(() => undefined);
-  const analyser = audio.createAnalyser();
-  analyser.fftSize = 1024;
-  audio.createMediaStreamSource(stream).connect(analyser);
-  opening = true;
-  try {
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      // Blocked or refused: say how to allow it (iPhone Safari: aA → Website Settings), not the browser's wording.
+      const blocked = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "SecurityError");
+      showError(
+        blocked
+          ? "The microphone is not allowed for this site. On the iPhone: aA (left of the address) → Website Settings → Microphone → Allow; elsewhere, the lock or site settings next to the address. Then tap 🎤 again."
+          : `No microphone: ${errorText(err)}`
+      );
+      return;
+    }
+    const audio = new AudioContext();
+    await audio.resume().catch(() => undefined);
+    const analyser = audio.createAnalyser();
+    analyser.fftSize = 1024;
+    audio.createMediaStreamSource(stream).connect(analyser);
+    const mimeType = MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const rec: Recording = {
+      recorder,
+      stream,
+      chunks: [],
+      startedAt: Date.now(),
+      pausedMs: 0,
+      audio,
+      analyser,
+      levels: [],
+      lastLevelAt: 0,
+      frame: 0,
+      view,
+      listening: audio.state === "running",
+      heard: false,
+    };
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data.size > 0) rec.chunks.push(event.data);
+    });
+    // Recording from the first moment, so no sound can be cut off; the silence before it costs nothing.
+    recorder.start();
     await waitForSignal(audio, analyser);
+    rec.startedAt = Date.now();
+    recording = rec;
   } finally {
     opening = false;
   }
-  const mimeType = MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
-  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-  const rec: Recording = {
-    recorder,
-    stream,
-    chunks: [],
-    startedAt: Date.now(),
-    pausedMs: 0,
-    audio,
-    analyser,
-    levels: [],
-    lastLevelAt: 0,
-    frame: 0,
-    view: state.view,
-    listening: audio.state === "running",
-    heard: false,
-  };
-  recorder.addEventListener("dataavailable", (event) => {
-    if (event.data.size > 0) rec.chunks.push(event.data);
-  });
-  recording = rec;
-  recorder.start();
-  setPaused(rec, false);
+  setPaused(recording, false);
   showPanel(true);
   // Let go while the microphone was opening: that was a click, so keep recording until Send.
   setLatched(!held);
-  tick(rec);
+  tick(recording);
 }
 
-/** Bluetooth headsets (AirPods) deliver exact silence for a second or so after a page opens their microphone, while
- * the system switches them to headset mode (Ümit, 16 Nov: the start of what she said was lost, or all of it). Recording
- * starts once the microphone sends anything at all, or after SIGNAL_WAIT_MS regardless. */
+/** Bluetooth headsets (AirPods) deliver exact silence for a moment after a page opens their microphone (Ümit's clips,
+ * 16 Nov: every one began with 0.6–0.7 s of zeros, and the short ones lost most of what she said). The recorder runs
+ * from the start; the timer and waveform, the cue to speak, appear once the microphone sends anything at all, or after
+ * SIGNAL_WAIT_MS regardless. */
 const SIGNAL_WAIT_MS = 3000;
 
 async function waitForSignal(audio: AudioContext, analyser: AnalyserNode): Promise<void> {
