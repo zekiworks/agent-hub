@@ -236,11 +236,13 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeEntryMenu();
 });
 
-/** ⋯ on a project, room or group in the sidebar (Can, 15 Nov): Pin/Unpin, and Archive for its members. */
+/** ⋯ on a project, room or group in the sidebar (Can, 15 Nov): Pin/Unpin, and for its members Rename (projects and
+ * rooms; Ümit #10496) and Archive. */
 function entryMenuButton(conv: Conversation): HTMLButtonElement {
   const btn = h("button", "entry-btn", "⋯");
   btn.type = "button";
-  btn.title = "Pin or archive";
+  btn.title = conv.kind === "project" ? `Pin, rename or archive ${conversationTitle(conv)}` : `Pin or archive ${conversationTitle(conv)}`;
+  btn.setAttribute("aria-label", btn.title);
   btn.addEventListener("click", (event) => {
     event.stopPropagation();
     const wasOpen = openEntryMenu?.dataset.conv === conv.id;
@@ -248,26 +250,87 @@ function entryMenuButton(conv: Conversation): HTMLButtonElement {
     if (wasOpen) return;
     const menu = h("div", "entry-menu");
     menu.dataset.conv = conv.id;
-    const item = (label: string, run: () => void) => {
+    // Clicks inside the menu (the rename field) must not close it.
+    menu.addEventListener("click", (e) => e.stopPropagation());
+    const item = (label: string, run: () => void, disabledWhy?: string) => {
       const b = h("button", "entry-menu-item", label);
       b.type = "button";
+      if (disabledWhy) {
+        b.disabled = true;
+        b.title = disabledWhy;
+      }
       b.addEventListener("click", (e) => {
         e.stopPropagation();
-        closeEntryMenu();
         run();
       });
       menu.append(b);
     };
+    const member = conv.members.includes(state.me);
     const pinned = pinnedByMe(conv);
-    item(pinned ? "Unpin" : "Pin to the top", () => void setPinned(conv, !pinned));
-    if (conv.members.includes(state.me)) item(conv.archived ? "Bring back (unarchive)" : "Archive", () => void setArchived(conv, !conv.archived));
+    item(pinned ? "Unpin" : "Pin to the top", () => {
+      closeEntryMenu();
+      void setPinned(conv, !pinned);
+    });
+    if (conv.kind === "project") {
+      const what = conv.room ? "room" : "project";
+      item(member ? `Rename ${what}…` : `Rename ${what} (members only)`, () => renameIn(menu, conv), member ? undefined : `Only members of ${conversationTitle(conv)} rename it`);
+    }
+    if (member) {
+      item(conv.archived ? "Bring back (unarchive)" : "Archive", () => {
+        closeEntryMenu();
+        void setArchived(conv, !conv.archived);
+      });
+    }
     const r = btn.getBoundingClientRect();
     menu.style.top = `${Math.round(r.bottom + 4)}px`;
-    menu.style.left = `${Math.round(Math.max(8, r.right - 180))}px`;
+    menu.style.left = `${Math.round(Math.max(8, Math.min(r.right - 220, innerWidth - 228)))}px`;
     document.body.append(menu);
     openEntryMenu = menu;
   });
   return btn;
+}
+
+/** The menu becomes a rename form: the current name filled in, Save or Cancel; Enter saves, Esc cancels. */
+function renameIn(menu: HTMLElement, conv: Conversation): void {
+  const room = !!conv.room;
+  const form = h("form", "entry-rename");
+  const label = h("label", "entry-rename-label", room ? "Room name (#name)" : "Project name (@@name)");
+  const input = h("input");
+  input.type = "text";
+  input.value = conv.name ?? "";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  label.append(input);
+  const error = h("p", "entry-rename-error");
+  error.hidden = true;
+  error.setAttribute("role", "alert");
+  const save = h("button", "btn btn-primary", "Save");
+  save.type = "submit";
+  const cancel = h("button", "btn", "Cancel");
+  cancel.type = "button";
+  cancel.addEventListener("click", closeEntryMenu);
+  const row = h("div", "entry-rename-actions");
+  row.append(cancel, save);
+  form.append(label, error, row);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = input.value.trim().replace(/^[#@]+/, "").toLowerCase();
+    if (!name || name === conv.name) return closeEntryMenu();
+    save.disabled = true;
+    try {
+      await postJson(`/api/conversations/${encodeURIComponent(conv.id)}/project`, { from: state.me, name });
+      closeEntryMenu();
+    } catch (err) {
+      error.textContent = errorText(err);
+      error.hidden = false;
+      save.disabled = false;
+      input.focus();
+    }
+  });
+  menu.replaceChildren(form);
+  menu.classList.add("entry-menu-form");
+  input.focus();
+  input.select();
 }
 
 /** The open draft of a new project or group DM ("new — not sent yet"); a draft DM with an agent is its Agents row. */

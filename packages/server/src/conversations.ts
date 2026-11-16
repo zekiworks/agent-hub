@@ -221,11 +221,21 @@ export async function handleConversationRoute(
       if (conversation.kind !== "group" && conversation.kind !== "project") {
         throw new HttpError(400, "Only a group DM can become a project");
       }
-      const rename = typeof request.name === "string" && request.name.trim() !== "" && request.name.trim().toLowerCase() !== conversation.name;
+      const wanted = typeof request.name === "string" ? request.name.trim().replace(/^#/, "") : "";
+      const rename = wanted !== "" && wanted.toLowerCase() !== conversation.name;
       if (conversation.kind === "group" && !rename) throw new HttpError(400, "A project needs a name");
-      if (conversation.kind === "project" && rename && writer.kind !== "human") throw new HttpError(403, "Only people rename projects");
-      const name = rename ? checkedProjectName(ctx, request.name as string, writer.id) : undefined;
-      if (name && db.projectByName(name)) throw new HttpError(409, `A project "${name}" exists already`);
+      if (conversation.kind === "project" && rename && writer.kind !== "human") throw new HttpError(403, "Only people rename projects and rooms");
+      // A room's name keeps the room rule (a letter in it, so "#8351" stays a message number; Ümit #10496).
+      let name: string | undefined;
+      if (rename && conversation.room) {
+        try {
+          name = roomName(wanted);
+        } catch (error) {
+          throw new HttpError(400, error instanceof Error ? error.message : String(error));
+        }
+        checkedProjectName(ctx, name, writer.id);
+      } else if (rename) name = checkedProjectName(ctx, wanted, writer.id);
+      if (name && db.projectByName(name)) throw new HttpError(409, `"${name}" is taken by a project or room already`);
       if (request.visibility !== undefined && !VISIBILITIES.includes(request.visibility)) {
         throw new HttpError(400, `visibility must be one of ${VISIBILITIES.join(", ")}`);
       }

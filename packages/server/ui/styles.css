@@ -2535,62 +2535,68 @@ ul.md-list ul.md-list { list-style: circle; }
   color: var(--sidebar-text);
 }
 
-/* ⋯ on a project, room or group (sidebar.ts entryMenuButton): on hover, faint on touch screens; over the entry's top
- * right, where its time hides while it shows. A pinned entry keeps a 📌 there. */
+/* ⋯ on a project, room or group (sidebar.ts entryMenuButton): always visible with readable contrast (Ümit #10501,
+ * #10504: small and invisible), at the entry's right edge; the entry keeps room for it, so the name and time never sit
+ * under it and a tap on ⋯ never opens the conversation. A pinned entry shows 📌 where its time was. */
 .side-list li {
   position: relative;
 }
 
-.entry-btn,
-.pin-mark {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  padding: 2px 6px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--sidebar-text);
-  font-size: 14px;
-  line-height: 1;
+.side-list li:has(.entry-btn) > .side-item {
+  padding-right: 40px;
 }
 
 .entry-btn {
-  opacity: 0;
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sidebar-muted);
+  font-size: 20px;
+  line-height: 1;
   cursor: pointer;
 }
 
-.side-list li:hover .entry-btn,
+.entry-btn:hover,
 .entry-btn:focus-visible {
-  opacity: 0.8;
-}
-
-.entry-btn:hover {
-  opacity: 1;
   background: var(--hover);
+  color: var(--sidebar-text);
 }
 
 .pin-mark {
+  position: absolute;
+  top: 6px;
+  right: 40px;
   font-size: 12px;
+  line-height: 1;
   pointer-events: none;
 }
 
-.side-list li:hover .pin-mark {
-  visibility: hidden;
-}
-
-.side-list li:has(.entry-btn):hover .side-item-time,
 .side-list li:has(.pin-mark) .side-item-time {
   visibility: hidden;
 }
 
-@media (hover: none) {
+@media (max-width: 640px) {
+  .side-list li:has(.entry-btn) > .side-item {
+    padding-right: 52px;
+  }
+
   .entry-btn {
-    opacity: 0.5;
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
   }
 
   .pin-mark {
-    right: 28px;
+    right: 52px;
   }
 }
 
@@ -2617,8 +2623,60 @@ ul.md-list ul.md-list { list-style: circle; }
   cursor: pointer;
 }
 
-.entry-menu-item:hover {
+.entry-menu-item:hover:not(:disabled) {
   background: var(--hover);
+}
+
+.entry-menu-item:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* Rename in the ⋯ menu (sidebar.ts renameIn): the field, then Cancel and Save. */
+.entry-menu.entry-menu-form {
+  width: 220px;
+  padding: 10px;
+}
+
+.entry-rename-label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.entry-rename-label input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  font-size: 15px;
+}
+
+.entry-rename-error {
+  margin: 6px 0 0;
+  color: var(--error);
+  font-size: 12px;
+}
+
+.entry-rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .entry-menu-item,
+  .entry-rename-actions .btn {
+    min-height: 44px;
+  }
+
+  .entry-rename-label input {
+    min-height: 44px;
+    font-size: 16px;
+  }
 }
 
 .conv-item.conv-muted {
