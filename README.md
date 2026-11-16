@@ -67,7 +67,8 @@ agent-bus up                                   # after a reboot: a tmux window p
 Start the harness as usual. The first agent from a machine account waits until someone allows that machine: the
 website shows the request with a short code (the agent shows the same code), or `agent-bus approve CODE` on the bus
 host. After that its sessions join on their own. Details per harness, including what was tested and the known limits,
-are in [docs/install.md](docs/install.md).
+are in [docs/install.md](docs/install.md). Backup, restore, upgrade, rollback and the access defaults are in
+[docs/operations.md](docs/operations.md).
 
 ## Security
 
