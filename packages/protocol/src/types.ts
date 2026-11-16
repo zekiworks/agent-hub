@@ -379,6 +379,8 @@ export interface StateResponse {
   /** Global ones among them (#10211): name → the label of their top-bar launcher (`--ext name=url,launcher=GPUs`).
    * The others are entity extensions: a tab of @@name and of agent name's DM. */
   launchers?: Record<string, string>;
+  /** The bus books GPUs (`serve --gpudash URL`): the website offers GPU booking under Tools. */
+  gpuBooking?: true;
 }
 
 /**

@@ -203,6 +203,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
         humans,
         ...(options.extensions && Object.keys(options.extensions).length > 0 ? { extensions: Object.keys(options.extensions) } : {}),
         ...(options.launchers && Object.keys(options.launchers).length > 0 ? { launchers: options.launchers } : {}),
+        ...(options.gpudash ? { gpuBooking: true as const } : {}),
       };
       return json(state);
     }
