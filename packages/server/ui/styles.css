@@ -2805,8 +2805,8 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 24px;
   }
 
-  /* Every other control a thumb hits is at least 44×44 (Ümit #10047): Back, ⓘ, ▤, ⋯, the pane's ✕ and tabs, the
-     Message/Task picker. Icons stay their size; the box around them grows. */
+  /* Every other control a thumb hits is at least 44×44 (Ümit #10047): Back, ⓘ, ▤, ⋯, the pane's ✕, tabs and heading
+     link, the Message/Task picker, 🗑 ⏸ while recording. Icons stay their size; the box around them grows. */
   .back-btn,
   .conv-header .icon-btn,
   .pane-close {
@@ -2814,7 +2814,8 @@ ul.md-list ul.md-list { list-style: circle; }
     min-height: 44px;
   }
 
-  .pane-tab {
+  .pane-tab,
+  .link-btn.pane-source.elsewhere {
     min-height: 44px;
   }
 
@@ -2831,8 +2832,8 @@ ul.md-list ul.md-list { list-style: circle; }
   }
 
   .composer .voice-rec-btn {
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 44px;
     font-size: 24px;
   }
 
