@@ -93,10 +93,6 @@ dom.newProjectBtn.addEventListener("click", () => {
   navigate(existing ? { kind: "conversation", id: existing.id } : { kind: "draft", to: [], project: raw });
 });
 
-dom.otherGroupsBtn.addEventListener("click", () => {
-  state.otherGroupsOpen = !state.otherGroupsOpen;
-  renderSidebar();
-});
 
 dom.browseBtn.addEventListener("click", () => {
   state.browsing = !state.browsing;
@@ -329,12 +325,32 @@ function renderConversationList(): void {
   const groupItems = groups.map(conversationItem);
   if (draft && state.view.kind === "draft" && state.view.project === undefined) groupItems.unshift(draft);
   dom.groupList.replaceChildren(...(groupItems.length > 0 ? groupItems : [h("li", "side-empty", "No group conversations.")]));
-  const others = otherGroups();
-  dom.otherGroupsBtn.hidden = others.length === 0;
-  dom.otherGroupsBtn.textContent = `${state.otherGroupsOpen ? "▾" : "▸"} Other groups (${others.length})`;
-  dom.otherGroupsBtn.title = "Agents' conversations without a person in them, and your archived groups";
-  dom.otherGroupsList.hidden = !state.otherGroupsOpen || others.length === 0;
-  dom.otherGroupsList.replaceChildren(...(state.otherGroupsOpen ? others.map(conversationItem) : []));
+  // Three folds, each with its own count (Can, 16 Nov), one open at a time.
+  const folds = otherGroups();
+  const parts: HTMLElement[] = [];
+  for (const [key, label, title] of [
+    ["agentGroups", "Agents' groups", "Group DMs of agents only; you can read them"],
+    ["agentDms", "Agents' DMs", "DMs between two agents; you can read them"],
+    ["archived", "Archived", "Archived group DMs and DMs: yours, and agents' ones"],
+  ] as const) {
+    const list = folds[key];
+    if (list.length === 0) continue;
+    const open = state.otherGroupsOpen === key;
+    const btn = h("button", "link-btn browse-btn", `${open ? "▾" : "▸"} ${label} (${list.length})`);
+    btn.type = "button";
+    btn.title = title;
+    btn.addEventListener("click", () => {
+      state.otherGroupsOpen = open ? "" : key;
+      renderSidebar();
+    });
+    parts.push(btn);
+    if (open) {
+      const ul = h("ul", "side-list");
+      ul.append(...list.map(conversationItem));
+      parts.push(ul);
+    }
+  }
+  dom.groupFolds.replaceChildren(...parts);
 }
 
 /** "with @a, @b · clear", plus how many unread messages the filter hides. */

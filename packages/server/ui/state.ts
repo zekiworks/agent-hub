@@ -48,7 +48,8 @@ export const state = {
   /** "Other projects" is open. */
   browsing: false,
   /** "Other groups" is open. */
-  otherGroupsOpen: false,
+  /** Which Groups fold is open, if any. */
+  otherGroupsOpen: "" as "" | "agentGroups" | "agentDms" | "archived",
   readAt: {} as Record<string, number>,
   view: { kind: "conversation", id: ALL_CONVERSATION_ID } as View,
   staged: [] as File[],
@@ -141,11 +142,18 @@ export function sortedGroups(): Conversation[] {
  * "Other groups": the group DMs and DMs I can read and am not in, i.e. the agents' own (no person in them; people
  * may read them for oversight, docs/projects.md), and my archived ones; the latter last.
  */
-export function otherGroups(): Conversation[] {
-  return Array.from(state.conversations.values())
-    .filter((c) => (c.kind === "group" || c.kind === "dm") && !c.preview)
-    .filter((c) => (!c.members.includes(state.me) && isAgentOnly(c)) || (c.archived && c.members.includes(state.me)))
-    .sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || byLast(a, b));
+/**
+ * The Groups section's folds (Can, 16 Nov: one "Other groups" mixed three kinds and read as growth): live agents-only
+ * group DMs, DMs between two agents, and archived group DMs and DMs (mine, and agents-only ones).
+ */
+export function otherGroups(): { agentGroups: Conversation[]; agentDms: Conversation[]; archived: Conversation[] } {
+  const all = Array.from(state.conversations.values()).filter((c) => (c.kind === "group" || c.kind === "dm") && !c.preview);
+  const theirs = (c: Conversation) => !c.members.includes(state.me) && isAgentOnly(c);
+  return {
+    agentGroups: all.filter((c) => c.kind === "group" && !c.archived && theirs(c)).sort(byLast),
+    agentDms: all.filter((c) => c.kind === "dm" && !c.archived && theirs(c)).sort(byLast),
+    archived: all.filter((c) => c.archived && (c.members.includes(state.me) || theirs(c))).sort(byLast),
+  };
 }
 
 /** "Other projects": the projects I can see and am not in (open or discoverable), archived ones last. */
