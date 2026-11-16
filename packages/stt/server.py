@@ -27,6 +27,8 @@ import av
 import numpy as np
 from faster_whisper import WhisperModel
 
+from silence import no_speech
+
 MODEL = os.environ.get("STT_MODEL", "mobiuslabsgmbh/faster-whisper-large-v3-turbo")
 HOST = os.environ.get("STT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("STT_PORT", "7810"))
@@ -38,28 +40,6 @@ LIQUID_URL = os.environ.get("STT_LIQUID_URL", "").rstrip("/")
 # Empty: any language, Whisper's guess.
 LANGUAGES = [code for code in os.environ.get("STT_LANGUAGES", "tr,en").split(",") if code]
 OTHER_LANGUAGE_MIN = 0.85
-# What Whisper writes for a moment of noise or silence (learned from subtitled videos), with full confidence, so
-# segment scores cannot catch it. A transcript that is only one of these is no speech.
-SILENCE_PHRASES = {
-    "altyazı m.k.",
-    "altyazı m.k",
-    "izlediğiniz için teşekkür ederim.",
-    "izlediğiniz için teşekkürler.",
-    "abone olmayı unutmayın.",
-    "thank you for watching.",
-    "thanks for watching!",
-    "thank you.",
-    "subtitles by the amara.org community",
-}
-
-def no_speech(text: str) -> bool:
-    """A transcript Whisper writes for noise or a sound too short to hear, not for speech: one of SILENCE_PHRASES (Python
-    lowercases "İ" to "i" plus a combining dot, so it is folded first; end punctuation ignored), or a long run without a
-    single letter ("6.0.0.0.0.0.0.0", Ümit #10784)."""
-    plain = text.replace("İ", "i").lower().strip().rstrip(".!?…").strip()
-    if plain in {p.rstrip(".!?…") for p in SILENCE_PHRASES}:
-        return True
-    return len(plain) >= 8 and not any(ch.isalpha() for ch in plain)
 
 
 model = WhisperModel(MODEL, device="cpu", compute_type="int8", cpu_threads=THREADS)
