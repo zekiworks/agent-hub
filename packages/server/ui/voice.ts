@@ -7,9 +7,10 @@ import type { TranscriptResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { hideError, showError, updateComposerState } from "./composer";
 import { dom } from "./dom";
-import { errorText } from "./format";
+import { errorText, nameList } from "./format";
+import { viewHash } from "./routing";
 import { postToView, uploadFile } from "./send";
-import { state } from "./state";
+import { conversationTitle, state, type View } from "./state";
 
 /** A press shorter than this is a click: recording goes on until Send. Longer: hold to talk, let go to send. */
 const MIN_RECORDING_MS = 600;
@@ -39,6 +40,16 @@ interface Recording {
   levels: number[];
   lastLevelAt: number;
   frame: number;
+  /** Where it goes: the conversation it was started in, even if another one is open by the time it is sent (codex-ui
+   * #10593: it went to whatever was open at Send, after the asynchronous stop). */
+  view: View;
+}
+
+/** "#room-a", "@@website", "logic, umit": where a recording started elsewhere will go. */
+function viewLabel(view: View): string {
+  if (view.kind === "draft") return view.project !== undefined ? `@@${view.project}` : nameList(view.to);
+  const conv = state.conversations.get(view.id);
+  return conv ? conversationTitle(conv) : "the conversation it started in";
 }
 
 let recording: Recording | undefined;
@@ -115,7 +126,8 @@ function tick(rec: Recording): void {
   }
   const elapsed = recordedMs(rec);
   if (elapsed >= MAX_RECORDING_MS) return void stop(false);
-  dom.voiceTime.textContent = clock(elapsed);
+  // Opened another conversation meanwhile: the bar says where this one goes.
+  dom.voiceTime.textContent = viewHash(state.view) === viewHash(rec.view) ? clock(elapsed) : `${clock(elapsed)} → ${viewLabel(rec.view)}`;
   drawWave(rec);
   rec.frame = requestAnimationFrame(() => tick(rec));
 }
@@ -161,6 +173,7 @@ async function start(): Promise<void> {
     levels: [],
     lastLevelAt: 0,
     frame: 0,
+    view: state.view,
   };
   recorder.addEventListener("dataavailable", (event) => {
     if (event.data.size > 0) rec.chunks.push(event.data);
@@ -207,11 +220,10 @@ async function stop(cancel: boolean): Promise<void> {
   const type = rec.recorder.mimeType || rec.chunks[0]?.type || "audio/webm";
   const ext = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
   const stamp = new Date(rec.startedAt).toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
-  await send(new File(rec.chunks, `voice-${stamp}.${ext}`, { type: type.split(";")[0] }), duration);
+  await send(new File(rec.chunks, `voice-${stamp}.${ext}`, { type: type.split(";")[0] }), duration, rec.view);
 }
 
-async function send(file: File, duration: number): Promise<void> {
-  const view = state.view;
+async function send(file: File, duration: number, view: View): Promise<void> {
   state.sending = true;
   dom.voiceBtn.disabled = true;
   updateComposerState();
@@ -228,7 +240,8 @@ async function send(file: File, duration: number): Promise<void> {
       text = `🎤 (voice message; no text: ${errorText(err)})`;
     }
     await postToView(view, text, [ref.id]);
-    hideStatus();
+    if (viewHash(state.view) !== viewHash(view)) showStatus(`Voice message sent to ${viewLabel(view)}, where it was recorded.`);
+    else hideStatus();
   } catch (err) {
     hideStatus();
     showError(`Voice message not sent: ${errorText(err)}`);
