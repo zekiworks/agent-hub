@@ -25,6 +25,7 @@ import { refreshInbox } from "./inbox";
 import "./files";
 import "./settings";
 import "./stats";
+import "./tools";
 import "./voice";
 import { renderSidebar } from "./sidebar";
 import { connectViewer, setLinkStatus } from "./socket";

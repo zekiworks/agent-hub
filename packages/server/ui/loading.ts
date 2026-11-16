@@ -19,7 +19,7 @@ export async function loadState(): Promise<void> {
   state.humans = res.humans;
   state.participants = res.participants;
   state.conversations = new Map(res.conversations.map((c) => [c.id, c]));
-  registerAgentPages(res.extensions ?? []);
+  registerAgentPages(res.extensions ?? [], res.launchers ?? {});
 }
 
 export async function loadMessages(conversationId: string): Promise<void> {

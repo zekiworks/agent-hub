@@ -80,18 +80,19 @@ button:disabled {
     "side main";
 }
 
-/* With the right pane open, the conversation is only as wide as its column (plus the chat box's 2 × 20px margin)
-   and the pane takes the rest; when space runs out the conversation narrows first. */
+/* With the Workspace open (pane.ts), it takes its own width (~420 px, or what it was dragged to: --ws-width, #10103)
+   and the conversation the rest. */
 .app.with-pane {
-  grid-template-columns: 280px minmax(0, calc(var(--column) + 40px)) minmax(360px, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr) var(--ws-width, 420px);
   grid-template-areas:
     "top top top"
     "side main doc";
 }
 
-/* The right pane (pane.ts): a row of extension tabs, then the open extension's body. */
+/* The Workspace: its label, a title bar (‹ › history, what it shows, ✕), an entity's tabs, then the body. */
 .pane {
   grid-area: doc;
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -103,30 +104,184 @@ button:disabled {
   display: none;
 }
 
-/* The conversation the pane shows, while it is not the one open on the left (pane.ts); a click opens it. */
+/* Its left edge: drag to resize, double-click for the default width. */
+.ws-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 5;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.ws-resize:hover,
+.app.ws-resizing .ws-resize {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+.app.ws-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* While dragging, frames must not swallow the pointer. */
+.app.ws-resizing iframe {
+  pointer-events: none;
+}
+
+/* "Workspace" (#10133): quiet, always there; the title below says what is open in it. */
+.ws-label {
+  padding: 8px 14px 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ws-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px 6px;
+}
+
+.ws-nav {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+}
+
+.ws-nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* What the Workspace shows ("Agent · @codex-ui", "Your inbox"); a link while it is not the conversation on the left. */
 .link-btn.pane-source {
-  display: block;
-  width: 100%;
-  padding: 8px 14px 2px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
   border: 0;
   background: transparent;
   text-align: left;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* While the pane shows the page on the left, its heading is plain text; only another subject's is a link. */
 .link-btn.pane-source:not(.elsewhere) {
   color: var(--text);
   cursor: default;
   text-decoration: none;
 }
 
-.link-btn.pane-source[hidden] {
+/* A global item (your inbox, GPUs) has no entity tabs. */
+.app.ws-global .pane-head {
   display: none;
+}
+
+.app.ws-global .ws-titlebar {
+  border-bottom: 1px solid var(--border);
+}
+
+/* The same entity on both sides (#10122): both headers share one tint and an accent line, in a project's own colour.
+   Desktop only: where the Workspace covers the conversation there is nothing side by side. */
+@media (min-width: 1101px) {
+  .app.ws-linked .conv-header,
+  .app.ws-linked .ws-label,
+  .app.ws-linked .ws-titlebar {
+    background: color-mix(in srgb, var(--ws-tint) 13%, transparent);
+  }
+
+  .app.ws-linked .conv-header {
+    box-shadow: inset 0 -2px 0 var(--ws-tint);
+  }
+
+  .app.ws-linked .pane-head {
+    box-shadow: inset 0 2px 0 var(--ws-tint);
+  }
+}
+
+@media (max-width: 1100px) {
+  .ws-resize {
+    display: none;
+  }
+}
+
+/* "Open in Workspace ▾" in a conversation's header (#10215); the short label on phones. */
+.ws-open-btn {
+  flex: none;
+  padding: 4px 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.ws-open-btn.on {
+  color: var(--accent);
+}
+
+.ws-open-short {
+  display: none;
+}
+
+.ws-menu-close {
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+/* Tools ▾ in the top bar (tools.ts). */
+.tools {
+  position: relative;
+}
+
+.entry-menu.tools-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+}
+
+/* Global Workspace items' buttons (GPUs) and ✉: lit while theirs is open. */
+.launcher-btn.active,
+.inbox-topbtn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* "✉ Your inbox" at the top of the left list (#10107). */
+.side-inbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 16px);
+  margin: 10px 8px 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sidebar-text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.side-inbox:hover,
+.side-inbox.active {
+  background: var(--hover);
+}
+
+.side-inbox .side-count {
+  margin-left: auto;
+}
+
+.side-inbox.inbox-unread .side-count {
+  color: var(--error);
 }
 
 .pane-head {
@@ -198,8 +353,10 @@ button:disabled {
   padding: 14px 16px;
 }
 
-.pane-btn.on {
-  color: var(--accent);
+.ws-open-btn.on .ws-open-long,
+.ws-open-btn.on .ws-open-short {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* File: the viewer of an opened attachment (files.ts). */
@@ -2805,18 +2962,29 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 24px;
   }
 
-  /* Every other control a thumb hits is at least 44×44 (Ümit #10047): Back, ⓘ, ▤, ⋯, the pane's ✕, tabs and heading
-     link, the Message/Task picker, 🗑 ⏸ while recording. Icons stay their size; the box around them grows. */
+  /* Every other control a thumb hits is at least 44×44 (Ümit #10047): Back, ⓘ, ⋯, Workspace ▾, the Workspace's ‹ › ✕,
+     tabs and heading link, the Message/Task picker, 🗑 ⏸ while recording. Icons stay their size; the box grows. */
   .back-btn,
   .conv-header .icon-btn,
-  .pane-close {
+  .pane-close,
+  .ws-nav {
     min-width: 44px;
     min-height: 44px;
   }
 
   .pane-tab,
-  .link-btn.pane-source.elsewhere {
+  .link-btn.pane-source.elsewhere,
+  .ws-open-btn,
+  .side-inbox {
     min-height: 44px;
+  }
+
+  .ws-open-long {
+    display: none;
+  }
+
+  .ws-open-short {
+    display: inline;
   }
 
   .task-select {

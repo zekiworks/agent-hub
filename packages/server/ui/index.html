@@ -18,8 +18,16 @@
       <a id="auth-link" class="topbar-link" href="/auth" hidden>Sign in</a>
       <div class="topbar-spacer"></div>
       <button id="settings-btn" type="button" class="link-btn" title="Your settings">Settings</button>
-      <button id="stats-btn" type="button" class="link-btn" title="Messages written and agent turns started, per participant">Stats</button>
-      <button id="gpu-btn" type="button" class="link-btn" title="Who holds which GPU, and book one">GPUs</button>
+      <!-- Tools (#10101): occasional utilities in one menu (tools.ts). -->
+      <div class="tools">
+        <button id="tools-btn" type="button" class="link-btn" aria-haspopup="menu" aria-expanded="false">Tools ▾</button>
+        <div id="tools-menu" class="entry-menu tools-menu" role="menu" hidden>
+          <button id="stats-btn" type="button" class="entry-menu-item" role="menuitem" title="Messages written and agent turns started, per participant">Stats</button>
+          <button id="gpu-btn" type="button" class="entry-menu-item" role="menuitem" title="Who holds which GPU, and book one">GPU booking</button>
+        </div>
+      </div>
+      <!-- Global Workspace items configured on this bus (agentpages.ts), e.g. GPUs. -->
+      <span id="launchers" class="launchers"></span>
       <button id="notify-btn" type="button" class="link-btn notify-btn" hidden></button>
       <button id="goto-btn" type="button" class="link-btn" title="Go to a message by its number (or open …/#/m/1234)">#…</button>
       <button id="inbox-btn" type="button" class="inbox-topbtn" title="Inbox: tasks for you and tasks you assigned">✉</button>
@@ -31,6 +39,8 @@
     <div id="agent-requests" class="agent-requests" role="alert" hidden></div>
 
     <aside class="sidebar">
+      <!-- Your inbox, always reachable (#10107); opens in the Workspace. -->
+      <button id="inbox-row" type="button" class="side-inbox" hidden>✉ Your inbox <span id="inbox-row-count" class="side-count"></span></button>
       <section class="side-section">
         <div class="side-heading">
           <button id="agents-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the agent list">▾ Agents</button>
@@ -89,7 +99,7 @@
         <div class="conv-bar">
           <button id="back-btn" type="button" class="back-btn" title="Conversations">←<span id="back-badge" class="badge" hidden></span></button>
           <h1 id="conv-title" class="conv-title"></h1>
-          <button id="pane-btn" type="button" class="icon-btn pane-btn" title="Files shared here, and more, on the right" aria-pressed="false" hidden>▤</button>
+          <button id="pane-btn" type="button" class="link-btn ws-open-btn" title="Open this conversation's tools in the Workspace on the right" aria-haspopup="menu" aria-pressed="false" hidden><span class="ws-open-long">Open in Workspace</span><span class="ws-open-short">Workspace</span> ▾</button>
           <button id="conv-menu-btn" type="button" class="icon-btn" title="Members, notifications and settings of this conversation" hidden>⋯</button>
           <button id="details-btn" type="button" class="icon-btn details-btn" title="Members and details" aria-pressed="false">ⓘ</button>
         </div>
@@ -162,12 +172,18 @@
       <div id="drop-overlay" class="drop-overlay" hidden>Drop files to attach</div>
     </main>
 
-    <!-- The right pane: extensions as tabs (pane.ts, docs/right-pane.md). -->
+    <!-- The Workspace (pane.ts, docs/right-pane.md): one item at a time, an entity's tabs or a global view. -->
     <aside id="pane" class="pane" hidden>
-      <button id="pane-source" type="button" class="link-btn pane-source" hidden></button>
+      <div id="ws-resize" class="ws-resize" title="Drag to resize; double-click for the default width"></div>
+      <div class="ws-label">Workspace</div>
+      <div class="ws-titlebar">
+        <button id="ws-back" type="button" class="icon-btn ws-nav" aria-label="Previous workspace item" title="Previous">‹</button>
+        <button id="ws-forward" type="button" class="icon-btn ws-nav" aria-label="Next workspace item" title="Next">›</button>
+        <button id="pane-source" type="button" class="link-btn pane-source"></button>
+        <button id="pane-close" type="button" class="icon-btn pane-close" title="Close (Esc)">✕</button>
+      </div>
       <div class="pane-head">
         <div id="pane-tabs" class="pane-tabs" role="tablist"></div>
-        <button id="pane-close" type="button" class="icon-btn pane-close" title="Close (Esc)">✕</button>
       </div>
       <div id="pane-body" class="pane-body"></div>
     </aside>

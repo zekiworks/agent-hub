@@ -374,8 +374,11 @@ export interface StateResponse {
   conversations: Conversation[];
   /** Configured human ids, for the website's profile picker. */
   humans: string[];
-  /** Agents' pages the website shows as right-pane tabs, served at /ext/<name>/<key>/ (`serve --ext`). */
+  /** Pages the website shows in the Workspace, served at /ext/<name>/<key>/ (`serve --ext`). */
   extensions?: string[];
+  /** Global ones among them (#10211): name → the label of their top-bar launcher (`--ext name=url,launcher=GPUs`).
+   * The others are entity extensions: a tab of @@name and of agent name's DM. */
+  launchers?: Record<string, string>;
 }
 
 /**

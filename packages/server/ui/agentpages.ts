@@ -1,10 +1,12 @@
-// Right-pane tabs for agents' own pages (`serve --ext NAME=URL`, e.g. gpudash's dashboard), showing the page in a
-// sandboxed frame. A page belongs to NAME (Can, 15 Nov): its tab is in the project @@NAME and the DM with agent NAME;
-// the pane keeps it while other conversations are opened on the left. The frame gets scripts but
-// not the website's origin, so the page cannot read the session; clipboard writes are allowed for click-to-copy.
+// Web pages the bus serves (`serve --ext NAME=URL[,launcher=LABEL]`) in the Workspace, each in a sandboxed frame. Two
+// kinds (Can, #10206; #10211): without a launcher a page belongs to NAME, a tab of the project @@NAME and the DM with
+// agent NAME (compactor's board); with one it is a global item opened from the top bar (gpudash's dashboard as
+// "GPUs"), no agent needed. The frame gets scripts but not the website's origin, so the page cannot read the session;
+// clipboard writes are allowed for click-to-copy.
 import { extensionUrl } from "./api";
+import { dom } from "./dom";
 import { h } from "./html";
-import { registerExtension } from "./pane";
+import { globalShown, onWorkspaceChange, registerExtension, toggleGlobal } from "./pane";
 import { directAgentOf, state, type View } from "./state";
 
 const registered = new Set<string>();
@@ -16,27 +18,41 @@ function belongsTo(view: View, name: string): boolean {
   return conv?.kind === "project" ? conv.name === name : directAgentOf(view) === name;
 }
 
-/** Adds a tab for each page the bus serves (from /api/state); pages already registered keep their frame. */
-export function registerAgentPages(names: readonly string[]): void {
+/** Registers each page the bus serves (from /api/state); pages already registered keep their frame. */
+export function registerAgentPages(names: readonly string[], launchers: Readonly<Record<string, string>>): void {
   for (const name of names) {
     if (registered.has(name)) continue;
     registered.add(name);
+    const id = `ext-${name}`;
+    const launcher = launchers[name];
     let frame: HTMLIFrameElement | undefined;
     registerExtension({
-      id: `ext-${name}`,
+      id,
       order: 30,
-      title: () => name,
-      applies: (view) => belongsTo(view, name),
+      ...(launcher ? { scope: "global" as const } : {}),
+      title: () => launcher ?? name,
+      applies: (view) => (launcher ? !!state.me : belongsTo(view, name)),
       render: (body) => {
         // Drawn once: switching conversations must not reload a live dashboard.
         if (frame && frame.parentElement === body) return;
         frame = h("iframe", "agent-page");
         frame.setAttribute("sandbox", "allow-scripts allow-popups allow-popups-to-escape-sandbox");
         frame.setAttribute("allow", "clipboard-write");
-        frame.title = name;
+        frame.title = launcher ?? name;
         frame.src = extensionUrl(name);
         body.replaceChildren(frame);
       },
+    });
+    if (!launcher) continue;
+    const button = h("button", "link-btn launcher-btn", launcher);
+    button.type = "button";
+    button.title = `${launcher} in the Workspace`;
+    button.addEventListener("click", () => toggleGlobal(id));
+    dom.launchers.append(button);
+    onWorkspaceChange(() => {
+      const on = globalShown(id);
+      button.classList.toggle("active", on);
+      button.setAttribute("aria-pressed", on ? "true" : "false");
     });
   }
 }

@@ -51,8 +51,10 @@ export interface BusServerOptions {
   sttUrl?: string;
   /** A text-to-speech server (llama-server with LFM3-Audio, e.g. http://127.0.0.1:9941) that reads messages aloud. */
   ttsUrl?: string;
-  /** Agents' own pages shown in the website's right pane: name → local URL (`--ext gpudash=http://127.0.0.1:3420`). */
+  /** Pages shown in the website's Workspace: name → local URL (`--ext gpudash=http://127.0.0.1:3420`). */
   extensions?: Record<string, string>;
+  /** Which of them are global, opened by a top-bar launcher: name → its label (`--ext gpudash=…,launcher=GPUs`). */
+  launchers?: Record<string, string>;
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
   forgetOfflineDays?: number;
   /** Projects and group DMs quiet this many days, pinned by nobody, are archived (Can, 15 Nov). 0: never. Default 3. */
@@ -198,6 +200,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
         conversations,
         humans,
         ...(options.extensions && Object.keys(options.extensions).length > 0 ? { extensions: Object.keys(options.extensions) } : {}),
+        ...(options.launchers && Object.keys(options.launchers).length > 0 ? { launchers: options.launchers } : {}),
       };
       return json(state);
     }

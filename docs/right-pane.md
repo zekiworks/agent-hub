@@ -1,19 +1,31 @@
-# The right pane: extensions (design)
+# The Workspace (right pane): extensions (design)
 
 Status: Can's ideas of 14 Nov 2026. Built so far: the pane with its extension system, **File** and **Shared** (14 Nov),
-**Checklist** and **Live** (15 Nov). Progress comes next (build order below).
+**Checklist** and **Live** (15 Nov); on 16 Nov it became the **Workspace** (#hilde-bus cards, Can and Ümit, below).
+Progress comes next (build order below).
 
 ## How an extension plugs in (built)
 
-`packages/server/ui/pane.ts`: an extension registers `{ id, order, title(), applies(view), render(body, view),
-shown?(visible) }`. The pane is opened for a view, its source, and keeps it (Can, 15 Nov): opening another conversation
-on the left does not change the pane; only opening an extension for the open conversation does (▤, a file clicked in
-a message). While source and main panel differ, the source's name heads the pane, and a click on it opens it. Tabs
-show while `applies` is true for the source; `render` fills its own part of the pane when the source changes or the
-extension calls `refreshPane(id)`, never on tab switches, so scroll positions stay; `shown` tells it when its tab
-appears or goes (Live streams only then). Open or closed and the last tab are kept per browser; ▤ closes the pane when
-it shows the open conversation and switches it to the open conversation otherwise; Esc closes it. On phones the pane
-covers the conversation.
+`packages/server/ui/pane.ts`: an extension registers `{ id, order, scope?, title(), applies(view), render(body, view),
+shown?(visible) }`. The Workspace (Can, 16 Nov: "like a desktop") shows one item at a time, under a quiet "Workspace"
+label (#10133), a title bar (‹ › history, what it shows, ✕) and, for an entity, its tabs:
+
+- **Entity extensions** (`scope` "entity", the default: Live, Home, Checklist, File, Shared, an agent's own page)
+  belong to the thing on the left (#10206). They open from its header's "Open in Workspace ▾" menu (#10215), which
+  lists only those whose `applies` is true for it. The Workspace is headed by the entity ("Agent · @compactor",
+  "Project · @@website"; #10042) with its tabs.
+- **Global extensions** (`scope` "global": your Inbox, GPUs) open from their top-bar button (✉, a launcher) or, for
+  the Inbox, the "✉ Your inbox" row at the top of the left list (#10107). They have no tabs; their button is lit while
+  shown and, pressed again, goes back a step.
+
+The Workspace keeps its item while the main panel moves (Can, 15 Nov); a click on an entity's heading then opens it.
+While it shows the entity open on the left, both headers share a tint in the project's own colour (#10122; desktop
+only). ‹ › walk the last 20 items, kept per browser tab; tab switches inside one entity are not steps (#10186). `render`
+fills an extension's part when its view changes or it calls `refreshPane(id)`, never on tab switches, so scroll
+positions stay; `shown` tells it when it appears or goes (Live streams only then). Open or closed, the last tab and the
+width are kept per browser: 420 px by default, the left edge drags (the conversation keeps at least 420 px),
+double-click resets (#10103). Esc closes it. At 1100 px and less it covers the conversation; on phones it is full
+screen.
 
 ## One pane, tabs by context
 
@@ -99,13 +111,15 @@ is working on (and the updates of a long task), its blockers, and links to notab
   it updates live. Full markdown, with `#1234`, `#room` and `@id` links.
 - Agents with their own site (compactor, gpudash: below) keep its tab and link it from their Home.
 
-## Agents' own pages (built)
+## Pages the bus serves (built)
 
-An agent that keeps its own web page (gpudash's dashboard, a progress board) can show it as a pane tab. The page
-belongs to NAME (Can, 15 Nov): its tab shows in the project @@NAME and in the DM with agent NAME, and like every tab
-stays in the pane while other conversations are opened on the left. Configured with `agent-bus serve --ext
-NAME=URL` (repeatable), e.g. `--ext gpudash=http://127.0.0.1:3420`. The bus lists the names in `GET /api/state`
-(`extensions`) and serves each page at `/ext/NAME/KEY/…`, forwarding to `URL/…`:
+A service with its own web page (gpudash's dashboard, a progress board) shows in the Workspace. Configured with
+`agent-bus serve --ext NAME=URL[,launcher=LABEL]` (repeatable). Without a launcher the page is an entity extension that
+belongs to NAME (Can, 15 Nov): a tab of the project @@NAME and of the DM with agent NAME (e.g.
+`--ext compactor=http://127.0.0.1:8899`). With one it is global (#10211): a top-bar button LABEL opens it from any
+conversation, no agent needed (e.g. `--ext gpudash=http://127.0.0.1:3420,launcher=GPUs`). The bus lists the names in
+`GET /api/state` (`extensions`, and `launchers`: name → label) and serves each page at `/ext/NAME/KEY/…`, forwarding
+to `URL/…`:
 
 - Signed-in people only. A frame cannot send the session header, so the key rides in the path: the signed file key
   the website already holds (a day long, and only while its person's session lasts). A page that uses relative URLs
@@ -134,5 +148,6 @@ reading, finishing and pressing Send.
   15 Nov). Check `event.source === parent`. More could follow (the person's id, theme, the conversation on the left),
   with only what the page may know.
 
-On bariton the bus runs with `--ext gpudash=http://127.0.0.1:3420` (Can, 15 Nov); gpudash's narrow layout and
+On bariton the bus runs with `--ext gpudash=http://127.0.0.1:3420,launcher=GPUs` (Can, 16 Nov: GPUs open from the top
+bar; the old dialog is "GPU booking" under Tools until gpudash's own buttons work, #10194); gpudash's narrow layout and
 relative URLs are in its own project.

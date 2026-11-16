@@ -9,7 +9,7 @@ import { dom, PHONE } from "./dom";
 import { errorText, relativeTime } from "./format";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
-import { closePane, openPane, refreshPane, registerExtension } from "./pane";
+import { closePane, globalShown, onWorkspaceChange, refreshPane, registerExtension, toggleGlobal } from "./pane";
 import { navigate, viewHash } from "./routing";
 import { conversationTitle, state } from "./state";
 import { mentionNodes } from "./text";
@@ -45,8 +45,11 @@ function renderButton(): void {
   btn.classList.toggle("inbox-unread", counts.unread > 0);
   btn.title =
     counts.open === 0
-      ? "Inbox: no open tasks"
-      : `Inbox: ${counts.open} open task${counts.open === 1 ? "" : "s"}${counts.unread ? `, ${counts.unread} unread` : ""}`;
+      ? "Your inbox: no open tasks"
+      : `Your inbox: ${counts.open} open task${counts.open === 1 ? "" : "s"}${counts.unread ? `, ${counts.unread} unread` : ""}`;
+  dom.inboxRow.hidden = !state.me;
+  dom.inboxRowCount.textContent = counts.open > 0 ? String(counts.open) : "";
+  dom.inboxRow.classList.toggle("inbox-unread", counts.unread > 0);
 }
 
 /** Marks the tasks shown under "For me" as read (the button turns from red to yellow). */
@@ -171,7 +174,9 @@ function renderCard(message: Message, conversation: Conversation | undefined): H
 registerExtension({
   id: "inbox",
   order: 40,
-  title: () => (counts.open > 0 ? `Inbox (${counts.open})` : "Inbox"),
+  // Yours, not the conversation's (Can, #10037): a Workspace item of its own, beside whatever is open on the left.
+  scope: "global",
+  title: () => (counts.open > 0 ? `Your inbox · ${counts.open} open` : "Your inbox"),
   applies: () => !!state.me,
   render: (body) => {
     const root = h("div", "inbox pane-pad");
@@ -212,4 +217,12 @@ registerExtension({
   },
 });
 
-dom.inboxBtn.addEventListener("click", () => openPane("inbox"));
+dom.inboxBtn.addEventListener("click", () => toggleGlobal("inbox"));
+dom.inboxRow.addEventListener("click", () => toggleGlobal("inbox"));
+// ✉ and the row are lit while the Workspace shows your inbox.
+onWorkspaceChange(() => {
+  const on = globalShown("inbox");
+  dom.inboxBtn.classList.toggle("active", on);
+  dom.inboxBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  dom.inboxRow.classList.toggle("active", on);
+});
