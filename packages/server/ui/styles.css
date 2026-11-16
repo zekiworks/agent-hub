@@ -2319,8 +2319,11 @@ ul.md-list ul.md-list { list-style: circle; }
   font-weight: 650;
 }
 
+/* Nothing to send yet: still a button, neutral, with an outline (codex-ui #10700, Ümit: "only white letters, Send");
+ * copper only once it can send. */
 .send-btn:disabled {
-  background: var(--panel-raised);
+  background: var(--input);
+  box-shadow: inset 0 0 0 1px var(--border);
   color: var(--muted);
 }
 
@@ -2497,6 +2500,17 @@ ul.md-list ul.md-list { list-style: circle; }
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* New room / group (group.ts): its buttons stay at the dialog's bottom edge while the participant list and the fields
+ * scroll, so a phone with the keyboard open still shows them (codex-ui #10771: they started 200 px below at 360×400). */
+#group-dialog .dialog-actions {
+  position: sticky;
+  bottom: -22px; /* the dialog's padding */
+  margin: 0 -22px -22px;
+  padding: 12px 22px 22px;
+  border-top: 1px solid var(--border);
+  background: Canvas; /* the dialog's own colour */
 }
 
 /* "Close window" at the bottom of every dialog (dialogs.ts). */
