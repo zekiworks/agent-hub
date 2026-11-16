@@ -1,5 +1,6 @@
-// The GPUs dialog: who holds each shared resource now and next, what runs on it, and booking, releasing and
-// extending for the signed-in person (POST /api/reservations…, the same schedule the agents' tool uses).
+// The GPU booking dialog: who holds each shared resource now and next, what runs on it, and booking, releasing,
+// extending, shared/private and notices for the signed-in person (POST /api/reservations…, the same schedule the
+// agents' tool uses). A Workspace page (gpudash's) can open it at a GPU or a hold (#10194); the person acts here.
 import type { Reservation, ReservationResponse, ReservationState, Resource, ResourcesResponse } from "@agent-bus/protocol";
 import { api, postJson } from "./api";
 import { dom } from "./dom";
@@ -66,12 +67,18 @@ function render(): void {
       : mine.map((r) => {
           const resource = listing?.resources.find((x) => x.id === r.resourceId);
           const li = h("li", "gpu-row gpu-mine-row");
+          li.dataset.reservation = r.id;
           li.append(h("span", "gpu-mine-text", `${resource?.label ?? r.resourceId}: ${holdText(r, resource)}`));
           const actions = h("span", "gpu-actions");
           if (r.state !== "queued") actions.append(actionButton("+2 h", `Extend ${r.id} by 2 hours`, () => postJson(`/api/reservations/${r.id}/extend`, { from: state.me, hours: 2 })));
           actions.append(
             actionButton(r.state === "planned" || r.state === "queued" ? "Cancel" : "Release", `End ${r.id} now`, () =>
               postJson(`/api/reservations/${r.id}/release`, { from: state.me })
+            )
+          );
+          actions.append(
+            actionButton(r.private ? "Make shared" : "Make private", r.private ? "Others may send requests to your servers on it" : "Only you use it", () =>
+              postJson(`/api/reservations/${r.id}/mode`, { from: state.me, mode: r.private ? "shared" : "private" })
             )
           );
           li.append(actions);
@@ -131,12 +138,65 @@ export function resourcesChanged(): void {
   if (dom.gpuDialog.open) void load().catch(() => undefined);
 }
 
-dom.gpuBtn.addEventListener("click", () => {
+function openDialog(): Promise<void> {
   hideError();
-  dom.gpuDialog.showModal();
-  void load().catch((err) => showError(errorText(err)));
-});
+  if (!dom.gpuDialog.open) dom.gpuDialog.showModal();
+  return load().catch((err) => showError(errorText(err)));
+}
+
+dom.gpuBtn.addEventListener("click", () => void openDialog());
 dom.gpuClose.addEventListener("click", () => dom.gpuDialog.close());
+
+type GpuAction = "book" | "release" | "extend" | "mode" | "subscribe";
+const ACTIONS: readonly GpuAction[] = ["book", "release", "extend", "mode", "subscribe"];
+
+/** Draws the eye to one control of the dialog, without pressing it: the person does that. */
+function point(element: Element | null | undefined): void {
+  for (const old of dom.gpuDialog.querySelectorAll(".gpu-pointed")) old.classList.remove("gpu-pointed");
+  if (!(element instanceof HTMLElement)) return;
+  element.classList.add("gpu-pointed");
+  element.scrollIntoView({ block: "center" });
+  element.focus();
+}
+
+/**
+ * A page in the Workspace asked for `action` (#10194): the dialog opens at that GPU (book) or that hold of yours
+ * (release, extend, mode), or at the notices switch (subscribe). Nothing happens until the person clicks; a GPU or hold
+ * that is not there (any more), or not yours, says so.
+ */
+async function openAt(action: GpuAction, resource: string | undefined, reservation: string | undefined): Promise<void> {
+  await openDialog();
+  if (!listing) return;
+  if (action === "subscribe") return point(dom.gpuSubscribe.closest("label") ?? dom.gpuSubscribe);
+  if (action === "book") {
+    const wanted = listing.resources.find((r) => r.id === resource || r.label === resource);
+    if (resource && !wanted) return showError(`That GPU ("${resource}") is no longer there.`);
+    if (wanted) dom.gpuResource.value = wanted.id;
+    return point(dom.gpuPurpose);
+  }
+  const row = reservation ? dom.gpuMine.querySelector(`[data-reservation="${CSS.escape(reservation)}"]`) : null;
+  if (!row) return showError("That hold is no longer there, or it is not yours.");
+  const label = action === "extend" ? "+2 h" : action === "mode" ? "Make" : undefined;
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>("button")];
+  point(label ? buttons.find((b) => b.textContent?.startsWith(label)) : buttons.find((b) => /^(Release|Cancel)$/.test(b.textContent ?? "")));
+}
+
+// Only a frame the website made for a Workspace page may ask, and only to open the dialog (agentpages.ts).
+window.addEventListener("message", (event) => {
+  const frames = [...document.querySelectorAll<HTMLIFrameElement>("iframe.agent-page")];
+  if (!frames.some((f) => f.contentWindow === event.source)) return;
+  const data = event.data as { type?: unknown; action?: unknown; resource?: unknown; reservation?: unknown } | null;
+  if (data?.type !== "agent-bus:gpu" || !ACTIONS.includes(data.action as GpuAction)) return;
+  const text = (v: unknown) => (typeof v === "string" && v.length <= 200 ? v : undefined);
+  void openAt(data.action as GpuAction, text(data.resource), text(data.reservation));
+});
+
+// When the dialog closes, the pages refresh what they show of the schedule at once.
+dom.gpuDialog.addEventListener("close", () => {
+  for (const frame of document.querySelectorAll<HTMLIFrameElement>("iframe.agent-page")) {
+    frame.contentWindow?.postMessage({ type: "agent-bus:resources-changed" }, "*");
+  }
+});
 dom.gpuSubscribe.addEventListener("change", async () => {
   hideError();
   dom.gpuSubscribe.disabled = true;

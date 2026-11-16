@@ -40,6 +40,10 @@ export function registerAgentPages(names: readonly string[], launchers: Readonly
         frame.setAttribute("allow", "clipboard-write");
         frame.title = launcher ?? name;
         frame.src = extensionUrl(name);
+        // Who is looking (#10194), so the page offers Release / +2 h / Shared-Private only on that person's holds. The
+        // only thing a page learns from the website: no keys, no messages.
+        const page = frame;
+        page.addEventListener("load", () => page.contentWindow?.postMessage({ type: "agent-bus:viewer", id: state.me }, "*"));
         body.replaceChildren(frame);
       },
     });

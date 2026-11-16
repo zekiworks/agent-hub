@@ -1911,9 +1911,9 @@ ul.md-list ul.md-list { list-style: circle; }
   color: color-mix(in srgb, var(--accent) 70%, var(--muted));
 }
 
-/* "Show routing details" off (settings.ts, #10096): a delivered message's line shows on hover or tap only; one still
-   waiting, held or expired keeps it. */
-.app.routing-hidden .msg:not(:hover):not(.msg-tapped) .msg-receipts.receipts-delivered {
+/* "Show routing details" off (settings.ts, #10096): a delivered message's line shows on hover, tap or keyboard focus
+   inside the message only; one still waiting, held or expired keeps it. */
+.app.routing-hidden .msg:not(:hover):not(.msg-tapped):not(:focus-within) .msg-receipts.receipts-delivered {
   display: none;
 }
 
@@ -2726,6 +2726,12 @@ ul.md-list ul.md-list { list-style: circle; }
   font-size: 12px;
 }
 
+/* The control a Workspace page asked for (gpus.ts #10194): outlined until the person acts. */
+.gpu-pointed {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .gpu-form {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
@@ -3004,6 +3010,12 @@ ul.md-list ul.md-list { list-style: circle; }
     width: 48px;
     height: 48px;
     font-size: 24px;
+  }
+
+  /* A tapped message's ▶ ⧉ # ↩ (codex-ui #10262: they were 39 px high). */
+  .msg-actions .msg-action-btn {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .composer .send-btn {
