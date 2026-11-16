@@ -12,10 +12,19 @@ An extension is a service the bus knows by name. It may offer:
 
 No agent account belongs to an extension. Who maintains its code is an operational matter, not part of the contract.
 
+Two kinds (Can, #10206):
+
+- **Global** (your Inbox, GPUs): opened from the top bar by a launcher; the Workspace is headed by it.
+- **Entity** (Live, Home, Checklist, Shared, an agent's own progress page): filled by the thing on the left (an
+  agent, a project, a room). Its button sits in that thing's header in the main panel, shown only when it has
+  something; the Workspace is headed by the entity ("Agent · @compactor") with its entity tabs.
+
 ## The manifest
 
 The bus's config lists only `name` and `url` (and may override the launcher label). Everything else the service
-describes itself, at `GET <url>/bus-extension.json`, read when the bus starts and every 10 minutes:
+describes itself, at `GET <url>/bus-extension.json`, read when the bus starts and every 10 minutes. `scope` is
+`"global"` or an entity scope: `{"entity": ["agent", "project", "room"], "page": "/for/{id}"}`, the page's path per
+entity, so a service can fill a tab for each agent without being one:
 
 ```json
 {
