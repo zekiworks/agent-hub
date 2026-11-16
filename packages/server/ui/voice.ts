@@ -47,6 +47,8 @@ interface Recording {
   listening: boolean;
   /** Anything but exact silence has come from the microphone. */
   heard: boolean;
+  /** The microphone has sent something (or SIGNAL_WAIT_MS passed): the timer runs from here. */
+  live: boolean;
 }
 
 /** "#room-a", "@@website", "logic, umit": where a recording started elsewhere will go. */
@@ -134,8 +136,10 @@ function tick(rec: Recording): void {
   }
   const elapsed = recordedMs(rec);
   if (elapsed >= MAX_RECORDING_MS) return void stop(false);
+  // Until the microphone sends anything, "starting…" stands where the timer will run.
+  const time = rec.live ? clock(elapsed) : "starting…";
   // Opened another conversation meanwhile: the bar says where this one goes.
-  dom.voiceTime.textContent = viewHash(state.view) === viewHash(rec.view) ? clock(elapsed) : `${clock(elapsed)} → ${viewLabel(rec.view)}`;
+  dom.voiceTime.textContent = viewHash(state.view) === viewHash(rec.view) ? time : `${time} → ${viewLabel(rec.view)}`;
   drawWave(rec);
   rec.frame = requestAnimationFrame(() => tick(rec));
 }
@@ -152,6 +156,9 @@ async function start(): Promise<void> {
   hideStatus();
   opening = true;
   startCancelled = false;
+  // The permission prompt, or a slow microphone, can take a moment: say so at once (Ümit #10669).
+  showStatus("Opening the microphone… (Esc or 🎤 again cancels)");
+  let rec: Recording;
   try {
     let stream: MediaStream;
     try {
@@ -159,6 +166,7 @@ async function start(): Promise<void> {
     } catch (err) {
       // Blocked or refused: say how to allow it (iPhone Safari: aA → Website Settings), not the browser's wording.
       const blocked = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "SecurityError");
+      hideStatus();
       showError(
         blocked
           ? "The microphone is not allowed for this site. On the iPhone: aA (left of the address) → Website Settings → Microphone → Allow; elsewhere, the lock or site settings next to the address. Then tap 🎤 again."
@@ -166,10 +174,11 @@ async function start(): Promise<void> {
       );
       return;
     }
-    const quit = (): void => {
+    hideStatus();
+    if (startCancelled) {
       for (const track of stream.getTracks()) track.stop();
-    };
-    if (startCancelled) return quit();
+      return;
+    }
     const audio = new AudioContext();
     await audio.resume().catch(() => undefined);
     const analyser = audio.createAnalyser();
@@ -177,7 +186,7 @@ async function start(): Promise<void> {
     audio.createMediaStreamSource(stream).connect(analyser);
     const mimeType = MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-    const rec: Recording = {
+    rec = {
       recorder,
       stream,
       chunks: [],
@@ -191,52 +200,47 @@ async function start(): Promise<void> {
       view,
       listening: audio.state === "running",
       heard: false,
+      live: false,
     };
+    const r = rec;
     recorder.addEventListener("dataavailable", (event) => {
-      if (event.data.size > 0) rec.chunks.push(event.data);
+      if (event.data.size > 0) r.chunks.push(event.data);
     });
     // Recording from the first moment, so no sound can be cut off; the silence before it costs nothing.
     recorder.start();
-    await waitForSignal(audio, analyser);
-    if (startCancelled) {
-      recorder.stop();
-      quit();
-      void audio.close();
-      return;
-    }
-    rec.startedAt = Date.now();
     recording = rec;
   } finally {
     opening = false;
   }
-  setPaused(recording, false);
+  // The panel (with 🗑 to cancel) shows at once; its timer starts with the first sound.
+  setPaused(rec, false);
   showPanel(true);
   // Let go while the microphone was opening: that was a click, so keep recording until Send.
   setLatched(!held);
-  tick(recording);
+  tick(rec);
+  await waitForSignal(rec);
+  if (recording === rec) {
+    rec.startedAt = Date.now();
+    rec.pausedMs = 0;
+    rec.live = true;
+  }
 }
 
 /** Bluetooth headsets (AirPods) deliver exact silence for a moment after a page opens their microphone (Ümit's clips,
  * 16 Nov: every one began with 0.6–0.7 s of zeros, and the short ones lost most of what she said). The recorder runs
- * from the start; the timer and waveform, the cue to speak, appear once the microphone sends anything at all, or after
+ * from the start; the timer, the cue to speak, starts once the microphone sends anything at all, or after
  * SIGNAL_WAIT_MS regardless. */
 const SIGNAL_WAIT_MS = 3000;
 
-async function waitForSignal(audio: AudioContext, analyser: AnalyserNode): Promise<void> {
-  if (audio.state !== "running") return;
-  const data = new Uint8Array(analyser.fftSize);
+async function waitForSignal(rec: Recording): Promise<void> {
+  if (rec.audio.state !== "running") return;
+  const data = new Uint8Array(rec.analyser.fftSize);
   const until = Date.now() + SIGNAL_WAIT_MS;
-  let told = false;
-  while (Date.now() < until && !startCancelled) {
-    analyser.getByteTimeDomainData(data);
-    if (data.some((v) => v !== 128)) break;
-    if (!told && Date.now() > until - SIGNAL_WAIT_MS + 300) {
-      showStatus("Waiting for the microphone… (headsets take a moment; Esc or 🎤 again cancels)");
-      told = true;
-    }
+  while (Date.now() < until && recording === rec) {
+    rec.analyser.getByteTimeDomainData(data);
+    if (data.some((v) => v !== 128)) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  if (told) hideStatus();
 }
 
 function setPaused(rec: Recording, paused: boolean): void {
