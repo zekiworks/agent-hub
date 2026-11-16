@@ -66,10 +66,20 @@ function markShownRead(): void {
   renderButton();
 }
 
+/**
+ * Phones: the inbox covers the conversation, so opening a task's message (↩, or its #number) leaves it, and the
+ * conversation shows "Back to your inbox" (#10107); the inbox keeps its part of the page, so it returns where it was.
+ */
+function leaveForMessage(): void {
+  if (!PHONE.matches) return;
+  dom.inboxReturn.hidden = false;
+  closePane();
+}
+
 /** ↩: the task's conversation, replying to it (the reply quotes the task). */
 function replyTo(message: Message): void {
   const view = { kind: "conversation" as const, id: message.conversationId };
-  if (PHONE.matches) closePane();
+  leaveForMessage();
   if (location.hash === viewHash(view)) {
     setReplyTo(message);
     return;
@@ -180,6 +190,10 @@ registerExtension({
   applies: () => !!state.me,
   render: (body) => {
     const root = h("div", "inbox pane-pad");
+    // A task's #number opens its message: on phones, out of the inbox and with the way back.
+    root.addEventListener("click", (event) => {
+      if ((event.target as Element).closest("a.msg-ref")) leaveForMessage();
+    });
     const bar = h("div", "inbox-bar");
     for (const [value, label] of [["mine", "For me"], ["assigned", "Assigned by me"]] as const) {
       const b = h("button", value === box ? "inbox-box active" : "inbox-box", label);
@@ -219,10 +233,12 @@ registerExtension({
 
 dom.inboxBtn.addEventListener("click", () => toggleGlobal("inbox"));
 dom.inboxRow.addEventListener("click", () => toggleGlobal("inbox"));
-// ✉ and the row are lit while the Workspace shows your inbox.
+// ✉ and the row are lit while the Workspace shows your inbox; showing it again ends the phone's way back.
 onWorkspaceChange(() => {
   const on = globalShown("inbox");
   dom.inboxBtn.classList.toggle("active", on);
   dom.inboxBtn.setAttribute("aria-pressed", on ? "true" : "false");
   dom.inboxRow.classList.toggle("active", on);
+  if (on) dom.inboxReturn.hidden = true;
 });
+dom.inboxReturn.addEventListener("click", () => toggleGlobal("inbox"));

@@ -103,6 +103,8 @@
           <button id="conv-menu-btn" type="button" class="icon-btn" title="Members, notifications and settings of this conversation" hidden>⋯</button>
           <button id="details-btn" type="button" class="icon-btn details-btn" title="Members and details" aria-pressed="false">ⓘ</button>
         </div>
+        <!-- Phones: after a task opened its message from Your inbox, the way back to it (inbox.ts). -->
+        <button id="inbox-return" type="button" class="link-btn inbox-return" hidden>‹ ✉ Back to your inbox</button>
         <div id="conv-subtitle" class="conv-subtitle"></div>
         <details id="subgroups-panel" class="subgroups-panel" open hidden>
           <summary id="subgroups-summary"></summary>
@@ -175,12 +177,14 @@
     <!-- The Workspace (pane.ts, docs/right-pane.md): one item at a time, an entity's tabs or a global view. -->
     <aside id="pane" class="pane" hidden>
       <div id="ws-resize" class="ws-resize" title="Drag to resize; double-click for the default width"></div>
-      <div class="ws-label">Workspace</div>
-      <div class="ws-titlebar">
-        <button id="ws-back" type="button" class="icon-btn ws-nav" aria-label="Previous workspace item" title="Previous">‹</button>
-        <button id="ws-forward" type="button" class="icon-btn ws-nav" aria-label="Next workspace item" title="Next">›</button>
-        <button id="pane-source" type="button" class="link-btn pane-source"></button>
-        <button id="pane-close" type="button" class="icon-btn pane-close" title="Close (Esc)">✕</button>
+      <div class="ws-head">
+        <div class="ws-label">Workspace</div>
+        <div class="ws-titlebar">
+          <button id="ws-back" type="button" class="icon-btn ws-nav" aria-label="Previous workspace item" title="Previous">‹</button>
+          <button id="ws-forward" type="button" class="icon-btn ws-nav" aria-label="Next workspace item" title="Next">›</button>
+          <button id="pane-source" type="button" class="link-btn pane-source"></button>
+          <button id="pane-close" type="button" class="icon-btn pane-close" title="Close (Esc)">✕</button>
+        </div>
       </div>
       <div class="pane-head">
         <div id="pane-tabs" class="pane-tabs" role="tablist"></div>

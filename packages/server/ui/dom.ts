@@ -111,6 +111,7 @@ export const dom = {
   inboxBtn: el<HTMLButtonElement>("inbox-btn"),
   inboxRow: el<HTMLButtonElement>("inbox-row"),
   inboxRowCount: el<HTMLSpanElement>("inbox-row-count"),
+  inboxReturn: el<HTMLButtonElement>("inbox-return"),
   toolsBtn: el<HTMLButtonElement>("tools-btn"),
   toolsMenu: el<HTMLDivElement>("tools-menu"),
   launchers: el<HTMLSpanElement>("launchers"),

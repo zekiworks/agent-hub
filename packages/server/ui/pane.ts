@@ -5,9 +5,10 @@
 // - or a global extension (your Inbox, GPUs) on its own, opened by its button in the top bar.
 // The Workspace keeps its item while the main panel moves (Can, 15 Nov), and keeps a short history walked with ‹ ›
 // (#10186). While it shows the entity open on the left, both headers share one tint (#10122).
-import { dom } from "./dom";
+import { dom, PHONE } from "./dom";
 import { h } from "./html";
 import { conversationTitle, hasProjectColor, projectColor, state, type View } from "./state";
+import { setPhoneList } from "./phones";
 import { navigate, viewHash } from "./routing";
 
 export interface PaneExtension {
@@ -119,15 +120,18 @@ export function entityExtensions(view: View): PaneExtension[] {
   return extensions.filter((e) => (e.scope ?? "entity") === "entity" && e.applies(view));
 }
 
-/** Shows `item`: the same item again only changes its tab; anything else is a new step (forward steps are dropped). */
+/** Shows `item`: the item last shown (open or closed since) only changes its tab; anything else is a new step
+ * (forward steps are dropped). */
 function show(item: Item): void {
-  const now = open ? history[at] : undefined;
+  const now = history[at];
   if (now && keyOf(now) === keyOf(item)) history[at] = item;
   else {
     history = [...history.slice(0, at + 1), item].slice(-HISTORY_MAX);
     at = history.length - 1;
   }
   open = true;
+  // Phones: opened from the conversation list (✉ Your inbox, GPUs), the Workspace must come in front of it.
+  setPhoneList(false);
   save();
   renderPane();
 }
@@ -233,10 +237,11 @@ export function renderPane(): void {
   }
   dom.wsBack.disabled = at <= 0;
   dom.wsForward.disabled = at >= history.length - 1;
-  dom.paneSource.textContent = entity ? subjectLabel(view) : extension.title();
-  // An entity not open on the left: its heading is a link back to it.
+  const label = entity ? subjectLabel(view) : extension.title();
+  dom.paneSource.textContent = label;
+  // An entity not open on the left: its heading is a link back to it. The full name shows on hover when it is cut.
   dom.paneSource.classList.toggle("elsewhere", entity && !linked);
-  dom.paneSource.title = entity && !linked ? "Not the conversation on the left; click to open it" : "";
+  dom.paneSource.title = entity && !linked ? `${label}: not the conversation on the left; click to open it` : label;
   dom.paneTabs.hidden = !entity;
   dom.paneTabs.replaceChildren(
     ...tabs.map((e) => {
@@ -314,11 +319,23 @@ document.addEventListener("click", closeMenu);
 
 dom.wsBack.addEventListener("click", () => step(-1));
 dom.wsForward.addEventListener("click", () => step(1));
+// The heading: another entity's opens it; otherwise, on a phone, a tap shows a long name whole (like the title).
 dom.paneSource.addEventListener("click", () => {
   const item = open ? history[at] : undefined;
   if (item && "view" in item && viewHash(item.view) !== viewHash(state.view)) navigate(item.view);
+  else if (PHONE.matches) dom.paneSource.classList.toggle("expanded");
 });
-dom.paneClose.addEventListener("click", closePane);
+// ✕: a global item (your inbox, GPUs) gives the Workspace back to what it showed before (#10107); else it closes.
+dom.paneClose.addEventListener("click", () => {
+  const item = history[at];
+  if (item && "global" in item && at > 0) step(-1);
+  else closePane();
+});
+// The shared band (#10122) runs straight across: the Workspace's head is as tall as the conversation's header.
+const convHeader = document.querySelector<HTMLElement>(".conv-header");
+if (convHeader) {
+  new ResizeObserver(() => dom.app.style.setProperty("--conv-head-h", `${convHeader.offsetHeight}px`)).observe(convHeader);
+}
 // Esc closes the menu, else the Workspace, unless something else (mention menu, reply bar, a dialog) used it first.
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.defaultPrevented) return;
