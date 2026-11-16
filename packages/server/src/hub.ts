@@ -515,6 +515,17 @@ export class Hub {
     for (const ws of this.viewersOf(conversation)) ws.send(viewerFrame);
   }
 
+  /**
+   * A message was edited or deleted by its writer (Ümit #10890): viewers show it as it is now. Agents that already
+   * received it keep their copy (a delivery cannot be taken back); held ones get the new text, deleted ones nothing.
+   */
+  messageChanged(message: Message, conversation: Conversation): void {
+    const frame = JSON.stringify({ type: "changed", message, conversation } satisfies ViewerServerFrame);
+    for (const ws of this.viewersOf(conversation)) ws.send(frame);
+    // A deleted message leaves the pinned list, which is part of the conversation.
+    if (message.deletedAt) this.conversationsChanged();
+  }
+
   /** Records `agentId`'s ack/seen of `seq` and tells viewers, the writer's agent connections and receipt waiters. */
   recordReceipt(agentId: string, seq: number, state: "ack" | "seen"): void {
     const receipt = this.db.markReceipt(agentId, seq, state);

@@ -457,3 +457,35 @@ export async function getMessageReceipts(
   if (!latest) throw new HttpError(404, `Unknown message ${seq}`);
   return withConversation(latest);
 }
+
+/**
+ * POST /api/messages/:seq/edit {from, text} and /delete {from} (Ümit #10890): only its writer, signed in as itself
+ * (checkWriter). Tasks are withdrawn, not edited or deleted: their steps and inboxes refer to the text.
+ */
+export async function changeMessage(ctx: BusContext, req: Request, seq: number, action: "edit" | "delete"): Promise<{ message: Message }> {
+  const body = await readJsonObject(req);
+  if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+  const writer = ctx.hub.knownParticipant(body.from.trim().toLowerCase());
+  if (!writer) throw new HttpError(400, `Unknown participant "${body.from}"`);
+  ctx.checkWriter(req, writer);
+  const message = ctx.db.getMessage(seq);
+  const conversation = message ? ctx.db.getConversation(message.conversationId) : null;
+  if (!message || !conversation || !mayRead(ctx, conversation, { id: writer.id, kind: writer.kind === "human" ? "human" : "agent" })) {
+    throw new HttpError(404, `Unknown message ${seq}`);
+  }
+  if (message.from !== writer.id) throw new HttpError(403, `#${seq} is @${message.from}'s; only its writer ${action}s it`);
+  if (message.deletedAt) throw new HttpError(409, `#${seq} is deleted already`);
+  if (message.task) throw new HttpError(409, `#${seq} is a task: withdraw it instead`);
+  if (action === "edit") {
+    if (typeof body.text !== "string") throw new HttpError(400, "text must be a string");
+    const text = body.text.trim();
+    if (text === "" && message.files.length === 0) throw new HttpError(400, "The text is empty: delete the message instead");
+    if (text.length > MAX_TEXT_LENGTH) throw new HttpError(400, `text is longer than ${MAX_TEXT_LENGTH} characters`);
+    if (text !== message.text) ctx.db.editMessage(seq, text);
+  } else {
+    ctx.db.deleteMessage(seq);
+  }
+  const changed = ctx.db.getMessage(seq) ?? message;
+  ctx.hub.messageChanged(changed, conversation);
+  return { message: changed };
+}

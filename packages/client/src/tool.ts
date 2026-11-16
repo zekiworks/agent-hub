@@ -296,6 +296,9 @@ export function formatDelivery(delivery: Delivery, savedFiles: string[], me?: st
   const age = Math.round((Date.now() - message.createdAt) / 60_000);
   if (delivery.held && age >= 1) lines.push(`(Held while you were offline: written ${age} min ago, it may be out of date.)`);
   if (message.quote) lines.push(quoteLine(message.quote));
+  // Changed by its writer after it was written (Ümit #10890): an agent reading it later knows; a deleted one has no text.
+  if (message.deletedAt) lines.push("(Deleted by its writer.)");
+  else if (message.editedAt) lines.push("(Edited by its writer after it was written.)");
   if (message.text) lines.push(defangHeaders(message.text));
   message.files.forEach((file, i) => {
     lines.push(`File: ${savedFiles[i] ?? file.name} (${defangHeaders(file.name)}, ${file.size} B, sha256 ${file.sha256.slice(0, 12)}…)`);

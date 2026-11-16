@@ -1,5 +1,5 @@
 // The conversations page (index.html): wires the modules together, routes between views and boots.
-import type { Conversation, Message, ViewerServerFrame } from "@agent-bus/protocol";
+import { QUOTE_TEXT_CHARS, type Conversation, type Message, type ViewerServerFrame } from "@agent-bus/protocol";
 import { api, PROFILE_KEY, setFileKey } from "./api";
 import { hideError, setReplyTo, showError, updateComposerState } from "./composer";
 import { dom, PHONE, scrollToBottom } from "./dom";
@@ -78,6 +78,24 @@ function taskChanged(message: Message, conversation: Conversation): void {
     if (isCurrent(conversation.id)) renderMessages();
   }
   void refreshInbox();
+}
+
+/**
+ * A message was edited or deleted by its writer (Ümit #10890): shown as it is now, and the replies quoting it quote the
+ * new text (an empty quote with no files reads "message deleted").
+ */
+function messageChanged(message: Message, conversation: Conversation): void {
+  const cache = state.caches.get(conversation.id);
+  if (!cache) return;
+  const quote = message.text.length > QUOTE_TEXT_CHARS ? `${message.text.slice(0, QUOTE_TEXT_CHARS - 1)}…` : message.text;
+  cache.messages = cache.messages.map((m) =>
+    m.seq === message.seq
+      ? message
+      : m.quote?.seq === message.seq
+        ? { ...m, quote: { ...m.quote, text: quote, files: message.files.length } }
+        : m
+  );
+  if (isCurrent(conversation.id)) renderMessages();
 }
 
 /**
@@ -166,6 +184,9 @@ function handleFrame(frame: ViewerServerFrame): void {
       break;
     case "task":
       taskChanged(frame.message, frame.conversation);
+      break;
+    case "changed":
+      messageChanged(frame.message, frame.conversation);
       break;
     case "checklist":
       checklistChanged(frame.conversationId);

@@ -22,7 +22,7 @@ import type { SocketData } from "./hub";
 import { resolveLanAddresses } from "./lan";
 import { getChecklist, putChecklist, tickChecklist } from "./checklists";
 import { getHome, putHome } from "./homes";
-import { getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, postMessage } from "./messages";
+import { changeMessage, getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, postMessage } from "./messages";
 import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
 import { forwardExtension } from "./extensions";
@@ -247,6 +247,11 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     if (method === "POST" && pathname === "/api/messages") return json(await postMessage(ctx, req));
     const messageMatch = /^\/api\/messages\/(\d+)$/.exec(pathname);
     if (method === "GET" && messageMatch?.[1]) return json(await getMessageReceipts(ctx, Number(messageMatch[1]), url, viewer));
+    // The writer edits or deletes one of its messages (Ümit #10890).
+    const changeMatch = /^\/api\/messages\/(\d+)\/(edit|delete)$/.exec(pathname);
+    if (method === "POST" && changeMatch?.[1] && changeMatch[2]) {
+      return json(await changeMessage(ctx, req, Number(changeMatch[1]), changeMatch[2] === "edit" ? "edit" : "delete"));
+    }
     if (method === "POST" && pathname === "/api/files") return json(await postFile(ctx, req, url));
     if (method === "GET" && fileMatch?.[1]) return getFile(ctx, decodeURIComponent(fileMatch[1]));
     const transcriptMatch = /^\/api\/files\/([^/]+)\/transcript$/.exec(pathname);

@@ -241,6 +241,27 @@ export interface Message {
    * from a signed-in session (passkey), false when not. Absent: authentication was off.
    */
   verified?: boolean;
+  /**
+   * Its writer changed the text (Ümit #10890): when, last. Only the text changes; agents that already received it keep
+   * the text they got (a delivery cannot be taken back), those it reaches later get the new one.
+   */
+  editedAt?: number;
+  /**
+   * Its writer deleted it (Ümit #10890): text and files are gone, the row stays so replies and #numbers still point
+   * somewhere. Agents that already received it keep their copy; it is no longer handed to those that had not.
+   */
+  deletedAt?: number;
+}
+
+/** POST /api/messages/:seq/edit: its writer changes the text. */
+export interface EditMessageRequest {
+  from: string;
+  text: string;
+}
+
+/** POST /api/messages/:seq/delete: its writer deletes it. */
+export interface DeleteMessageRequest {
+  from: string;
 }
 
 /** The message a reply answers: who wrote it and the start of its text (QUOTE_TEXT_CHARS). */
@@ -361,6 +382,8 @@ export type ViewerServerFrame =
   | { type: "home"; conversationId: string }
   /** A task's state changed: the message as it is now (its `task`). */
   | { type: "task"; message: Message; conversation: Conversation }
+  /** A message was edited or deleted by its writer: the message as it is now (replies quoting it refresh too). */
+  | { type: "changed"; message: Message; conversation: Conversation }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
   | ExpiredFrame

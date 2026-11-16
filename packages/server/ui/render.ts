@@ -5,6 +5,7 @@ import { BRAND } from "./brand";
 import { setReplyTo, updateComposerState } from "./composer";
 import { dom, PHONE } from "./dom";
 import { dayFormat, dayKey, errorText, fullFormat, nameList, timeFormat } from "./format";
+import { changeButtons, deleteQuestion, editBox } from "./edit";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
 import { setTitleBase } from "./notify";
@@ -201,14 +202,23 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   time.dateTime = new Date(message.createdAt).toISOString();
   time.title = fullFormat.format(message.createdAt);
   head.append(h("span", "msg-seq", `#${message.seq}`), time);
+  // Changed by its writer (Ümit #10890): said quietly, the time in the tooltip.
+  if (message.editedAt && !message.deletedAt) {
+    const edited = h("span", "msg-edited", "edited");
+    edited.title = `Edited ${fullFormat.format(message.editedAt)}`;
+    head.append(edited);
+  }
   li.append(head);
   // Outside the head so grouped messages (whose head is hidden) can be replied to too. Shown on hover, or on phones
   // (no hover) after tapping the message. Clicking Reply again cancels.
   const actions = h("div", "msg-actions");
-  if (message.text) actions.append(speakButton(message), copyButton(message));
+  const deleted = !!message.deletedAt;
+  if (message.text && !deleted) actions.append(speakButton(message), copyButton(message));
   actions.append(copyIdButton(message));
   // 📌 for members: pins the message in its conversation, or unpins it (#10757).
-  if (state.conversations.get(message.conversationId)?.members.includes(state.me)) actions.append(pinButton(message));
+  if (!deleted && state.conversations.get(message.conversationId)?.members.includes(state.me)) actions.append(pinButton(message));
+  // ✎ 🗑 on my own messages (Ümit #10890).
+  actions.append(...changeButtons(message));
   const replyBtn = h("button", "msg-action-btn msg-reply-btn", "↩ ");
   replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";
@@ -216,7 +226,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   replyBtn.addEventListener("click", () =>
     setReplyTo(state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq ? undefined : message)
   );
-  actions.append(replyBtn);
+  if (!deleted) actions.append(replyBtn);
   li.addEventListener("click", (event) => {
     if (!PHONE.matches || (event.target as Element).closest("a, button, audio, img, input, summary")) return;
     const tapped = li.classList.contains("msg-tapped");
@@ -225,7 +235,16 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   });
 
   if (message.quote) li.append(renderQuote(message.quote));
-  if (message.text) li.append(renderText(message.text));
+  if (deleted) {
+    li.classList.add("msg-deleted");
+    const gone = h("div", "msg-text msg-deleted-text", "Message deleted");
+    if (message.deletedAt) gone.title = `Deleted by ${message.from} ${fullFormat.format(message.deletedAt)}`;
+    li.append(gone);
+  } else {
+    const box = editBox(message);
+    if (box) li.append(box);
+    else if (message.text) li.append(renderText(message.text));
+  }
   if (message.files.length > 0) {
     const files = h("ul", "msg-files");
     for (const file of message.files) files.append(renderFile(file));
@@ -235,6 +254,8 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   if (badge) li.append(badge);
   const receipts = renderReceipts(message);
   if (receipts) li.append(receipts);
+  const ask = deleteQuestion(message);
+  if (ask) li.append(ask);
   // Last: on phones it is a row under the message (on wider screens it floats top right).
   li.append(actions);
   return li;
@@ -337,7 +358,9 @@ function renderQuote(quote: Quote): HTMLButtonElement {
   el.type = "button";
   el.title = `Reply to #${quote.seq} — click to show it`;
   const files = quote.files > 0 ? ` · ${quote.files} file${quote.files === 1 ? "" : "s"}` : "";
-  el.append(h("span", "msg-quote-from", quote.from), h("span", "msg-quote-text", `${quote.text || "(no text)"}${files}`));
+  // No text and no files: the quoted message was deleted (Ümit #10890); every other message has one or the other.
+  const quoted = quote.text || (quote.files > 0 ? "(no text)" : "(message deleted)");
+  el.append(h("span", "msg-quote-from", quote.from), h("span", "msg-quote-text", `${quoted}${files}`));
   el.addEventListener("click", () => {
     const target = shownMessage(quote.seq);
     if (target) flashMessage(target);

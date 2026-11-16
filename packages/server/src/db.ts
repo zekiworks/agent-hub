@@ -137,6 +137,8 @@ interface MessageRow {
   expires_at: number | null;
   wake_json?: string | null;
   task_json?: string | null;
+  edited_at?: number | null;
+  deleted_at?: number | null;
 }
 
 interface FileRow {
@@ -348,6 +350,8 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
     ...(row.wake_json ? { wake: JSON.parse(row.wake_json) as string[] } : {}),
     ...(row.task_json ? { task: JSON.parse(row.task_json) as Task } : {}),
     expiresAt: expiresAt(row),
+    ...(row.edited_at ? { editedAt: row.edited_at } : {}),
+    ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
   };
 }
 
@@ -395,6 +399,9 @@ export class BusDatabase {
     if (!messageColumns.some((c) => c.name === "wake_json")) this.db.exec("ALTER TABLE messages ADD COLUMN wake_json TEXT");
     // Databases created before tasks lack the column (null: an ordinary message).
     if (!messageColumns.some((c) => c.name === "task_json")) this.db.exec("ALTER TABLE messages ADD COLUMN task_json TEXT");
+    // Databases created before editing and deleting one's messages lack the columns (Ümit #10890; null: never).
+    if (!messageColumns.some((c) => c.name === "edited_at")) this.db.exec("ALTER TABLE messages ADD COLUMN edited_at INTEGER");
+    if (!messageColumns.some((c) => c.name === "deleted_at")) this.db.exec("ALTER TABLE messages ADD COLUMN deleted_at INTEGER");
     if (!messageColumns.some((c) => c.name === "from_session")) {
       this.db.exec("ALTER TABLE messages ADD COLUMN from_session INTEGER");
     }
@@ -1344,6 +1351,24 @@ export class BusDatabase {
     return row ? (this.withReceipts([row])[0] ?? null) : null;
   }
 
+  /** Its writer changes message `seq`'s text (Ümit #10890). Callers check who may. */
+  editMessage(seq: number, text: string, now = Date.now()): void {
+    this.db.query("UPDATE messages SET text = ?2, edited_at = ?3 WHERE seq = ?1 AND deleted_at IS NULL").run(seq, text, now);
+  }
+
+  /**
+   * Its writer deletes message `seq` (Ümit #10890): text and files go, the row stays (replies and #numbers point to
+   * it). It is no longer handed to recipients that had not received it (their receipts go, so no "expired" notice
+   * either), and it leaves the pinned list. The files themselves stay: another message may carry the same one.
+   */
+  deleteMessage(seq: number, now = Date.now()): void {
+    this.db.transaction(() => {
+      this.db.query("UPDATE messages SET text = '', files_json = '[]', deleted_at = ?2 WHERE seq = ?1").run(seq, now);
+      this.db.query("DELETE FROM receipts WHERE seq = ?1 AND delivered_at IS NULL").run(seq);
+      this.db.query("DELETE FROM pinned_messages WHERE seq = ?1").run(seq);
+    })();
+  }
+
   /**
    * Marks `recipient`'s receipt for `seq` delivered (`ack`) or seen (`seen`, which also implies delivered).
    * Returns the receipt when it changed, else null (unknown receipt or already in that state).
@@ -1413,13 +1438,14 @@ export class BusDatabase {
   /**
    * Messages for `agentId` not written by it, ascending, newest `limit`: those with an undelivered receipt for it,
    * plus (for messages written before receipts existed) those after `afterSeq` in `all` or in groups whose
-   * `addressed` contains it — agents become members only through `addressed`.
+   * `addressed` contains it — agents become members only through `addressed`. Never a deleted one (Ümit #10890):
+   * deleting drops its undelivered receipts, which would otherwise make it look like one from before receipts.
    */
   backlogFor(agentId: string, afterSeq: number, limit: number): Message[] {
     const rows = this.db
       .query<MessageRow, [number, string, string, number, number]>(
         `SELECT * FROM messages
-         WHERE from_id != ?2 AND (
+         WHERE from_id != ?2 AND deleted_at IS NULL AND (
            seq IN (SELECT seq FROM receipts WHERE recipient = ?2 AND delivered_at IS NULL)
            AND COALESCE(expires_at, created_at + ${DEFAULT_HOLD_MS}) > ?5
            OR (seq > ?1

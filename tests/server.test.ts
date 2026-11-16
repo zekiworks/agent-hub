@@ -900,6 +900,38 @@ describe("delivery", () => {
     expect((await state("carol")).conversations.find((c) => c.id === room.conversation.id)?.pinnedMessages?.map((p) => p.seq)).toEqual([room.message.seq]);
   });
 
+  test("a writer edits and deletes its own messages: others are refused, viewers see the change, replies quote the new text, a deleted message is not handed to an agent that was offline", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    await send({ from: "alpha", to: "@carol", text: "taking part" });
+    await leave(alpha.client);
+    const viewer = await connectViewer();
+    const room = await send({ from: "carol", to: "#crew", text: "first draft" });
+    const reply = await send({ from: "uma", text: "answering", replyToSeq: room.message.seq });
+    const change = (from: string, seq: number, action: "edit" | "delete", text?: string) =>
+      postJson(bus, `/api/messages/${seq}/${action}`, { from, ...(text === undefined ? {} : { text }) });
+    // Only its writer, signed in as itself.
+    expect((await change("uma", room.message.seq, "edit", "mine now")).status).toBe(403);
+    expect((await change("uma", room.message.seq, "delete")).status).toBe(403);
+    const edited = (await (await change("carol", room.message.seq, "edit", "  second thoughts  ")).json()) as { message: Message };
+    expect(edited.message).toMatchObject({ text: "second thoughts", seq: room.message.seq });
+    expect(edited.message.editedAt).toBeNumber();
+    expect((await viewer.take("changed")).message.text).toBe("second thoughts");
+    // A reply's quote is the text as it is now.
+    const replied = await getJson<{ message: Message }>(bus, `/api/messages/${reply.message.seq}`, "carol");
+    expect(replied.message.quote?.text).toBe("second thoughts");
+    expect((await change("carol", room.message.seq, "edit", "   ")).status).toBe(400); // empty: delete instead
+    // Deleting: held for offline alpha, and then gone from its backlog.
+    const held = await send({ from: "carol", to: "@alpha", text: "never mind this" });
+    expect(held.message.receipts.map((r) => r.to)).toEqual(["alpha"]);
+    const deleted = (await (await change("carol", held.message.seq, "delete")).json()) as { message: Message };
+    expect(deleted.message).toMatchObject({ text: "", files: [], receipts: [] });
+    expect(deleted.message.deletedAt).toBeNumber();
+    expect((await change("carol", held.message.seq, "edit", "back")).status).toBe(409);
+    const back = await joinPath("/tmp/x/alpha");
+    const sentinel = await send({ from: "carol", to: "@alpha", text: "fresh" });
+    expect((await back.client.take("deliver")).message.id).toBe(sentinel.message.id);
+  });
+
   test("a room's name people read (title) changes without its address: #address keeps reaching it; people only; empty clears", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const room = await send({ from: "carol", to: "#model-research", text: "start" });
