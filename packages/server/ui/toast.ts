@@ -48,12 +48,18 @@ function place(position: Position | undefined): void {
     box.style.left = box.style.top = box.style.right = "";
     return;
   }
+  // The visible part of the page: on phones the keyboard shrinks only the visual viewport (codex-ui #10841).
+  const vv = window.visualViewport;
+  const top = vv?.offsetTop ?? 0;
+  const bottom = vv ? vv.offsetTop + vv.height : innerHeight;
+  const left = vv?.offsetLeft ?? 0;
+  const right = vv ? vv.offsetLeft + vv.width : innerWidth;
   const r = box.getBoundingClientRect();
-  const composerTop = dom.composer.getBoundingClientRect().top || innerHeight;
-  const maxX = Math.max(8, innerWidth - r.width - 8);
-  const maxY = Math.max(8, Math.min(innerHeight, composerTop) - r.height - 8);
-  box.style.left = `${Math.round(Math.min(Math.max(position.x, 8), maxX))}px`;
-  box.style.top = `${Math.round(Math.min(Math.max(position.y, 8), maxY))}px`;
+  const composerTop = dom.composer.getBoundingClientRect().top || bottom;
+  const maxX = Math.max(left + 8, right - r.width - 8);
+  const maxY = Math.max(top + 8, Math.min(bottom, composerTop) - r.height - 8);
+  box.style.left = `${Math.round(Math.min(Math.max(position.x, left + 8), maxX))}px`;
+  box.style.top = `${Math.round(Math.min(Math.max(position.y, top + 8), maxY))}px`;
   box.style.right = "auto";
 }
 
@@ -93,7 +99,9 @@ function makeHandle(handle: HTMLElement): void {
   });
 }
 
+// Rotation, a resized window, or the phone keyboard opening: the moved banners are fitted into what is visible again.
 window.addEventListener("resize", () => place(savedPosition()));
+window.visualViewport?.addEventListener("resize", () => place(savedPosition()));
 
 export function showAnswer(message: Message, conversation: Conversation): void {
   if (!box) {
