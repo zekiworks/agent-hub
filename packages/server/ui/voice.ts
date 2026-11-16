@@ -43,6 +43,10 @@ interface Recording {
   /** Where it goes: the conversation it was started in, even if another one is open by the time it is sent (codex-ui
    * #10593: it went to whatever was open at Send, after the asynchronous stop). */
   view: View;
+  /** The level meter works (its AudioContext runs), so `heard` can be trusted. */
+  listening: boolean;
+  /** Anything but exact silence has come from the microphone. */
+  heard: boolean;
 }
 
 /** "#room-a", "@@website", "logic, umit": where a recording started elsewhere will go. */
@@ -122,6 +126,7 @@ function tick(rec: Recording): void {
     for (const v of data) sum += ((v - 128) / 128) ** 2;
     // Speech sits around 0.02–0.2 RMS; scale so normal speaking fills most of the height.
     rec.levels.push(Math.min(1, Math.sqrt(sum / data.length) * 5));
+    if (sum > 0) rec.heard = true;
     rec.lastLevelAt = now;
   }
   const elapsed = recordedMs(rec);
@@ -156,12 +161,19 @@ async function start(): Promise<void> {
   } finally {
     opening = false;
   }
-  const mimeType = MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
-  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
   const audio = new AudioContext();
+  await audio.resume().catch(() => undefined);
   const analyser = audio.createAnalyser();
   analyser.fftSize = 1024;
   audio.createMediaStreamSource(stream).connect(analyser);
+  opening = true;
+  try {
+    await waitForSignal(audio, analyser);
+  } finally {
+    opening = false;
+  }
+  const mimeType = MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
+  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
   const rec: Recording = {
     recorder,
     stream,
@@ -174,6 +186,8 @@ async function start(): Promise<void> {
     lastLevelAt: 0,
     frame: 0,
     view: state.view,
+    listening: audio.state === "running",
+    heard: false,
   };
   recorder.addEventListener("dataavailable", (event) => {
     if (event.data.size > 0) rec.chunks.push(event.data);
@@ -185,6 +199,28 @@ async function start(): Promise<void> {
   // Let go while the microphone was opening: that was a click, so keep recording until Send.
   setLatched(!held);
   tick(rec);
+}
+
+/** Bluetooth headsets (AirPods) deliver exact silence for a second or so after a page opens their microphone, while
+ * the system switches them to headset mode (Ümit, 16 Nov: the start of what she said was lost, or all of it). Recording
+ * starts once the microphone sends anything at all, or after SIGNAL_WAIT_MS regardless. */
+const SIGNAL_WAIT_MS = 3000;
+
+async function waitForSignal(audio: AudioContext, analyser: AnalyserNode): Promise<void> {
+  if (audio.state !== "running") return;
+  const data = new Uint8Array(analyser.fftSize);
+  const until = Date.now() + SIGNAL_WAIT_MS;
+  let told = false;
+  while (Date.now() < until) {
+    analyser.getByteTimeDomainData(data);
+    if (data.some((v) => v !== 128)) break;
+    if (!told && Date.now() > until - SIGNAL_WAIT_MS + 300) {
+      showStatus("Waiting for the microphone… (headsets take a moment)");
+      told = true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (told) hideStatus();
 }
 
 function setPaused(rec: Recording, paused: boolean): void {
@@ -217,6 +253,10 @@ async function stop(cancel: boolean): Promise<void> {
   void rec.audio.close();
   if (cancel) return;
   if (duration < MIN_RECORDING_MS) return showStatus("Too short: click 🎤, speak, then press Send.");
+  // Nothing at all came from the microphone (not quiet: exact silence), so there is nothing to send.
+  if (rec.listening && !rec.heard && rec.levels.length > 0) {
+    return showError("The microphone sent only silence, so nothing was sent. If you use AirPods or another headset, check it is the selected microphone, or try the built-in one.");
+  }
   const type = rec.recorder.mimeType || rec.chunks[0]?.type || "audio/webm";
   const ext = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
   const stamp = new Date(rec.startedAt).toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
