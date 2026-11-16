@@ -3776,28 +3776,40 @@ ul.md-list ul.md-list { list-style: circle; }
   overflow-wrap: anywhere;
 }
 
-/* Answers elsewhere (toast.ts): banners at the top, tap to open the message. */
+/* Answers elsewhere (toast.ts): tap to open the message, ✕ to close. Desktop: at the right, below the top bar and the
+ * headers, so the room's controls and the message box stay free (Ümit #10782, codex-ui #10783); never taller than
+ * the space between them. */
 .answer-toasts {
   position: fixed;
-  top: 10px;
-  left: 50%;
+  top: 150px;
+  right: 16px;
   z-index: 60;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: min(440px, calc(100vw - 20px));
-  transform: translateX(-50%);
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100dvh - 310px);
+  overflow-y: auto;
   pointer-events: none;
 }
 
 .answer-toast {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   border: 1px solid var(--accent);
   border-radius: 10px;
   background: var(--panel-raised);
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
   pointer-events: auto;
+}
+
+.answer-toast-more {
+  flex: 1 1 100%;
+  min-height: 32px;
+  padding: 0 14px 8px;
+  text-align: left;
+  font-size: 13px;
 }
 
 .answer-toast-open {
@@ -3836,8 +3848,27 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .answer-toast-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
   font-size: 14px;
   overflow-wrap: anywhere;
+}
+
+.answer-toast-text.expanded {
+  -webkit-line-clamp: unset;
+}
+
+/* Phones: across the screen just below the conversation's two-row header (it ends at ~101 px) and ending above the
+ * message box (~210 px tall), so ←, the title, ⓘ and the pin stay free; ✕ stays 44×44. */
+@media (max-width: 640px) {
+  .answer-toasts {
+    top: 108px;
+    right: 8px;
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 330px);
+  }
 }
 
 /* The optional reason of ✕ / Withdraw, in the card (inbox.ts). */

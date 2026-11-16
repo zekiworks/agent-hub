@@ -52,6 +52,16 @@ SILENCE_PHRASES = {
     "subtitles by the amara.org community",
 }
 
+def no_speech(text: str) -> bool:
+    """A transcript Whisper writes for noise or a sound too short to hear, not for speech: one of SILENCE_PHRASES (Python
+    lowercases "İ" to "i" plus a combining dot, so it is folded first; end punctuation ignored), or a long run without a
+    single letter ("6.0.0.0.0.0.0.0", Ümit #10784)."""
+    plain = text.replace("İ", "i").lower().strip().rstrip(".!?…").strip()
+    if plain in {p.rstrip(".!?…") for p in SILENCE_PHRASES}:
+        return True
+    return len(plain) >= 8 and not any(ch.isalpha() for ch in plain)
+
+
 model = WhisperModel(MODEL, device="cpu", compute_type="int8", cpu_threads=THREADS)
 # One transcription at a time: the model uses all its threads for each.
 lock = threading.Lock()
@@ -143,7 +153,7 @@ class Handler(BaseHTTPRequestHandler):
             with lock:
                 segments, info = model.transcribe(samples, language=language, vad_filter=True, beam_size=5, hotwords=hotwords)
                 text = " ".join(s.text.strip() for s in segments).strip()
-                if text.lower() in SILENCE_PHRASES:
+                if no_speech(text):
                     text = ""
         except Exception as error:  # undecodable audio and the like: the caller sends the voice message without text
             return self.reply(422, {"error": f"could not transcribe: {error}"})

@@ -32,13 +32,13 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   const toast = h("div", "answer-toast");
   const open = h("button", "answer-toast-open");
   open.type = "button";
-  open.append(
-    h("span", "answer-toast-head", `↩ @${message.from} in ${conversationTitle(conversation)}`),
-    h("span", "answer-toast-text", text.length > 140 ? `${text.slice(0, 139)}…` : text || "(file)")
-  );
+  // The whole text, a few lines of it shown; "More" lets the rest out (Ümit #10782: she could not read them).
+  const body = h("span", "answer-toast-text", text || "(file)");
+  open.append(h("span", "answer-toast-head", `↩ @${message.from} in ${conversationTitle(conversation)}`), body);
   const dismiss = h("button", "answer-toast-close", "✕");
   dismiss.type = "button";
   dismiss.title = "Close (the message stays in its conversation)";
+  dismiss.setAttribute("aria-label", "Close this notification");
   open.addEventListener("click", () => {
     toast.remove();
     void hooks.showMessage(message.seq);
@@ -47,4 +47,13 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   toast.append(open, dismiss);
   box.append(toast);
   while (box.childElementCount > MAX_SHOWN) box.firstElementChild?.remove();
+  if (body.scrollHeight > body.clientHeight + 1) {
+    const more = h("button", "link-btn answer-toast-more", "More");
+    more.type = "button";
+    more.addEventListener("click", () => {
+      const expanded = body.classList.toggle("expanded");
+      more.textContent = expanded ? "Less" : "More";
+    });
+    toast.append(more);
+  }
 }
