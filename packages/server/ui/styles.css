@@ -2771,22 +2771,26 @@ ul.md-list ul.md-list { list-style: circle; }
   color: var(--muted);
 }
 
+/* A hold of yours: its text, then its buttons; where they don't fit side by side (phones), the text takes the full
+   width and the buttons wrap below it (codex-ui #10424), never squeezing the text to a column. */
 .gpu-mine-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
 .gpu-mine-text {
-  flex: 1;
+  flex: 1 1 260px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .gpu-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  flex: none;
+  flex: 0 1 auto;
 }
 
 .gpu-action {

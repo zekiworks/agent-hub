@@ -164,6 +164,9 @@ function openDialog(action?: GpuAction): Promise<void> {
     const section = document.getElementById(id);
     if (section) dom.gpuDialog.append(section);
   }
+  // "Close window" stays the footer, after the sections (codex-ui #10424); the header's ✕ is the quick one.
+  const footer = dom.gpuDialog.querySelector(".close-window-row");
+  if (footer) dom.gpuDialog.append(footer);
   dom.gpuFleet.open = !action;
   dom.gpuFocus.hidden = true;
   if (!dom.gpuDialog.open) dom.gpuDialog.showModal();
@@ -221,8 +224,9 @@ async function openAt(action: GpuAction, resource: string | undefined, reservati
   point(button);
 }
 
-/** The page that asked, so the keyboard goes back to it when the dialog closes (#10402). */
+/** The page that asked and what it asked for, so the keyboard goes back to its control when the dialog closes (#10402). */
 let askingFrame: HTMLIFrameElement | undefined;
+let asked: { action: GpuAction; resource?: string; reservation?: string } | undefined;
 
 // Only a frame the website made for a Workspace page may ask, and only to open the dialog (agentpages.ts).
 window.addEventListener("message", (event) => {
@@ -233,17 +237,23 @@ window.addEventListener("message", (event) => {
   if (data?.type !== "agent-bus:gpu" || !ACTIONS.includes(data.action as GpuAction)) return;
   const text = (v: unknown) => (typeof v === "string" && v.length <= 200 ? v : undefined);
   askingFrame = frame;
-  void openAt(data.action as GpuAction, text(data.resource), text(data.reservation));
+  const resource = text(data.resource);
+  const reservation = text(data.reservation);
+  asked = { action: data.action as GpuAction, ...(resource ? { resource } : {}), ...(reservation ? { reservation } : {}) };
+  void openAt(asked.action, resource, reservation);
 });
 
-// When the dialog closes, the pages refresh what they show of the schedule at once; the one that asked gets the
-// keyboard back (inside it, its own button keeps its focus).
+// When the dialog closes, the pages refresh what they show of the schedule at once. The one that asked gets the
+// keyboard and, in `focus`, what it asked for: it redraws its buttons on the refresh, so it puts focus back on that
+// control itself (or a sensible neighbour if a Release removed it; codex-ui #10424).
 dom.gpuDialog.addEventListener("close", () => {
   for (const frame of document.querySelectorAll<HTMLIFrameElement>("iframe.agent-page")) {
-    frame.contentWindow?.postMessage({ type: "agent-bus:resources-changed" }, "*");
+    const mine = frame === askingFrame && asked;
+    frame.contentWindow?.postMessage({ type: "agent-bus:resources-changed", ...(mine ? { focus: asked } : {}) }, "*");
   }
   if (askingFrame?.isConnected) askingFrame.focus();
   askingFrame = undefined;
+  asked = undefined;
 });
 dom.gpuSubscribe.addEventListener("change", async () => {
   hideError();

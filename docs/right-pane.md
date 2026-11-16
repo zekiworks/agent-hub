@@ -153,8 +153,10 @@ reading, finishing and pressing Send.
   says so; strings over 200 characters and unknown actions are ignored.
 - To the frame, about the person: `{type: "agent-bus:viewer", id: "can"}` once the page loads (offer Release, +2 h and
   shared/private only on that person's holds; the bus checks ownership anyway), and `{type:
-  "agent-bus:resources-changed"}` whenever the booking dialog closes (refresh the schedule now). Nothing else: no keys,
-  no messages.
+  "agent-bus:resources-changed"}` whenever the booking dialog closes (refresh the schedule now). The page that asked
+  also gets `focus: {action, resource?, reservation?}`, what it asked for, and the keyboard: after redrawing, it puts
+  focus back on that control, or a sensible neighbour if it is gone (a Release removes its hold's buttons). Nothing
+  else: no keys, no messages.
 
 On bariton the bus runs with `--ext gpudash=http://127.0.0.1:3420,launcher=GPUs` (Can, 16 Nov: GPUs open from the top
 bar; the old dialog is "GPU booking" under Tools until gpudash's own buttons work, #10194); gpudash's narrow layout and
