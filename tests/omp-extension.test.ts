@@ -294,7 +294,7 @@ test("write to an offline agent is held for it; the result says so", async () =>
   const search = await getJson<{ messages: Array<{ expiresAt: number; createdAt: number }> }>(bus, "/api/search?from=carol&q=are%20you%20there&scope=all");
   expect(search.messages).toHaveLength(1);
   expect(search.messages[0]!.expiresAt - search.messages[0]!.createdAt).toBe(4 * 3600_000);
-});
+}, 15_000); // the tool waits up to 5 s for receipts an offline agent never sends: longer than Bun's 5 s default
 
 test("a delivery is reported seen when its text reaches the model, not when it is queued", async () => {
   const alpha = await startSession("alpha");

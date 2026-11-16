@@ -1119,7 +1119,7 @@ describe("backlog", () => {
     const back = await joinPath("/tmp/x/alpha");
     const sentinel = await send({ from: "carol", to: "@alpha", text: "fresh" });
     expect((await back.client.take("deliver")).message.id).toBe(sentinel.message.id);
-  });
+  }, 15_000); // the bus checks for expired messages every 5 s (EXPIRY_CHECK_MS): longer than Bun's 5 s default
 
   test("a brand-new agent gets no history", async () => {
     await joinPath("/tmp/x/beta");
