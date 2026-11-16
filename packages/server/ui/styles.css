@@ -2746,13 +2746,6 @@ ul.md-list ul.md-list { list-style: circle; }
     grid-area: attach;
   }
 
-  #attach-btn,
-  #voice-btn {
-    width: 36px;
-    height: 32px;
-    padding: 0;
-  }
-
   .composer-input-wrap,
   .voice-rec {
     grid-area: input;
