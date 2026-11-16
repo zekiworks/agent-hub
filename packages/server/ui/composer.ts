@@ -52,9 +52,11 @@ export function updateComposerState(): void {
   const view = state.view;
   const conv = view.kind === "conversation" ? state.conversations.get(view.id) : undefined;
   const target = view.kind === "draft" ? nameList(view.to) : conv ? conversationTitle(conv) : "";
-  dom.input.placeholder = PHONE.matches
-    ? `Message ${target}…`
-    : `Message ${target}…  (Enter to send, Shift+Enter for a new line, @ to mention)`;
+  // A short, quiet placeholder (Ümit #10686: the long one read like text still in the box); the conversation header
+  // names the room, screen readers get it from the label, the keys from the tooltip.
+  dom.input.placeholder = "Write a message…";
+  dom.input.setAttribute("aria-label", target ? `Message to ${target}` : "Message");
+  dom.input.title = PHONE.matches ? "" : "Enter sends, Shift+Enter starts a new line, @ mentions someone";
 }
 
 /** Height the user gave the message box with its grip (px); undefined = grows with its text. Kept per browser. */

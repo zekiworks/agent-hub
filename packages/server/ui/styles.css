@@ -916,7 +916,7 @@ button:disabled {
   gap: 10px;
   padding: 6px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0; /* square rows (Can #10680: no curved edge on the selected one) */
   background: transparent;
   text-align: left;
   color: inherit;
@@ -926,7 +926,8 @@ button:disabled {
   background: var(--sidebar-hover);
 }
 
-/* The open conversation: a raised row with a lilac edge (#10099), clear without colour on the name. */
+/* The open conversation: a flat raised row with a straight lilac edge (#10099, Can #10680), clear without colour on
+ * the name. */
 .side-item.active {
   background: var(--sidebar-active);
   box-shadow: inset 2px 0 0 var(--accent);
