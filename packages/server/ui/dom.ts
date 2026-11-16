@@ -71,6 +71,8 @@ export const dom = {
   lightboxName: el<HTMLSpanElement>("lightbox-name"),
   lightboxDownload: el<HTMLAnchorElement>("lightbox-download"),
   lightboxHint: el<HTMLSpanElement>("lightbox-hint"),
+  lightboxPrev: el<HTMLButtonElement>("lightbox-prev"),
+  lightboxNext: el<HTMLButtonElement>("lightbox-next"),
   app: el<HTMLDivElement>("app"),
   pane: el<HTMLElement>("pane"),
   paneTabs: el<HTMLDivElement>("pane-tabs"),

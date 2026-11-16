@@ -2064,8 +2064,11 @@ ul.md-list ul.md-list { list-style: circle; }
 
 .lightbox-bar {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  gap: 14px;
+  gap: 4px 14px;
+  padding: 0 8px;
   font-size: 13px;
   color: var(--text);
 }
@@ -2073,6 +2076,19 @@ ul.md-list ul.md-list { list-style: circle; }
 .lightbox-bar .link-btn {
   color: var(--accent);
   cursor: pointer;
+}
+
+/* ‹ Previous / Next › through the message's images (attachments.ts; Can #10845): finger-sized, plainly off at the ends. */
+.lightbox-step {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.lightbox-bar .lightbox-step:disabled {
+  color: var(--muted);
+  opacity: 0.45;
+  cursor: default;
 }
 
 .lightbox-hint {

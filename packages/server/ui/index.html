@@ -199,7 +199,10 @@
   <dialog id="lightbox" class="lightbox">
     <img id="lightbox-img" alt="" />
     <div class="lightbox-bar">
+      <!-- This message's other images (attachments.ts; Can #10845): hidden when it has one, disabled at the ends. -->
+      <button id="lightbox-prev" type="button" class="link-btn lightbox-step" aria-label="Previous image" hidden>‹ Previous</button>
       <span id="lightbox-name"></span>
+      <button id="lightbox-next" type="button" class="link-btn lightbox-step" aria-label="Next image" hidden>Next ›</button>
       <a id="lightbox-download" class="link-btn">Download</a>
       <span id="lightbox-hint" class="lightbox-hint">click or Esc to close</span>
     </div>

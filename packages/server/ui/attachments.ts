@@ -62,7 +62,7 @@ export function renderFile(file: FileRef): HTMLLIElement {
     // The viewer steps through this message's images (those still previewed: unrenderable ones are gone).
     preview.addEventListener("click", () => {
       const all = [...(preview.closest(".msg")?.querySelectorAll<HTMLElement>(".image-preview") ?? [preview])];
-      openLightbox(all.flatMap((p) => previewFiles.get(p) ?? []), Math.max(0, all.indexOf(preview)));
+      openLightbox(all.flatMap((p) => previewFiles.get(p) ?? []), Math.max(0, all.indexOf(preview)), preview);
     });
     li.append(preview);
   }
@@ -73,12 +73,15 @@ export function renderFile(file: FileRef): HTMLLIElement {
 /** File behind each image preview, for the viewer. */
 const previewFiles = new WeakMap<HTMLElement, { file: FileRef; url: string }>();
 
-/** The images the viewer steps through with ← and → (one message's), and the one shown. */
+/** The images the viewer steps through (one message's, in attachment order), the one shown, and the preview it was
+ * opened from: focus goes back there on close (codex-ui #10847; Safari does not focus a clicked button by itself). */
 let lightboxImages: Array<{ file: FileRef; url: string }> = [];
 let lightboxIndex = 0;
+let lightboxOpener: HTMLElement | undefined;
 
-function openLightbox(images: Array<{ file: FileRef; url: string }>, index: number): void {
+function openLightbox(images: Array<{ file: FileRef; url: string }>, index: number, opener: HTMLElement): void {
   lightboxImages = images;
+  lightboxOpener = opener;
   showLightboxImage(index);
   if (!dom.lightbox.open) dom.lightbox.showModal();
 }
@@ -88,27 +91,49 @@ function showLightboxImage(index: number): void {
   if (!image) return;
   lightboxIndex = index;
   const { file, url } = image;
+  const several = lightboxImages.length > 1;
   dom.lightboxImg.src = url;
   dom.lightboxImg.alt = file.name;
-  const position = lightboxImages.length > 1 ? `${index + 1} / ${lightboxImages.length} · ` : "";
+  const position = several ? `${index + 1} of ${lightboxImages.length} · ` : "";
   dom.lightboxName.textContent = `${position}${file.name} · ${formatBytes(file.size)}`;
   dom.lightboxDownload.href = url;
   dom.lightboxDownload.download = file.name;
-  dom.lightboxHint.textContent = lightboxImages.length > 1 ? "← → for the others · click or Esc to close" : "click or Esc to close";
+  // Previous / Next for this message's images (Can #10845): disabled at the ends, never on to another message.
+  dom.lightboxPrev.hidden = dom.lightboxNext.hidden = !several;
+  // A focused button that turns off drops the focus out of the viewer (at once, as it is disabled): the other one takes it.
+  const focused = document.activeElement;
+  dom.lightboxPrev.disabled = index === 0;
+  dom.lightboxNext.disabled = index === lightboxImages.length - 1;
+  if (focused === dom.lightboxPrev && dom.lightboxPrev.disabled) dom.lightboxNext.focus();
+  if (focused === dom.lightboxNext && dom.lightboxNext.disabled) dom.lightboxPrev.focus();
+  dom.lightboxHint.textContent = several ? "← → for the others · click or Esc to close" : "click or Esc to close";
 }
 
-dom.lightbox.addEventListener("keydown", (event) => {
-  if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-    event.preventDefault();
-    showLightboxImage(lightboxIndex + (event.key === "ArrowRight" ? 1 : -1));
-  }
+// While the viewer is open the arrows are its own (it is modal: no text field can have the focus then); listened for
+// on the document, as the focus may have left the dialog's buttons.
+document.addEventListener("keydown", (event) => {
+  if (!dom.lightbox.open || (event.key !== "ArrowRight" && event.key !== "ArrowLeft")) return;
+  event.preventDefault();
+  showLightboxImage(lightboxIndex + (event.key === "ArrowRight" ? 1 : -1));
 });
 
-// Any click closes it, except on the download link.
+for (const [button, step] of [
+  [dom.lightboxPrev, -1],
+  [dom.lightboxNext, 1],
+] as const) {
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    showLightboxImage(lightboxIndex + step);
+  });
+}
+
+// Any other click closes it, except on the download link.
 dom.lightbox.addEventListener("click", (event) => {
   if (event.target !== dom.lightboxDownload) dom.lightbox.close();
 });
 dom.lightbox.addEventListener("close", () => {
   dom.lightboxImg.removeAttribute("src");
   lightboxImages = [];
+  if (lightboxOpener?.isConnected) lightboxOpener.focus();
+  lightboxOpener = undefined;
 });
