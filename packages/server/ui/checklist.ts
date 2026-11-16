@@ -7,7 +7,8 @@ import { prefill } from "./compose";
 import { errorText, relativeTime } from "./format";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
-import { refreshPane, registerExtension, renderPane } from "./pane";
+import { dom } from "./dom";
+import { onWorkspaceChange, openPane, refreshPane, registerExtension, renderPane } from "./pane";
 import { state } from "./state";
 import { mentionNodes } from "./text";
 
@@ -141,4 +142,62 @@ registerExtension({
     );
     body.replaceChildren(root);
   },
+});
+
+/** Items in `list`, and how many are done (ticked here, or marked [x] by the owner). */
+function progress(list: Checklist): { done: number; total: number } {
+  let done = 0;
+  let total = 0;
+  for (const raw of list.text.split("\n")) {
+    const item = /^\s*[-*] \[([ xX])\] (.+)$/.exec(raw);
+    if (!item) continue;
+    total++;
+    if (item[1] !== " " || list.ticks[(item[2] ?? "").trim()]) done++;
+  }
+  return { done, total };
+}
+
+/**
+ * The pin at the top right of every conversation (Ümit #10722, #10735, #10739: the list inside the Workspace menu was
+ * not to be found). Filled, "📌 Pinned 6/14", when the conversation has a checklist: one click opens it in the
+ * Workspace, lit while it shows there. Empty, "📌 Nothing pinned", otherwise: a click says so.
+ */
+function renderHeaderButton(): void {
+  const view = state.view;
+  dom.checklistBtn.hidden = view.kind !== "conversation";
+  if (view.kind !== "conversation") return;
+  const list = lists.get(view.id)?.list;
+  dom.checklistBtn.classList.toggle("pinned", !!list);
+  if (list) {
+    const { done, total } = progress(list);
+    dom.checklistLabel.textContent = "Pinned";
+    dom.checklistCount.textContent = `${done}/${total}`;
+    dom.checklistBtn.title = `Pinned here: a checklist, ${done} of ${total} done. Opens in the Workspace on the right.`;
+    dom.checklistBtn.setAttribute("aria-label", `Pinned: checklist, ${done} of ${total} done`);
+  } else {
+    dom.checklistLabel.textContent = "Nothing pinned";
+    dom.checklistCount.textContent = "";
+    dom.checklistBtn.title = "Nothing is pinned in this conversation yet";
+    dom.checklistBtn.setAttribute("aria-label", "Nothing pinned");
+  }
+  const on = !!list && dom.paneBtn.dataset.shown === "checklist";
+  dom.checklistBtn.classList.toggle("on", on);
+  dom.checklistBtn.setAttribute("aria-pressed", on ? "true" : "false");
+}
+onWorkspaceChange(renderHeaderButton);
+
+let note: HTMLElement | undefined;
+dom.checklistBtn.addEventListener("click", () => {
+  const view = state.view;
+  if (view.kind === "conversation" && lists.get(view.id)?.list) return openPane("checklist");
+  // Empty: say so, briefly, under the pin.
+  note?.remove();
+  note = h("div", "pin-note", "Nothing pinned yet.");
+  note.setAttribute("role", "status");
+  const r = dom.checklistBtn.getBoundingClientRect();
+  note.style.top = `${Math.round(r.bottom + 6)}px`;
+  note.style.left = `${Math.round(Math.max(8, Math.min(r.left, innerWidth - 200)))}px`;
+  document.body.append(note);
+  const shown = note;
+  setTimeout(() => shown.remove(), 2500);
 });

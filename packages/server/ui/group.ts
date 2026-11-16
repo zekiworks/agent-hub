@@ -111,9 +111,10 @@ async function openRoom(picked: string[]): Promise<void> {
     const id = res.conversation.id;
     const action = (what: string, body: Record<string, unknown>) =>
       postJson<ConversationResponse>(`/api/conversations/${encodeURIComponent(id)}/${what}`, { from: state.me, ...body });
+    // Name and privacy first, so agents added next get the room's first message with its name (codex-ui #10727).
+    await action("project", { visibility: "private", title });
     if (picked.length > 0) await action("members", { ids: picked });
     if (dom.roomParent.value) await action("parent", { parent: dom.roomParent.value });
-    await action("project", { visibility: "private", title });
     dom.groupDialog.close();
     navigate({ kind: "conversation", id });
   } catch (error) {
