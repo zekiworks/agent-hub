@@ -145,8 +145,16 @@ reading, finishing and pressing Send.
   rules. Opened while signed out, the address is kept through signing in.
 - To the frame: `{type: "agent-bus:pointerleave"}` while the pointer moves over the website (at most one per 250 ms),
   since a pointer jumping straight out of a frame gives the page no mouseleave and leaves its hover stuck (gpudash,
-  15 Nov). Check `event.source === parent`. More could follow (the person's id, theme, the conversation on the left),
-  with only what the page may know.
+  15 Nov). Check `event.source === parent`.
+- GPU actions (#10194, 16 Nov): `parent.postMessage({type: "agent-bus:gpu", action, resource?, reservation?}, "*")`
+  with `action` one of `book` (with `resource`: its label, e.g. "bariton GPU 2", or id), `release`, `extend`, `mode`
+  (with `reservation`: the hold's id), `subscribe`. The website opens its GPU booking dialog at that GPU or hold and
+  outlines the control; the person clicks it (the page performs nothing). A hold that is gone or not the person's
+  says so; strings over 200 characters and unknown actions are ignored.
+- To the frame, about the person: `{type: "agent-bus:viewer", id: "can"}` once the page loads (offer Release, +2 h and
+  shared/private only on that person's holds; the bus checks ownership anyway), and `{type:
+  "agent-bus:resources-changed"}` whenever the booking dialog closes (refresh the schedule now). Nothing else: no keys,
+  no messages.
 
 On bariton the bus runs with `--ext gpudash=http://127.0.0.1:3420,launcher=GPUs` (Can, 16 Nov: GPUs open from the top
 bar; the old dialog is "GPU booking" under Tools until gpudash's own buttons work, #10194); gpudash's narrow layout and
