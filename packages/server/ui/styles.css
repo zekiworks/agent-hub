@@ -3216,17 +3216,42 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .answer-toast {
-  display: grid;
-  gap: 2px;
-  padding: 10px 14px;
+  display: flex;
+  align-items: flex-start;
   border: 1px solid var(--accent);
   border-radius: 10px;
   background: var(--panel-raised);
-  color: var(--text);
-  text-align: left;
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
-  cursor: pointer;
   pointer-events: auto;
+}
+
+.answer-toast-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 10px 4px 10px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.answer-toast-close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.answer-toast-close:hover {
+  color: var(--text);
 }
 
 .answer-toast-head {

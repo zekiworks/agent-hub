@@ -1,13 +1,13 @@
 // An answer elsewhere (Ümit, 16 Nov: "I write in one room and go to another; how do I know an answer came?"): a banner
 // at the top, "↩ @logic in #toolbench-models: …", that opens the message when tapped. Phones show no browser
-// notifications in a Safari tab, and the conversation list is hidden while a conversation is open.
+// notifications in a Safari tab, and the conversation list is hidden while a conversation is open. A banner stays
+// until tapped or closed with ✕ (Ümit #10168: 12 s was too short to catch); the message itself is in its conversation.
 import type { Conversation, Message } from "@agent-bus/protocol";
 import { hooks } from "./hooks";
 import { h } from "./html";
 import { conversationTitle, state } from "./state";
 
-/** How long a banner stays (ms), and how many show at once (the oldest goes first). */
-const SHOW_MS = 12_000;
+/** How many show at once (the oldest goes first). */
 const MAX_SHOWN = 3;
 
 let box: HTMLElement | undefined;
@@ -29,18 +29,22 @@ export function showAnswer(message: Message, conversation: Conversation): void {
     document.body.append(box);
   }
   const text = message.text.replace(/\s+/g, " ").trim();
-  const toast = h("button", "answer-toast");
-  toast.type = "button";
-  toast.append(
+  const toast = h("div", "answer-toast");
+  const open = h("button", "answer-toast-open");
+  open.type = "button";
+  open.append(
     h("span", "answer-toast-head", `↩ @${message.from} in ${conversationTitle(conversation)}`),
     h("span", "answer-toast-text", text.length > 140 ? `${text.slice(0, 139)}…` : text || "(file)")
   );
-  const close = () => toast.remove();
-  toast.addEventListener("click", () => {
-    close();
+  const dismiss = h("button", "answer-toast-close", "✕");
+  dismiss.type = "button";
+  dismiss.title = "Close (the message stays in its conversation)";
+  open.addEventListener("click", () => {
+    toast.remove();
     void hooks.showMessage(message.seq);
   });
+  dismiss.addEventListener("click", () => toast.remove());
+  toast.append(open, dismiss);
   box.append(toast);
   while (box.childElementCount > MAX_SHOWN) box.firstElementChild?.remove();
-  setTimeout(close, SHOW_MS);
 }
