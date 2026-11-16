@@ -4,7 +4,7 @@ import type { Conversation, ConversationResponse, NotifyLevel, ProjectVisibility
 import { postJson } from "./api";
 import { closeWindowButton } from "./dialogs";
 import { dom } from "./dom";
-import { errorText, nameList } from "./format";
+import { errorText } from "./format";
 import { h } from "./html";
 import { loadState } from "./loading";
 import { renderAll } from "./render";
@@ -77,7 +77,7 @@ function parentSelect(conv: Conversation): HTMLElement {
   if (children.length > 0) {
     return h("p", "dialog-hint", `A root project: ${children.length} ${children.length === 1 ? "is" : "are"} under it (${children.map((c) => conversationTitle(c)).join(", ")}).`);
   }
-  const options: Array<[string, string]> = [["", conv.kind === "project" ? "None: a root project" : "None"]];
+  const options: Array<[string, string]> = [["", conv.kind === "project" && !conv.room ? "None: a root project" : "None"]];
   for (const p of Array.from(state.conversations.values())
     .filter((c) => c.kind === "project" && !c.room && !c.preview && !c.parentId && c.id !== conv.id)
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))) {
@@ -100,7 +100,24 @@ function render(): void {
   head.append(h("h2", "", conversationTitle(conv)), close);
   const body: HTMLElement[] = [head];
 
-  body.push(h("h3", "", `Members (${conv.members.length})`), h("p", "dialog-hint", nameList(conv.members)));
+  body.push(h("h3", "", `Members (${conv.members.length})`));
+  // Each member; agents get ✕ to take them out (Ümit, 16 Nov), for a person who is in it.
+  const list = h("div", "member-chips");
+  const humans = new Set(state.humans);
+  for (const id of conv.members) {
+    const chip = h("span", "member-chip", id);
+    if (member && !humans.has(id)) {
+      const x = h("button", "member-remove", "✕");
+      x.type = "button";
+      x.title = `Remove @${id} from ${conversationTitle(conv)}`;
+      x.addEventListener("click", () => {
+        if (confirm(`Remove @${id} from ${conversationTitle(conv)}? It stops getting its messages; you can add it again.`)) void act(conv, "remove", { id });
+      });
+      chip.append(x);
+    }
+    list.append(chip);
+  }
+  body.push(list);
   if (member) {
     const add = h("input");
     add.type = "text";
@@ -208,7 +225,7 @@ function render(): void {
     body.push(
       h("h3", "", "Delete"),
       h("p", "dialog-hint", "Gone for good: its messages, and their quotes elsewhere. What is under it becomes a root."),
-      button("Delete project…", () => {
+      button(conv.room ? "Delete room…" : "Delete project…", () => {
         const typed = prompt(`Delete ${conversationTitle(conv)} and all its messages for good? Type its name to confirm.`);
         if (typed === null) return;
         if (typed.trim().replace(/^@@/, "").toLowerCase() !== name) {

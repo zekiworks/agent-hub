@@ -2133,6 +2133,43 @@ ul.md-list ul.md-list { list-style: circle; }
   margin-top: 16px;
 }
 
+/* Members in the ⋯ menu (convmenu.ts): one chip each; agents carry ✕ to take them out. */
+.member-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+
+.member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.member-chip:not(:has(.member-remove)) {
+  padding-right: 10px;
+}
+
+.member-remove {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.member-remove:hover {
+  background: var(--hover);
+  color: var(--error);
+}
+
 .btn {
   padding: 7px 14px;
   border: 1px solid var(--border);

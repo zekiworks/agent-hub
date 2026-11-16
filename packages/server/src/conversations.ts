@@ -154,7 +154,7 @@ function memberRequest(ctx: BusContext, req: Request, body: Record<string, unkno
   return { writer, conversation };
 }
 
-/** POST /api/conversations/:id/{members,leave,notify,pin,project,room,parent,archive,delete}; null for any other path. */
+/** POST /api/conversations/:id/{members,leave,remove,notify,pin,project,room,parent,archive,delete}; null for any other path. */
 export async function handleConversationRoute(
   ctx: BusContext,
   req: Request,
@@ -175,6 +175,15 @@ export async function handleConversationRoute(
     case "leave": {
       const { writer, conversation } = memberRequest(ctx, req, body, id);
       return { conversation: leave(ctx, conversation, writer.id) };
+    }
+    case "remove": {
+      // A person takes an agent out of a group, project or room (Ümit, 16 Nov); people leave by themselves.
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      if (writer.kind !== "human") throw new HttpError(403, "Only people remove members");
+      const target = typeof (body as { id?: unknown }).id === "string" ? ((body as { id: string }).id).trim().replace(/^@/, "").toLowerCase() : "";
+      if (!target) throw new HttpError(400, "id must be the agent to remove");
+      if (ctx.hub.isHuman(target)) throw new HttpError(400, "People leave by themselves; only agents are removed");
+      return { conversation: leave(ctx, conversation, target) };
     }
     case "pin": {
       // Not only members: a project seen under "Other projects" can be pinned too (Can, 15 Nov).

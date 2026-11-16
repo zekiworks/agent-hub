@@ -865,6 +865,21 @@ describe("delivery", () => {
     expect(await beta.client.take("deliver")).toMatchObject({ wake: true, message: { text: "Withdrawn. not needed" } });
   });
 
+  test("a person removes an agent from a group, project or room; agents and non-members cannot, and people are not removed", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const room = await send({ from: "carol", to: "#crew", text: "start" });
+    await postJson(bus, `/api/conversations/${room.conversation.id}/members`, { from: "carol", ids: ["alpha", "beta", "uma"] });
+    const remove = (id: string, from = "carol") => postJson(bus, `/api/conversations/${room.conversation.id}/remove`, { from, id });
+    expect((await remove("beta", alpha.id)).status).toBe(403); // agents don't remove
+    expect((await remove("uma")).status).toBe(400); // people leave by themselves
+    expect((await answeredConversation(await remove("@Beta"))).members).toEqual(["alpha", "carol", "uma"]);
+    expect((await remove("beta")).status).toBe(400); // not in it any more
+    // A removed agent no longer gets its messages.
+    const later = await send({ from: "carol", conversationId: room.conversation.id, text: "after" });
+    expect(later.message.receipts.map((r) => r.to)).toEqual(["alpha"]);
+  });
+
   test("a project's Home: its first publisher (a member) owns and replaces it; anyone who may read the project reads it", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
