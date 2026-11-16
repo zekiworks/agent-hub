@@ -3179,3 +3179,42 @@ ul.md-list ul.md-list { list-style: circle; }
 .auth-link a {
   overflow-wrap: anywhere;
 }
+
+/* Answers elsewhere (toast.ts): banners at the top, tap to open the message. */
+.answer-toasts {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(440px, calc(100vw - 20px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.answer-toast {
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--panel-raised);
+  color: var(--text);
+  text-align: left;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.answer-toast-head {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--accent);
+}
+
+.answer-toast-text {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}

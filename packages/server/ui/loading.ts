@@ -1,5 +1,6 @@
 // Loading state and messages from the server, and recording each new message (socket or POST response).
 import { registerAgentPages } from "./agentpages";
+import { answersMe, showAnswer } from "./toast";
 import type { Conversation, Message, MessagesResponse, StateResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { showError } from "./composer";
@@ -81,6 +82,8 @@ export function receive(message: Message, conversation: Conversation): void {
   const cache = state.caches.get(conversation.id);
   const pending = state.loading.get(conversation.id);
   const known = (cache?.messages ?? pending ?? []).some((m) => m.seq === message.seq);
+  // The message before it here, for "it answers me" (it follows my own last message).
+  const previous = (cache?.messages ?? pending ?? []).filter((m) => m.seq < message.seq).at(-1);
   if (!known) {
     applyEarlyReceipts(message);
     if (message.files.length > 0) sharedFilesChanged(conversation.id);
@@ -92,6 +95,7 @@ export function receive(message: Message, conversation: Conversation): void {
     if (viewingNow(conversation.id)) {
       markRead(conversation.id);
     } else {
+      if (answersMe(message, conversation, previous)) showAnswer(message, conversation);
       state.unread.set(conversation.id, (state.unread.get(conversation.id) ?? 0) + 1);
       if (isForMe(message, conversation)) {
         state.attention.set(conversation.id, (state.attention.get(conversation.id) ?? 0) + 1);

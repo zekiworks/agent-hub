@@ -261,11 +261,16 @@ dom.voiceBtn.addEventListener("pointerup", (event) => {
     event.clientY < box.top - CANCEL_DISTANCE_PX ||
     event.clientY > box.bottom + CANCEL_DISTANCE_PX;
   void stop(away);
+  // Not silently: a recording thrown away looks like one that failed to send (Ümit, 16 Nov).
+  if (away) showStatus("Recording discarded: your finger let go away from 🎤. Tap 🎤 once, then ➤, to send without holding.");
 });
 
 dom.voiceBtn.addEventListener("pointercancel", () => {
   held = false;
-  if (!state.voiceLatched) void stop(true);
+  if (!state.voiceLatched) {
+    void stop(true);
+    showStatus("Recording discarded: the phone took the touch away. Tap 🎤 once, then ➤, to send without holding.");
+  }
 });
 dom.voiceBtn.addEventListener("contextmenu", (event) => event.preventDefault());
 
