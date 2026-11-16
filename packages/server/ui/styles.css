@@ -2057,6 +2057,37 @@ ul.md-list ul.md-list { list-style: circle; }
   font-size: 16px;
 }
 
+/* New room's fields (group.ts): one per row, full width. */
+.room-fields {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.room-fields[hidden] {
+  display: none;
+}
+
+.room-fields label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.room-fields input,
+.room-fields select,
+.room-fields textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
 .group-choices {
   list-style: none;
   margin: 0 0 14px;
@@ -2650,10 +2681,54 @@ ul.md-list ul.md-list { list-style: circle; }
 
   /* A sheet with the grip on top: pull the line up for a taller box, down for a shorter one. */
   .composer {
-    padding: 0 8px 6px;
+    /* More room at the bottom: the box sat right above Safari's address bar, and thumbs landed on it (Ümit, 16 Nov). */
+    padding: 0 8px 14px;
     border-top: 1px solid var(--border);
     border-radius: 14px 14px 0 0;
     background: var(--panel-raised);
+  }
+
+  /* The Message/Task picker on a short line of its own above the box: beside it the box was squeezed (Ümit, 16 Nov). */
+  /* Only the box and Send on the bottom line; 📎, Message/Task and 🎤 above it (Ümit, 16 Nov: the box was too small). */
+  .composer-row {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "attach type . mic"
+      "input input input send";
+    align-items: center;
+    row-gap: 4px;
+  }
+
+  .task-select {
+    grid-area: type;
+    justify-self: start;
+  }
+
+  #attach-btn {
+    grid-area: attach;
+  }
+
+  #attach-btn,
+  #voice-btn {
+    width: 36px;
+    height: 32px;
+    padding: 0;
+  }
+
+  .composer-input-wrap,
+  .voice-rec {
+    grid-area: input;
+  }
+
+  #voice-btn {
+    grid-area: mic;
+    justify-self: end;
+  }
+
+  #send-btn {
+    grid-area: send;
+    align-self: end;
   }
 
   .composer-grip {

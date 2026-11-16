@@ -133,7 +133,13 @@ async function start(): Promise<void> {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (err) {
-    showError(`No microphone: ${errorText(err)}`);
+    // Blocked or refused: say how to allow it (iPhone Safari: aA → Website Settings), not the browser's wording.
+    const blocked = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "SecurityError");
+    showError(
+      blocked
+        ? "The microphone is not allowed for this site. On the iPhone: aA (left of the address) → Website Settings → Microphone → Allow; elsewhere, the lock or site settings next to the address. Then tap 🎤 again."
+        : `No microphone: ${errorText(err)}`
+    );
     return;
   } finally {
     opening = false;

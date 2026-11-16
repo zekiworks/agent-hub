@@ -44,6 +44,9 @@
       <section class="side-section">
         <div class="side-heading">
           <span>Rooms</span>
+          <span class="side-heading-actions">
+            <button id="new-room-btn" type="button" class="link-btn" title="Open a room: a name, the people and agents in it, and a first message">+ Room</button>
+          </span>
         </div>
         <ul id="room-list" class="side-list"></ul>
         <button id="other-rooms-btn" type="button" class="link-btn browse-btn" hidden></button>
@@ -188,7 +191,12 @@
 
   <dialog id="group-dialog" class="dialog">
     <form id="group-form" method="dialog">
-      <h2>New group</h2>
+      <h2 id="group-heading">New group</h2>
+      <div id="room-fields" class="room-fields" hidden>
+        <label>Name <input id="room-name" type="text" placeholder="small-models" autocomplete="off" /></label>
+        <label>Under project <select id="room-parent"></select></label>
+        <label>First message <textarea id="room-first" rows="2" placeholder="What is this room for?"></textarea></label>
+      </div>
       <p class="dialog-hint">Pick the participants. You are included automatically.</p>
       <ul id="group-choices" class="group-choices"></ul>
       <div id="group-error" class="composer-error" hidden></div>
