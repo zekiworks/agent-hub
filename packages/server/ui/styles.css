@@ -3927,18 +3927,48 @@ ul.md-list ul.md-list { list-style: circle; }
   display: inline;
 }
 
-/* The first line is the handle that moves them (mouse and touch). */
+/* The header row is the handle that moves them, mouse and touch (toast.ts): a grip ⠿, who and where, then ✕.
+   A grab cursor and the grip say it moves (codex-ui #10866); it is outside the text's button (Ümit #10864). */
 .answer-toast-head {
-  cursor: move;
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding-left: 8px;
+  cursor: grab;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.answer-toast-head:active {
+  cursor: grabbing;
+}
+
+.answer-toast-grip {
+  flex: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.answer-toast-where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--accent);
 }
 
 .answer-toast-open {
-  flex: 1;
+  flex: 1 1 100%;
   min-width: 0;
   display: grid;
-  gap: 2px;
-  padding: 10px 4px 10px 14px;
+  padding: 0 14px 10px;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -3960,12 +3990,6 @@ ul.md-list ul.md-list { list-style: circle; }
 
 .answer-toast-close:hover {
   color: var(--text);
-}
-
-.answer-toast-head {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--accent);
 }
 
 .answer-toast-text {

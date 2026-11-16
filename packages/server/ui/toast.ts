@@ -69,10 +69,11 @@ function place(position: Position | undefined): void {
 /** A drag that just ended: the click it ends with must not open the message. */
 let dragged = false;
 
-/** Dragging a banner by its first line moves all of them (mouse and touch: pointer events). */
-function makeHandle(handle: HTMLElement): void {
+/** Dragging a banner by its header row moves all of them (mouse and touch: pointer events); a tap on it, `tap`. The
+ * handle is not inside the banner's button: Firefox gives a button's children no mouse events (Ümit #10864). */
+function makeHandle(handle: HTMLElement, tap: () => void): void {
   handle.addEventListener("pointerdown", (down) => {
-    if (!box || down.button !== 0) return;
+    if (!box || down.button !== 0 || (down.target as Element).closest("button")) return;
     const start = box.getBoundingClientRect();
     let moving = false;
     // Captured at once: a quick mouse move leaves the line before the drag is recognised.
@@ -89,7 +90,8 @@ function makeHandle(handle: HTMLElement): void {
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", end);
       handle.removeEventListener("pointercancel", end);
-      if (!moving || !box) return;
+      if (!moving) return tap();
+      if (!box) return;
       // The click that may follow this drag must not open the message; a later tap must.
       dragged = true;
       setTimeout(() => (dragged = false), 0);
@@ -114,25 +116,29 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   }
   const text = message.text.replace(/\s+/g, " ").trim();
   const toast = h("div", "answer-toast");
-  const open = h("button", "answer-toast-open");
-  open.type = "button";
-  // The whole text, a few lines of it shown; "More" lets the rest out (Ümit #10782: she could not read them).
-  const body = h("span", "answer-toast-text", text || "(file)");
-  const head = h("span", "answer-toast-head", `↩ @${message.from} in ${conversationTitle(conversation)}`);
-  head.title = "Drag to move these notifications";
-  makeHandle(head);
-  open.append(head, body);
-  const dismiss = h("button", "answer-toast-close", "✕");
-  dismiss.type = "button";
-  dismiss.title = "Close (the message stays in its conversation)";
-  dismiss.setAttribute("aria-label", "Close this notification");
   const activate = () => {
     toast.remove();
     void hooks.showMessage(message.seq);
   };
-  // A tap or click opens the message: a press and release in place. Pressing and moving is a drag (on the first line)
-  // or selecting text, not an open. Not relying on the browser's click: after a touch drag Chrome sometimes sends
-  // none for the next tap. The keyboard (Enter/Space) still opens it through click.
+  // The header row: a visible grip and who/where, the handle that moves the banners (codex-ui #10866: it looked like
+  // ordinary text), and ✕.
+  const head = h("div", "answer-toast-head");
+  head.title = "Drag to move these notifications; click to open the message";
+  head.append(h("span", "answer-toast-grip", "⠿"), h("span", "answer-toast-where", `↩ @${message.from} in ${conversationTitle(conversation)}`));
+  makeHandle(head, activate);
+  const dismiss = h("button", "answer-toast-close", "✕");
+  dismiss.type = "button";
+  dismiss.title = "Close (the message stays in its conversation)";
+  dismiss.setAttribute("aria-label", "Close this notification");
+  head.append(dismiss);
+  const open = h("button", "answer-toast-open");
+  open.type = "button";
+  // The whole text, a few lines of it shown; "More" lets the rest out (Ümit #10782: she could not read them).
+  const body = h("span", "answer-toast-text", text || "(file)");
+  open.append(body);
+  // A tap or click on the text opens the message: a press and release in place. Pressing and moving selects text,
+  // not an open. Not relying on the browser's click: after a touch drag Chrome sometimes sends none for the next tap.
+  // The keyboard (Enter/Space) still opens it through click.
   let pressed: { x: number; y: number } | undefined;
   open.addEventListener("pointerdown", (event) => {
     pressed = event.button === 0 ? { x: event.clientX, y: event.clientY } : undefined;
@@ -152,7 +158,7 @@ export function showAnswer(message: Message, conversation: Conversation): void {
     localStorage.removeItem(POSITION_KEY);
     place(undefined);
   });
-  toast.append(open, dismiss);
+  toast.append(head, open);
   box.append(toast);
   while (box.childElementCount > MAX_SHOWN) box.firstElementChild?.remove();
   const row = h("div", "answer-toast-row");
