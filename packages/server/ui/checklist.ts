@@ -172,8 +172,8 @@ function renderHeaderButton(): void {
     const { done, total } = progress(list);
     dom.checklistLabel.textContent = "Pinned";
     dom.checklistCount.textContent = `${done}/${total}`;
-    dom.checklistBtn.title = `Pinned here: a checklist, ${done} of ${total} done. Opens in the Workspace on the right.`;
-    dom.checklistBtn.setAttribute("aria-label", `Pinned: checklist, ${done} of ${total} done`);
+    dom.checklistBtn.title = `Pinned: a checklist, ${done} of ${total} tasks done. Opens in the Workspace on the right.`;
+    dom.checklistBtn.setAttribute("aria-label", `Pinned checklist: ${done} of ${total} tasks done`);
   } else {
     dom.checklistLabel.textContent = "Nothing pinned";
     dom.checklistCount.textContent = "";

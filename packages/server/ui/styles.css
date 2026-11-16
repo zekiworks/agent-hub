@@ -280,6 +280,23 @@ button:disabled {
   color: var(--text);
 }
 
+/* Outlined when nothing is pinned, filled when something is (codex-ui #10756: the shape says it, not only the colour). */
+.pin-icon {
+  vertical-align: -3px;
+}
+
+.pin-icon path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.checklist-btn.pinned .pin-icon .pin-head {
+  fill: currentColor;
+}
+
 .pin-note {
   position: fixed;
   z-index: 50;
@@ -326,6 +343,23 @@ button:disabled {
 .inbox-topbtn.active {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* The open global item reads as a tab (#10696, Can and Ümit): its top-bar entry and the Workspace's heading share one
+ * tint, the entry with an accent lower edge, the heading with an accent upper edge. Follows ‹ › (the class goes with
+ * the item); gone when an entity's tools are shown. Desktop only: on phones the Workspace's heading names it. */
+@media (min-width: 1101px) {
+  .app.ws-global .launcher-btn.active,
+  .app.ws-global .inbox-topbtn.active {
+    border-radius: 6px 6px 0 0;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  .app.ws-global .ws-head {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
 }
 
 /* "✉ Your inbox" at the top of the left list (#10107). */
