@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import {
@@ -113,8 +113,14 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     options.dataDir ?? process.env.AGENT_BUS_DATA_DIR ?? path.join(homedir(), ".agent-bus")
   );
   const filesDir = path.join(dataDir, "files");
-  mkdirSync(filesDir, { recursive: true });
   const dbPath = path.join(dataDir, "message-bus.sqlite");
+  // Messages, files, session and token hashes are the account's alone: the directory is 700 and what the bus writes
+  // there 600, on a fresh install and fixed on an existing one (launch check, 16 Nov: other local users could read
+  // the database).
+  process.umask(0o077);
+  mkdirSync(filesDir, { recursive: true, mode: 0o700 });
+  for (const p of [dataDir, filesDir]) chmodSync(p, 0o700);
+  for (const suffix of ["", "-wal", "-shm"]) if (existsSync(dbPath + suffix)) chmodSync(dbPath + suffix, 0o600);
   const humans = resolveHumans(options.humans);
   const db = new BusDatabase(dbPath, humans);
   // The ports are known once the servers listen; the passkey origins follow them.
