@@ -3864,12 +3864,37 @@ ul.md-list ul.md-list { list-style: circle; }
   pointer-events: auto;
 }
 
-.answer-toast-more {
+/* Under the text: More/Less, and Reset position once the banners were moved (toast.ts). */
+.answer-toast-row {
+  display: flex;
   flex: 1 1 100%;
+  gap: 14px;
+  padding: 0 14px 6px;
+}
+
+.answer-toast-row:empty {
+  display: none;
+}
+
+.answer-toast-more,
+.answer-toast-reset {
   min-height: 32px;
-  padding: 0 14px 8px;
-  text-align: left;
+  padding: 0;
   font-size: 13px;
+}
+
+.answer-toast-reset {
+  display: none;
+}
+
+.answer-toasts.moved .answer-toast-reset {
+  display: inline;
+}
+
+/* The first line is the handle that moves them (mouse and touch). */
+.answer-toast-head {
+  cursor: move;
+  touch-action: none;
 }
 
 .answer-toast-open {
@@ -3914,6 +3939,10 @@ ul.md-list ul.md-list { list-style: circle; }
   overflow: hidden;
   font-size: 14px;
   overflow-wrap: anywhere;
+  /* Selectable, to copy a part (codex-ui #10815); a press and drag here selects, it does not open the message. */
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
 }
 
 .answer-toast-text.expanded {
