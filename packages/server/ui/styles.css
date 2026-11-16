@@ -118,6 +118,13 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* While the pane shows the page on the left, its heading is plain text; only another subject's is a link. */
+.link-btn.pane-source:not(.elsewhere) {
+  color: var(--text);
+  cursor: default;
+  text-decoration: none;
+}
+
 .link-btn.pane-source[hidden] {
   display: none;
 }
@@ -2796,6 +2803,26 @@ ul.md-list ul.md-list { list-style: circle; }
 
   .composer .send-btn::before {
     font-size: 24px;
+  }
+
+  /* Every other control a thumb hits is at least 44×44 (Ümit #10047): Back, ⓘ, ▤, ⋯, the pane's ✕ and tabs, the
+     Message/Task picker. Icons stay their size; the box around them grows. */
+  .back-btn,
+  .conv-header .icon-btn,
+  .pane-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .pane-tab {
+    min-height: 44px;
+  }
+
+  .task-select {
+    min-height: 44px;
+    max-width: none;
+    padding: 0 8px;
+    font-size: 15px;
   }
 
   .composer .voice-rec {

@@ -1,7 +1,8 @@
 // The right pane: extensions shown as tabs next to the conversation (docs/right-pane.md). An extension says when it
 // has something for a view and fills the pane's body. The pane keeps the view it was opened for (its source): the
 // main panel changing does not change it (Can, 15 Nov); only opening an extension for the current view does (▤, a
-// file, a tab while they match). While the two differ, the source's name heads the pane.
+// file, a tab while they match). Its subject heads it always, with its kind ("Agent · @codex-ui"; Ümit #10044):
+// a click on it opens it while the main panel shows something else.
 import { dom } from "./dom";
 import { h } from "./html";
 import { conversationTitle, state, type View } from "./state";
@@ -108,6 +109,25 @@ export function refreshPane(id: string): void {
   renderPane();
 }
 
+/** The pane's heading for `view`: what kind of thing it is and its name. */
+function subjectLabel(view: View): string {
+  const agent = (id: string | undefined) => !!id && state.participants.some((p) => p.id === id && p.kind === "agent");
+  if (view.kind === "draft") {
+    if (view.project) return `Project · @@${view.project}`;
+    return view.to.length === 1 && agent(view.to[0]) ? `Agent · @${view.to[0]}` : `Group · ${view.to.join(", ")}`;
+  }
+  const conv = state.conversations.get(view.id);
+  if (!conv) return "";
+  const name = conversationTitle(conv);
+  if (conv.kind === "all") return `Room · ${name}`;
+  if (conv.kind === "project") return `${conv.room ? "Room" : "Project"} · ${name}`;
+  if (conv.kind === "dm") {
+    const other = conv.members.find((id) => id !== state.me);
+    return agent(other) ? `Agent · @${other}` : `Person · ${name}`;
+  }
+  return `Group · ${name}`;
+}
+
 /** Whether the pane's source is the view open in the main panel. */
 function showsCurrent(): boolean {
   return !!source && viewHash(source) === viewHash(state.view);
@@ -132,14 +152,11 @@ export function renderPane(): void {
     setVisible(undefined);
     return;
   }
-  // Another conversation's extensions: its name heads the pane, and a click on it opens that conversation.
-  dom.paneSource.hidden = here;
-  if (!here) {
-    const conv = view.kind === "conversation" ? state.conversations.get(view.id) : undefined;
-    const name = conv ? conversationTitle(conv) : view.kind === "draft" ? (view.project ? `@@${view.project}` : view.to.join(", ")) : "";
-    dom.paneSource.textContent = name;
-    dom.paneSource.title = `Showing ${name}; click to open it`;
-  }
+  // Its subject heads the pane; while the main panel shows something else, a click on it opens it.
+  dom.paneSource.hidden = false;
+  dom.paneSource.textContent = subjectLabel(view);
+  dom.paneSource.classList.toggle("elsewhere", !here);
+  dom.paneSource.title = here ? "" : `Not the conversation on the left; click to open it`;
   dom.paneTabs.replaceChildren(
     ...list.map((e) => {
       const button = h("button", e === current ? "pane-tab active" : "pane-tab", e.title());
@@ -172,7 +189,7 @@ dom.paneBtn.addEventListener("click", () => {
   selectTab((list.find((e) => e.id === tab) ?? list[0])?.id ?? tab);
 });
 dom.paneSource.addEventListener("click", () => {
-  if (source) navigate(source);
+  if (source && !showsCurrent()) navigate(source);
 });
 dom.paneClose.addEventListener("click", closePane);
 // Esc closes the pane unless something else (mention menu, reply bar, a dialog) used it first.
