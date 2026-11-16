@@ -105,8 +105,14 @@ export interface Conversation {
    * and cannot be updated while they run; remove once none of them is left.
    */
   addressed: string[];
-  /** Projects. */
+  /** Projects: the address ("#name" for a room, "@@name" for a project), a slug that does not change with the title. */
   name?: string;
+  /**
+   * Projects and rooms: the name people read, in any letters and with spaces ("Model Research", "Yeni model ekleme")
+   * (#10623). Absent: the address is the name. Renaming changes this, never the address, so links and agents' addresses
+   * keep working.
+   */
+  title?: string;
   topic?: string;
   visibility?: ProjectVisibility;
   /** Group DMs and projects out of the sidebar (and Browse) until someone writes in them again. */
@@ -576,7 +582,10 @@ export interface NotifyRequest {
  */
 export interface ProjectRequest {
   from: string;
+  /** The address (slug). Changing it breaks old "#name" links; the title is the name to change. */
   name?: string;
+  /** The name people read; "" clears it (the address is shown again). */
+  title?: string;
   topic?: string;
   visibility?: ProjectVisibility;
 }

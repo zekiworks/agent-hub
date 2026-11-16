@@ -213,7 +213,8 @@
     <form id="group-form" method="dialog">
       <h2 id="group-heading">New group</h2>
       <div id="room-fields" class="room-fields" hidden>
-        <label>Name <input id="room-name" type="text" placeholder="small-models" autocomplete="off" /></label>
+        <label>Name <input id="room-name" type="text" placeholder="Model Research" autocomplete="off" maxlength="80" /></label>
+        <p id="room-address" class="dialog-hint room-address" aria-live="polite"></p>
         <label>Under project <select id="room-parent"></select></label>
         <label>First message <textarea id="room-first" rows="2" placeholder="What is this room for?"></textarea></label>
       </div>

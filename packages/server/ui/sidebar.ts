@@ -15,6 +15,7 @@ import {
   otherGroups,
   projectColor,
   sortedGroups,
+  conversationAddress,
   conversationTitle,
   currentDirectAgent,
   dmWith,
@@ -153,9 +154,11 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   button.type = "button";
   if (isCurrent(conv.id)) button.classList.add("active");
   const title = h("span", "side-item-title", conversationTitle(conv));
+  // A named room or project also shows its address, so two similar names stay apart (#10623).
+  const address = conv.kind === "project" && conv.title ? `${conversationAddress(conv)} · ` : "";
   const what =
     conv.kind === "project"
-      ? (conv.topic ?? `${conv.visibility ?? "open"} ${conv.room ? "room" : "project"}`)
+      ? address + (conv.topic ?? `${conv.visibility ?? "open"} ${conv.room ? "room" : "project"}`)
       : conv.kind === "group"
         ? "group DM"
         : conv.kind === "dm"
@@ -290,17 +293,21 @@ function entryMenuButton(conv: Conversation): HTMLButtonElement {
   return btn;
 }
 
-/** The menu becomes a rename form: the current name filled in, Save or Cancel; Enter saves, Esc cancels. */
+/**
+ * The menu becomes a rename form: the current name filled in, Save or Cancel; Enter saves, Esc cancels. Renaming
+ * changes the name people read, never the address (#10623): links and agents keep working.
+ */
 function renameIn(menu: HTMLElement, conv: Conversation): void {
-  const room = !!conv.room;
+  const address = conversationAddress(conv) ?? "";
   const form = h("form", "entry-rename");
-  const label = h("label", "entry-rename-label", room ? "Room name (#name)" : "Project name (@@name)");
+  const label = h("label", "entry-rename-label", conv.room ? "Room name" : "Project name");
   const input = h("input");
   input.type = "text";
-  input.value = conv.name ?? "";
+  input.maxLength = 80;
+  input.value = conversationTitle(conv);
   input.autocomplete = "off";
-  input.spellcheck = false;
   label.append(input);
+  const hint = h("p", "entry-rename-hint", `Address stays ${address}`);
   const error = h("p", "entry-rename-error");
   error.hidden = true;
   error.setAttribute("role", "alert");
@@ -311,14 +318,16 @@ function renameIn(menu: HTMLElement, conv: Conversation): void {
   cancel.addEventListener("click", closeEntryMenu);
   const row = h("div", "entry-rename-actions");
   row.append(cancel, save);
-  form.append(label, error, row);
+  form.append(label, hint, error, row);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const name = input.value.trim().replace(/^[#@]+/, "").toLowerCase();
-    if (!name || name === conv.name) return closeEntryMenu();
+    const title = input.value.replace(/\s+/g, " ").trim();
+    if (title === conversationTitle(conv)) return closeEntryMenu();
+    // Typing the address itself (or nothing) gives the address back as the name.
+    const titleToSave = title === address || title === "" ? "" : title;
     save.disabled = true;
     try {
-      await postJson(`/api/conversations/${encodeURIComponent(conv.id)}/project`, { from: state.me, name });
+      await postJson(`/api/conversations/${encodeURIComponent(conv.id)}/project`, { from: state.me, title: titleToSave });
       closeEntryMenu();
     } catch (err) {
       error.textContent = errorText(err);

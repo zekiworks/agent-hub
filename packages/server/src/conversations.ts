@@ -25,6 +25,8 @@ export const JOIN_CONTEXT_MESSAGES = 5;
 
 const NOTIFY_LEVELS: readonly NotifyLevel[] = ["all", "mentions", "none"];
 const VISIBILITIES: readonly ProjectVisibility[] = ["open", "discoverable", "private"];
+/** A project's or room's name people read (#10623). */
+const TITLE_MAX = 80;
 
 /**
  * Whether `reader` may read `conversation`'s messages: `all`; its own conversations; open projects; and, for people,
@@ -240,11 +242,22 @@ export async function handleConversationRoute(
         throw new HttpError(400, `visibility must be one of ${VISIBILITIES.join(", ")}`);
       }
       if (request.topic !== undefined && typeof request.topic !== "string") throw new HttpError(400, "topic must be a string");
+      // The name people read (#10623): any letters, spaces; at most TITLE_MAX characters, one line. People only, as
+      // renaming; "" (or the address itself) clears it.
+      let title: string | null | undefined;
+      if (request.title !== undefined) {
+        if (typeof request.title !== "string") throw new HttpError(400, "title must be text");
+        if (writer.kind !== "human") throw new HttpError(403, "Only people rename projects and rooms");
+        const t = request.title.replace(/\s+/g, " ").trim();
+        if (t.length > TITLE_MAX) throw new HttpError(400, `A name is at most ${TITLE_MAX} characters`);
+        title = t === "" || t === (name ?? conversation.name) ? null : t;
+      }
       db.updateProject(conversation.id, {
         ...(name ? { name } : {}),
         ...(request.topic !== undefined ? { topic: request.topic.trim().slice(0, 200) } : {}),
         ...(request.visibility ? { visibility: request.visibility } : {}),
       });
+      if (title !== undefined) db.setTitle(conversation.id, title);
       ctx.hub.conversationsChanged();
       return { conversation: db.getConversation(conversation.id) ?? conversation };
     }

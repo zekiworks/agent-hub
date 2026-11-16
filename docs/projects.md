@@ -115,6 +115,12 @@ A room is a project addressed only as `#name`: the way sub-work is made, optiona
 - **Room ↔ project (Can, 15 Nov):** ⋯ → "Turn into a project" on a room, "Turn into a room" on a project with nothing
   under it (people only). Name, members, history, visibility and parent stay; only the address changes, and the old
   form is then refused with the new one named.
+- **Names and addresses (#10623, Can and Ümit, 16 Nov):** a room or project may have a name people read ("Model
+  Research", Turkish letters, spaces) beside its address (`#model-research`). "+ Room" takes the name and shows the
+  address it gets (letters folded to a–z, spaces to "-"; "-2", "-3"… when taken). Renaming (sidebar ⋯ → Rename, or the
+  ⋯ menu's Name) changes the name only, so links, `#name` in old messages and agents' addresses keep working; changing
+  the address itself is a separate, confirmed step. The website shows the name, with the address under it; agents see
+  `#model-research ("Model Research")`. People only; `POST …/project {from, title}`, "" clears it.
 - **Removing an agent (Ümit, 16 Nov):** a person in a group, project or room takes an agent out with ✕ on its chip in
   the ⋯ menu (`POST …/remove {from, id}`); people leave by themselves. The agent stops getting its messages.
 - **Parents:** projects only, one level; a room is never a parent. A project's Sub-groups panel lists its rooms; the

@@ -59,7 +59,7 @@ function roomNamed(name: string): Conversation | undefined {
 function roomLink(room: Conversation): HTMLAnchorElement {
   const a = h("a", "msg-ref", room.kind === "all" ? "#all" : `#${room.name}`);
   a.href = `#/c/${encodeURIComponent(room.id)}`;
-  a.title = room.topic ?? (room.kind === "all" ? "Everyone's room" : `Room #${room.name}`);
+  a.title = room.kind === "all" ? "Everyone's room" : [room.title ?? `Room #${room.name}`, room.topic].filter(Boolean).join(" — ");
   return a;
 }
 

@@ -1,6 +1,6 @@
 // The New group dialog, and the same dialog as New room (Ümit, 16 Nov): a name, an optional parent project, the people
 // and agents in it, and a first message; the room is made in one go, private (its members chose each other).
-import type { ConversationResponse, PostMessageResponse } from "@agent-bus/protocol";
+import { slugFromTitle, type ConversationResponse, type PostMessageResponse } from "@agent-bus/protocol";
 import { postJson } from "./api";
 import { dom } from "./dom";
 import { agentDetail, errorText, sortedUnique } from "./format";
@@ -19,6 +19,7 @@ function openGroupDialog(asRoom = false): void {
   dom.roomFields.hidden = !asRoom;
   if (asRoom) {
     dom.roomName.value = "";
+    showAddress();
     dom.roomFirst.value = "";
     dom.roomParent.replaceChildren(new Option("No project", ""));
     for (const p of Array.from(state.conversations.values())
@@ -56,24 +57,63 @@ function openGroupDialog(asRoom = false): void {
 dom.newGroupBtn.addEventListener("click", () => openGroupDialog(false));
 dom.newRoomBtn.addEventListener("click", () => openGroupDialog(true));
 
-/** Makes the room: its first message to "#name" creates it; then its members, its parent, and private. */
+/**
+ * The address a name gets (#10623): "Model Research" → "model-research"; when a project or room this person can see
+ * already has it, "-2", "-3"… Names others keep private are found out at creation (the bus refuses them).
+ */
+function addressesFor(title: string): string[] {
+  const base = slugFromTitle(title);
+  if (!/[a-z]/.test(base)) return [];
+  const taken = new Set(Array.from(state.conversations.values(), (c) => (c.kind === "project" ? c.name : undefined)));
+  const out: string[] = [];
+  for (let n = 1; out.length < 6 && n < 50; n++) {
+    const candidate = n === 1 ? base : `${base.slice(0, 45)}-${n}`;
+    if (!taken.has(candidate) && candidate !== "all") out.push(candidate);
+  }
+  return out;
+}
+
+/** Under the name: the address it will get, or why there is none yet. */
+function showAddress(): void {
+  const title = dom.roomName.value.trim();
+  const first = addressesFor(title)[0];
+  dom.roomAddress.textContent = !title ? "" : first ? `Address: #${first} (links and agents use it; it stays when you rename)` : "The name needs at least one letter (a–z).";
+}
+dom.roomName.addEventListener("input", showAddress);
+
+/** Makes the room: its first message to "#address" creates it; then its name, members, parent, and private. */
 async function openRoom(picked: string[]): Promise<void> {
-  const name = dom.roomName.value.trim().toLowerCase().replace(/^#/, "");
+  const title = dom.roomName.value.replace(/\s+/g, " ").trim().replace(/^#/, "");
   const text = dom.roomFirst.value.trim();
   const fail = (why: string) => {
     dom.groupError.textContent = why;
     dom.groupError.hidden = false;
   };
-  if (!name) return fail("Give the room a name.");
+  if (!title) return fail("Give the room a name.");
+  const candidates = addressesFor(title);
+  if (candidates.length === 0) return fail("The name needs at least one letter (a–z), for its address.");
   if (!text) return fail("Write a first message: what is this room for?");
   try {
-    const res = await postJson<PostMessageResponse>("/api/messages", { from: state.me, to: `#${name}`, text });
+    // A name someone else keeps private is refused by the bus (403/409): the next free form is tried.
+    let res: PostMessageResponse | undefined;
+    let lastError: unknown;
+    for (const address of candidates) {
+      try {
+        res = await postJson<PostMessageResponse>("/api/messages", { from: state.me, to: `#${address}`, text });
+        break;
+      } catch (error) {
+        lastError = error;
+        // The bus's answers when the address is someone else's: a private room or project, the other kind, an agent's name.
+        if (!/is not open|is a project|is a room|'s name; only/.test(errorText(error))) throw error;
+      }
+    }
+    if (!res) throw lastError;
     const id = res.conversation.id;
     const action = (what: string, body: Record<string, unknown>) =>
       postJson<ConversationResponse>(`/api/conversations/${encodeURIComponent(id)}/${what}`, { from: state.me, ...body });
     if (picked.length > 0) await action("members", { ids: picked });
     if (dom.roomParent.value) await action("parent", { parent: dom.roomParent.value });
-    await action("project", { visibility: "private" });
+    await action("project", { visibility: "private", title });
     dom.groupDialog.close();
     navigate({ kind: "conversation", id });
   } catch (error) {

@@ -14,7 +14,7 @@ import { renderTaskBadge } from "./inbox";
 import { updateJump } from "./jump";
 import { renderPane } from "./pane";
 import { renderSpeaking, speakButton } from "./speak";
-import { conversationTitle, projectColor, state } from "./state";
+import { conversationAddress, conversationTitle, projectColor, state } from "./state";
 import { flashMessage, mentionNodes, mentionsMe, shownMessage } from "./text";
 
 export function renderAll(): void {
@@ -84,7 +84,9 @@ export function renderHeader(): void {
         : conv.kind === "project" && conv.visibility !== "open"
           ? " Ask a member to add you."
           : " You are viewing; you join when you send a message.";
-    const project = conv.kind === "project" ? `${conv.topic ? `${conv.topic} · ` : ""}${conv.visibility ?? "open"} ${conv.room ? "room" : "project"} · ` : "";
+    // A named room or project also shows its address, the way links and agents reach it (#10623).
+    const address = conv.kind === "project" && conv.title ? `${conversationAddress(conv)} · ` : "";
+    const project = conv.kind === "project" ? `${address}${conv.topic ? `${conv.topic} · ` : ""}${conv.visibility ?? "open"} ${conv.room ? "room" : "project"} · ` : "";
     const level = conv.notify?.[state.me];
     const notify = level ? ` Your notifications: ${level === "mentions" ? "mentions only" : "none"}.` : "";
     const archived = conv.archived ? " Archived: writing in it brings it back." : "";

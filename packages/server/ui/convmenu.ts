@@ -175,12 +175,36 @@ function render(): void {
       const row3 = h("div", "conv-row");
       row3.append(topic, button("Set topic", () => void act(conv, "project", { topic: topic.value })));
       body.push(row3, select(VISIBILITY, conv.visibility ?? "open", (visibility) => void act(conv, "project", { visibility })));
-      const rename = h("input");
-      rename.type = "text";
-      rename.value = conv.name ?? "";
+      // The name people read, and the address links and agents use (#10623): renaming changes the name only.
+      const title = h("input");
+      title.type = "text";
+      title.maxLength = 80;
+      title.value = conv.title ?? "";
+      title.placeholder = conv.name ?? "";
+      title.setAttribute("aria-label", "Name");
       const row4 = h("div", "conv-row");
-      row4.append(rename, button("Rename", () => void act(conv, "project", { name: rename.value.trim().toLowerCase() })));
-      body.push(row4);
+      row4.append(title, button("Rename", () => void act(conv, "project", { title: title.value })));
+      const address = h("input");
+      address.type = "text";
+      address.value = conv.name ?? "";
+      address.setAttribute("aria-label", "Address");
+      const row4b = h("div", "conv-row");
+      row4b.append(
+        address,
+        button("Change address", () => {
+          const next = address.value.trim().replace(/^[#@]+/, "").toLowerCase();
+          const now = conv.room ? "#" : "@@";
+          if (next && next !== conv.name && confirm(`Change the address ${now}${conv.name} to ${now}${next}? Old ${now}${conv.name} links and agents' notes stop working.`)) {
+            void act(conv, "project", { name: next });
+          }
+        })
+      );
+      body.push(
+        h("p", "dialog-hint", "Name: what people read, any letters and spaces."),
+        row4,
+        h("p", "dialog-hint", `Address: how links and agents reach it (${conv.room ? "#" : "@@"}${conv.name}). Rarely changed.`),
+        row4b
+      );
       // Room ↔ project (Can, 15 Nov): only the address changes; a project with something under it stays a project.
       const hasChildren = Array.from(state.conversations.values()).some((c) => c.parentId === conv.id);
       if (conv.room) {

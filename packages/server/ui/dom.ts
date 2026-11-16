@@ -60,6 +60,7 @@ export const dom = {
   newRoomBtn: el<HTMLButtonElement>("new-room-btn"),
   roomFields: el<HTMLDivElement>("room-fields"),
   roomName: el<HTMLInputElement>("room-name"),
+  roomAddress: el<HTMLParagraphElement>("room-address"),
   roomParent: el<HTMLSelectElement>("room-parent"),
   roomFirst: el<HTMLTextAreaElement>("room-first"),
   notifyBtn: el<HTMLButtonElement>("notify-btn"),

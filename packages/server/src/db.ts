@@ -117,6 +117,8 @@ interface ConversationRow {
   created_at: number;
   last_message_at: number;
   room?: number | null;
+  /** The name people read (#10623); null on databases from before the column, and when the address is the name. */
+  title?: string | null;
 }
 
 interface MessageRow {
@@ -409,6 +411,10 @@ export class BusDatabase {
     // Databases created before rooms lack the column (null: a project addressed as @@name).
     if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "room")) {
       this.db.exec("ALTER TABLE conversations ADD COLUMN room INTEGER");
+    }
+    // Databases created before titles lack the column (null: the address is the name; #10623).
+    if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "title")) {
+      this.db.exec("ALTER TABLE conversations ADD COLUMN title TEXT");
     }
     // Databases created before project hierarchy lack the column (null: a root).
     if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "parent_id")) {
@@ -819,6 +825,7 @@ export class BusDatabase {
       members: members.map((m) => m.participant_id),
       addressed: members.map((m) => m.participant_id),
       ...(row.name !== null ? { name: row.name } : {}),
+      ...(row.title ? { title: row.title } : {}),
       ...(row.topic !== null ? { topic: row.topic } : {}),
       ...(kind === "project" ? { visibility: toVisibility(row.visibility) } : {}),
       ...(row.room ? { room: true as const } : {}),
@@ -998,6 +1005,11 @@ export class BusDatabase {
            visibility = COALESCE(?4, visibility, 'open') WHERE id = ?1 AND kind IN ('group', 'project')`
       )
       .run(conversationId, changes.name ?? null, changes.topic ?? null, changes.visibility ?? null);
+  }
+
+  /** Sets the name people read of a project or room; null clears it (#10623). The address stays. */
+  setTitle(conversationId: string, title: string | null): void {
+    this.db.query("UPDATE conversations SET title = ?2 WHERE id = ?1 AND kind = 'project'").run(conversationId, title);
   }
 
   setParent(conversationId: string, parentId: string | null): void {

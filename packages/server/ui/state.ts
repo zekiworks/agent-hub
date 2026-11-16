@@ -234,12 +234,20 @@ export function hasProjectColor(conv: Conversation): boolean {
   return conv.kind === "project" || !!conv.parentId;
 }
 
-/** "all", a project's "@@name", or the members: everyone but me (all of them if I am not a member). */
+/** "#all", a project's or room's name (its title, else "@@name"/"#name"), or the members: everyone but me (all of them
+ * if I am not a member). */
 export function conversationTitle(conv: Conversation): string {
   if (conv.kind === "all") return "#all"; // a room, everyone's (Can, 15 Nov)
-  if (conv.kind === "project" && conv.name) return conv.room ? `#${conv.name}` : `@@${conv.name}`;
+  if (conv.kind === "project" && conv.title) return conv.title; // the name people gave it (#10623)
+  if (conv.kind === "project" && conv.name) return conversationAddress(conv) ?? conv.name;
   const others = conv.members.filter((id) => id !== state.me);
   return nameList(others.length > 0 ? others : conv.members);
+}
+
+/** A project's or room's address ("@@name", "#name"); undefined for everything else. */
+export function conversationAddress(conv: Conversation): string | undefined {
+  if (conv.kind !== "project" || !conv.name) return undefined;
+  return conv.room ? `#${conv.name}` : `@@${conv.name}`;
 }
 
 export function mergeMessages(a: readonly Message[], b: readonly Message[]): Message[] {

@@ -2324,6 +2324,16 @@ ul.md-list ul.md-list { list-style: circle; }
   margin-bottom: 12px;
 }
 
+/* "Address: #model-research" under the new room's name (#10623). */
+.room-fields .room-address {
+  margin: -6px 0 0;
+  font-size: 12px;
+}
+
+.room-fields .room-address:empty {
+  display: none;
+}
+
 .room-fields[hidden] {
   display: none;
 }
@@ -2661,6 +2671,12 @@ ul.md-list ul.md-list { list-style: circle; }
 .entry-rename-error {
   margin: 6px 0 0;
   color: var(--error);
+  font-size: 12px;
+}
+
+.entry-rename-hint {
+  margin: 6px 0 0;
+  color: var(--muted);
   font-size: 12px;
 }
 

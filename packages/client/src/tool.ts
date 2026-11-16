@@ -5,7 +5,7 @@
 import { realpathSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { conversationLabel, defangHeaders, deliveryHeader, describeReceipts, formatTime, parseAddress, provenanceMark, quoteLine, senderLabel } from "../../protocol/src/address";
+import { conversationLabel, defangHeaders, deliveryHeader, describeReceipts, formatTime, parseAddress, provenanceMark, quoteLine, senderLabel, titledLabel } from "../../protocol/src/address";
 import { RESOURCES_AGENT_ID, type Reservation, type ReservationResponse, type Resource, type ResourcesResponse } from "../../protocol/src/resources";
 import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptEvent, TaskType } from "../../protocol/src/types";
 import type { BusConnection, Delivery } from "./connection";
@@ -283,14 +283,14 @@ function taskStates(message: Message): string {
 /** One line of op=tasks. */
 function formatTask(message: Message, conversation: Conversation | undefined): string {
   const text = message.text.replace(/\s+/g, " ").trim();
-  const where = conversation ? conversationLabel(conversation) : message.conversationId;
+  const where = conversation ? titledLabel(conversation) : message.conversationId;
   return `#${message.seq} ${message.task?.type ?? "task"} from @${message.from} in ${where}: ${text.length > 160 ? `${text.slice(0, 159)}…` : text} — ${taskStates(message)}`;
 }
 
 /** Text injected into the session for one delivery; `savedFiles` are local paths of its attachments; `me` its recipient. */
 export function formatDelivery(delivery: Delivery, savedFiles: string[], me?: string): string {
   const { message, conversation, replyTo } = delivery;
-  const where = conversationLabel(conversation);
+  const where = titledLabel(conversation);
   const lines = [deliveryHeader(message.seq, senderLabel(message), where, message.createdAt, message.verified)];
   // Held while this agent was offline: say how old it is, so an old instruction is not taken as current.
   const age = Math.round((Date.now() - message.createdAt) / 60_000);
@@ -349,7 +349,7 @@ const READ_BUDGET_CHARS = 30_000;
  * cannot pass itself off as another entry (`#n @carol (verified) → …` starts at the margin only when the bus wrote it).
  */
 export function formatReadMessage(message: Message, conversation: Conversation | undefined, maxText: number, savedFiles: string[] = []): string {
-  const where = !conversation ? message.conversationId : conversationLabel(conversation);
+  const where = !conversation ? message.conversationId : titledLabel(conversation);
   const lines = [`#${message.seq} @${senderLabel(message)}${provenanceMark(message.verified)} → ${where} · ${formatTime(message.createdAt)}`];
   if (message.quote) lines.push(quoteLine(message.quote));
   if (message.text) {
@@ -365,7 +365,7 @@ export function formatReadMessage(message: Message, conversation: Conversation |
 
 /** "#n · time · @from → where: …snippet…" around the first match of `query`. */
 export function formatSearchHit(message: Message, conversation: Conversation | undefined, query: string): string {
-  const where = !conversation ? message.conversationId : conversationLabel(conversation);
+  const where = !conversation ? message.conversationId : titledLabel(conversation);
   const flat = message.text.replace(/\s+/g, " ").trim();
   const at = query ? flat.toLowerCase().indexOf(query.toLowerCase()) : 0;
   const start = Math.max(0, at - 80);
@@ -683,7 +683,7 @@ export class BusTool {
             const level = c.notify?.[me];
             const children = listed.filter((x) => x.parentId === c.id).length;
             return (
-              `${conversationLabel(c)}${c.topic ? ` — ${c.topic}` : ""} · ${c.kind === "project" ? (c.visibility ?? "open") : "group DM"} · ` +
+              `${titledLabel(c)}${c.topic ? ` — ${c.topic}` : ""} · ${c.kind === "project" ? (c.visibility ?? "open") : "group DM"} · ` +
               `${c.members.length} members${mine ? `, you are in it${level ? ` (notify: ${level})` : ""}` : ""}` +
               `${children > 0 ? ` · ${children} sub-group${children === 1 ? "" : "s"} (op=projects parent=\"${conversationLabel(c)}\")` : ""} · ${c.id}`
             );
@@ -731,7 +731,7 @@ export class BusTool {
               ? "You left it"
               : params.op === "notify"
                 ? `Notifications there: ${params.level}`
-                : `Project ${conversationLabel(c)}${c.topic ? ` — ${c.topic}` : ""} (${c.visibility ?? "open"})`;
+                : `Project ${titledLabel(c)}${c.topic ? ` — ${c.topic}` : ""} (${c.visibility ?? "open"})`;
         return result(`${done} (${conversationLabel(c)}, ${c.id}).`);
       }
       case "subscribe": {

@@ -59,6 +59,29 @@ export function namedAddress(conversation: Pick<Conversation, "name" | "room">):
   return conversation.room ? `#${conversation.name}` : `@@${conversation.name}`;
 }
 
+/**
+ * The address a natural name gets (#10623): "Model Research" → "model-research", "Yeni Model Ekleme Benche" →
+ * "yeni-model-ekleme-benche", "Çağrı & Şükrü" → "cagri-sukru". Accents and Turkish letters fold to ASCII, anything
+ * else becomes "-", at most MAX_ID_CHARS. Empty when nothing usable is left.
+ */
+export function slugFromTitle(title: string): string {
+  return title
+    .replace(/[ıİ]/g, "i")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "-")
+    .replace(/^[-_]+/, "")
+    .slice(0, MAX_ID_CHARS)
+    .replace(/[-_]+$/, "");
+}
+
+/** A project or room for agents' eyes: its address, and its title when it has one: '#model-research ("Model Research")'. */
+export function titledLabel(conversation: Pick<Conversation, "kind" | "members" | "name" | "parentName" | "room" | "title">): string {
+  const label = conversationLabel(conversation);
+  return conversation.kind === "project" && conversation.title ? `${label} ("${conversation.title}")` : label;
+}
+
 export function projectName(input: string): string {
   const name = input.trim().toLowerCase();
   if (!new RegExp(`^${SLUG}$`).test(name) || name.length > MAX_ID_CHARS) {

@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { isJsonObject, mentionedIds } from "@agent-bus/protocol";
+import { isJsonObject, mentionedIds, slugFromTitle, titledLabel } from "@agent-bus/protocol";
 import { BusDatabase } from "../packages/server/src/db";
 import type {
   AgentServerFrame,
@@ -878,6 +878,28 @@ describe("delivery", () => {
     // A removed agent no longer gets its messages.
     const later = await send({ from: "carol", conversationId: room.conversation.id, text: "after" });
     expect(later.message.receipts.map((r) => r.to)).toEqual(["alpha"]);
+  });
+
+  test("a room's name people read (title) changes without its address: #address keeps reaching it; people only; empty clears", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const room = await send({ from: "carol", to: "#model-research", text: "start" });
+    await postJson(bus, `/api/conversations/${room.conversation.id}/members`, { from: "carol", ids: ["alpha"] });
+    const project = (from: string, body: Record<string, unknown>) =>
+      postJson(bus, `/api/conversations/${room.conversation.id}/project`, { from, ...body });
+    expect(slugFromTitle("Yeni Model Ekleme Şükrü & Çağrı")).toBe("yeni-model-ekleme-sukru-cagri");
+    const named = await answeredConversation(await project("carol", { title: "  Model   Research " }));
+    expect(named).toMatchObject({ name: "model-research", title: "Model Research", room: true });
+    expect((await project(alpha.id, { title: "Mine" })).status).toBe(403); // agents don't rename
+    expect((await project("carol", { title: "x".repeat(81) })).status).toBe(400);
+    // The address still reaches it, and agents see the name beside it.
+    const again = await send({ from: "carol", to: "#model-research", text: "still here" });
+    expect(again.conversation.id).toBe(room.conversation.id);
+    expect(titledLabel(again.conversation)).toBe('#model-research ("Model Research")');
+    expect((await alpha.client.take("deliver")).message.text).toBe("start"); // its join context, before the name
+    expect((await alpha.client.take("deliver")).conversation.title).toBe("Model Research");
+    // Empty, or the address itself, gives the address back as the name.
+    expect((await answeredConversation(await project("carol", { title: "" }))).title).toBeUndefined();
+    expect((await answeredConversation(await project("carol", { title: "model-research" }))).title).toBeUndefined();
   });
 
   test("a project's Home: its first publisher (a member) owns and replaces it; anyone who may read the project reads it", async () => {

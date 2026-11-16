@@ -167,11 +167,13 @@ def _utc(ms: int) -> str:
 
 
 def _conversation_label(conversation: dict) -> str:
-    """Same as conversationLabel in packages/protocol/src/address.ts: "@all", "@@project", or the members."""
+    """Same as titledLabel in packages/protocol/src/address.ts: "@all", "#room", "@@project" (with its title, if it has
+    one: '#model-research ("Model Research")'), or the members."""
     if conversation["kind"] == "all":
         return "@all"
     if conversation["kind"] == "project" and conversation.get("name"):
-        return f"@@{conversation['name']}"
+        label = f"#{conversation['name']}" if conversation.get("room") else f"@@{conversation['name']}"
+        return f'{label} ("{conversation["title"]}")' if conversation.get("title") else label
     if conversation["kind"] == "group" and conversation.get("parentName"):
         return f"@{{@@{conversation['parentName']},{','.join(conversation['members'])}}}"
     return _format_address(conversation["members"])
