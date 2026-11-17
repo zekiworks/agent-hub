@@ -411,6 +411,9 @@ export class BusDatabase {
     // Databases created before editing and deleting one's messages lack the columns (Ümit #10890; null: never).
     if (!messageColumns.some((c) => c.name === "edited_at")) this.db.exec("ALTER TABLE messages ADD COLUMN edited_at INTEGER");
     if (!messageColumns.some((c) => c.name === "deleted_at")) this.db.exec("ALTER TABLE messages ADD COLUMN deleted_at INTEGER");
+    // Databases created before tabs lack the column (Can #11480; null: in the order they were pinned).
+    const pinColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(pins)").all();
+    if (!pinColumns.some((c) => c.name === "position")) this.db.exec("ALTER TABLE pins ADD COLUMN position INTEGER");
     if (!messageColumns.some((c) => c.name === "from_session")) {
       this.db.exec("ALTER TABLE messages ADD COLUMN from_session INTEGER");
     }
@@ -1172,13 +1175,32 @@ export class BusDatabase {
     return shared;
   }
 
-  /** Someone pins (or unpins) a conversation for themselves; whether they may is the caller's check. */
+  /** Someone pins (or unpins) a conversation for themselves, a new one last among their tabs; may they is the caller's check. */
   setPinned(conversationId: string, participantId: string, pinned: boolean): void {
     if (pinned) {
       this.db
-        .query("INSERT OR IGNORE INTO pins (participant_id, conversation_id, created_at) VALUES (?1, ?2, ?3)")
+        .query(
+          `INSERT OR IGNORE INTO pins (participant_id, conversation_id, created_at, position)
+           VALUES (?1, ?2, ?3, (SELECT COALESCE(MAX(position), -1) + 1 FROM pins WHERE participant_id = ?1))`
+        )
         .run(participantId, conversationId, Date.now());
     } else this.db.query("DELETE FROM pins WHERE participant_id = ?1 AND conversation_id = ?2").run(participantId, conversationId);
+  }
+
+  /** `participantId`'s tabs: the conversations they pinned, in their order (Can #11480). */
+  tabsOf(participantId: string): string[] {
+    return this.db
+      .query<{ conversation_id: string }, [string]>(
+        "SELECT conversation_id FROM pins WHERE participant_id = ?1 ORDER BY position IS NULL, position, created_at, rowid"
+      )
+      .all(participantId)
+      .map((r) => r.conversation_id);
+  }
+
+  /** Puts `participantId`'s tabs in `order` (all of them, each once; the caller checks). */
+  setTabOrder(participantId: string, order: string[]): void {
+    const update = this.db.query("UPDATE pins SET position = ?3 WHERE participant_id = ?1 AND conversation_id = ?2");
+    this.db.transaction(() => order.forEach((id, i) => update.run(participantId, id, i)))();
   }
 
   /**

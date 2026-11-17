@@ -40,7 +40,7 @@ function setConvTitle(title: string, names: string): void {
 
 export function renderHeader(): void {
   const view = state.view;
-  setNameMenu(false);
+  setNameMenu(undefined);
   dom.subgroupsPanel.hidden = true;
   if (view.kind === "draft") {
     const title = view.project !== undefined ? `@@${view.project}` : nameList(view.to);
@@ -63,7 +63,7 @@ export function renderHeader(): void {
   setConvTitle(title, conv.kind === "all" ? "Everyone" : `Members: ${nameList(conv.members)}`);
   // The title in the text colour (#10099): a project's colour is its band in the list and the Workspace's shared tint.
   setTitleBase(`${title} · ${BRAND}`);
-  setNameMenu(conv.kind !== "all" && conv.kind !== "dm");
+  setNameMenu(conv.kind === "group" || conv.kind === "project" ? "tab, members, notifications and settings" : "tab");
   if (conv.kind === "all") {
     dom.convSubtitle.textContent = "Everyone. Every agent receives what is written here.";
   } else {
@@ -87,14 +87,15 @@ export function renderHeader(): void {
 }
 
 /**
- * The name is the button to the room's menu (Can #11463: no ⋯ of its own) where there is one: rooms, projects and
- * groups; elsewhere (DMs, #all, drafts) it is plain text, and on a phone a tap unfolds a long one (phones.ts).
+ * The name is the button to the conversation's menu (Can #11463: no ⋯ of its own): its tab for every conversation
+ * (Can #11480), and more for rooms, projects and groups (`what` says what). Only a draft's name is plain text, and on
+ * a phone a tap unfolds a long one (phones.ts).
  */
-function setNameMenu(on: boolean): void {
-  dom.convMenuBtn.classList.toggle("no-menu", !on);
-  if (on) {
+function setNameMenu(what: string | undefined): void {
+  dom.convMenuBtn.classList.toggle("no-menu", !what);
+  if (what) {
     dom.convMenuBtn.setAttribute("aria-haspopup", "dialog");
-    dom.convMenuBtn.setAttribute("aria-label", `${dom.convTitle.textContent}: members, notifications and settings`);
+    dom.convMenuBtn.setAttribute("aria-label", `${dom.convTitle.textContent}: ${what}`);
   } else {
     dom.convMenuBtn.removeAttribute("aria-haspopup");
     dom.convMenuBtn.removeAttribute("aria-label");

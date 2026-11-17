@@ -533,6 +533,12 @@ export class Hub {
     for (const ws of this.viewers) if (ws.data.kind === "viewer" && ws.data.human === human) ws.send(frame);
   }
 
+  /** `human`'s tab order changed (Can #11480): only their own open pages hear of it. */
+  tabsChanged(human: string, tabs: string[]): void {
+    const frame = JSON.stringify({ type: "tabs", tabs } satisfies ViewerServerFrame);
+    for (const ws of this.viewers) if (ws.data.kind === "viewer" && ws.data.human === human) ws.send(frame);
+  }
+
   /** Records `agentId`'s ack/seen of `seq` and tells viewers, the writer's agent connections and receipt waiters. */
   recordReceipt(agentId: string, seq: number, state: "ack" | "seen"): void {
     const receipt = this.db.markReceipt(agentId, seq, state);

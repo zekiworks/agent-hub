@@ -1617,6 +1617,76 @@ button:disabled {
   background: var(--panel-raised);
 }
 
+/* My tabs above the conversation (tabs.ts; Can #11480, codex-ui #11481): one flat row, square ends, the open one
+   underlined in the accent; it scrolls sideways when they do not fit. */
+.tab-row {
+  display: flex;
+  flex: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.tab-row[hidden] {
+  display: none;
+}
+.tab {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  max-width: 220px;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.tab.active {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.tab.unread .tab-open {
+  font-weight: 650;
+  color: var(--text);
+}
+.tab.dragging {
+  z-index: 1;
+  background: var(--panel-raised);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+  cursor: grabbing;
+}
+.tab-open {
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px 4px 7px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab-close {
+  flex: none;
+  padding: 0 8px;
+  align-self: stretch;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.tab-close:hover {
+  color: var(--text);
+}
+
 .conv-header {
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
@@ -3004,6 +3074,7 @@ ul.md-list ul.md-list { list-style: circle; }
   display: flex;
   gap: 8px;
   margin: 6px 0;
+  flex-wrap: wrap;
 }
 
 .conv-row input[type="text"] {
@@ -3685,6 +3756,18 @@ ul.md-list ul.md-list { list-style: circle; }
 
   .msg-edit-input {
     font-size: 16px;
+  }
+
+  /* Tabs: a thumb's height; ✕ a thumb's width; Pin/Unpin and Move in the name's menu too. */
+  .tab-open {
+    min-height: 44px;
+    padding-left: 14px;
+  }
+  .tab-close {
+    min-width: 44px;
+  }
+  .conv-tab-row .btn {
+    min-height: 44px;
   }
 
   /* The ▸/▾ section folds (Agents, Projects, Groups): a thumb's height. */

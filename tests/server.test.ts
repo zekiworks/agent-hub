@@ -766,9 +766,10 @@ describe("delivery", () => {
     expect((await answeredConversation(await pin(true, "uma", other.conversation.id))).pinnedBy).toEqual(["uma"]);
     await postJson(bus, `/api/conversations/${other.conversation.id}/project`, { from: "carol", visibility: "private" });
     expect((await pin(true, "uma", other.conversation.id)).status).toBe(404);
-    // DMs and @all have nothing to pin.
+    // DMs pin too since tabs (Can #11480: a tab for a person or an agent); that person's own tabs list it.
     const dm = await send({ from: "carol", to: "@alpha", text: "x" });
-    expect((await pin(true, "carol", dm.conversation.id)).status).toBe(400);
+    expect((await pin(true, "carol", dm.conversation.id)).status).toBe(200);
+    expect((await state("carol")).tabs).toContain(dm.conversation.id);
     expect((await pin("yes" as unknown as boolean)).status).toBe(400);
   });
 
@@ -950,6 +951,29 @@ describe("delivery", () => {
     expect((await search("carol", `&conversationId=${secret.conversation.id}`)).status).toBe(404);
     // As someone else: refused.
     expect((await busFetch(bus, "/api/search?from=uma&q=launch&scope=all", {}, "carol")).status).toBe(403);
+  });
+
+  test("a person's tabs: pins in their order, reordered only as a whole set, only by themselves, invisible to others", async () => {
+    const crew = await send({ from: "carol", to: "#crew", text: "a room" });
+    const dm = await send({ from: "carol", to: "@uma", text: "a DM" });
+    const pin = (id: string, pinned = true) => postJson(bus, `/api/conversations/${id}/pin`, { from: "carol", pinned });
+    expect((await pin(crew.conversation.id)).status).toBe(200);
+    expect((await pin(dm.conversation.id)).status).toBe(200);
+    expect((await state("carol")).tabs).toEqual([crew.conversation.id, dm.conversation.id]);
+    const order = (o: string[], as = "carol") => busFetch(bus, "/api/tabs", { method: "POST", body: JSON.stringify({ from: as, order: o }) }, as);
+    const moved = await order([dm.conversation.id, crew.conversation.id]);
+    expect(moved.status).toBe(200);
+    expect((await state("carol")).tabs).toEqual([dm.conversation.id, crew.conversation.id]);
+    // Not the whole set, a repeat, someone else's order for carol: refused, the order unchanged.
+    expect((await order([dm.conversation.id])).status).toBe(409);
+    expect((await order([dm.conversation.id, dm.conversation.id])).status).toBe(409);
+    expect((await busFetch(bus, "/api/tabs", { method: "POST", body: JSON.stringify({ from: "carol", order: [] }) }, "uma")).status).toBe(403);
+    expect((await state("uma")).tabs ?? []).toEqual([]);
+    // Unpinning removes only the tab; a new pin goes last.
+    expect((await pin(dm.conversation.id, false)).status).toBe(200);
+    expect((await pin(dm.conversation.id)).status).toBe(200);
+    expect((await state("carol")).tabs).toEqual([crew.conversation.id, dm.conversation.id]);
+    expect((await getJson<{ messages: unknown[] }>(bus, `/api/conversations/${dm.conversation.id}/messages`, "carol")).messages.length).toBe(1);
   });
 
   test("a person's bookmarks are their own: only messages they can read, only people, invisible to others", async () => {

@@ -386,6 +386,8 @@ export type ViewerServerFrame =
   | { type: "changed"; message: Message; conversation: Conversation }
   /** The viewer's own bookmarks changed (another of their pages, or this one): the list as it is now. */
   | { type: "bookmarks"; bookmarks: Bookmark[] }
+  /** The viewer's own tab order changed (another of their pages, or this one). */
+  | { type: "tabs"; tabs: string[] }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
   | ExpiredFrame
@@ -439,6 +441,17 @@ export interface StateResponse {
   gpuBooking?: true;
   /** The signed-in person's own bookmarks (Can #11065), newest first; only people have them. */
   bookmarks?: Bookmark[];
+  /**
+   * The signed-in person's tabs (Can #11463, #11480): the conversations they pinned, in their order. Theirs alone; the
+   * same set the list shows first ("Pin to the top").
+   */
+  tabs?: string[];
+}
+
+/** POST /api/tabs: a person puts their tabs in a new order (every id one of their pins). */
+export interface TabsRequest {
+  from: string;
+  order: string[];
 }
 
 /** A message a person saved for themselves (Can #11065): only they see it; the message itself is not touched. */

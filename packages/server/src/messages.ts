@@ -491,6 +491,25 @@ export async function changeMessage(ctx: BusContext, req: Request, seq: number, 
   return { message: changed };
 }
 
+/** POST /api/tabs {from, order} (Can #11480): a person puts their tabs in a new order; exactly their pins, each once. */
+export async function postTabs(ctx: BusContext, req: Request): Promise<{ tabs: string[] }> {
+  const body = await readJsonObject(req);
+  if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+  const who = ctx.hub.knownParticipant(body.from.trim().toLowerCase());
+  if (!who) throw new HttpError(400, `Unknown participant "${body.from}"`);
+  ctx.checkWriter(req, who);
+  const order = body.order;
+  if (!Array.isArray(order) || !order.every((id): id is string => typeof id === "string")) throw new HttpError(400, "order must be a list of conversation ids");
+  const mine = ctx.db.tabsOf(who.id);
+  if (order.length !== mine.length || new Set(order).size !== order.length || !order.every((id) => mine.includes(id))) {
+    throw new HttpError(409, "order must be exactly your tabs, each once (they changed meanwhile: reload them)");
+  }
+  ctx.db.setTabOrder(who.id, order);
+  const tabs = ctx.db.tabsOf(who.id);
+  if (who.kind === "human") ctx.hub.tabsChanged(who.id, tabs);
+  return { tabs };
+}
+
 /**
  * POST /api/bookmarks {from, seq, bookmarked} (Can #11065): a person saves a message they can read in their own list,
  * or drops it. Only people, signed in as themselves; only they see the list.

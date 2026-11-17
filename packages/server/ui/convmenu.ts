@@ -1,5 +1,6 @@
-// The ⋯ menu of a group DM or project: members and adding people, my notifications there, leaving, turning a group
-// DM into a project, a project's topic, visibility and name, archiving (POST /api/conversations/:id/…).
+// The menu behind a conversation's name (Can #11463): its tab (pin, move; Can #11480) for every conversation, and for a
+// group DM or project also members and adding people, my notifications there, leaving, turning a group DM into a
+// project, a project's topic, visibility and name, archiving (POST /api/conversations/:id/…).
 import type { Conversation, ConversationResponse, NotifyLevel, ProjectVisibility } from "@agent-bus/protocol";
 import { postJson } from "./api";
 import { closeWindowButton } from "./dialogs";
@@ -11,6 +12,7 @@ import { renderAll } from "./render";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
 import { conversationTitle, state } from "./state";
+import { isTab, moveTab, onTabsChange, setTab } from "./tabs";
 
 const NOTIFY: Array<[NotifyLevel, string]> = [
   ["all", "All messages"],
@@ -86,9 +88,28 @@ function parentSelect(conv: Conversation): HTMLElement {
   return select(options, conv.parentId ?? "", (parent) => void act(conv, "parent", { parent: parent || null }));
 }
 
+/** The tab part (Can #11480): pin as tab or unpin it, and move it among my tabs (the keyboard's and the phone's way). */
+function tabSection(conv: Conversation): HTMLElement[] {
+  const on = isTab(conv.id);
+  const row = h("div", "conv-row conv-tab-row");
+  row.append(button(on ? "Unpin tab" : "Pin as tab", () => void setTab(conv.id, !on)));
+  if (on) {
+    const i = state.tabs.indexOf(conv.id);
+    const left = button("‹ Move tab left", () => moveTab(conv.id, -1));
+    const right = button("Move tab right ›", () => moveTab(conv.id, 1));
+    left.disabled = i <= 0;
+    right.disabled = i >= state.tabs.length - 1;
+    row.append(left, right);
+  }
+  const hint = on
+    ? "Unpinning removes only the tab; the conversation stays. A mouse can also drag the tab."
+    : "A tab above the conversation, to come back to it in one click. Only you see your tabs.";
+  return [h("h3", "", "Tab"), row, h("p", "dialog-hint", hint)];
+}
+
 function render(): void {
   const conv = current();
-  if (!conv || (conv.kind !== "group" && conv.kind !== "project")) {
+  if (!conv) {
     dom.convDialog.close();
     return;
   }
@@ -98,7 +119,12 @@ function render(): void {
   close.className = "link-btn";
   close.title = "Close (Esc)";
   head.append(h("h2", "", conversationTitle(conv)), close);
-  const body: HTMLElement[] = [head];
+  const body: HTMLElement[] = [head, ...tabSection(conv)];
+  // DMs and #all: their tab is all there is to it.
+  if (conv.kind !== "group" && conv.kind !== "project") {
+    dom.convDialog.replaceChildren(...body, closeWindowButton(dom.convDialog));
+    return;
+  }
 
   body.push(h("h3", "", `Members (${conv.members.length})`));
   // Each member; agents get ✕ to take them out (Ümit, 16 Nov), for a person who is in it.
@@ -272,4 +298,9 @@ dom.convMenuBtn.addEventListener("click", () => {
   if (dom.convMenuBtn.classList.contains("no-menu")) return;
   render();
   if (!dom.convDialog.open) dom.convDialog.showModal();
+});
+
+// Moving or unpinning (here, on the row, or on another of my pages) redraws the open menu's buttons.
+onTabsChange(() => {
+  if (dom.convDialog.open) render();
 });

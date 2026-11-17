@@ -8,6 +8,7 @@ import { renderLive } from "./live";
 import { applyTitle, renderNotifyButton } from "./notify";
 import { renderBackBadge } from "./phones";
 import { navigate } from "./routing";
+import { renderTabs } from "./tabs";
 import {
   agents,
   browsableProjects,
@@ -59,6 +60,7 @@ function renderWorkingLine(): void {
 
 export function renderSidebar(): void {
   renderBackBadge();
+  renderTabs();
   renderUnreadToggle();
   renderOfflineToggle();
   renderConversationList();
@@ -274,7 +276,8 @@ function entryMenuButton(conv: Conversation): HTMLButtonElement {
     };
     const member = conv.members.includes(state.me);
     const pinned = pinnedByMe(conv);
-    item(pinned ? "Unpin" : "Pin to the top", () => {
+    // The same set as the tabs above the conversation (Can #11480): pinned ones also sort first here.
+    item(pinned ? "Unpin tab" : "Pin as tab", () => {
       closeEntryMenu();
       void setPinned(conv, !pinned);
     });

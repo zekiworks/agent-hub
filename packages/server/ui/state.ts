@@ -34,6 +34,8 @@ export const state = {
   conversations: new Map<string, Conversation>(),
   /** My own bookmarks (Can #11065), newest first: the bus keeps them, only I see them. */
   bookmarks: [] as Bookmark[],
+  /** My tabs (Can #11480): conversations I pinned, in my order; the bus keeps them, only I see them. */
+  tabs: [] as string[],
   caches: new Map<string, MessageCache>(),
   /** Conversations whose first page is being fetched → live messages received meanwhile. */
   loading: new Map<string, Message[]>(),

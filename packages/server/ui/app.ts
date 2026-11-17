@@ -2,8 +2,9 @@
 import { QUOTE_TEXT_CHARS, type Conversation, type Message, type ViewerServerFrame } from "@agent-bus/protocol";
 import { api, PROFILE_KEY, setFileKey } from "./api";
 import { bookmarksChanged } from "./bookmarks";
+import { tabsChanged } from "./tabs";
 import { hideError, setReplyTo, showError, updateComposerState } from "./composer";
-import { dom, PHONE, scrollToBottom } from "./dom";
+import { dom, nearBottom, PHONE, scrollToBottom } from "./dom";
 import { rememberAddress, restoreAddress, takeDraftLink } from "./compose";
 import { loadDraft } from "./drafts";
 import { errorText } from "./format";
@@ -45,12 +46,22 @@ function resolveView(view: View): View {
   return existing ? { kind: "conversation", id: existing.id } : view;
 }
 
+/**
+ * Where I was reading in each conversation I left scrolled up (Can #11480: switching tabs back and forth keeps the
+ * place); left at the bottom, it opens at the newest message as before. This page only.
+ */
+const readingAt = new Map<string, number>();
+
 function applyView(view: View): void {
   const resolved = resolveView(view);
   if (resolved !== view) {
     history.replaceState(null, "", viewHash(resolved));
   }
   const changed = viewHash(resolved) !== viewHash(state.view);
+  if (changed && state.view.kind === "conversation") {
+    if (nearBottom()) readingAt.delete(state.view.id);
+    else readingAt.set(state.view.id, dom.messageScroll.scrollTop);
+  }
   state.view = resolved;
   if (resolved.kind === "conversation") {
     markRead(resolved.id);
@@ -66,7 +77,9 @@ function applyView(view: View): void {
   renderAll();
   if (changed) {
     loadDraft();
-    scrollToBottom();
+    const at = resolved.kind === "conversation" && state.caches.has(resolved.id) ? readingAt.get(resolved.id) : undefined;
+    if (at === undefined) scrollToBottom();
+    else dom.messageScroll.scrollTop = at;
   }
 }
 
@@ -196,6 +209,9 @@ function handleFrame(frame: ViewerServerFrame): void {
       break;
     case "bookmarks":
       bookmarksChanged(frame.bookmarks);
+      break;
+    case "tabs":
+      tabsChanged(frame.tabs);
       break;
     case "checklist":
       checklistChanged(frame.conversationId);

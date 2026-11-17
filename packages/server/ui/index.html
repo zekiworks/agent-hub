@@ -103,11 +103,14 @@
     </aside>
 
     <main id="main" class="main">
+      <!-- My tabs (tabs.ts; Can #11480): conversations pinned as tabs, in my order. -->
+      <nav id="tab-row" class="tab-row" aria-label="Your tabs" hidden></nav>
       <div class="conv-header">
         <div class="conv-bar">
           <button id="back-btn" type="button" class="back-btn" title="Conversations">←<span id="back-badge" class="badge" hidden></span></button>
-          <!-- The name is the room's menu (Can #11463, codex-ui #11467): "#name ▾" opens members, notifications and
-               settings; where there is no menu (DMs, #all) it is plain text. Then the pin, then Workspace at the right edge. -->
+          <!-- The name is the conversation's menu (Can #11463, #11480; codex-ui #11467): "#name ▾" opens its tab (pin,
+               move), and for rooms, projects and groups members, notifications and settings. Then the pin, then
+               Workspace at the right edge. -->
           <h1 class="conv-title-wrap"><button id="conv-menu-btn" type="button" class="conv-name-btn no-menu" aria-haspopup="dialog"><span id="conv-title" class="conv-title"></span><span class="conv-name-caret" aria-hidden="true">▾</span></button></h1>
           <!-- What is pinned here (pins.ts): a drawn pin, filled with a count when something is pinned. -->
           <button id="checklist-btn" type="button" class="link-btn checklist-btn" aria-pressed="false" hidden><svg class="pin-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path class="pin-head" d="M9 3h6l-1 6 3 3v2H7v-2l3-3z" /><path class="pin-needle" d="M12 14v7" /></svg><span id="checklist-count" class="checklist-count"></span></button>
