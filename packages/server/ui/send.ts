@@ -11,12 +11,12 @@ import {
 import { api, postJson } from "./api";
 import { autosize, hideError, holdHours, renderStaged, setReplyTo, showError, updateComposerState } from "./composer";
 import { dom, PHONE } from "./dom";
-import { saveDraft } from "./drafts";
+import { readDraft, saveDraft } from "./drafts";
 import { errorText } from "./format";
 import { chosenSession } from "./live";
 import { loadMessages, receive } from "./loading";
 import { closeMention, handleMentionKey, updateMention } from "./mentions";
-import { navigate } from "./routing";
+import { navigate, viewHash } from "./routing";
 import { currentDirectAgent, state, type ItemReply, type View } from "./state";
 
 export async function uploadFile(file: File): Promise<FileRef> {
@@ -29,18 +29,21 @@ export async function uploadFile(file: File): Promise<FileRef> {
   return res.file;
 }
 
-/** What a message answers, taken when its sending (or recording) starts (codex-ui #10825, #11603). */
+/** What a message answers and what it is, taken when its sending (or recording) starts (codex-ui #10825, #11603, #11711). */
 export interface Chosen {
   reply: Message | undefined;
   item: ItemReply | undefined;
+  /** The Message/Task picker's value ("" for a plain message). */
+  task: string;
 }
 
-/** What the open conversation's message answers now: a message, or a checklist item. */
+/** What the open conversation's message answers now (a message, or a checklist item), and the picker's choice. */
 export function chosenNow(view: View): Chosen {
   const here = (id: string) => view.kind === "conversation" && id === view.id;
   return {
     reply: state.replyTo && here(state.replyTo.conversationId) ? state.replyTo : undefined,
     item: state.itemReply && here(state.itemReply.conversationId) ? state.itemReply : undefined,
+    task: dom.taskSelect.value,
   };
 }
 
@@ -76,7 +79,7 @@ export async function postToView(view: View, text: string, fileIds: string[], ch
   if (session !== undefined) request.toSession = session;
   const hold = holdHours();
   if (hold !== undefined) request.holdHours = hold;
-  const taskType = dom.taskSelect.value;
+  const taskType = chosen.task;
   if (taskType === "task" || taskType === "approval" || taskType === "chore") request.task = { type: taskType };
 
   const res = await postJson<PostMessageResponse>("/api/messages", request);
@@ -96,15 +99,18 @@ async function send(): Promise<void> {
   const text = dom.input.value;
   if (!text.trim() && state.staged.length === 0) return;
   const view = state.view;
-  // What it answers is taken now: a reply picked while files upload is the next message's (codex-ui #11603).
+  const sentFrom = viewHash(view);
+  // Taken now: a reply picked or a conversation opened while files upload belongs to the next message (codex-ui
+  // #11603, #11711), and so do files added meanwhile.
   const chosen = chosenNow(view);
+  const files = [...state.staged];
   state.sending = true;
   hideError();
   updateComposerState();
   renderStaged();
   try {
     const fileIds: string[] = [];
-    for (const file of state.staged) {
+    for (const file of files) {
       try {
         fileIds.push((await uploadFile(file)).id);
       } catch (err) {
@@ -112,19 +118,25 @@ async function send(): Promise<void> {
       }
     }
     await postToView(view, text, fileIds, chosen);
-    // The task picker belongs to typed text.
-    dom.taskSelect.value = "";
-    dom.input.value = "";
-    saveDraft(view, "");
-    state.staged = [];
-    autosize();
+    // Clear what was sent, from the conversation it was sent in: another one opened meanwhile keeps its draft, and
+    // text typed after Send stays (codex-ui #11711).
+    const stillThere = viewHash(state.view) === sentFrom;
+    const left = stillThere ? dom.input.value : readDraft(view);
+    const rest = left === text ? "" : left.startsWith(text) ? left.slice(text.length).replace(/^\n+/, "") : left;
+    saveDraft(view, rest);
+    state.staged = state.staged.filter((f) => !files.includes(f));
+    if (stillThere) {
+      dom.input.value = rest;
+      dom.taskSelect.value = "";
+      autosize();
+    }
   } catch (err) {
     showError(errorText(err));
   } finally {
     state.sending = false;
     renderStaged();
     updateComposerState();
-    dom.input.focus();
+    if (viewHash(state.view) === sentFrom) dom.input.focus();
   }
 }
 

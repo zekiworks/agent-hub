@@ -111,6 +111,22 @@ function openNameMenu(): void {
   menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", conversationTitle(conv));
   menu.addEventListener("click", (e) => e.stopPropagation());
+  // ↑ ↓ Home End move among the items that can be chosen, round at the ends (codex-ui #11708); Esc closes.
+  menu.addEventListener("keydown", (event) => {
+    const moves: Record<string, (i: number, n: number) => number> = {
+      ArrowDown: (i, n) => (i + 1) % n,
+      ArrowUp: (i, n) => (i - 1 + n) % n,
+      Home: () => 0,
+      End: (_i, n) => n - 1,
+    };
+    const move = moves[event.key];
+    if (!move) return;
+    event.preventDefault();
+    const items = [...menu.querySelectorAll<HTMLButtonElement>(".entry-menu-item:not(:disabled)")];
+    if (items.length === 0) return;
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    items[move(at < 0 ? 0 : at, items.length)]?.focus();
+  });
   const item = (label: string, run: () => void, disabled = false) => {
     const b = h("button", "entry-menu-item", label);
     b.type = "button";

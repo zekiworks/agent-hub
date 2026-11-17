@@ -16,8 +16,13 @@ export function saveDraft(view: View, text: string): void {
   else localStorage.removeItem(draftKey(view));
 }
 
+/** The draft kept for `view` ("" if none). */
+export function readDraft(view: View): string {
+  return state.me ? (localStorage.getItem(draftKey(view)) ?? "") : "";
+}
+
 export function loadDraft(): void {
-  dom.input.value = state.me ? (localStorage.getItem(draftKey(state.view)) ?? "") : "";
+  dom.input.value = readDraft(state.view);
   autosize();
   updateComposerState();
 }

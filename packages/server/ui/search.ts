@@ -20,7 +20,13 @@ let scope: "all" | "here" = "all";
 let messages: Message[] = [];
 let conversations = new Map<string, Conversation>();
 let status = "";
+/** What the hits shown are for: scope, conversation and text ("" while none are). */
 let searched = "";
+/**
+ * Each search, and each change of what to search, counts up; an answer for an older count is dropped, success or
+ * failure, so a slow earlier request never overwrites a newer one (codex-ui #11708).
+ */
+let generation = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let input: HTMLInputElement | undefined;
 let results: HTMLElement | undefined;
@@ -114,7 +120,7 @@ function renderResults(): void {
   if (q.length >= MIN_CHARS) {
     parts.push(h("h3", "search-heading", scope === "here" ? `Messages in ${here() ? conversationTitle(here()!) : "this conversation"}` : "Messages"));
     if (status) parts.push(h("p", "check-note", status));
-    else if (searched === q && messages.length === 0) parts.push(h("p", "check-note", "No messages found."));
+    else if (searched === searchKey(q) && messages.length === 0) parts.push(h("p", "check-note", "No messages found."));
     const list = h("div", "search-list");
     for (const message of [...messages].reverse()) {
       const conv = conversations.get(message.conversationId) ?? state.conversations.get(message.conversationId);
@@ -139,12 +145,26 @@ function renderResults(): void {
   results.replaceChildren(...parts);
 }
 
+/** Scope, conversation and text: what a set of hits answers. */
+function searchKey(q: string): string {
+  return `${scope}|${scope === "here" ? (here()?.id ?? "") : ""}|${q}`;
+}
+
+/** What to search changed (text, scope, the open conversation): hits for anything else go, and so do late answers. */
+function invalidate(): void {
+  generation++;
+  if (searched !== searchKey(query.trim())) {
+    messages = [];
+    searched = "";
+  }
+}
+
 async function run(): Promise<void> {
+  invalidate();
+  const gen = generation;
   const q = query.trim();
   if (q.length < MIN_CHARS) {
-    messages = [];
     status = "";
-    searched = "";
     renderResults();
     return;
   }
@@ -154,17 +174,19 @@ async function run(): Promise<void> {
     renderResults();
     return;
   }
+  const key = searchKey(q);
   status = "Searching…";
   renderResults();
   const params = new URLSearchParams({ from: state.me, q, scope: "all", limit: String(LIMIT), ...(conv ? { conversationId: conv.id } : {}) });
   try {
     const res = await api<ReadResponse>(`/api/search?${params}`);
-    if (query.trim() !== q) return; // a newer query is on its way
+    if (gen !== generation) return; // something newer was asked meanwhile
     messages = res.messages;
     conversations = new Map(res.conversations.map((c) => [c.id, c]));
     status = "";
-    searched = q;
+    searched = key;
   } catch (error) {
+    if (gen !== generation) return;
     status = `Search failed: ${errorText(error)}`;
   }
   renderResults();
@@ -186,6 +208,8 @@ registerExtension({
     input.addEventListener("input", () => {
       query = input?.value ?? "";
       clearTimeout(timer);
+      invalidate();
+      status = query.trim().length >= MIN_CHARS ? "Searching…" : "";
       renderResults();
       timer = setTimeout(() => void run(), 300);
     });
