@@ -27,6 +27,7 @@ import "./files";
 import "./settings";
 import "./stats";
 import "./tools";
+import "./search";
 import "./voice";
 import { renderSidebar } from "./sidebar";
 import { connectViewer, setLinkStatus } from "./socket";

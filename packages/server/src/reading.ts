@@ -89,17 +89,28 @@ export function getHistory(ctx: BusContext, req: Request, url: URL): ReadRespons
   return withConversations(ctx, db.listMessages(conversation.id, intParam(url, "beforeSeq", 1), readLimit(url)));
 }
 
-/** Messages whose text contains `q` (and from `sender`), newest `limit`, in the reader's conversations or all it may read. */
+/**
+ * Messages whose text contains `q` (and from `sender`), newest `limit`, in the reader's conversations or all it may
+ * read; with `conversationId`, in that one only (the website's "This conversation", Can #11398).
+ */
 export function getSearch(ctx: BusContext, req: Request, url: URL): ReadResponse {
   const me = reader(ctx, req, url, "from");
   const sender = url.searchParams.get("sender")?.trim().replace(/^@/, "").toLowerCase() || null;
   const q = url.searchParams.get("q") ?? "";
   if (!q.trim() && !sender) throw new HttpError(400, "Give q (text to find) and/or sender");
-  const ids = me.all
-    ? ctx.db
-        .listConversations()
-        .filter((c) => mayRead(ctx, c, me))
-        .map((c) => c.id)
-    : ctx.db.conversationIdsOf(me.id);
+  const only = url.searchParams.get("conversationId");
+  let ids: string[];
+  if (only) {
+    const conversation = ctx.db.getConversation(only);
+    if (!conversation || !mayRead(ctx, conversation, me)) throw new HttpError(404, `Unknown conversation "${only}"`);
+    ids = [conversation.id];
+  } else {
+    ids = me.all
+      ? ctx.db
+          .listConversations()
+          .filter((c) => mayRead(ctx, c, me))
+          .map((c) => c.id)
+      : ctx.db.conversationIdsOf(me.id);
+  }
   return withConversations(ctx, ctx.db.searchMessages(q.trim(), sender, ids, readLimit(url)));
 }

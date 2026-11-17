@@ -46,6 +46,8 @@
       <button id="inbox-row" type="button" class="side-inbox" hidden>✉ Your inbox <span id="inbox-row-count" class="side-count"></span></button>
       <!-- Your own bookmarks, across rooms (bookmarks.ts; Can #11065): opens in the Workspace. -->
       <button id="bookmarks-row" type="button" class="side-inbox" hidden>☆ Bookmarks <span id="bookmarks-row-count" class="side-count"></span></button>
+      <!-- Search rooms, people and messages (search.ts; Can #11398): opens in the Workspace. -->
+      <button id="search-row" type="button" class="side-inbox" aria-pressed="false" hidden>🔍 Search</button>
       <!-- Rooms first, right under ✉ and ☆ (codex-ui #11405); Agents, Projects and Groups below, each foldable. -->
       <section class="side-section">
         <div class="side-heading">
@@ -114,6 +116,7 @@
         <!-- Phones: after a task opened its message from Your inbox, the way back to it (inbox.ts). -->
         <button id="inbox-return" type="button" class="link-btn inbox-return" hidden>‹ ✉ Back to your inbox</button>
         <button id="bookmarks-return" type="button" class="link-btn inbox-return" hidden>‹ ☆ Back to bookmarks</button>
+        <button id="search-return" type="button" class="link-btn inbox-return" hidden>‹ 🔍 Back to search</button>
         <div id="conv-subtitle" class="conv-subtitle"></div>
         <details id="subgroups-panel" class="subgroups-panel" open hidden>
           <summary id="subgroups-summary"></summary>

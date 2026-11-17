@@ -932,6 +932,26 @@ describe("delivery", () => {
     expect((await back.client.take("deliver")).message.id).toBe(sentinel.message.id);
   });
 
+  test("search for people: as yourself only, every conversation you may read or one of them, never one you can't", async () => {
+    await joinPath("/tmp/x/alpha");
+    const room = await send({ from: "carol", to: "#crew", text: "the launch checklist is pinned" });
+    await send({ from: "carol", to: "#other", text: "another launch note" });
+    const secret = await send({ from: "uma", to: "@{alpha}", text: "launch secret between uma and alpha" });
+    const search = async (as: string, query: string) => {
+      const res = await busFetch(bus, `/api/search?from=${as}&q=launch&scope=all${query}`, {}, as);
+      return { status: res.status, texts: res.ok ? ((await res.json()) as { messages: Message[] }).messages.map((m) => m.text) : [] };
+    };
+    const all = await search("carol", "");
+    expect(all.status).toBe(200);
+    expect(all.texts).toContain("the launch checklist is pinned");
+    expect(all.texts).toContain("another launch note");
+    expect(all.texts).not.toContain("launch secret between uma and alpha"); // uma's group, not carol's
+    expect((await search("carol", `&conversationId=${room.conversation.id}`)).texts).toEqual(["the launch checklist is pinned"]);
+    expect((await search("carol", `&conversationId=${secret.conversation.id}`)).status).toBe(404);
+    // As someone else: refused.
+    expect((await busFetch(bus, "/api/search?from=uma&q=launch&scope=all", {}, "carol")).status).toBe(403);
+  });
+
   test("a person's bookmarks are their own: only messages they can read, only people, invisible to others", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const open = await send({ from: "carol", to: "#crew", text: "worth keeping" });

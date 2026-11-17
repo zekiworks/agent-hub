@@ -127,6 +127,8 @@ export const dom = {
   bookmarksRow: el<HTMLButtonElement>("bookmarks-row"),
   bookmarksRowCount: el<HTMLSpanElement>("bookmarks-row-count"),
   bookmarksReturn: el<HTMLButtonElement>("bookmarks-return"),
+  searchRow: el<HTMLButtonElement>("search-row"),
+  searchReturn: el<HTMLButtonElement>("search-return"),
   toolsBtn: el<HTMLButtonElement>("tools-btn"),
   toolsMenu: el<HTMLDivElement>("tools-menu"),
   launchers: el<HTMLSpanElement>("launchers"),
