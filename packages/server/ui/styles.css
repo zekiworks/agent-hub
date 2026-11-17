@@ -4377,6 +4377,14 @@ ul.md-list ul.md-list { list-style: circle; }
   cursor: pointer;
 }
 
+/* Under the mouse it lightens, and lighter still while pressed, so it reads as something to click (Ümit #11657). */
+.answer-toast:has(.answer-toast-open:hover) {
+  background: color-mix(in srgb, var(--text) 12%, var(--panel-raised));
+}
+.answer-toast:has(.answer-toast-open:active) {
+  background: color-mix(in srgb, var(--text) 20%, var(--panel-raised));
+}
+
 .answer-toast-close {
   flex: none;
   width: 44px;
@@ -4399,10 +4407,11 @@ ul.md-list ul.md-list { list-style: circle; }
   overflow: hidden;
   font-size: 14px;
   overflow-wrap: anywhere;
-  /* Selectable, to copy a part (codex-ui #10815); a press and drag here selects, it does not open the message. */
+  /* Selectable, to copy a part (codex-ui #10815): a press and drag selects, it does not open the message. The pointer
+     is the hand all the same, as the whole text opens the message (Ümit #11657). */
   -webkit-user-select: text;
   user-select: text;
-  cursor: text;
+  cursor: pointer;
 }
 
 .answer-toast-text.expanded {
