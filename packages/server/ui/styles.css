@@ -1006,6 +1006,12 @@ button:disabled {
   display: none;
 }
 
+/* A folded section (sidebar.ts; codex-ui #11405): its heading and + button only. */
+.side-section.folded > :not(.side-heading),
+.side-section.folded .unread-toggle {
+  display: none;
+}
+
 .side-count {
   text-transform: none;
   letter-spacing: 0;
@@ -3500,6 +3506,11 @@ ul.md-list ul.md-list { list-style: circle; }
 
   .msg-edit-input {
     font-size: 16px;
+  }
+
+  /* The ▸/▾ section folds (Agents, Projects, Groups): a thumb's height. */
+  .side-toggle {
+    min-height: 44px;
   }
 
   /* ✉, ☆ and the account in the phone's top bar: a thumb's size. */

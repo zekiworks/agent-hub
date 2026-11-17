@@ -46,16 +46,7 @@
       <button id="inbox-row" type="button" class="side-inbox" hidden>✉ Your inbox <span id="inbox-row-count" class="side-count"></span></button>
       <!-- Your own bookmarks, across rooms (bookmarks.ts; Can #11065): opens in the Workspace. -->
       <button id="bookmarks-row" type="button" class="side-inbox" hidden>☆ Bookmarks <span id="bookmarks-row-count" class="side-count"></span></button>
-      <section class="side-section">
-        <div class="side-heading">
-          <button id="agents-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the agent list">▾ Agents</button>
-          <span id="agent-count" class="side-count"></span>
-          <span class="side-heading-actions">
-            <button id="offline-btn" type="button" class="unread-toggle" aria-pressed="false">Include offline</button>
-          </span>
-        </div>
-        <ul id="agent-list" class="side-list"></ul>
-      </section>
+      <!-- Rooms first, right under ✉ and ☆ (codex-ui #11405); Agents, Projects and Groups below, each foldable. -->
       <section class="side-section">
         <div class="side-heading">
           <span>Rooms</span>
@@ -68,7 +59,7 @@
         <ul id="other-rooms-list" class="side-list" hidden></ul>
       </section>
       <section id="mention-section" class="side-section" hidden>
-        <div class="side-heading" title="Unread messages for you directly: they mention you, or a conversation of just you and one other. Read, a conversation goes back to Conversations.">
+        <div class="side-heading" title="Unread messages for you directly: they mention you, or a conversation of just you and one other. Each also stays in its own list.">
           <span>Mentions</span>
           <span id="mention-count" class="side-count"></span>
         </div>
@@ -76,7 +67,17 @@
       </section>
       <section class="side-section">
         <div class="side-heading">
-          <span>Projects</span>
+          <button id="agents-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the agent list">▾ Agents</button>
+          <span id="agent-count" class="side-count"></span>
+          <span class="side-heading-actions">
+            <button id="offline-btn" type="button" class="unread-toggle" aria-pressed="false">Include offline</button>
+          </span>
+        </div>
+        <ul id="agent-list" class="side-list"></ul>
+      </section>
+      <section id="projects-section" class="side-section">
+        <div class="side-heading">
+          <button id="projects-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the projects">▾ Projects</button>
           <span class="side-heading-actions">
             <button id="unread-btn" type="button" class="unread-toggle" aria-pressed="false" title="Show only conversations with unread messages">Unread</button>
             <button id="new-project-btn" type="button" class="link-btn" title="Start a project: a named conversation others can join">+ Project</button>
@@ -87,9 +88,9 @@
         <button id="browse-btn" type="button" class="link-btn browse-btn" hidden></button>
         <ul id="browse-list" class="side-list" hidden></ul>
       </section>
-      <section class="side-section">
+      <section id="groups-section" class="side-section">
         <div class="side-heading">
-          <span>Groups</span>
+          <button id="groups-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the groups">▾ Groups</button>
           <span class="side-heading-actions">
             <button id="new-group-btn" type="button" class="link-btn" title="Start a group DM with several participants">+ Group</button>
           </span>

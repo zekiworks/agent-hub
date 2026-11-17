@@ -462,6 +462,26 @@ dom.agentsToggle.addEventListener("click", () => {
   renderAgentList();
 });
 
+// Projects and Groups fold too (codex-ui #11405: Rooms first and roomy, the rest out of the way when not in use),
+// remembered per browser like Agents. Folded, a section keeps only its heading (and its + button).
+for (const [section, toggle, label] of [
+  [dom.projectsSection, dom.projectsToggle, "Projects"],
+  [dom.groupsSection, dom.groupsToggle, "Groups"],
+] as const) {
+  const key = `agent-bus.folded.${label.toLowerCase()}`;
+  const apply = (folded: boolean): void => {
+    section.classList.toggle("folded", folded);
+    toggle.textContent = `${folded ? "▸" : "▾"} ${label}`;
+    toggle.setAttribute("aria-expanded", folded ? "false" : "true");
+  };
+  apply(localStorage.getItem(key) === "1");
+  toggle.addEventListener("click", () => {
+    const folded = !section.classList.contains("folded");
+    localStorage.setItem(key, folded ? "1" : "0");
+    apply(folded);
+  });
+}
+
 function renderAgentList(): void {
   dom.agentsToggle.textContent = `${agentsFolded ? "▸" : "▾"} Agents`;
   dom.agentsToggle.setAttribute("aria-expanded", agentsFolded ? "false" : "true");
