@@ -8,6 +8,7 @@ import { setReplyTo } from "./composer";
 import { dom, PHONE } from "./dom";
 import { errorText, relativeTime } from "./format";
 import { h } from "./html";
+import { setIcon } from "./icons";
 import { renderMarkdown } from "./markdown";
 import { closePane, globalShown, onWorkspaceChange, refreshPane, registerExtension, toggleGlobal } from "./pane";
 import { navigate, viewHash } from "./routing";
@@ -40,7 +41,8 @@ export async function refreshInbox(): Promise<void> {
 
 function renderButton(): void {
   const btn = dom.inboxBtn;
-  btn.textContent = counts.open > 0 ? `✉ ${counts.open}` : "✉";
+  setIcon(btn, "mail", counts.open > 0 ? String(counts.open) : "");
+  btn.setAttribute("aria-label", counts.open > 0 ? `Your inbox, ${counts.open} open` : "Your inbox");
   btn.classList.toggle("inbox-open", counts.open > 0 && counts.unread === 0);
   btn.classList.toggle("inbox-unread", counts.unread > 0);
   btn.title =

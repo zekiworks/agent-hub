@@ -859,6 +859,11 @@ button:disabled {
 
 /* Tasks (inbox.ts): the ✉ button (yellow: open tasks; red: some unread), the Inbox tab, and the line under a task. */
 .inbox-topbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 26px;
   padding: 2px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -866,6 +871,11 @@ button:disabled {
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+
+/* A navigation icon's holder (index.html data-icon, filled by icons.ts). */
+[data-icon] {
+  display: inline-flex;
 }
 
 /* ✉ and ☆ (bookmarks.ts) side by side, wrapping together on a narrow phone (Can #11378). */

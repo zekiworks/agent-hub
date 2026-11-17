@@ -42,3 +42,6 @@ export function icon(name: IconName, filled = false): SVGSVGElement {
 export function setIcon(el: Element, name: IconName, label?: string, filled = false): void {
   el.replaceChildren(icon(name, filled), ...(label ? [Object.assign(document.createElement("span"), { className: "icon-label", textContent: label })] : []));
 }
+
+/** Fills every empty `<span data-icon="name">` in the page with its icon (navigation in index.html; Can #11804). */
+for (const el of document.querySelectorAll<HTMLElement>("[data-icon]")) el.replaceChildren(icon(el.dataset.icon as IconName));
