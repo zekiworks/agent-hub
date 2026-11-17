@@ -31,8 +31,13 @@ function here(): Conversation | undefined {
   return state.view.kind === "conversation" ? state.conversations.get(state.view.id) : undefined;
 }
 
+/**
+ * Whether a name matches: case, spaces, "-" and "_" alike, a leading # or @ ignored, so "launch checklist" finds
+ * #launch-checklist (codex-ui #11426 screenshots: it did not).
+ */
 function matches(text: string, q: string): boolean {
-  return text.toLowerCase().includes(q.toLowerCase());
+  const plain = (s: string) => s.toLowerCase().replace(/^[#@]+/, "").replace(/[\s_-]+/g, " ").trim();
+  return plain(text).includes(plain(q));
 }
 
 /** The words around the first match, the match marked. */
