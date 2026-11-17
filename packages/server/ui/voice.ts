@@ -3,14 +3,14 @@
 // letting go also sends (letting go far from the button deletes). The recording goes up as an audio file; the bus's
 // speech-to-text turns it into the message text, so agents (which cannot listen) read what was said. People see a
 // player (attachments.ts).
-import type { Message, TranscriptResponse } from "@agent-bus/protocol";
+import type { TranscriptResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { hideError, showError, updateComposerState } from "./composer";
 import { dom } from "./dom";
 import { errorText, nameList } from "./format";
 import { h } from "./html";
 import { viewHash } from "./routing";
-import { postToView, uploadFile } from "./send";
+import { chosenNow, postToView, uploadFile, type Chosen } from "./send";
 import { conversationTitle, state, type View } from "./state";
 
 /** A press shorter than this is a click: recording goes on until Send. Longer: hold to talk, let go to send. */
@@ -44,9 +44,9 @@ interface Recording {
   /** Where it goes: the conversation it was started in, even if another one is open by the time it is sent (codex-ui
    * #10593: it went to whatever was open at Send, after the asynchronous stop). */
   view: View;
-  /** The message it answers, as chosen when it was started (codex-ui #10825): a reply changed or cancelled meanwhile
-   * does not move it to another quote. */
-  reply: Message | undefined;
+  /** What it answers, a message or a checklist item, as chosen when it was started (codex-ui #10825, #11603): a reply
+   * changed or cancelled meanwhile does not move it to another quote. */
+  chosen: Chosen;
   /** The level meter has seen anything but exact silence (a shortcut: then the recording is not checked for silence). */
   heard: boolean;
   /** The microphone has sent something (or SIGNAL_WAIT_MS passed): the timer runs from here. */
@@ -154,7 +154,7 @@ async function start(): Promise<void> {
   }
   // Where it goes is decided at the tap, not after the permission prompt or the microphone's start-up (codex-ui #10622).
   const view = state.view;
-  const reply = state.replyTo && view.kind === "conversation" && state.replyTo.conversationId === view.id ? state.replyTo : undefined;
+  const chosen = chosenNow(view);
   hideError();
   hideStatus();
   opening = true;
@@ -201,7 +201,7 @@ async function start(): Promise<void> {
       lastLevelAt: 0,
       frame: 0,
       view,
-      reply,
+      chosen,
       heard: false,
       live: false,
     };
@@ -282,8 +282,8 @@ async function stop(cancel: boolean): Promise<void> {
   const file = new File(rec.chunks, `voice-${stamp}.${ext}`, { type: type.split(";")[0] });
   // Silence is judged from the recording itself, not the level meter (Ümit #10810: the meter can read nothing while
   // the recorder hears her, e.g. Safari). Even then the recording is kept: she can send it anyway or discard it.
-  if (!rec.heard && (await recordingIsSilent(file))) return offerSilent(file, duration, rec.view, rec.reply);
-  await send(file, duration, rec.view, rec.reply);
+  if (!rec.heard && (await recordingIsSilent(file))) return offerSilent(file, duration, rec.view, rec.chosen);
+  await send(file, duration, rec.view, rec.chosen);
 }
 
 /**
@@ -301,7 +301,7 @@ async function recordingIsSilent(file: File): Promise<boolean> {
 }
 
 /** A silent recording: say so, keep it, and offer to send it anyway or discard it. */
-function offerSilent(file: File, duration: number, view: View, reply: Message | undefined): void {
+function offerSilent(file: File, duration: number, view: View, chosen: Chosen): void {
   const again = h("button", "link-btn", "Send anyway");
   again.type = "button";
   const drop = h("button", "link-btn", "Discard");
@@ -315,12 +315,12 @@ function offerSilent(file: File, duration: number, view: View, reply: Message | 
   dom.voiceBar.hidden = false;
   again.addEventListener("click", () => {
     hideStatus();
-    void send(file, duration, view, reply);
+    void send(file, duration, view, chosen);
   });
   drop.addEventListener("click", hideStatus);
 }
 
-async function send(file: File, duration: number, view: View, reply: Message | undefined): Promise<void> {
+async function send(file: File, duration: number, view: View, chosen: Chosen): Promise<void> {
   state.sending = true;
   dom.voiceBtn.disabled = true;
   updateComposerState();
@@ -336,7 +336,7 @@ async function send(file: File, duration: number, view: View, reply: Message | u
       // The voice still goes out; agents get only the file.
       text = `🎤 (voice message; no text: ${errorText(err)})`;
     }
-    await postToView(view, text, [ref.id], { reply });
+    await postToView(view, text, [ref.id], chosen);
     if (viewHash(state.view) !== viewHash(view)) showStatus(`Voice message sent to ${viewLabel(view)}, where it was recorded.`);
     else hideStatus();
   } catch (err) {

@@ -27,6 +27,12 @@ export interface MentionCandidate {
   hint: string;
 }
 
+/** A checklist item a message answers (↩ on the item; Ümit #11598). */
+export interface ItemReply {
+  conversationId: string;
+  item: string;
+}
+
 export const state = {
   me: "",
   humans: [] as string[],
@@ -63,7 +69,7 @@ export const state = {
    * A checklist item the next send answers (↩ on the item): shown above the box and put in front of the message as a
    * quote when it is sent, never written into the box (Ümit #11598, codex-ui #11599).
    */
-  itemReply: undefined as { conversationId: string; item: string } | undefined,
+  itemReply: undefined as ItemReply | undefined,
   sending: false,
   /** A voice recording started with a click is running: Send sends it (voice.ts). */
   voiceLatched: false,

@@ -17,7 +17,7 @@ import { chosenSession } from "./live";
 import { loadMessages, receive } from "./loading";
 import { closeMention, handleMentionKey, updateMention } from "./mentions";
 import { navigate } from "./routing";
-import { currentDirectAgent, state, type View } from "./state";
+import { currentDirectAgent, state, type ItemReply, type View } from "./state";
 
 export async function uploadFile(file: File): Promise<FileRef> {
   const params = new URLSearchParams({ from: state.me, name: file.name });
@@ -29,16 +29,31 @@ export async function uploadFile(file: File): Promise<FileRef> {
   return res.file;
 }
 
+/** What a message answers, taken when its sending (or recording) starts (codex-ui #10825, #11603). */
+export interface Chosen {
+  reply: Message | undefined;
+  item: ItemReply | undefined;
+}
+
+/** What the open conversation's message answers now: a message, or a checklist item. */
+export function chosenNow(view: View): Chosen {
+  const here = (id: string) => view.kind === "conversation" && id === view.id;
+  return {
+    reply: state.replyTo && here(state.replyTo.conversationId) ? state.replyTo : undefined,
+    item: state.itemReply && here(state.itemReply.conversationId) ? state.itemReply : undefined,
+  };
+}
+
 /**
- * Posts `text` and `fileIds` to `view` (as a reply when one is picked there, to the session picked on an agent's
- * page, kept for the chosen hours), shows it, and clears the reply. Typed text and staged files are the caller's.
+ * Posts `text` and `fileIds` to `view` (as a reply to `chosen`, taken when sending or recording started; a checklist
+ * item goes in front as a quote), to the session picked on an agent's page, kept for the chosen hours, and shows it.
+ * The reply it answered is cleared, not a newer one picked meanwhile. Typed text and staged files are the caller's.
  */
-export async function postToView(view: View, text: string, fileIds: string[], fixedReply?: { reply: Message | undefined }): Promise<void> {
-  // A voice message brings the reply chosen when it was started (codex-ui #10825); typed text uses the current one.
-  const replyTo = fixedReply ? fixedReply.reply : state.replyTo;
-  const request: PostMessageRequest = { from: state.me, text };
+export async function postToView(view: View, text: string, fileIds: string[], chosen: Chosen): Promise<void> {
+  const { reply: replyTo, item } = chosen;
+  const request: PostMessageRequest = { from: state.me, text: item ? `> ${item.item}\n\n${text}` : text };
   if (fileIds.length > 0) request.fileIds = fileIds;
-  if (replyTo && view.kind === "conversation" && replyTo.conversationId === view.id) {
+  if (replyTo) {
     request.replyToSeq = replyTo.seq;
   } else if (view.kind === "draft") request.to = view.project !== undefined ? `@@${view.project}` : formatAddress(view.to);
   else if (view.id === ALL_CONVERSATION_ID) request.to = "@all";
@@ -65,11 +80,9 @@ export async function postToView(view: View, text: string, fileIds: string[], fi
   if (taskType === "task" || taskType === "approval" || taskType === "chore") request.task = { type: taskType };
 
   const res = await postJson<PostMessageResponse>("/api/messages", request);
-  // Clear the reply this message answered, not a newer one chosen meanwhile; the task picker belongs to typed text.
-  if (!fixedReply || (state.replyTo && replyTo && state.replyTo.seq === replyTo.seq && state.replyTo.conversationId === replyTo.conversationId)) {
-    setReplyTo(undefined);
-  }
-  if (!fixedReply) dom.taskSelect.value = "";
+  // Clear the reply this message answered, not a newer one chosen meanwhile (a message or a checklist item).
+  const same = (replyTo && state.replyTo?.seq === replyTo.seq) || (item && state.itemReply === item);
+  if (same) setReplyTo(undefined);
   // Groups not loaded yet (e.g. a draft that just became a group) get their history fetched.
   if (!state.caches.has(res.conversation.id)) void loadMessages(res.conversation.id);
   receive(res.message, res.conversation);
@@ -83,6 +96,8 @@ async function send(): Promise<void> {
   const text = dom.input.value;
   if (!text.trim() && state.staged.length === 0) return;
   const view = state.view;
+  // What it answers is taken now: a reply picked while files upload is the next message's (codex-ui #11603).
+  const chosen = chosenNow(view);
   state.sending = true;
   hideError();
   updateComposerState();
@@ -96,9 +111,9 @@ async function send(): Promise<void> {
         throw new Error(`Upload of ${file.name} failed: ${errorText(err)}`);
       }
     }
-    // A checklist item being answered goes in front as a quote (it was never in the box; Ümit #11598).
-    const item = state.itemReply && view.kind === "conversation" && state.itemReply.conversationId === view.id ? state.itemReply.item : undefined;
-    await postToView(view, item ? `> ${item}\n\n${text}` : text, fileIds);
+    await postToView(view, text, fileIds, chosen);
+    // The task picker belongs to typed text.
+    dom.taskSelect.value = "";
     dom.input.value = "";
     saveDraft(view, "");
     state.staged = [];
