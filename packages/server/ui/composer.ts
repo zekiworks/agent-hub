@@ -39,7 +39,7 @@ export function updateComposerState(): void {
   const alone = !!open && open.kind !== "all" && open.members.every((id) => id === state.me);
   dom.nobodyBar.hidden = !alone;
   if (open && alone) {
-    dom.nobodyBar.textContent = `Nobody else is in ${conversationTitle(open)}: a message here reaches no one. Add people in its ⋯ menu, or write where they are.`;
+    dom.nobodyBar.textContent = `Nobody else is in ${conversationTitle(open)}: a message here reaches no one. Add people with its name ▾ → Settings…, or write where they are.`;
   }
   const offline = offlineRecipients();
   dom.holdBar.hidden = offline.length === 0;
@@ -85,7 +85,9 @@ export function autosize(): void {
     return;
   }
   dom.input.style.height = "auto";
-  dom.input.style.height = `${Math.min(dom.input.scrollHeight, COMPOSER_AUTO_MAX)}px`;
+  // Growing with the text stops at 240 px, or sooner when the screen is short (keyboard up, big text), so Send and the
+  // newest messages stay in view (codex-ui #11709).
+  dom.input.style.height = `${Math.min(dom.input.scrollHeight, COMPOSER_AUTO_MAX, composerMax())}px`;
 }
 
 function setComposerHeight(height: number | "max" | undefined): void {

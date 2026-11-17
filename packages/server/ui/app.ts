@@ -319,12 +319,13 @@ async function boot(): Promise<void> {
     onFrame: handleFrame,
   });
   restoreAddress();
-  // A link brought here (a message's #/m/…, a #/to/…?draft=) opens its conversation, not the list.
-  const cameByLink = /^#\/(m\/|to\/[^?]*\?draft=)/.test(location.hash);
+  // Only a reload goes back to the list it was on (Ümit #11664); a link or an address typed in opens its conversation.
+  const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+  const reloaded = navigation?.type === "reload";
   const linkedSeq = takeMessageLink();
   takeDraftLink();
   // Phones opened without a conversation in the address, or reloaded on the list, start on the conversation list.
-  const startOnList = location.hash === "" || (!cameByLink && wasOnPhoneList());
+  const startOnList = location.hash === "" || (reloaded && wasOnPhoneList());
   applyView(parseHash());
   if (startOnList) setPhoneList(true);
   if (linkedSeq !== undefined) void showMessage(linkedSeq);

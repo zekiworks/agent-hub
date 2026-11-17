@@ -127,7 +127,8 @@ async function send(): Promise<void> {
     state.staged = state.staged.filter((f) => !files.includes(f));
     if (stillThere) {
       dom.input.value = rest;
-      dom.taskSelect.value = "";
+      // The picker goes back to Message only if nobody changed it while this was sending (codex-ui #11716).
+      if (dom.taskSelect.value === chosen.task) dom.taskSelect.value = "";
       autosize();
     }
   } catch (err) {

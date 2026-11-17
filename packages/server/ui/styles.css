@@ -4118,6 +4118,8 @@ ul.md-list ul.md-list { list-style: circle; }
   background: var(--panel-raised);
   font-size: 13px;
   color: var(--muted);
+  /* A long name without spaces breaks instead of running off the right edge (codex-ui #11709 check). */
+  overflow-wrap: anywhere;
 }
 
 .hold-bar select {
