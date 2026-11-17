@@ -138,6 +138,12 @@ dom.sendBtn.addEventListener("pointerdown", (event) => {
   if (PHONE.matches && document.activeElement === dom.input) event.preventDefault();
 });
 
+/**
+ * Enter pressed while the system holds unfinished text (an input method, or macOS's grey inline word completion): the
+ * system commits it first, then the message is sent (Ümit #11642: Enter must send). Shift+Enter is a new line.
+ */
+let enterWhileComposing = false;
+
 dom.input.addEventListener("keydown", (event) => {
   if (state.mention.open && handleMentionKey(event)) return;
   if (event.key === "Escape" && (state.replyTo || state.itemReply)) {
@@ -145,10 +151,23 @@ dom.input.addEventListener("keydown", (event) => {
     setReplyTo(undefined);
     return;
   }
-  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-    event.preventDefault();
-    void send();
+  if (event.key !== "Enter" || event.shiftKey) return;
+  if (event.isComposing) {
+    enterWhileComposing = true;
+    return;
   }
+  event.preventDefault();
+  void send();
+});
+
+dom.input.addEventListener("compositionend", () => {
+  if (!enterWhileComposing) return;
+  enterWhileComposing = false;
+  // After the commit: the Enter that ended it may have left a new line at the end, which is not part of the message.
+  setTimeout(() => {
+    if (dom.input.value.endsWith("\n")) dom.input.value = dom.input.value.slice(0, -1);
+    void send();
+  }, 0);
 });
 
 dom.input.addEventListener("input", () => {
