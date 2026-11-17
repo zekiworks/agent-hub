@@ -65,6 +65,7 @@ export function renderBackBadge(): void {
 }
 
 // The title of a conversation with many names does not fit a phone's header: a tap unfolds it (and folds it again).
+// Where the name opens the room's menu, the menu's heading shows it whole instead.
 dom.convTitle.addEventListener("click", () => {
-  if (PHONE.matches) dom.convTitle.classList.toggle("expanded");
+  if (PHONE.matches && dom.convMenuBtn.classList.contains("no-menu")) dom.convTitle.classList.toggle("expanded");
 });

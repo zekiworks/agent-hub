@@ -42,14 +42,14 @@ function renderHeaderButton(): void {
   const list = checklistOf(conv.id);
   const messages = conv.pinnedMessages?.length ?? 0;
   dom.checklistBtn.classList.toggle("pinned", n > 0);
-  dom.checklistLabel.textContent = n > 0 ? "Pinned" : "Nothing pinned";
   dom.checklistCount.textContent = n > 0 ? String(n) : "";
   // The number counts pinned things; the checklist's progress is said separately (codex-ui #10756, #10757).
   const parts = [
     ...(list ? [`a checklist (${checklistProgress(list).done} of ${checklistProgress(list).total} tasks done)`] : []),
     ...(messages > 0 ? [`${messages} message${messages === 1 ? "" : "s"}`] : []),
   ];
-  const label = n > 0 ? `Pinned: ${parts.join(" and ")}` : "Nothing pinned";
+  // The words are in its label, not on the button (Can #11463, codex-ui #11467: "Pinned here, 2 items").
+  const label = n > 0 ? `Pinned here, ${n} item${n === 1 ? "" : "s"}: ${parts.join(" and ")}` : "Pinned here, none";
   dom.checklistBtn.title = n > 0 ? `${label}. ${n === 1 ? "Opens it" : "Opens the list in the Workspace on the right"}.` : "Nothing is pinned in this conversation yet";
   dom.checklistBtn.setAttribute("aria-label", label);
   const shown = dom.paneBtn.dataset.shown;

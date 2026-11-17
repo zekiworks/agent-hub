@@ -267,7 +267,9 @@ function render(): void {
   dom.convDialog.replaceChildren(...body);
 }
 
+// The name opens it (Can #11463), where the conversation has one (render.ts setNameMenu).
 dom.convMenuBtn.addEventListener("click", () => {
+  if (dom.convMenuBtn.classList.contains("no-menu")) return;
   render();
   if (!dom.convDialog.open) dom.convDialog.showModal();
 });

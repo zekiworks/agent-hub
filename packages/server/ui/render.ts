@@ -40,7 +40,7 @@ function setConvTitle(title: string, names: string): void {
 
 export function renderHeader(): void {
   const view = state.view;
-  dom.convMenuBtn.hidden = true;
+  setNameMenu(false);
   dom.subgroupsPanel.hidden = true;
   if (view.kind === "draft") {
     const title = view.project !== undefined ? `@@${view.project}` : nameList(view.to);
@@ -63,7 +63,7 @@ export function renderHeader(): void {
   setConvTitle(title, conv.kind === "all" ? "Everyone" : `Members: ${nameList(conv.members)}`);
   // The title in the text colour (#10099): a project's colour is its band in the list and the Workspace's shared tint.
   setTitleBase(`${title} · ${BRAND}`);
-  dom.convMenuBtn.hidden = conv.kind === "all" || conv.kind === "dm";
+  setNameMenu(conv.kind !== "all" && conv.kind !== "dm");
   if (conv.kind === "all") {
     dom.convSubtitle.textContent = "Everyone. Every agent receives what is written here.";
   } else {
@@ -84,6 +84,21 @@ export function renderHeader(): void {
     dom.convSubtitle.textContent = `${project}Members: ${nameList(conv.members)}.${membership}${notify}${archived}`;
   }
   renderSubgroups(conv);
+}
+
+/**
+ * The name is the button to the room's menu (Can #11463: no ⋯ of its own) where there is one: rooms, projects and
+ * groups; elsewhere (DMs, #all, drafts) it is plain text, and on a phone a tap unfolds a long one (phones.ts).
+ */
+function setNameMenu(on: boolean): void {
+  dom.convMenuBtn.classList.toggle("no-menu", !on);
+  if (on) {
+    dom.convMenuBtn.setAttribute("aria-haspopup", "dialog");
+    dom.convMenuBtn.setAttribute("aria-label", `${dom.convTitle.textContent}: members, notifications and settings`);
+  } else {
+    dom.convMenuBtn.removeAttribute("aria-haspopup");
+    dom.convMenuBtn.removeAttribute("aria-label");
+  }
 }
 
 /**

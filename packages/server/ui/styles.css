@@ -248,9 +248,10 @@ button:disabled {
   }
 }
 
-/* "Open in Workspace ▾" in a conversation's header (#10215); the short label on phones. */
+/* "Workspace ▾": last in the bar, at the right edge, next to the Workspace it opens (Can #11463). */
 .ws-open-btn {
   flex: none;
+  order: 11;
   padding: 4px 8px;
   font-size: 13px;
   white-space: nowrap;
@@ -260,23 +261,28 @@ button:disabled {
   color: var(--accent);
 }
 
-/* 📌 at the top right of a conversation (checklist.ts; Ümit #10722, #10735, #10739): outlined "Nothing pinned" when
- * empty, filled "Pinned 6/14" when the conversation has a checklist; the words carry the state, not only the colour. */
+/* What is pinned here (pins.ts; Ümit #10722, codex-ui #10756, Can #11463): a plain drawn pin, outlined when nothing
+ * is pinned, filled with a count when something is; no pill, no words (they are in its label). */
 .checklist-btn {
   flex: none;
-  order: 10; /* last in the bar: its top right */
-  padding: 3px 10px;
-  border: 1px dashed var(--border);
-  border-radius: 999px;
+  order: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
 }
 
+.checklist-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
 .checklist-btn.pinned {
-  border-style: solid;
-  border-color: var(--accent);
-  background: var(--accent-soft);
   color: var(--text);
 }
 
@@ -461,15 +467,15 @@ button:disabled {
 }
 
 .checklist-btn.on {
-  border-color: var(--accent);
   color: var(--accent);
 }
 
-.checklist-btn #checklist-count {
-  color: var(--muted);
+.checklist-count {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
 }
 
-.ws-open-short {
+.checklist-count:empty {
   display: none;
 }
 
@@ -629,8 +635,7 @@ button:disabled {
   padding: 14px 16px;
 }
 
-.ws-open-btn.on .ws-open-long,
-.ws-open-btn.on .ws-open-short {
+.ws-open-btn.on {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -1630,12 +1635,57 @@ button:disabled {
   gap: 6px 8px;
 }
 
-.conv-title {
+/* The name, and on rooms and projects the button that opens their menu (convmenu.ts): "#name ▾". */
+.conv-title-wrap {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
   font-size: 18px;
   font-weight: 650;
+}
+
+.conv-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-left: -6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conv-name-btn:hover,
+.conv-name-btn:focus-visible {
+  background: var(--hover);
+}
+
+.conv-name-caret {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* No menu here (DMs, #all, drafts): the name is plain text. */
+.conv-name-btn.no-menu {
+  cursor: default;
+}
+
+.conv-name-btn.no-menu:hover {
+  background: transparent;
+}
+
+.conv-name-btn.no-menu .conv-name-caret {
+  display: none;
+}
+
+.conv-title {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
@@ -3448,8 +3498,8 @@ ul.md-list ul.md-list { list-style: circle; }
     padding: 4px 8px;
   }
 
-  /* Two rows (Ümit #10735, 360 px): ← title ⓘ, then the conversation's tools with the pin at the right, so the title
-   * keeps the width it needs. */
+  /* Two rows (Ümit #10735, 360 px): ← name ⓘ, then the pin and Workspace at the right (Can #11463), so the name keeps
+   * the width it needs. */
   .conv-bar {
     display: flex;
     flex-wrap: wrap;
@@ -3458,30 +3508,36 @@ ul.md-list ul.md-list { list-style: circle; }
     min-height: 36px;
   }
 
-  .conv-title {
+  .conv-title-wrap {
     order: 1;
     flex: 1 1 calc(100% - 120px);
-    min-width: 0;
+    font-size: 17px;
+  }
+
+  .conv-name-btn {
+    min-height: 44px;
+  }
+
+  .conv-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 17px;
   }
 
   .conv-bar .details-btn {
     order: 2;
   }
 
-  .conv-bar .ws-open-btn,
-  .conv-bar #conv-menu-btn {
-    order: 3;
-  }
-
   .conv-bar .checklist-btn {
+    order: 3;
     margin-left: auto;
   }
 
-  /* Tapped (phones.ts): the whole title, on as many lines as it needs. */
+  .conv-bar .ws-open-btn {
+    order: 4;
+  }
+
+  /* Tapped where there is no menu (phones.ts): the whole name, on as many lines as it needs. */
   .conv-title.expanded {
     white-space: normal;
     overflow-wrap: anywhere;
@@ -3710,23 +3766,9 @@ ul.md-list ul.md-list { list-style: circle; }
     min-height: 44px;
   }
 
-  .ws-open-long {
-    display: none;
-  }
-
-  .ws-open-short {
-    display: inline;
-  }
-
-  /* The pin's words would squeeze the title out (Ümit's 360 px): 📌 alone when empty, 📌 6/14 when pinned; the words
-   * stay in its accessible label. */
-  .checklist-btn-label {
-    display: none;
-  }
-
   .checklist-btn {
     min-width: 44px;
-    padding: 3px 8px;
+    justify-content: center;
   }
 
   /* A long Workspace heading ("Project · @@answer-check-private-review…") gets two lines on a phone, no tooltip there. */
