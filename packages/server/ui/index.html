@@ -48,7 +48,17 @@
       <button id="bookmarks-row" type="button" class="side-inbox" hidden>☆ Bookmarks <span id="bookmarks-row-count" class="side-count"></span></button>
       <!-- Search rooms, people and messages (search.ts; Can #11398): opens in the Workspace. -->
       <button id="search-row" type="button" class="side-inbox" aria-pressed="false" hidden>🔍 Search</button>
-      <!-- Rooms first, right under ✉ and ☆ (codex-ui #11405); Agents, Projects and Groups below, each foldable. -->
+      <!-- Agents at the top (Can #11454), then Rooms, then Mentions, Projects and Groups; Agents, Projects and Groups fold. -->
+      <section class="side-section">
+        <div class="side-heading">
+          <button id="agents-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the agent list">▾ Agents</button>
+          <span id="agent-count" class="side-count"></span>
+          <span class="side-heading-actions">
+            <button id="offline-btn" type="button" class="unread-toggle" aria-pressed="false">Include offline</button>
+          </span>
+        </div>
+        <ul id="agent-list" class="side-list"></ul>
+      </section>
       <section class="side-section">
         <div class="side-heading">
           <span>Rooms</span>
@@ -66,16 +76,6 @@
           <span id="mention-count" class="side-count"></span>
         </div>
         <ul id="mention-list" class="side-list"></ul>
-      </section>
-      <section class="side-section">
-        <div class="side-heading">
-          <button id="agents-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the agent list">▾ Agents</button>
-          <span id="agent-count" class="side-count"></span>
-          <span class="side-heading-actions">
-            <button id="offline-btn" type="button" class="unread-toggle" aria-pressed="false">Include offline</button>
-          </span>
-        </div>
-        <ul id="agent-list" class="side-list"></ul>
       </section>
       <section id="projects-section" class="side-section">
         <div class="side-heading">
