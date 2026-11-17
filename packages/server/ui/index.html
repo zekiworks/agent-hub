@@ -167,7 +167,9 @@
                above the draft, the space goes to the text). 🎤 and Send stay outside: recording replaces the box. -->
           <div id="composer-input-wrap" class="composer-input-wrap">
             <ul id="mention-menu" class="mention-menu" role="listbox" hidden></ul>
-            <textarea id="composer-input" rows="1" placeholder="Write a message…" aria-label="Message"></textarea>
+            <!-- No inline word predictions (Ümit #11651): in Safari on the Mac the grey completion took Enter for itself
+                 and flickered while she typed, so Enter seemed to do nothing. Spelling stays on. -->
+            <textarea id="composer-input" rows="1" placeholder="Write a message…" aria-label="Message" writingsuggestions="false"></textarea>
             <div class="composer-tools">
               <button id="attach-btn" type="button" class="icon-btn" title="Attach files (or drop them here)" aria-label="Attach files">📎</button>
               <select id="task-select" class="task-select" title="Send as a task for those you @mention (in a DM: the other member)" aria-label="Send as">
