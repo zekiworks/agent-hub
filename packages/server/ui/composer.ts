@@ -39,7 +39,10 @@ export function updateComposerState(): void {
   const alone = !!open && open.kind !== "all" && open.members.every((id) => id === state.me);
   dom.nobodyBar.hidden = !alone;
   if (open && alone) {
-    dom.nobodyBar.textContent = `Nobody else is in ${conversationTitle(open)}: a message here reaches no one. Add people with its name ▾ → Settings…, or write where they are.`;
+    // Short, without the name, so it never fills a phone's screen with the keyboard up (codex-ui #11719).
+    const what = open.kind === "project" ? (open.room ? "room" : "project") : open.kind === "group" ? "group" : "conversation";
+    const add = open.kind === "project" || open.kind === "group" ? " Add people via the name ▾ → Settings." : "";
+    dom.nobodyBar.textContent = `Only you are in this ${what}: a message here reaches no one.${add}`;
   }
   const offline = offlineRecipients();
   dom.holdBar.hidden = offline.length === 0;
