@@ -1517,9 +1517,29 @@ button:disabled {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--online) 25%, transparent);
 }
 
+/* Busy: a turning green arc, online and at work (Can #11457: an animation, not an orange dot). The same footprint as the
+   other dots, so the row does not move when it starts or stops. */
 .dot-busy {
-  background: var(--warning);
-  box-shadow: 0 0 0 3px rgba(227, 165, 71, 0.25);
+  width: 11px;
+  height: 11px;
+  margin: -1px;
+  border: 2px solid color-mix(in srgb, var(--online) 30%, transparent);
+  border-top-color: var(--online);
+  background: transparent;
+  animation: dot-spin 0.9s linear infinite;
+}
+
+@keyframes dot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reduced motion: the arc stands still, still different from idle's full ring. */
+@media (prefers-reduced-motion: reduce) {
+  .dot-busy {
+    animation: none;
+  }
 }
 
 .dot-off {
