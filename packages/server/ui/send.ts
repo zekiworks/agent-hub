@@ -96,7 +96,9 @@ async function send(): Promise<void> {
         throw new Error(`Upload of ${file.name} failed: ${errorText(err)}`);
       }
     }
-    await postToView(view, text, fileIds);
+    // A checklist item being answered goes in front as a quote (it was never in the box; Ümit #11598).
+    const item = state.itemReply && view.kind === "conversation" && state.itemReply.conversationId === view.id ? state.itemReply.item : undefined;
+    await postToView(view, item ? `> ${item}\n\n${text}` : text, fileIds);
     dom.input.value = "";
     saveDraft(view, "");
     state.staged = [];
@@ -123,7 +125,7 @@ dom.sendBtn.addEventListener("pointerdown", (event) => {
 
 dom.input.addEventListener("keydown", (event) => {
   if (state.mention.open && handleMentionKey(event)) return;
-  if (event.key === "Escape" && state.replyTo) {
+  if (event.key === "Escape" && (state.replyTo || state.itemReply)) {
     event.preventDefault();
     setReplyTo(undefined);
     return;

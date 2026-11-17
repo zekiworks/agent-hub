@@ -13,11 +13,15 @@ const MAX_COMPOSE_CHARS = 500;
 /** Address to come back to after signing in (a draft link opened while signed out keeps its draft). */
 const RETURN_KEY = "agent-bus.returnTo";
 
-/** Puts `text` at the top of `view`'s message box, cursor right after it; what was in the box stays below. */
+/**
+ * Puts `text` at the top of `view`'s message box (a Workspace page's "write to…", a #/to/…?draft= link), cursor right
+ * after it; what was in the box stays below. Text already at the top is not put there again (Ümit #11598: a repeated
+ * tap stacked the same lines).
+ */
 export function prefill(view: View, text: string): void {
   const put = () => {
     const rest = dom.input.value.trim();
-    dom.input.value = rest ? `${text}\n\n${rest}` : text;
+    if (!rest.startsWith(text.trim())) dom.input.value = rest ? `${text}\n\n${rest}` : text;
     saveDraft(view, dom.input.value);
     autosize();
     updateComposerState();

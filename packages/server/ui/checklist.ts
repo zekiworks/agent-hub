@@ -3,12 +3,14 @@
 // owner reads the ticks back. Its tab shows only where a list exists.
 import type { Checklist } from "@agent-bus/protocol";
 import { postJson, SESSION_KEY } from "./api";
-import { prefill } from "./compose";
+import { setItemReply } from "./composer";
+import { PHONE } from "./dom";
 import { errorText, relativeTime } from "./format";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
-import { refreshPane, registerExtension, renderPane } from "./pane";
-import { state } from "./state";
+import { closePane, refreshPane, registerExtension, renderPane } from "./pane";
+import { navigate } from "./routing";
+import { isCurrent, state } from "./state";
 import { mentionNodes } from "./text";
 
 /** One line of markdown, inline (bold, code, links, #n, @mentions), as the website renders messages (Can, 15 Nov). */
@@ -18,9 +20,21 @@ function inline(text: string): Node[] {
   return nodes.length === 1 && only instanceof HTMLElement && only.classList.contains("md-p") ? Array.from(only.childNodes) : nodes;
 }
 
-/** ↩ on an item (Can, 15 Nov): opens the list's conversation with the item quoted at the top of the message box. */
+/**
+ * ↩ on an item (Can, 15 Nov): opens the list's conversation replying to the item. The item shows above the message
+ * box and goes in front of the message as a quote when it is sent; it is not written into the box, where taps added
+ * it again and again (Ümit #11598, codex-ui #11599).
+ */
 function replyToItem(conversationId: string, item: string): void {
-  prefill({ kind: "conversation", id: conversationId }, `> ${item}\n\n`);
+  // On a phone the Workspace covers the conversation: it gives way to the message box.
+  if (PHONE.matches) closePane();
+  if (isCurrent(conversationId)) {
+    setItemReply(conversationId, item);
+    return;
+  }
+  // Switching conversations cancels any reply: this one is set after the switch.
+  window.addEventListener("hashchange", () => setTimeout(() => setItemReply(conversationId, item), 0), { once: true });
+  navigate({ kind: "conversation", id: conversationId });
 }
 
 /** Per conversation: its list, none, or loading (no entry: not asked yet). */
@@ -68,7 +82,7 @@ function line(conversationId: string, list: Checklist, raw: string): HTMLElement
     label.lastElementChild?.append(...inline(text));
     const reply = h("button", "check-reply", "↩");
     reply.type = "button";
-    reply.title = "Reply to this item: opens its conversation with the item quoted";
+    reply.title = "Reply to this item: it shows above the message box and is quoted when you send";
     reply.addEventListener("click", () => replyToItem(conversationId, text));
     li.append(label, reply);
     if (tick) li.append(h("span", "check-meta", `✓ ${tick.by} · ${relativeTime(tick.at)}`));

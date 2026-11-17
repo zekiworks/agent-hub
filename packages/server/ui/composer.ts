@@ -175,8 +175,10 @@ dom.composerSize.addEventListener("pointerdown", (event) => {
   grip.setAttribute("aria-valuemin", String(COMPOSER_MIN));
 }
 
+/** Sets (or, with undefined, cancels) the message the next send replies to; also cancels a checklist item's reply. */
 export function setReplyTo(message: Message | undefined): void {
   state.replyTo = message;
+  state.itemReply = undefined;
   dom.replyBar.hidden = !message;
   // The message being replied to stays framed until the reply is sent or cancelled (✕, Esc, Reply again).
   for (const li of dom.messageList.querySelectorAll<HTMLLIElement>(".msg-replying")) li.classList.remove("msg-replying");
@@ -186,6 +188,18 @@ export function setReplyTo(message: Message | undefined): void {
     dom.replyBarText.textContent = `Replying to ${message.from}: ${text.length > 120 ? `${text.slice(0, 119)}…` : text || "(file)"}`;
     dom.input.focus();
   }
+}
+
+/**
+ * ↩ on a checklist item (Ümit #11598): the item shows above the message box like a reply, and goes in front of the
+ * message as a quote when it is sent. The box keeps only what she writes; ↩ again replaces it, never adds a line.
+ */
+export function setItemReply(conversationId: string, item: string): void {
+  setReplyTo(undefined);
+  state.itemReply = { conversationId, item };
+  dom.replyBar.hidden = false;
+  dom.replyBarText.textContent = `Replying to the checklist item: ${item.length > 120 ? `${item.slice(0, 119)}…` : item}`;
+  dom.input.focus();
 }
 
 dom.replyCancel.addEventListener("click", () => setReplyTo(undefined));
