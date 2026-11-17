@@ -180,11 +180,13 @@ function hasOfflineAgent(conv: Conversation): boolean {
 
 /**
  * Agent filter: `@all` always passes, a group when every filtered agent is a member. Unread filter: unread or open.
- * Without "Include offline", conversations with an offline agent are hidden (the open one stays).
+ * Without "Include offline", conversations with an offline agent are hidden (the open one stays), but not rooms: a
+ * room is a shared place of people and agents, and one agent going offline must not take it out of the list
+ * (Ümit #11394).
  */
 export function passesFilter(conv: Conversation): boolean {
   if (state.unreadOnly && (state.unread.get(conv.id) ?? 0) === 0 && !isCurrent(conv.id)) return false;
-  if (!state.includeOffline && !isCurrent(conv.id) && hasOfflineAgent(conv)) return false;
+  if (!state.includeOffline && !isCurrent(conv.id) && !(conv.kind === "project" && conv.room) && hasOfflineAgent(conv)) return false;
   if (conv.kind === "all" || state.filter.size === 0) return true;
   return [...state.filter].every((id) => conv.members.includes(id));
 }

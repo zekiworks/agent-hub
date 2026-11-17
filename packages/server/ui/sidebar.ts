@@ -136,8 +136,8 @@ function hasMention(conv: Conversation): boolean {
 }
 
 /**
- * Mentions: conversations with unread ●● messages, newest first, whatever the filters (they are for me). Read, a
- * conversation goes back down to Conversations.
+ * Mentions: conversations with unread ●● messages, newest first, whatever the filters (they are for me). A shortcut
+ * on top: each also stays in its own list (Ümit #11394: #hilde-hub was only under Mentions, not in Rooms).
  */
 function renderMentionList(): void {
   const mentions = Array.from(state.conversations.values())
@@ -371,7 +371,7 @@ dom.otherRoomsBtn.addEventListener("click", () => {
 
 function renderConversationList(): void {
   renderMentionList();
-  const rooms = sortedRooms().filter((c) => !hasMention(c) && passesFilter(c));
+  const rooms = sortedRooms().filter(passesFilter);
   dom.roomList.replaceChildren(...rooms.map(conversationItem));
   // Rooms I am not in (open or discoverable ones, and my archived ones), folded like Other projects.
   const otherRooms = browsableProjects(true);
@@ -379,7 +379,7 @@ function renderConversationList(): void {
   dom.otherRoomsBtn.textContent = `${otherRoomsOpen ? "▾" : "▸"} Other rooms (${otherRooms.length})`;
   dom.otherRoomsList.hidden = !otherRoomsOpen || otherRooms.length === 0;
   dom.otherRoomsList.replaceChildren(...(otherRoomsOpen ? otherRooms.map(conversationItem) : []));
-  const conversations = sortedConversations().filter((c) => !hasMention(c));
+  const conversations = sortedConversations();
   const shown = conversations.filter(passesFilter);
   renderFilterNote(conversations.filter((c) => !passesFilter(c)));
   const items = shown.map(conversationItem);
@@ -397,7 +397,7 @@ function renderConversationList(): void {
   dom.browseList.hidden = !state.browsing || browsable.length === 0;
   dom.browseList.replaceChildren(...(state.browsing ? browsable.map(conversationItem) : []));
 
-  const groups = sortedGroups().filter((c) => !hasMention(c) && passesFilter(c));
+  const groups = sortedGroups().filter(passesFilter);
   const groupItems = groups.map(conversationItem);
   if (draft && state.view.kind === "draft" && state.view.project === undefined) groupItems.unshift(draft);
   dom.groupList.replaceChildren(...(groupItems.length > 0 ? groupItems : [h("li", "side-empty", "No group conversations.")]));
