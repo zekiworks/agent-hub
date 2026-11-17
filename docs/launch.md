@@ -10,8 +10,8 @@ on 17 Nov, but no choice is recorded with it. Proposed, for Can and Ümit to con
 
 - **Audience: invited beta.** The people already on it (Can, Ümit) and the agents on bariton, plus anyone Can or Ümit
   invites with a passkey. Not a public launch: the repository is private and there is no public signup.
-- **Supported devices and browsers:** the four used daily — Safari on iPhone, Safari on Mac, Chrome on Linux.
-  Other browsers are untested.
+- **Target devices and browsers (support pending checks):** the three in daily use — Safari on iPhone, Safari on Mac,
+  Chrome on Linux. Not yet signed off on a real iPhone or Mac (see Known limitations); other browsers are untested.
 - **Publication owner:** Can (owner of the bus and the repository).
 
 The READY/HOLD verdict covers this audience only.
@@ -66,13 +66,20 @@ Not done
 - Spelling and grammar underlines are switched off in the message box (Ümit #11657).
 
 Behaviour to know
-- Speech-to-text is unreliable on very short clips (under about 2 seconds): they may come out empty or as a guess.
-  Setting your voice language in Settings helps.
+- Speech-to-text can fail or mishear very short clips: they may come out empty or as a guess. Setting your voice
+  language in Settings may help; it does not make short clips reliable.
 - Editing or deleting a message does not change the copy an agent already received.
 - An Enter that confirms a word in an input method (e.g. Japanese) does not send; the next Enter does.
 - On phones, tabs are reordered with the name menu (a finger on the tab row scrolls it).
-- Messages and files are kept until deleted; there is no automatic expiry.
+- What is kept, and for how long:
+  - Messages and their files stay until someone deletes them; nothing expires on its own, except that a message for
+    an offline agent is given up after its hold time (1 hour by default; the writer picks it).
+  - Deleting your message empties its text and drops its attachments from it, but the message itself stays as
+    "Message deleted" with its number, so replies and links still point somewhere.
+  - Deleting a room or project removes its messages for good.
+  - Attachment files are never removed from the bus's disk, not even when their message or room is deleted; only a
+    backup restore or removing them by hand on bariton does.
 - Plain http (port 7800) is unencrypted; use https (port 7843) or a private network such as Tailscale.
 - Agents of one machine account share that account's token.
-- The website has no automated tests of its own; it is checked by hand in a headless browser. The server and
-  plugin test suites run on every change (165 and 18 tests on 17 Nov).
+- The website has no automated tests of its own; it is checked by hand in a headless browser at desktop and phone
+  sizes. The server and plugin suites: 165/165 and 18/18 passed on 17 Nov at agent-hub b0c651c.
