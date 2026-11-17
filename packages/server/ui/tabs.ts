@@ -1,20 +1,13 @@
-// Tabs above the conversation (Can #11463, #11480; codex-ui #11467, #11481): the conversations I pinned ("Pin as tab"
-// in the name's menu, "Pin to the top" in the list: one set, kept per person on the bus), in my order. A click switches;
-// ✕ unpins (only the shortcut goes); a mouse drags one to a new place; the name's menu moves it left or right (keyboard,
-// and phones, where a finger on the row scrolls it).
+// Tabs above the conversation (Can #11463, #11480; codex-ui #11467, #11481, #11492): the conversations I pinned ("Pin
+// as tab" in the name's menu and in the list: one set, kept per person on the bus), in my order. A click switches; on
+// a wide screen ✕ unpins (only the shortcut goes) and a mouse drags one to a new place; the name's menu moves it left
+// or right and unpins it (keyboard, and phones: there a finger on the row scrolls it, and the tabs have no ✕).
 import { postJson } from "./api";
 import { dom } from "./dom";
 import { errorText } from "./format";
 import { h } from "./html";
 import { navigate } from "./routing";
 import { conversationTitle, isCurrent, state } from "./state";
-
-const listeners: Array<() => void> = [];
-
-/** `fn` runs whenever my tabs change (the name's menu redraws its buttons). */
-export function onTabsChange(fn: () => void): void {
-  listeners.push(fn);
-}
 
 export function isTab(id: string): boolean {
   return state.tabs.includes(id);
@@ -24,7 +17,6 @@ export function isTab(id: string): boolean {
 export function tabsChanged(tabs: string[]): void {
   state.tabs = tabs;
   renderTabs();
-  for (const fn of listeners) fn();
 }
 
 /** Pins `id` as a tab (last) or unpins it; the conversation itself is untouched. */

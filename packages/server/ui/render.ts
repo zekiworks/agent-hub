@@ -63,7 +63,7 @@ export function renderHeader(): void {
   setConvTitle(title, conv.kind === "all" ? "Everyone" : `Members: ${nameList(conv.members)}`);
   // The title in the text colour (#10099): a project's colour is its band in the list and the Workspace's shared tint.
   setTitleBase(`${title} · ${BRAND}`);
-  setNameMenu(conv.kind === "group" || conv.kind === "project" ? "tab, members, notifications and settings" : "tab");
+  setNameMenu(conv.kind === "group" || conv.kind === "project" ? "settings and tab" : "tab");
   if (conv.kind === "all") {
     dom.convSubtitle.textContent = "Everyone. Every agent receives what is written here.";
   } else {
@@ -94,7 +94,7 @@ export function renderHeader(): void {
 function setNameMenu(what: string | undefined): void {
   dom.convMenuBtn.classList.toggle("no-menu", !what);
   if (what) {
-    dom.convMenuBtn.setAttribute("aria-haspopup", "dialog");
+    dom.convMenuBtn.setAttribute("aria-haspopup", "menu");
     dom.convMenuBtn.setAttribute("aria-label", `${dom.convTitle.textContent}: ${what}`);
   } else {
     dom.convMenuBtn.removeAttribute("aria-haspopup");

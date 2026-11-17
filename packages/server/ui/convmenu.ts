@@ -12,7 +12,7 @@ import { renderAll } from "./render";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
 import { conversationTitle, state } from "./state";
-import { isTab, moveTab, onTabsChange, setTab } from "./tabs";
+import { isTab, moveTab, setTab } from "./tabs";
 
 const NOTIFY: Array<[NotifyLevel, string]> = [
   ["all", "All messages"],
@@ -88,28 +88,73 @@ function parentSelect(conv: Conversation): HTMLElement {
   return select(options, conv.parentId ?? "", (parent) => void act(conv, "parent", { parent: parent || null }));
 }
 
-/** The tab part (Can #11480): pin as tab or unpin it, and move it among my tabs (the keyboard's and the phone's way). */
-function tabSection(conv: Conversation): HTMLElement[] {
-  const on = isTab(conv.id);
-  const row = h("div", "conv-row conv-tab-row");
-  row.append(button(on ? "Unpin tab" : "Pin as tab", () => void setTab(conv.id, !on)));
-  if (on) {
-    const i = state.tabs.indexOf(conv.id);
-    const left = button("‹ Move tab left", () => moveTab(conv.id, -1));
-    const right = button("Move tab right ›", () => moveTab(conv.id, 1));
-    left.disabled = i <= 0;
-    right.disabled = i >= state.tabs.length - 1;
-    row.append(left, right);
-  }
-  const hint = on
-    ? "Unpinning removes only the tab; the conversation stays. A mouse can also drag the tab."
-    : "A tab above the conversation, to come back to it in one click. Only you see your tabs.";
-  return [h("h3", "", "Tab"), row, h("p", "dialog-hint", hint)];
+/** The short menu under the name (Can #11480, codex-ui #11492), when open. */
+let nameMenu: HTMLElement | undefined;
+
+function closeNameMenu(focusName = false): void {
+  if (!nameMenu) return;
+  nameMenu.remove();
+  nameMenu = undefined;
+  dom.convMenuBtn.setAttribute("aria-expanded", "false");
+  if (focusName) dom.convMenuBtn.focus();
 }
 
+/**
+ * The name's short menu (codex-ui #11492): Settings… (rooms, projects and groups: the full form), then the tab: Pin as
+ * tab, or Move tab left / right and Unpin tab. On a phone this is the only way to unpin (the tabs there have no ✕).
+ */
+function openNameMenu(): void {
+  const conv = current();
+  closeNameMenu();
+  if (!conv) return;
+  const menu = h("div", "entry-menu name-menu");
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", conversationTitle(conv));
+  menu.addEventListener("click", (e) => e.stopPropagation());
+  const item = (label: string, run: () => void, disabled = false) => {
+    const b = h("button", "entry-menu-item", label);
+    b.type = "button";
+    b.setAttribute("role", "menuitem");
+    b.disabled = disabled;
+    b.addEventListener("click", () => {
+      closeNameMenu(true);
+      run();
+    });
+    menu.append(b);
+  };
+  if (conv.kind === "group" || conv.kind === "project") {
+    item("Settings…", () => {
+      render();
+      if (!dom.convDialog.open) dom.convDialog.showModal();
+    });
+  }
+  if (isTab(conv.id)) {
+    const i = state.tabs.indexOf(conv.id);
+    item("‹ Move tab left", () => moveTab(conv.id, -1), i <= 0);
+    item("Move tab right ›", () => moveTab(conv.id, 1), i >= state.tabs.length - 1);
+    item("Unpin tab", () => void setTab(conv.id, false));
+  } else {
+    item("Pin as tab", () => void setTab(conv.id, true));
+  }
+  const r = dom.convMenuBtn.getBoundingClientRect();
+  menu.style.top = `${Math.round(r.bottom + 4)}px`;
+  menu.style.left = `${Math.round(Math.max(8, Math.min(r.left, innerWidth - 228)))}px`;
+  document.body.append(menu);
+  nameMenu = menu;
+  dom.convMenuBtn.setAttribute("aria-expanded", "true");
+  menu.querySelector<HTMLButtonElement>(".entry-menu-item:not(:disabled)")?.focus();
+}
+
+document.addEventListener("click", () => closeNameMenu());
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && nameMenu) closeNameMenu(true);
+});
+window.addEventListener("hashchange", () => closeNameMenu());
+
+/** The full settings form of a group DM or project ("Settings…" in the name's menu). */
 function render(): void {
   const conv = current();
-  if (!conv) {
+  if (!conv || (conv.kind !== "group" && conv.kind !== "project")) {
     dom.convDialog.close();
     return;
   }
@@ -119,12 +164,7 @@ function render(): void {
   close.className = "link-btn";
   close.title = "Close (Esc)";
   head.append(h("h2", "", conversationTitle(conv)), close);
-  const body: HTMLElement[] = [head, ...tabSection(conv)];
-  // DMs and #all: their tab is all there is to it.
-  if (conv.kind !== "group" && conv.kind !== "project") {
-    dom.convDialog.replaceChildren(...body, closeWindowButton(dom.convDialog));
-    return;
-  }
+  const body: HTMLElement[] = [head];
 
   body.push(h("h3", "", `Members (${conv.members.length})`));
   // Each member; agents get ✕ to take them out (Ümit, 16 Nov), for a person who is in it.
@@ -293,14 +333,10 @@ function render(): void {
   dom.convDialog.replaceChildren(...body);
 }
 
-// The name opens it (Can #11463), where the conversation has one (render.ts setNameMenu).
-dom.convMenuBtn.addEventListener("click", () => {
+// The name opens its short menu (Can #11463, #11480), on every conversation (render.ts setNameMenu).
+dom.convMenuBtn.addEventListener("click", (event) => {
   if (dom.convMenuBtn.classList.contains("no-menu")) return;
-  render();
-  if (!dom.convDialog.open) dom.convDialog.showModal();
-});
-
-// Moving or unpinning (here, on the row, or on another of my pages) redraws the open menu's buttons.
-onTabsChange(() => {
-  if (dom.convDialog.open) render();
+  event.stopPropagation();
+  if (nameMenu) closeNameMenu();
+  else openNameMenu();
 });

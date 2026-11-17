@@ -3758,16 +3758,13 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 16px;
   }
 
-  /* Tabs: a thumb's height; ✕ a thumb's width; Pin/Unpin and Move in the name's menu too. */
+  /* Tabs: a thumb's height, and no ✕ (codex-ui #11492: swiping the row must not unpin one); the name's menu unpins. */
   .tab-open {
     min-height: 44px;
-    padding-left: 14px;
+    padding: 0 14px;
   }
   .tab-close {
-    min-width: 44px;
-  }
-  .conv-tab-row .btn {
-    min-height: 44px;
+    display: none;
   }
 
   /* The ▸/▾ section folds (Agents, Projects, Groups): a thumb's height. */
