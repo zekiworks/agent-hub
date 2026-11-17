@@ -416,8 +416,8 @@ button:disabled {
 
 /* The open global item reads as a tab (#10696, Can and Ümit): its top-bar entry runs down to the bottom of the band and
  * meets the Workspace's heading in one tint (one opaque colour, so both sides match; codex-ui #10762), an accent edge
- * on the tab's top. Follows ‹ › (the class goes with the item); gone when an entity's tools are shown. Desktop only:
- * on phones the Workspace's heading names it. */
+ * on the tab's top, square corners (Can #11392: no rounded tabs). Follows ‹ › (the class goes with the item); gone when
+ * an entity's tools are shown. Desktop only: on phones the Workspace's heading names it. */
 @media (min-width: 1101px) {
   .app.ws-global .launcher-btn.active,
   .app.ws-global .inbox-topbtn.active {
@@ -429,7 +429,7 @@ button:disabled {
     margin: -8px 0 -9px; /* the band's padding and its bottom border */
     padding: 0 12px;
     border: 0;
-    border-radius: 6px 6px 0 0;
+    border-radius: 0;
     background: color-mix(in srgb, var(--accent) 16%, var(--panel));
     box-shadow: inset 0 2px 0 var(--accent);
   }
@@ -955,23 +955,6 @@ button:disabled {
 
 .link-status[data-state="offline"] {
   color: #f87171;
-}
-
-.profile {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--sidebar-muted);
-}
-
-.profile select {
-  background: var(--sidebar-hover);
-  color: #fff;
-  border: 1px solid var(--sidebar-active);
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-weight: 600;
 }
 
 /* ---- Sidebar ---- */
@@ -3227,10 +3210,6 @@ ul.md-list ul.md-list { list-style: circle; }
   .app {
     grid-template-columns: 220px minmax(0, 1fr);
   }
-
-  .profile-label {
-    display: none;
-  }
 }
 
 @media (max-width: 1100px) {
@@ -3276,15 +3255,14 @@ ul.md-list ul.md-list { list-style: circle; }
     display: none;
   }
 
-  /* The phone's top bar (codex-ui #10248: three busy rows): brand, then Settings, Tools, GPUs, notifications and ✉ under
-     it. "#…" (also …/#/m/1234) and "You are" (set when signing in) stay on wider screens only. */
+  /* The phone's top bar (codex-ui #10248: three busy rows): brand, then Settings, Tools, GPUs, notifications, ✉ ☆ and the
+     account under it. "#…" (also …/#/m/1234) stays on wider screens only. */
   .topbar {
     flex-wrap: wrap;
     gap: 8px 14px;
   }
 
-  #goto-btn,
-  .topbar .profile {
+  #goto-btn {
     display: none;
   }
 
@@ -3496,10 +3474,17 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 16px;
   }
 
-  /* ✉ and ☆ in the phone's top bar: a thumb's size. */
+  /* ✉, ☆ and the account in the phone's top bar: a thumb's size. */
   .inbox-topbtn {
     min-width: 44px;
     min-height: 44px;
+  }
+
+  .account-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 6px;
   }
 
   /* The GPU booking form (codex-ui #10274): fields, checkbox rows and hold buttons a thumb can hit; 16 px text so iOS

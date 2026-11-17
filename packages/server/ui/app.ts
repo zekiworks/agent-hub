@@ -255,9 +255,11 @@ async function loadAuth(): Promise<string | undefined> {
   const auth = await api<{ me: string | null; fileKey?: string }>("/api/auth/state");
   if (!auth.me) return undefined;
   setFileKey(auth.fileKey ?? "");
+  // The account, once, at the right of the top bar (Can #11389): the name, a link to passkeys, machines, sign out.
   dom.authLink.hidden = false;
   dom.authLink.textContent = `✓ ${auth.me}`;
-  dom.authLink.title = "Signed in with a passkey (passkeys, machines on the bus, sign out)";
+  dom.authLink.title = `Signed in as ${auth.me} with a passkey: passkeys, machines on the bus, sign out`;
+  dom.authLink.setAttribute("aria-label", `Your account: signed in as ${auth.me} (passkeys, machines on the bus, sign out)`);
   return auth.me;
 }
 
@@ -279,8 +281,6 @@ async function boot(): Promise<void> {
   // A signed-in browser is that human (the server refuses any other `from`).
   state.me = state.humans.includes(signedIn) ? signedIn : "";
   localStorage.setItem(PROFILE_KEY, signedIn);
-  dom.profileSelect.disabled = true;
-  dom.profileSelect.title = `Signed in as ${signedIn} with a passkey`;
   void loadAgentRequests();
   // File keys last a day; pages stay open longer.
   setInterval(() => void loadAuth().catch(() => undefined), 3600_000);

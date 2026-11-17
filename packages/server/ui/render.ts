@@ -21,23 +21,11 @@ import { conversationAddress, conversationTitle, projectColor, state } from "./s
 import { flashMessage, mentionNodes, mentionsMe, shownMessage } from "./text";
 
 export function renderAll(): void {
-  renderProfileSelect();
   renderSidebar();
   renderHeader();
   renderMessages();
   updateComposerState();
   renderPane();
-}
-
-function renderProfileSelect(): void {
-  dom.profileSelect.replaceChildren(
-    ...state.humans.map((id) => {
-      const option = h("option", undefined, id);
-      option.value = id;
-      return option;
-    })
-  );
-  dom.profileSelect.value = state.me;
 }
 
 /**

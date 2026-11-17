@@ -1,4 +1,4 @@
-// Who is using this page: the profile picker.
+// Who is using this page, when the signed-in person is not among the bus's people: the profile dialog.
 import { PROFILE_KEY } from "./api";
 import { dom, PHONE } from "./dom";
 import { loadDraft } from "./drafts";
@@ -10,7 +10,6 @@ import { loadReadMarkers, refreshUnread } from "./unread";
 function setMe(id: string): void {
   state.me = id;
   localStorage.setItem(PROFILE_KEY, id);
-  dom.profileSelect.value = id;
   loadReadMarkers();
   renderAll();
   loadDraft();
@@ -34,4 +33,3 @@ export function askProfile(): void {
 }
 
 dom.profileDialog.addEventListener("cancel", (event) => event.preventDefault());
-dom.profileSelect.addEventListener("change", () => setMe(dom.profileSelect.value));

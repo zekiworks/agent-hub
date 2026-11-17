@@ -3,7 +3,6 @@ import { el } from "./html";
 
 export const dom = {
   linkStatus: el<HTMLSpanElement>("link-status"),
-  profileSelect: el<HTMLSelectElement>("profile-select"),
   newGroupBtn: el<HTMLButtonElement>("new-group-btn"),
   unreadBtn: el<HTMLButtonElement>("unread-btn"),
   offlineBtn: el<HTMLButtonElement>("offline-btn"),
