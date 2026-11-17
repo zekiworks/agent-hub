@@ -15,7 +15,7 @@ import { applyActivity, syncWatch } from "./live";
 import { loadEarlier, loadMessages, loadState, receive } from "./loading";
 import { loadAgentRequests } from "./machines";
 import { closeMention, updateMention } from "./mentions";
-import { setDetails, setPhoneList } from "./phones";
+import { setDetails, setPhoneList, wasOnPhoneList } from "./phones";
 import { askProfile } from "./profile";
 import { applyReceipt, renderAll, renderMessages, showEmpty } from "./render";
 import { navigate, parseHash, viewHash } from "./routing";
@@ -319,10 +319,12 @@ async function boot(): Promise<void> {
     onFrame: handleFrame,
   });
   restoreAddress();
+  // A link brought here (a message's #/m/…, a #/to/…?draft=) opens its conversation, not the list.
+  const cameByLink = /^#\/(m\/|to\/[^?]*\?draft=)/.test(location.hash);
   const linkedSeq = takeMessageLink();
   takeDraftLink();
-  // Phones opened without a conversation in the address start on the conversation list.
-  const startOnList = location.hash === "";
+  // Phones opened without a conversation in the address, or reloaded on the list, start on the conversation list.
+  const startOnList = location.hash === "" || (!cameByLink && wasOnPhoneList());
   applyView(parseHash());
   if (startOnList) setPhoneList(true);
   if (linkedSeq !== undefined) void showMessage(linkedSeq);

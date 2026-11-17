@@ -34,9 +34,20 @@ document.addEventListener("focusout", () => {
   for (const ms of [100, 400, 800]) setTimeout(fitViewport, ms);
 });
 
-/** Phones: show the conversation list (← in the conversation bar) instead of the open conversation. */
+const LIST_KEY = "agent-bus.phoneList";
+
+/**
+ * Phones: show the conversation list (← in the conversation bar) instead of the open conversation. Remembered for this
+ * tab, so a reload shows the list again (Ümit #11664: a reload opened the conversation she had left).
+ */
 export function setPhoneList(on: boolean): void {
   dom.app.classList.toggle("phone-list", on);
+  sessionStorage.setItem(LIST_KEY, on ? "1" : "0");
+}
+
+/** The list was showing when this tab was last reloaded. */
+export function wasOnPhoneList(): boolean {
+  return sessionStorage.getItem(LIST_KEY) === "1";
 }
 dom.backBtn.addEventListener("click", () => {
   dom.input.blur();
