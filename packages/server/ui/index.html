@@ -31,7 +31,12 @@
       <span id="launchers" class="launchers"></span>
       <button id="notify-btn" type="button" class="link-btn notify-btn" hidden></button>
       <button id="goto-btn" type="button" class="link-btn" title="Go to a message by its number (or open …/#/m/1234)">#…</button>
-      <button id="inbox-btn" type="button" class="inbox-topbtn" title="Inbox: tasks for you and tasks you assigned">✉</button>
+      <!-- ✉ and ☆ stay together when the bar wraps on a phone. -->
+      <span class="topbar-pair">
+        <button id="inbox-btn" type="button" class="inbox-topbtn" title="Inbox: tasks for you and tasks you assigned">✉</button>
+        <!-- Your bookmarks beside your inbox (bookmarks.ts; Can #11378): the same as "☆ Bookmarks" in the list. -->
+        <button id="bookmarks-btn" type="button" class="inbox-topbtn" title="Your bookmarks (only you see them)" aria-label="Your bookmarks" aria-pressed="false" hidden>☆</button>
+      </span>
       <label class="profile" title="Who you are on the bus">
         <span class="profile-label">You are</span>
         <select id="profile-select"></select>

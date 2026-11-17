@@ -109,13 +109,17 @@ registerExtension({
   },
 });
 
+// "☆ Bookmarks" in the list and ☆ beside ✉ in the top bar (Can #11378) both open the list, and are lit while it shows.
 onWorkspaceChange(() => {
-  dom.bookmarksRow.hidden = !state.me;
-  dom.bookmarksRowCount.textContent = state.bookmarks.length > 0 ? String(state.bookmarks.length) : "";
   const on = globalShown("bookmarks");
-  dom.bookmarksRow.classList.toggle("active", on);
-  dom.bookmarksRow.setAttribute("aria-pressed", on ? "true" : "false");
+  dom.bookmarksRowCount.textContent = state.bookmarks.length > 0 ? String(state.bookmarks.length) : "";
+  for (const button of [dom.bookmarksRow, dom.bookmarksBtn]) {
+    button.hidden = !state.me;
+    button.classList.toggle("active", on);
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+  }
   if (on) dom.bookmarksReturn.hidden = true;
 });
 dom.bookmarksRow.addEventListener("click", () => toggleGlobal("bookmarks"));
+dom.bookmarksBtn.addEventListener("click", () => toggleGlobal("bookmarks"));
 dom.bookmarksReturn.addEventListener("click", () => toggleGlobal("bookmarks"));

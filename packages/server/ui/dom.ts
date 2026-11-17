@@ -116,6 +116,7 @@ export const dom = {
   statsDaily: el<HTMLUListElement>("stats-daily"),
   gpuBtn: el<HTMLButtonElement>("gpu-btn"),
   inboxBtn: el<HTMLButtonElement>("inbox-btn"),
+  bookmarksBtn: el<HTMLButtonElement>("bookmarks-btn"),
   inboxRow: el<HTMLButtonElement>("inbox-row"),
   inboxRowCount: el<HTMLSpanElement>("inbox-row-count"),
   inboxReturn: el<HTMLButtonElement>("inbox-return"),

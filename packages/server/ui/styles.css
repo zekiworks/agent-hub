@@ -742,6 +742,15 @@ button:disabled {
   cursor: pointer;
 }
 
+/* ✉ and ☆ (bookmarks.ts) side by side, wrapping together on a narrow phone (Can #11378). */
+.topbar-pair {
+  display: inline-flex;
+  align-self: stretch;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .inbox-topbtn.inbox-open {
   border-color: var(--warning);
   background: rgb(227 165 71 / 0.18);
@@ -3485,6 +3494,12 @@ ul.md-list ul.md-list { list-style: circle; }
 
   .msg-edit-input {
     font-size: 16px;
+  }
+
+  /* ✉ and ☆ in the phone's top bar: a thumb's size. */
+  .inbox-topbtn {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   /* The GPU booking form (codex-ui #10274): fields, checkbox rows and hold buttons a thumb can hit; 16 px text so iOS
