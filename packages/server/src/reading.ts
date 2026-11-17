@@ -22,13 +22,18 @@ function readLimit(url: URL): number {
 
 type ReaderScope = { id: string; kind: "agent" | "human"; all: boolean };
 
-/** The reader (`param`, a known participant) and whether it reads everything it may (`scope=all`) or its own. */
-function reader(ctx: BusContext, url: URL, param: string): ReaderScope {
+/**
+ * The reader (`param`, a known participant) and whether it reads everything it may (`scope=all`) or its own. It must
+ * be the caller (checkWriter: a person signed in as themselves, an agent with its own token): naming someone else in
+ * `param` read their conversations (found 17 Nov, while building search).
+ */
+function reader(ctx: BusContext, req: Request, url: URL, param: string): ReaderScope {
   const id = (url.searchParams.get(param) ?? "").trim().toLowerCase();
   const participant = ctx.hub.knownParticipant(id);
   if (!participant) {
     throw new HttpError(400, `Unknown participant "${id}" in ${param}. Known ids: ${ctx.hub.knownIds().join(", ")}`);
   }
+  ctx.checkWriter(req, participant);
   const scope = url.searchParams.get("scope") ?? "mine";
   if (scope !== "mine" && scope !== "all") throw new HttpError(400, 'scope must be "mine" or "all"');
   return { id: participant.id, kind: participant.kind, all: scope === "all" };
@@ -42,8 +47,8 @@ function withConversations(ctx: BusContext, messages: Message[]): ReadResponse {
 }
 
 /** Messages sent to `for` (it has a receipt), newest `limit`, after `sinceSeq`. */
-export function getInbox(ctx: BusContext, url: URL): ReadResponse {
-  const { id } = reader(ctx, url, "for");
+export function getInbox(ctx: BusContext, req: Request, url: URL): ReadResponse {
+  const { id } = reader(ctx, req, url, "for");
   return withConversations(ctx, ctx.db.inboxFor(id, intParam(url, "sinceSeq", 0) ?? 0, readLimit(url)));
 }
 
@@ -51,9 +56,9 @@ export function getInbox(ctx: BusContext, url: URL): ReadResponse {
  * The newest `limit` messages (before `beforeSeq`) of the conversation `to` names for `from` ("@x" its DM with x,
  * "@{a,b}" its group DM with them, "@@name" a project, "@all"), or of `conversationId`.
  */
-export function getHistory(ctx: BusContext, url: URL): ReadResponse {
+export function getHistory(ctx: BusContext, req: Request, url: URL): ReadResponse {
   const { db } = ctx;
-  const me = reader(ctx, url, "from");
+  const me = reader(ctx, req, url, "from");
   const to = url.searchParams.get("to");
   const conversationId = url.searchParams.get("conversationId");
   let conversation: Conversation | null;
@@ -85,8 +90,8 @@ export function getHistory(ctx: BusContext, url: URL): ReadResponse {
 }
 
 /** Messages whose text contains `q` (and from `sender`), newest `limit`, in the reader's conversations or all it may read. */
-export function getSearch(ctx: BusContext, url: URL): ReadResponse {
-  const me = reader(ctx, url, "from");
+export function getSearch(ctx: BusContext, req: Request, url: URL): ReadResponse {
+  const me = reader(ctx, req, url, "from");
   const sender = url.searchParams.get("sender")?.trim().replace(/^@/, "").toLowerCase() || null;
   const q = url.searchParams.get("q") ?? "";
   if (!q.trim() && !sender) throw new HttpError(400, "Give q (text to find) and/or sender");

@@ -115,23 +115,29 @@ test("every read route needs a session or an approved agent token (401 otherwise
   const { message } = (await (await postJson(bus, "/api/messages", { from: "carol", to: "@all", text: "hi" })).json()) as PostMessageResponse;
   const upload = await busFetch(bus, "/api/files?from=carol&name=a.txt", { method: "POST", body: "abc" }, "carol");
   const { file } = (await upload.json()) as { file: FileRef };
-  const routes = [
+  // The reading routes name their reader (for=, from=): each identity reads as itself.
+  const routes = (who: string) => [
     "/api/state",
-    "/api/inbox?for=alpha",
-    "/api/history?from=carol&to=@all",
-    "/api/search?from=carol&q=hi",
+    `/api/inbox?for=${who}`,
+    `/api/history?from=${who}&to=@all`,
+    `/api/search?from=${who}&q=hi`,
     `/api/conversations/${message.conversationId}/messages`,
     `/api/messages/${message.seq}`,
     `/api/files/${file.id}`,
     "/api/resources",
   ];
-  for (const route of routes) {
+  for (const route of routes("carol")) {
     expect([route, (await get(route)).status]).toEqual([route, 401]);
     expect([route, (await get(route, { "X-Agent-Token": "never-seen" })).status]).toEqual([route, 401]);
     expect([route, (await get(route, { Authorization: "Bearer made-up" })).status]).toEqual([route, 401]);
     expect([route, (await get(route, identity(bus, "carol"))).status]).toEqual([route, 200]);
-    expect([route, (await get(route, identity(bus))).status]).toEqual([route, 200]);
   }
+  for (const route of routes("alpha")) expect([route, (await get(route, identity(bus))).status]).toEqual([route, 200]);
+  // Nobody reads as someone else: a person as another person or an agent, an agent token as a person.
+  for (const route of ["/api/inbox?for=alpha", "/api/history?from=uma&to=@all", "/api/search?from=uma&q=hi"]) {
+    expect([route, (await get(route, identity(bus, "carol"))).status]).toEqual([route, 403]);
+  }
+  expect((await get("/api/search?from=carol&q=hi", identity(bus))).status).toBe(401);
   expect((await get("/api/health")).status).toBe(200);
   expect((await get("/api/auth/state")).status).toBe(200);
   // Writes too: an agent's write without any identity.

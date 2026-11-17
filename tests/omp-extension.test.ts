@@ -291,7 +291,7 @@ test("write to an offline agent is held for it; the result says so", async () =>
   const result = (await alpha.run({ op: "write", to: "@gamma", message: "are you there", hold_hours: 4 })).content[0]!.text;
   expect(result).toContain("held for @gamma until it is back");
   expect(result).toContain("You will be told when they receive it, or if it expires first");
-  const search = await getJson<{ messages: Array<{ expiresAt: number; createdAt: number }> }>(bus, "/api/search?from=carol&q=are%20you%20there&scope=all");
+  const search = await getJson<{ messages: Array<{ expiresAt: number; createdAt: number }> }>(bus, "/api/search?from=carol&q=are%20you%20there&scope=all", "carol");
   expect(search.messages).toHaveLength(1);
   expect(search.messages[0]!.expiresAt - search.messages[0]!.createdAt).toBe(4 * 3600_000);
 }, 15_000); // the tool waits up to 5 s for receipts an offline agent never sends: longer than Bun's 5 s default

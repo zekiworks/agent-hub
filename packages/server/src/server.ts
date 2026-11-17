@@ -217,9 +217,9 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       };
       return json(state);
     }
-    if (method === "GET" && pathname === "/api/inbox") return json(getInbox(ctx, url));
-    if (method === "GET" && pathname === "/api/history") return json(getHistory(ctx, url));
-    if (method === "GET" && pathname === "/api/search") return json(getSearch(ctx, url));
+    if (method === "GET" && pathname === "/api/inbox") return json(getInbox(ctx, req, url));
+    if (method === "GET" && pathname === "/api/history") return json(getHistory(ctx, req, url));
+    if (method === "GET" && pathname === "/api/search") return json(getSearch(ctx, req, url));
     if (method === "GET" && pathname === "/api/stats") {
       const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 7));
       return json(db.stats(Date.now() - days * 86_400_000, days));
