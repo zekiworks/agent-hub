@@ -5,6 +5,7 @@ import type { Message } from "@agent-bus/protocol";
 import { postJson } from "./api";
 import { errorText } from "./format";
 import { h } from "./html";
+import { setIcon } from "./icons";
 import { renderMessages } from "./render";
 import { state } from "./state";
 
@@ -26,7 +27,8 @@ export function changeable(message: Message): boolean {
 /** ✎ and 🗑 for my own messages. */
 export function changeButtons(message: Message): HTMLButtonElement[] {
   if (!changeable(message)) return [];
-  const edit = h("button", "msg-action-btn msg-edit-btn", "✎");
+  const edit = h("button", "msg-action-btn msg-edit-btn");
+  setIcon(edit, "pencil");
   edit.type = "button";
   edit.title = "Edit this message";
   edit.setAttribute("aria-label", `Edit message #${message.seq}`);
@@ -35,7 +37,8 @@ export function changeButtons(message: Message): HTMLButtonElement[] {
     deleting = undefined;
     renderMessages();
   });
-  const remove = h("button", "msg-action-btn msg-delete-btn", "🗑");
+  const remove = h("button", "msg-action-btn msg-delete-btn");
+  setIcon(remove, "trash");
   remove.type = "button";
   remove.title = "Delete this message";
   remove.setAttribute("aria-label", `Delete message #${message.seq}`);

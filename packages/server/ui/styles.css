@@ -286,17 +286,42 @@ button:disabled {
   color: var(--text);
 }
 
-/* Outlined when nothing is pinned, filled when something is (codex-ui #10756: the shape says it, not only the colour). */
-.pin-icon {
+/* Icons (icons.ts, Lucide; Can #11800, codex-ui #11801): outline, 2 px stroke, in the text colour of their button;
+   18 px, 20–22 px on phones. A filled one (`icon-filled`) is a set state: a pinned pin, a saved star. */
+.icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
   vertical-align: -3px;
-}
-
-.pin-icon path {
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
+}
+.icon-filled {
+  fill: currentColor;
+}
+.icon-label:empty {
+  display: none;
+}
+.msg-action-btn,
+.send-btn,
+.icon-btn.composer-size {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.icon-btn,
+.voice-rec-btn {
+  display: inline-grid;
+  place-items: center;
+}
+
+/* Outlined when nothing is pinned, filled when something is (codex-ui #10756: the shape says it, not only the colour). */
+.pin-icon path {
+  fill: none;
 }
 
 .checklist-btn.pinned .pin-icon .pin-head {
@@ -3184,6 +3209,11 @@ ul.md-list ul.md-list { list-style: circle; }
   line-height: 1;
   pointer-events: none;
 }
+.pin-mark .icon {
+  width: 13px;
+  height: 13px;
+  color: var(--sidebar-muted);
+}
 
 .side-list li:has(.pin-mark) .side-item-time {
   visibility: hidden;
@@ -3755,15 +3785,14 @@ ul.md-list ul.md-list { list-style: circle; }
     margin: 0;
   }
 
+  /* Send: its icon alone on a phone (the word in its label). */
   .send-btn {
     min-width: 44px;
     padding: 0 12px;
-    font-size: 0;
   }
 
-  .send-btn::before {
-    content: "➤";
-    font-size: 18px;
+  .send-btn .icon-label {
+    display: none;
   }
 
   /* iOS zooms into inputs with text under 16px. */
@@ -3771,11 +3800,21 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 16px;
   }
 
-  /* Finger-sized icons: 📎 🎤 ➤ under the messages, 🗑 ⏸ while recording, and Reply on a message. */
+  /* Finger-sized buttons with 22 px icons: attach, microphone, Send, the recording's delete and pause. */
   .composer .icon-btn {
     width: 48px;
     height: 48px;
-    font-size: 24px;
+  }
+
+  .composer .icon,
+  .voice-rec .icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .msg-actions .icon {
+    width: 20px;
+    height: 20px;
   }
 
   /* A tapped message's ▶ ⧉ # ↩ (codex-ui #10262: they were 39 px high). */

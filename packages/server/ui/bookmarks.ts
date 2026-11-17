@@ -7,6 +7,7 @@ import { dom, PHONE } from "./dom";
 import { errorText, relativeTime } from "./format";
 import { hooks } from "./hooks";
 import { h } from "./html";
+import { icon } from "./icons";
 import { closePane, globalShown, onWorkspaceChange, refreshPane, registerExtension, toggleGlobal } from "./pane";
 import { renderMessages } from "./render";
 import { conversationTitle, state } from "./state";
@@ -31,7 +32,8 @@ export function bookmarksChanged(bookmarks: Bookmark[]): void {
 /** ☆ (save for myself) or ★ (saved; a click drops it) among a message's actions. */
 export function bookmarkButton(message: Message): HTMLButtonElement {
   const on = isBookmarked(message.seq);
-  const button = h("button", `msg-action-btn msg-bookmark-btn${on ? " bookmarked" : ""}`, on ? "★" : "☆");
+  const button = h("button", `msg-action-btn msg-bookmark-btn${on ? " bookmarked" : ""}`);
+  button.append(icon("star", on));
   button.type = "button";
   button.title = on ? "In your bookmarks; click to remove it (only you see them)" : "Bookmark it for yourself (only you see your bookmarks)";
   button.setAttribute("aria-label", on ? `Remove message #${message.seq} from your bookmarks` : `Bookmark message #${message.seq}`);

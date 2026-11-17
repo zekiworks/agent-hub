@@ -9,6 +9,7 @@ import { hideError, showError, updateComposerState } from "./composer";
 import { dom } from "./dom";
 import { errorText, nameList } from "./format";
 import { h } from "./html";
+import { setIcon } from "./icons";
 import { viewHash } from "./routing";
 import { chosenNow, postToView, uploadFile, type Chosen } from "./send";
 import { conversationTitle, state, type View } from "./state";
@@ -255,7 +256,7 @@ function setPaused(rec: Recording, paused: boolean): void {
     rec.pausedMs += Date.now() - rec.pausedAt;
     rec.pausedAt = undefined;
   }
-  dom.voicePause.textContent = paused ? "▶" : "⏸";
+  setIcon(dom.voicePause, paused ? "play" : "pause");
   dom.voicePause.title = paused ? "Go on recording" : "Pause";
   dom.voiceRec.classList.toggle("paused", paused);
 }
@@ -394,6 +395,9 @@ dom.voiceDelete.addEventListener("click", () => void stop(true));
 dom.voicePause.addEventListener("click", () => {
   if (recording) setPaused(recording, !recording.pausedAt);
 });
+setIcon(dom.voiceBtn, "mic");
+setIcon(dom.voiceDelete, "trash");
+setIcon(dom.voicePause, "pause");
 
 // Send during a click-started recording sends the recording (capture: before send.ts sends the typed text).
 dom.composer.addEventListener(

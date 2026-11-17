@@ -7,6 +7,7 @@ import { dom, PHONE } from "./dom";
 import { dayFormat, dayKey, errorText, fullFormat, nameList, timeFormat } from "./format";
 import { changeButtons, deleteQuestion, editBox } from "./edit";
 import { h } from "./html";
+import { icon, setIcon, type IconName } from "./icons";
 import { renderMarkdown } from "./markdown";
 import { setTitleBase } from "./notify";
 import { navigate } from "./routing";
@@ -234,7 +235,8 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   if (!deleted && state.conversations.get(message.conversationId)?.members.includes(state.me)) actions.append(pinButton(message));
   // ✎ 🗑 on my own messages (Ümit #10890).
   actions.append(...changeButtons(message));
-  const replyBtn = h("button", "msg-action-btn msg-reply-btn", "↩ ");
+  const replyBtn = h("button", "msg-action-btn msg-reply-btn");
+  setIcon(replyBtn, "reply");
   replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";
   replyBtn.title = "Reply to this message (quotes it); click again to cancel";
@@ -394,7 +396,7 @@ function renderQuote(quote: Quote): HTMLButtonElement {
  * themselves.
  */
 function copyButton(message: Message): HTMLButtonElement {
-  return copier("⧉", "Copy the whole message", () => {
+  return copier("copy", "Copy the whole message", () => {
     const shown = actionsOwner(message)?.querySelector<HTMLElement>(".msg-text");
     return shown?.innerText.trim() || message.text;
   });
@@ -402,15 +404,16 @@ function copyButton(message: Message): HTMLButtonElement {
 
 /** "#10228" to the clipboard (Can, #10228): the number stays easy to share while it is drawn quietly. */
 function copyIdButton(message: Message): HTMLButtonElement {
-  return copier("#", `Copy the message's number (#${message.seq})`, () => `#${message.seq}`);
+  return copier("hash", `Copy the message's number (#${message.seq})`, () => `#${message.seq}`);
 }
 
 /** 📌 on a message: pinned (filled, "Unpin") or not; the header's pin and the Pinned list follow (#10757). */
 function pinButton(message: Message): HTMLButtonElement {
   const pinned = isPinned(message);
-  const button = h("button", `msg-action-btn msg-pin-btn${pinned ? " pinned" : ""}`, "📌");
+  const button = h("button", `msg-action-btn msg-pin-btn${pinned ? " pinned" : ""}`);
+  button.append(icon("pin", pinned));
   button.type = "button";
-  button.title = pinned ? "Unpin it from this conversation (the message stays)" : "Pin it to this conversation (📌 at the top right)";
+  button.title = pinned ? "Unpin it from this conversation (the message stays)" : "Pin it to this conversation (the pin at the top right)";
   button.setAttribute("aria-label", pinned ? `Unpin message #${message.seq}` : `Pin message #${message.seq}`);
   button.setAttribute("aria-pressed", pinned ? "true" : "false");
   button.addEventListener("click", () => {
@@ -487,8 +490,9 @@ function manualCopy(near: Element | null, value: string): void {
 }
 
 /** A message action that copies `text()`: ✓ "Copied" only when it was (#10401), else the text to copy by hand. */
-function copier(label: string, title: string, text: () => string): HTMLButtonElement {
-  const button = h("button", "msg-action-btn msg-copy-btn", label);
+function copier(name: IconName, title: string, text: () => string): HTMLButtonElement {
+  const button = h("button", "msg-action-btn msg-copy-btn");
+  setIcon(button, name);
   button.type = "button";
   button.title = title;
   button.setAttribute("aria-label", title);
@@ -496,12 +500,12 @@ function copier(label: string, title: string, text: () => string): HTMLButtonEle
     const value = text();
     const copied = await copyText(value);
     const short = value.length > 40 ? `${value.slice(0, 39)}…` : value;
-    button.textContent = copied ? "✓" : "✕";
+    setIcon(button, copied ? "check" : "x");
     button.title = copied ? "Copied" : "Not copied";
     announce(copied ? `Copied ${short}` : "Not copied automatically: the text is selected below the message, copy it from there");
     if (!copied) manualCopy(button.closest(".msg"), value);
     setTimeout(() => {
-      button.textContent = label;
+      setIcon(button, name);
       button.title = title;
     }, 1500);
   });

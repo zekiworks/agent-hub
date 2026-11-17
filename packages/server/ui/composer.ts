@@ -3,6 +3,7 @@ import { formatBytes, type Message } from "@agent-bus/protocol";
 import { dom, nearBottom, PHONE, scrollToBottom } from "./dom";
 import { nameList } from "./format";
 import { h } from "./html";
+import { setIcon } from "./icons";
 import { conversationTitle, state } from "./state";
 
 export function showError(text: string): void {
@@ -51,7 +52,8 @@ export function updateComposerState(): void {
   }
   const hasContent = dom.input.value.trim().length > 0 || state.staged.length > 0;
   dom.sendBtn.disabled = state.sending || !state.me || (!hasContent && !state.voiceLatched);
-  dom.sendBtn.textContent = state.sending ? "Sending…" : state.voiceLatched ? "Send 🎤" : "Send";
+  setIcon(dom.sendBtn, "send", state.sending ? "Sending…" : "Send");
+  dom.sendBtn.setAttribute("aria-label", state.sending ? "Sending" : state.voiceLatched ? "Send the voice message" : "Send");
   const view = state.view;
   const conv = view.kind === "conversation" ? state.conversations.get(view.id) : undefined;
   const target = view.kind === "draft" ? nameList(view.to) : conv ? conversationTitle(conv) : "";
@@ -110,12 +112,13 @@ function setComposerHeight(height: number | "max" | undefined): void {
 function renderSizeButton(): void {
   const expanded = composerHeight !== undefined;
   // The word on it, not only the arrow (codex-ui #11413: Ümit could not tell how to open or close the box).
-  dom.composerSize.textContent = expanded ? "⤡ Collapse" : "⤢ Expand";
+  setIcon(dom.composerSize, expanded ? "collapse" : "expand", expanded ? "Collapse" : "Expand");
   dom.composerSize.title = expanded ? "Make the message box small again" : "Make the message box tall";
   dom.composerSize.setAttribute("aria-label", expanded ? "Collapse the message box" : "Expand the message box");
   dom.composerSize.setAttribute("aria-expanded", expanded ? "true" : "false");
 }
 renderSizeButton();
+setIcon(dom.attachBtn, "paperclip");
 dom.composerSize.addEventListener("click", () => {
   const stick = nearBottom();
   setComposerHeight(composerHeight === undefined ? "max" : undefined);

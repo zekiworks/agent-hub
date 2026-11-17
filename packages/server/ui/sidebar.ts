@@ -4,6 +4,7 @@ import { dom } from "./dom";
 import { postJson } from "./api";
 import { agentDetail, errorText, nameList, relativeTime } from "./format";
 import { h } from "./html";
+import { icon } from "./icons";
 import { renderLive } from "./live";
 import { applyTitle, renderNotifyButton } from "./notify";
 import { renderBackBadge } from "./phones";
@@ -204,7 +205,11 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   button.addEventListener("click", () => navigate({ kind: "conversation", id: conv.id }));
   li.append(button);
   if (conv.kind === "project" || conv.kind === "group") {
-    if (pinnedByMe(conv)) li.append(h("span", "pin-mark", "📌"));
+    if (pinnedByMe(conv)) {
+      const mark = h("span", "pin-mark");
+      mark.append(icon("pin", true));
+      li.append(mark);
+    }
     li.append(entryMenuButton(conv));
   }
   return li;

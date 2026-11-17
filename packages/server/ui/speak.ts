@@ -11,6 +11,13 @@ import { dom } from "./dom";
 import { errorText } from "./format";
 import { hooks } from "./hooks";
 import { h } from "./html";
+import { setIcon } from "./icons";
+
+/** ▶, ⏸, or "…" while the first sentence's audio is made. */
+function face(button: HTMLElement, state: "play" | "pause" | "loading"): void {
+  if (state === "loading") button.textContent = "…";
+  else setIcon(button, state);
+}
 
 /** A sentence of the message as shown: its place in the rendered text, and its audio once made. */
 interface Sentence {
@@ -144,7 +151,7 @@ function show(): void {
   for (const el of dom.messageList.querySelectorAll(".msg-speaking")) el.classList.remove("msg-speaking");
   for (const b of dom.messageList.querySelectorAll<HTMLButtonElement>(".msg-speak-btn")) {
     const mine = current?.seq === Number(b.dataset.seq);
-    b.textContent = mine ? (current?.loading ? "…" : playing() ? "⏸" : "▶") : "▶";
+    face(b, mine ? (current?.loading ? "loading" : playing() ? "pause" : "play") : "play");
     b.title = mine ? (playing() ? "Pause" : "Go on reading") : "Read it aloud";
     if (mine) b.closest(".msg")?.classList.add("msg-speaking");
   }
@@ -154,7 +161,8 @@ function show(): void {
     bar.replaceChildren();
     return;
   }
-  const toggle = h("button", "msg-action-btn", current.loading ? "…" : playing() ? "⏸" : "▶");
+  const toggle = h("button", "msg-action-btn");
+  face(toggle, current.loading ? "loading" : playing() ? "pause" : "play");
   toggle.type = "button";
   toggle.title = playing() ? "Pause" : "Go on reading";
   toggle.addEventListener("click", () => void togglePause());
@@ -254,7 +262,9 @@ export function renderSpeaking(): void {
 }
 
 export function speakButton(message: Message): HTMLButtonElement {
-  const button = h("button", "msg-action-btn msg-speak-btn", current?.seq === message.seq ? (playing() ? "⏸" : "▶") : "▶");
+  const button = h("button", "msg-action-btn msg-speak-btn");
+  face(button, current?.seq === message.seq && playing() ? "pause" : "play");
+  button.setAttribute("aria-label", "Read it aloud");
   button.type = "button";
   button.dataset.seq = String(message.seq);
   button.title = "Read it aloud";
