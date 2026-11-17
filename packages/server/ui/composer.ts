@@ -59,11 +59,15 @@ export function updateComposerState(): void {
   dom.input.title = PHONE.matches ? "" : "Enter sends, Shift+Enter starts a new line, @ mentions someone";
 }
 
-/** Height the user gave the message box with its grip (px); undefined = grows with its text. Kept per browser. */
+/**
+ * Height the user gave the message box: px from its grip, "max" from Expand (as tall as it may be, followed as the
+ * keyboard comes and goes), undefined = grows with its text. Kept per browser.
+ */
 const COMPOSER_HEIGHT_KEY = "agent-bus.composerHeight";
 const COMPOSER_MIN = 40;
 const COMPOSER_AUTO_MAX = 240;
-let composerHeight: number | undefined = Number(localStorage.getItem(COMPOSER_HEIGHT_KEY)) || undefined;
+const stored = localStorage.getItem(COMPOSER_HEIGHT_KEY);
+let composerHeight: number | "max" | undefined = stored === "max" ? "max" : Number(stored) || undefined;
 
 /**
  * Tallest the text may be dragged: the whole box (its 📎 🎤 row and grip included) at most 70% of the chat, leaving room
@@ -77,20 +81,44 @@ function composerMax(): number {
 
 export function autosize(): void {
   if (composerHeight !== undefined) {
-    dom.input.style.height = `${Math.min(composerHeight, composerMax())}px`;
+    dom.input.style.height = `${composerHeight === "max" ? composerMax() : Math.min(composerHeight, composerMax())}px`;
     return;
   }
   dom.input.style.height = "auto";
   dom.input.style.height = `${Math.min(dom.input.scrollHeight, COMPOSER_AUTO_MAX)}px`;
 }
 
-function setComposerHeight(height: number | undefined): void {
+function setComposerHeight(height: number | "max" | undefined): void {
   composerHeight = height;
   if (height === undefined) localStorage.removeItem(COMPOSER_HEIGHT_KEY);
   else localStorage.setItem(COMPOSER_HEIGHT_KEY, String(height));
-  dom.composerGrip.setAttribute("aria-valuenow", String(height ?? dom.input.offsetHeight));
   autosize();
+  dom.composerGrip.setAttribute("aria-valuenow", String(dom.input.offsetHeight));
+  renderSizeButton();
 }
+
+/**
+ * ⤢ Expand / ⤡ Collapse (Ümit #11400, codex-ui #11401: the thin grip alone was not clear or reliable, least of all with
+ * the page zoomed): a plain button, by keyboard too. Expanded fills the space the box may have; Collapse gives it back
+ * to the text's own size. The draft is untouched either way; a height dragged with the grip counts as expanded.
+ */
+function renderSizeButton(): void {
+  const expanded = composerHeight !== undefined;
+  dom.composerSize.textContent = expanded ? "⤡" : "⤢";
+  dom.composerSize.title = expanded ? "Make the message box small again" : "Make the message box tall";
+  dom.composerSize.setAttribute("aria-label", expanded ? "Collapse the message box" : "Expand the message box");
+  dom.composerSize.setAttribute("aria-expanded", expanded ? "true" : "false");
+}
+renderSizeButton();
+dom.composerSize.addEventListener("click", () => {
+  const stick = nearBottom();
+  setComposerHeight(composerHeight === undefined ? "max" : undefined);
+  if (stick) scrollToBottom();
+});
+// Tapping it keeps the text focused, so the keyboard stays up (as for Send).
+dom.composerSize.addEventListener("pointerdown", (event) => {
+  if (PHONE.matches && document.activeElement === dom.input) event.preventDefault();
+});
 
 // Dragging the grip: read the sizes once at the start, then write only the box's height (one write per frame). A tap,
 // or a slip of a few pixels while reaching for the box, changes nothing (Ümit #11235: the box was not stable enough).

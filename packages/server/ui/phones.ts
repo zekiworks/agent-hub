@@ -14,10 +14,14 @@ function fitViewport(): void {
   const stick = nearBottom();
   const root = document.documentElement.style;
   // The layout viewport keeps its height when the keyboard comes up; the visual one shrinks by the keyboard's height.
-  const keyboard = viewport.height < document.documentElement.clientHeight - 80;
-  root.setProperty("--vvh", `${Math.round(viewport.height)}px`);
+  // Zooming in shrinks it too (Ümit #11400 enlarges the page; codex-ui #11401): zoomed, the page keeps its own size
+  // and position and the zoomed view moves over it, as on any page; only at scale 1 does a short view mean a keyboard.
+  const zoomed = (viewport.scale ?? 1) > 1.05;
+  const layout = document.documentElement.clientHeight;
+  const keyboard = !zoomed && viewport.height < layout - 80;
+  root.setProperty("--vvh", `${Math.round(zoomed ? layout : viewport.height)}px`);
   root.setProperty("--vvt", `${keyboard ? Math.max(0, Math.round(viewport.offsetTop)) : 0}px`);
-  if (!keyboard && window.scrollY !== 0) window.scrollTo(0, 0);
+  if (!keyboard && !zoomed && window.scrollY !== 0) window.scrollTo(0, 0);
   // A message box dragged tall keeps within the space there is now (codex-ui #11237).
   autosize();
   if (stick) scrollToBottom();

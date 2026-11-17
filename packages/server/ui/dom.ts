@@ -45,6 +45,7 @@ export const dom = {
   mentionMenu: el<HTMLUListElement>("mention-menu"),
   input: el<HTMLTextAreaElement>("composer-input"),
   composerGrip: el<HTMLDivElement>("composer-grip"),
+  composerSize: el<HTMLButtonElement>("composer-size"),
   sendBtn: el<HTMLButtonElement>("send-btn"),
   dropOverlay: el<HTMLDivElement>("drop-overlay"),
   profileDialog: el<HTMLDialogElement>("profile-dialog"),

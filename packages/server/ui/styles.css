@@ -2392,10 +2392,44 @@ ul.md-list ul.md-list { list-style: circle; }
   gap: 8px;
 }
 
+/* The box (Can #11404): one frame around the draft and, under it, its tools (📎, Message/Task, ⤢). */
 .composer-input-wrap {
   position: relative;
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--input);
+}
+
+.composer-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 4px;
+}
+
+.composer-tools .icon-btn {
+  width: 32px;
+  height: 32px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 16px;
+}
+
+.composer-tools .icon-btn:hover {
+  background: var(--hover);
+}
+
+.composer-tools .composer-size {
+  margin-left: auto;
 }
 
 /* The grip above the message box: a visible pill with a finger-sized target. */
@@ -2435,19 +2469,16 @@ ul.md-list ul.md-list { list-style: circle; }
   min-height: 40px;
   /* Grows with its text up to 240px (composer.ts autosize), or the height dragged with the grip above it. */
   resize: none;
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--input);
+  padding: 9px 12px 4px;
+  border: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: transparent;
   color: var(--text);
   line-height: 1.4;
 }
 
 .composer textarea:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  background: var(--input);
 }
 
 .icon-btn {
@@ -3393,40 +3424,37 @@ ul.md-list ul.md-list { list-style: circle; }
     background: var(--panel-raised);
   }
 
-  /* The Message/Task picker on a short line of its own above the box: beside it the box was squeezed (Ümit, 16 Nov). */
-  /* Only the box and Send on the bottom line; 📎, Message/Task and 🎤 above it (Ümit, 16 Nov: the box was too small). */
+  /* The box across the width, its tools inside it (📎, Message/Task, ⤢: Can #11404, no row of their own above the draft),
+     and 🎤 over ➤ beside it. Recording replaces the box with its panel. */
   .composer-row {
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      "attach type . mic"
-      "input input input send";
-    align-items: center;
-    row-gap: 4px;
-  }
-
-  .task-select {
-    grid-area: type;
-    justify-self: start;
-  }
-
-  #attach-btn {
-    grid-area: attach;
+      "input mic"
+      "input send";
+    align-items: end;
+    gap: 4px 8px;
   }
 
   .composer-input-wrap,
   .voice-rec {
     grid-area: input;
+    align-self: stretch;
   }
 
   #voice-btn {
     grid-area: mic;
-    justify-self: end;
   }
 
   #send-btn {
     grid-area: send;
-    align-self: end;
+  }
+
+  /* The box's tools: a thumb's size. */
+  .composer-tools .icon-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
   }
 
   .composer-grip {
