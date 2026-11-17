@@ -2737,13 +2737,30 @@ ul.md-list ul.md-list { list-style: circle; }
   background: var(--hover);
 }
 
-/* ⤢ Expand / ⤡ Collapse, with its word (composer.ts; codex-ui #11413), at the right end of the tools. */
-.composer-tools .composer-size {
-  width: auto;
-  margin-left: auto;
+/* Every control inside the box, icons only (Can #11807): attach and Message/Task at the left, then Expand, the
+   microphone and Send at the right. */
+.composer-tools .tools-spacer {
+  flex: 1;
+}
+
+.composer-tools .send-btn {
+  height: 32px;
+  min-width: 40px;
   padding: 0 10px;
-  font-size: 13px;
-  white-space: nowrap;
+  border-radius: 8px;
+}
+
+/* Recording: its panel in the draft's place; the tools at the left go, the microphone and Send stay. */
+.composer-input-wrap.recording #composer-input,
+.composer-input-wrap.recording #attach-btn,
+.composer-input-wrap.recording #task-select,
+.composer-input-wrap.recording #composer-size {
+  display: none;
+}
+
+.composer-input-wrap .voice-rec {
+  border: 0;
+  background: transparent;
 }
 
 /* The grip above the message box: a visible pill with a finger-sized target. */
@@ -3750,44 +3767,18 @@ ul.md-list ul.md-list { list-style: circle; }
     background: var(--panel-raised);
   }
 
-  /* The box across the width, its tools inside it (📎, Message/Task, ⤢: Can #11404, no row of their own above the draft),
-     and 🎤 over ➤ beside it. Recording replaces the box with its panel. */
+  /* The box across the width, every control inside it (Can #11404, #11807). */
   .composer-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "input mic"
-      "input send";
-    align-items: end;
-    gap: 4px 8px;
+    display: block;
   }
 
-  .composer-input-wrap,
-  .voice-rec {
-    grid-area: input;
-    align-self: stretch;
-  }
-
-  #voice-btn {
-    grid-area: mic;
-  }
-
-  #send-btn {
-    grid-area: send;
-  }
-
-  /* The box's tools: a thumb's size (more specific than ".composer .icon-btn" below, which sizes 🎤). */
-  .composer .composer-tools .icon-btn {
+  /* The box's tools: a thumb's size, icons only (Can #11807), Send among them. */
+  .composer .composer-tools .icon-btn,
+  .composer .composer-tools .send-btn {
     width: 44px;
-    height: 44px;
-    font-size: 20px;
-  }
-
-  .composer .composer-tools .composer-size {
-    width: auto;
     min-width: 44px;
-    padding: 0 10px;
-    font-size: 15px;
+    height: 44px;
+    padding: 0;
   }
 
   .composer-grip {
@@ -3795,27 +3786,12 @@ ul.md-list ul.md-list { list-style: circle; }
     margin: 0;
   }
 
-  /* Send: its icon alone on a phone (the word in its label). */
-  .send-btn {
-    min-width: 44px;
-    padding: 0 12px;
-  }
-
-  .send-btn .icon-label {
-    display: none;
-  }
-
   /* iOS zooms into inputs with text under 16px. */
   #composer-input {
     font-size: 16px;
   }
 
-  /* Finger-sized buttons with 22 px icons: attach, microphone, Send, the recording's delete and pause. */
-  .composer .icon-btn {
-    width: 48px;
-    height: 48px;
-  }
-
+  /* 22 px icons: attach, microphone, Send, the recording's delete and pause. */
   .composer .icon,
   .voice-rec .icon {
     width: 22px;
@@ -3903,15 +3879,6 @@ ul.md-list ul.md-list { list-style: circle; }
 
   #gpu-close {
     min-width: 44px;
-  }
-
-  .composer .send-btn {
-    height: 48px;
-    min-width: 56px;
-  }
-
-  .composer .send-btn::before {
-    font-size: 24px;
   }
 
   /* Every other control a thumb hits is at least 44×44 (Ümit #10047): Back, ⓘ, ⋯, Workspace ▾, the Workspace's ‹ › ✕,

@@ -94,11 +94,10 @@ function hideStatus(): void {
   dom.voiceBar.hidden = true;
 }
 
-/** The recording panel takes the text box's place while recording. */
+/** The recording panel takes the draft's place inside the box while recording; the microphone and Send stay (Can #11807). */
 function showPanel(on: boolean): void {
   dom.voiceRec.hidden = !on;
-  dom.inputWrap.hidden = on;
-  dom.attachBtn.hidden = on;
+  dom.inputWrap.classList.toggle("recording", on);
   dom.voiceBtn.classList.toggle("recording", on);
 }
 

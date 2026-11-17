@@ -52,8 +52,10 @@ export function updateComposerState(): void {
   }
   const hasContent = dom.input.value.trim().length > 0 || state.staged.length > 0;
   dom.sendBtn.disabled = state.sending || !state.me || (!hasContent && !state.voiceLatched);
-  setIcon(dom.sendBtn, "send", state.sending ? "Sending…" : "Send");
-  dom.sendBtn.setAttribute("aria-label", state.sending ? "Sending" : state.voiceLatched ? "Send the voice message" : "Send");
+  setIcon(dom.sendBtn, "send");
+  const sendName = state.sending ? "Sending" : state.voiceLatched ? "Send the voice message" : "Send";
+  dom.sendBtn.setAttribute("aria-label", sendName);
+  dom.sendBtn.title = state.sending ? "Sending…" : `${sendName} (Enter)`;
   const view = state.view;
   const conv = view.kind === "conversation" ? state.conversations.get(view.id) : undefined;
   const target = view.kind === "draft" ? nameList(view.to) : conv ? conversationTitle(conv) : "";
@@ -111,8 +113,8 @@ function setComposerHeight(height: number | "max" | undefined): void {
  */
 function renderSizeButton(): void {
   const expanded = composerHeight !== undefined;
-  // The word on it, not only the arrow (codex-ui #11413: Ümit could not tell how to open or close the box).
-  setIcon(dom.composerSize, expanded ? "collapse" : "expand", expanded ? "Collapse" : "Expand");
+  // Icon only (Can #11807); the name is in its tooltip and label.
+  setIcon(dom.composerSize, expanded ? "collapse" : "expand");
   dom.composerSize.title = expanded ? "Make the message box small again" : "Make the message box tall";
   dom.composerSize.setAttribute("aria-label", expanded ? "Collapse the message box" : "Expand the message box");
   dom.composerSize.setAttribute("aria-expanded", expanded ? "true" : "false");
