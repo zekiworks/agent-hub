@@ -1,20 +1,34 @@
 // Phones: one screen at a time (the conversation list, or one conversation), sized above the keyboard.
+import { autosize } from "./composer";
 import { dom, nearBottom, PHONE, scrollToBottom } from "./dom";
 import { isCurrent, state } from "./state";
 
 // The iOS keyboard covers the page instead of shrinking it: pin the page to the visible area above it
 // (CSS vars --vvh and --vvt), so the message box sits on the keyboard and the newest messages right above.
+// Without the keyboard the page sits at the top (Ümit #11234: after a tap the whole page was left halfway down, an
+// offset from the keyboard's way out that no later event corrected): the offset is used only while the keyboard is up,
+// the document is scrolled back to 0, and the fit is redone when focus leaves a field, after the keyboard has gone.
 const viewport = window.visualViewport;
 function fitViewport(): void {
   if (!viewport || !PHONE.matches) return;
   const stick = nearBottom();
   const root = document.documentElement.style;
+  // The layout viewport keeps its height when the keyboard comes up; the visual one shrinks by the keyboard's height.
+  const keyboard = viewport.height < document.documentElement.clientHeight - 80;
   root.setProperty("--vvh", `${Math.round(viewport.height)}px`);
-  root.setProperty("--vvt", `${Math.round(viewport.offsetTop)}px`);
+  root.setProperty("--vvt", `${keyboard ? Math.max(0, Math.round(viewport.offsetTop)) : 0}px`);
+  if (!keyboard && window.scrollY !== 0) window.scrollTo(0, 0);
+  // A message box dragged tall keeps within the space there is now (codex-ui #11237).
+  autosize();
   if (stick) scrollToBottom();
 }
 viewport?.addEventListener("resize", fitViewport);
 viewport?.addEventListener("scroll", fitViewport);
+window.addEventListener("scroll", fitViewport, { passive: true });
+document.addEventListener("focusout", () => {
+  // iOS animates the keyboard away; fit again once it is gone.
+  for (const ms of [100, 400, 800]) setTimeout(fitViewport, ms);
+});
 
 /** Phones: show the conversation list (← in the conversation bar) instead of the open conversation. */
 export function setPhoneList(on: boolean): void {

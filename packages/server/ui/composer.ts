@@ -65,10 +65,14 @@ const COMPOSER_MIN = 40;
 const COMPOSER_AUTO_MAX = 240;
 let composerHeight: number | undefined = Number(localStorage.getItem(COMPOSER_HEIGHT_KEY)) || undefined;
 
-/** Tallest the box may be dragged: most of the chat, leaving room to see the newest messages. */
+/**
+ * Tallest the text may be dragged: the whole box (its 📎 🎤 row and grip included) at most 70% of the chat, leaving room
+ * to see the newest messages. With the keyboard up a tall box shrinks to that (codex-ui #11237: it ran under the keyboard).
+ */
 function composerMax(): number {
   const chat = dom.composer.parentElement;
-  return Math.max(COMPOSER_MIN, Math.floor((chat?.clientHeight ?? window.innerHeight) * 0.7));
+  const chrome = dom.composer.offsetHeight - dom.input.offsetHeight;
+  return Math.max(COMPOSER_MIN, Math.floor((chat?.clientHeight ?? window.innerHeight) * 0.7) - chrome);
 }
 
 export function autosize(): void {
@@ -88,10 +92,11 @@ function setComposerHeight(height: number | undefined): void {
   autosize();
 }
 
-// Dragging the grip: read the sizes once at the start, then write only the box's height (one write per frame).
+// Dragging the grip: read the sizes once at the start, then write only the box's height (one write per frame). A tap,
+// or a slip of a few pixels while reaching for the box, changes nothing (Ümit #11235: the box was not stable enough).
 {
   const grip = dom.composerGrip;
-  let drag: { startY: number; startHeight: number; max: number; stick: boolean; target: number; frame: number } | undefined;
+  let drag: { startY: number; startHeight: number; max: number; stick: boolean; target: number; frame: number; moving: boolean } | undefined;
   grip.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -100,13 +105,17 @@ function setComposerHeight(height: number | undefined): void {
     } catch {
       // The pointer is already gone (released before this ran): the drag still follows moves over the grip.
     }
-    grip.classList.add("dragging");
     const startHeight = dom.input.offsetHeight;
-    drag = { startY: event.clientY, startHeight, max: composerMax(), stick: nearBottom(), target: startHeight, frame: 0 };
+    drag = { startY: event.clientY, startHeight, max: composerMax(), stick: nearBottom(), target: startHeight, frame: 0, moving: false };
   });
   grip.addEventListener("pointermove", (event) => {
     const d = drag;
     if (!d) return;
+    if (!d.moving) {
+      if (Math.abs(event.clientY - d.startY) < 6) return;
+      d.moving = true;
+      grip.classList.add("dragging");
+    }
     d.target = Math.round(Math.min(d.max, Math.max(COMPOSER_MIN, d.startHeight + d.startY - event.clientY)));
     d.frame ||= requestAnimationFrame(() => {
       d.frame = 0;
@@ -121,6 +130,7 @@ function setComposerHeight(height: number | undefined): void {
     drag = undefined;
     cancelAnimationFrame(d.frame);
     grip.classList.remove("dragging");
+    if (!d.moving) return;
     if (d.target !== d.startHeight) setComposerHeight(d.target);
     if (d.stick) scrollToBottom();
   };
