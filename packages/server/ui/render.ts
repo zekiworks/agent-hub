@@ -18,7 +18,7 @@ import { isPinned, setMessagePinned } from "./pins";
 import { bookmarkButton, isBookmarked } from "./bookmarks";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, projectColor, state } from "./state";
-import { flashMessage, mentionNodes, mentionsMe, shownMessage } from "./text";
+import { flashMessage, mentionNodes, mentionsMe, selectMessage, shownMessage } from "./text";
 
 export function renderAll(): void {
   renderSidebar();
@@ -186,6 +186,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   if (continued) li.classList.add("msg-continued");
   li.dataset.seq = String(message.seq);
   if (state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq) li.classList.add("msg-replying");
+  if (state.selectedSeq === message.seq) li.classList.add("msg-selected");
 
   const head = h("div", "msg-head");
   const sender = h("button", "msg-sender", senderLabel(message));
@@ -235,7 +236,12 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   );
   if (!deleted) actions.append(replyBtn);
   li.addEventListener("click", (event) => {
-    if (!PHONE.matches || (event.target as Element).closest("a, button, audio, img, input, summary")) return;
+    if ((event.target as Element).closest("a, button, audio, img, input, textarea, summary, .msg-edit, .msg-delete-ask")) return;
+    // Selecting text inside it is not a click on it.
+    if (String(getSelection() ?? "").trim()) return;
+    // A click on a message puts me "in" it: lit until I click another, press Esc or leave (Ümit #11622).
+    selectMessage(message.seq);
+    if (!PHONE.matches) return;
     const tapped = li.classList.contains("msg-tapped");
     for (const other of dom.messageList.querySelectorAll(".msg-tapped")) other.classList.remove("msg-tapped");
     if (!tapped) li.classList.add("msg-tapped");

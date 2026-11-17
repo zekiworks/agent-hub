@@ -70,6 +70,11 @@ export const state = {
    * quote when it is sent, never written into the box (Ümit #11598, codex-ui #11599).
    */
   itemReply: undefined as ItemReply | undefined,
+  /**
+   * The message I am "in" (Ümit #11622): the one I clicked, or the one a banner, #number, bookmark or search took me to.
+   * Lit until I click another one, press Esc, or leave the conversation.
+   */
+  selectedSeq: undefined as number | undefined,
   sending: false,
   /** A voice recording started with a click is running: Send sends it (voice.ts). */
   voiceLatched: false,

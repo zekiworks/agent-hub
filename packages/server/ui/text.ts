@@ -97,7 +97,19 @@ function onScreen(el: HTMLElement): boolean {
   return r.bottom > view.top && r.top < view.bottom;
 }
 
+/** Lights message `seq` as the one I am in (Ümit #11622), or none; it stays lit through redraws (render.ts). */
+export function selectMessage(seq: number | undefined): void {
+  state.selectedSeq = seq;
+  for (const li of dom.messageList.querySelectorAll(".msg-selected")) li.classList.remove("msg-selected");
+  if (seq !== undefined) dom.messageList.querySelector(`.msg[data-seq="${seq}"]`)?.classList.add("msg-selected");
+}
+
+/**
+ * Takes me to a message (a banner, a #number, a bookmark, search): scrolled to the middle and lit until I move on, so
+ * it is found among the others (Ümit #11622: the short flash was over before the scroll ended).
+ */
 export function flashMessage(el: HTMLElement): void {
+  selectMessage(Number(el.dataset.seq));
   el.scrollIntoView({ block: "center", behavior: "smooth" });
   el.classList.remove("msg-flash");
   void el.offsetWidth; // restart the animation

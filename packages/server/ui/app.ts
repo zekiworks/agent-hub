@@ -33,9 +33,16 @@ import "./voice";
 import { renderSidebar } from "./sidebar";
 import { connectViewer, setLinkStatus } from "./socket";
 import { draftConversation, isCurrent, state, type View } from "./state";
-import { flashMessage, fetchMessage, forgetFetched, shownMessage } from "./text";
+import { flashMessage, fetchMessage, forgetFetched, selectMessage, shownMessage } from "./text";
 import { refreshPane } from "./pane";
 import { loadReadMarkers, markRead, refreshUnread } from "./unread";
+
+// Esc outside a text field steps out of the message I am in (Ümit #11622).
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || state.selectedSeq === undefined) return;
+  if ((event.target as Element | null)?.closest("input, textarea, select, dialog")) return;
+  selectMessage(undefined);
+});
 
 // ---- Routing (#/c/<id>, #/to/<a,b>) ----
 
@@ -72,6 +79,8 @@ function applyView(view: View): void {
     closeMention();
     setReplyTo(undefined);
     setDetails(false);
+    // The message I was in belongs to the conversation I left.
+    state.selectedSeq = undefined;
   }
   setPhoneList(false);
   renderAll();
