@@ -2417,6 +2417,7 @@ ul.md-list ul.md-list { list-style: circle; }
 
 .composer-tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 0 6px 4px;
@@ -2434,8 +2435,13 @@ ul.md-list ul.md-list { list-style: circle; }
   background: var(--hover);
 }
 
+/* ⤢ Expand / ⤡ Collapse, with its word (composer.ts; codex-ui #11413), at the right end of the tools. */
 .composer-tools .composer-size {
+  width: auto;
   margin-left: auto;
+  padding: 0 10px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 /* The grip above the message box: a visible pill with a finger-sized target. */
@@ -3456,11 +3462,18 @@ ul.md-list ul.md-list { list-style: circle; }
     grid-area: send;
   }
 
-  /* The box's tools: a thumb's size. */
-  .composer-tools .icon-btn {
+  /* The box's tools: a thumb's size (more specific than ".composer .icon-btn" below, which sizes 🎤). */
+  .composer .composer-tools .icon-btn {
     width: 44px;
     height: 44px;
     font-size: 20px;
+  }
+
+  .composer .composer-tools .composer-size {
+    width: auto;
+    min-width: 44px;
+    padding: 0 10px;
+    font-size: 15px;
   }
 
   .composer-grip {

@@ -104,7 +104,8 @@ function setComposerHeight(height: number | "max" | undefined): void {
  */
 function renderSizeButton(): void {
   const expanded = composerHeight !== undefined;
-  dom.composerSize.textContent = expanded ? "⤡" : "⤢";
+  // The word on it, not only the arrow (codex-ui #11413: Ümit could not tell how to open or close the box).
+  dom.composerSize.textContent = expanded ? "⤡ Collapse" : "⤢ Expand";
   dom.composerSize.title = expanded ? "Make the message box small again" : "Make the message box tall";
   dom.composerSize.setAttribute("aria-label", expanded ? "Collapse the message box" : "Expand the message box");
   dom.composerSize.setAttribute("aria-expanded", expanded ? "true" : "false");
