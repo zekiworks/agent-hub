@@ -18,7 +18,7 @@ import { isPinned, setMessagePinned } from "./pins";
 import { bookmarkButton, isBookmarked } from "./bookmarks";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, projectColor, state } from "./state";
-import { flashMessage, mentionNodes, mentionsMe, selectMessage, shownMessage } from "./text";
+import { conversationLink, flashMessage, mentionNodes, mentionsMe, selectMessage, shownMessage } from "./text";
 
 export function renderAll(): void {
   renderSidebar();
@@ -42,6 +42,7 @@ export function renderHeader(): void {
   const view = state.view;
   setNameMenu(undefined);
   dom.subgroupsPanel.hidden = true;
+  dom.convParent.hidden = true;
   if (view.kind === "draft") {
     const title = view.project !== undefined ? `@@${view.project}` : nameList(view.to);
     setConvTitle(title, view.project !== undefined ? title : `You and ${nameList(view.to)}`);
@@ -64,6 +65,12 @@ export function renderHeader(): void {
   // The title in the text colour (#10099): a project's colour is its band in the list and the Workspace's shared tint.
   setTitleBase(`${title} · ${BRAND}`);
   setNameMenu(conv.kind === "group" || conv.kind === "project" ? "settings and tab" : "tab");
+  // "Parent: @@reading" beside the name, a link to it (Can #11791), where the conversation is under a project I can see.
+  const parent = conv.parentId ? state.conversations.get(conv.parentId) : undefined;
+  if (parent) {
+    dom.convParent.replaceChildren("Parent: ", conversationLink(parent));
+    dom.convParent.hidden = false;
+  }
   if (conv.kind === "all") {
     dom.convSubtitle.textContent = "Everyone. Every agent receives what is written here.";
   } else {

@@ -28,6 +28,7 @@ export const dom = {
   main: el<HTMLElement>("main"),
   convTitle: el<HTMLSpanElement>("conv-title"),
   convSubtitle: el<HTMLDivElement>("conv-subtitle"),
+  convParent: el<HTMLSpanElement>("conv-parent"),
   subgroupsPanel: el<HTMLDetailsElement>("subgroups-panel"),
   subgroupsSummary: el<HTMLElement>("subgroups-summary"),
   subgroupsList: el<HTMLUListElement>("subgroups-list"),

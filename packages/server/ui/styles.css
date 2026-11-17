@@ -1747,6 +1747,18 @@ button:disabled {
   font-size: 13px;
 }
 
+/* "Parent: @@reading" beside the name (render.ts; Can #11791): quiet, its own size, the project a link. */
+.conv-parent {
+  margin-left: 10px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.conv-parent[hidden] {
+  display: none;
+}
+
 /* No menu here (DMs, #all, drafts): the name is plain text. */
 .conv-name-btn.no-menu {
   cursor: default;

@@ -29,37 +29,49 @@ export function mentionNodes(text: string): Node[] {
   return out;
 }
 
-// ---- Message references (#n) ----
+// ---- Message references (#n), rooms (#name) and projects (@@name) ----
 
-/** "#1234" (a message) or "#name" (a room, Can 15 Nov: linked only when such a room exists; other #words stay text). */
-const REF_RE = /(^|[^\w#&])#(\d{1,7}|[a-z0-9][a-z0-9_-]*)(?![\w-])/g;
+/**
+ * "#1234" (a message), "#name" (a room) or "@@name" (a project): rooms and projects are linked only when they exist
+ * and I can see them (Can 15 Nov, #11791); other #words and @@words stay text.
+ */
+const REF_RE = /(^|[^\w#&@])(#|@@)(\d{1,7}|[a-z0-9][a-z0-9_-]*)(?![\w-])/g;
 
 function refNodes(text: string): Node[] {
   const out: Node[] = [];
   let last = 0;
   for (const match of text.matchAll(REF_RE)) {
-    const ref = match[2] ?? "";
-    const room = ref === "all" ? state.conversations.get(ALL_CONVERSATION_ID) : /[a-z]/.test(ref) ? roomNamed(ref) : undefined;
-    if (/[a-z]/.test(ref) && !room) continue;
+    const sign = match[2] ?? "#";
+    const ref = match[3] ?? "";
+    const named = /[a-z]/.test(ref);
+    if (sign === "@@" && !named) continue;
+    const target =
+      sign === "@@" ? namedConversation(ref, false) : ref === "all" ? state.conversations.get(ALL_CONVERSATION_ID) : named ? namedConversation(ref, true) : undefined;
+    if (named && !target) continue;
     const start = (match.index ?? 0) + (match[1] ?? "").length;
     if (start > last) out.push(document.createTextNode(text.slice(last, start)));
-    out.push(room ? roomLink(room) : refLink(Number(ref)));
-    last = start + 1 + ref.length;
+    out.push(target ? conversationLink(target) : refLink(Number(ref)));
+    last = start + sign.length + ref.length;
   }
   if (last < text.length) out.push(document.createTextNode(text.slice(last)));
   return out;
 }
 
-function roomNamed(name: string): Conversation | undefined {
-  for (const c of state.conversations.values()) if (c.kind === "project" && c.room && c.name === name) return c;
+/** The room (`room`) or project (not a room) with address `name`, if I can see it. */
+function namedConversation(name: string, room: boolean): Conversation | undefined {
+  for (const c of state.conversations.values()) if (c.kind === "project" && !!c.room === room && c.name === name) return c;
   return undefined;
 }
 
-/** "#name" as a link to the room. */
-function roomLink(room: Conversation): HTMLAnchorElement {
-  const a = h("a", "msg-ref", room.kind === "all" ? "#all" : `#${room.name}`);
-  a.href = `#/c/${encodeURIComponent(room.id)}`;
-  a.title = room.kind === "all" ? "Everyone's room" : [room.title ?? `Room #${room.name}`, room.topic].filter(Boolean).join(" — ");
+/** "#name" or "@@name" as a link to that room or project (the header's "Parent:" uses it too). */
+export function conversationLink(conv: Conversation): HTMLAnchorElement {
+  const label = conv.kind === "all" ? "#all" : conv.room ? `#${conv.name}` : `@@${conv.name}`;
+  const a = h("a", "msg-ref", label);
+  a.href = `#/c/${encodeURIComponent(conv.id)}`;
+  a.title =
+    conv.kind === "all"
+      ? "Everyone's room"
+      : [conv.title ?? `${conv.room ? "Room" : "Project"} ${label}`, conv.topic, conv.archived ? "archived" : undefined].filter(Boolean).join(" — ");
   return a;
 }
 
