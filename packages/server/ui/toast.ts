@@ -92,12 +92,16 @@ function makeHandle(handle: HTMLElement, tap: () => void): void {
       event.preventDefault();
       place({ x: start.left + dx, y: start.top + dy });
     };
-    const end = () => {
+    const cleanup = () => {
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", end);
-      handle.removeEventListener("pointercancel", end);
+      handle.removeEventListener("pointercancel", cleanup);
+    };
+    // A cancelled gesture (the system took it: a scroll, a call) only cleans up; it opens nothing (codex-ui #12455).
+    const end = (up: PointerEvent) => {
+      cleanup();
       if (!moving) {
-        swallowNextClick();
+        swallowClickAt(up.clientX, up.clientY);
         return tap();
       }
       if (!box) return;
@@ -106,22 +110,26 @@ function makeHandle(handle: HTMLElement, tap: () => void): void {
     };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", end);
-    handle.addEventListener("pointercancel", end);
+    handle.addEventListener("pointercancel", cleanup);
   });
 }
 
 /**
  * After a tap opens a message its banner is gone, and the browser's own click for that tap lands on whatever was under
- * the finger: on a phone the tab row or the conversation's header, which took Ümit somewhere else (#12447). That one
- * click is dropped.
+ * the finger: on a phone the tab row or the conversation's header, which took Ümit somewhere else (#12447). Only that
+ * click is dropped: the first click after the tap, if it comes where the finger lifted and within half a second. Any
+ * other click (the browser sent none for the tap, and this is a new one elsewhere) goes through (codex-ui #12455).
  */
-function swallowNextClick(): void {
-  const swallow = (event: MouseEvent) => {
+function swallowClickAt(x: number, y: number): void {
+  const until = performance.now() + 500;
+  const first = (event: MouseEvent) => {
+    document.removeEventListener("click", first, { capture: true });
+    if (performance.now() > until || Math.hypot(event.clientX - x, event.clientY - y) > 12) return;
     event.preventDefault();
     event.stopPropagation();
   };
-  document.addEventListener("click", swallow, { capture: true, once: true });
-  setTimeout(() => document.removeEventListener("click", swallow, { capture: true }), 700);
+  document.addEventListener("click", first, { capture: true });
+  setTimeout(() => document.removeEventListener("click", first, { capture: true }), 500);
 }
 
 // Rotation, a resized window, or the phone keyboard opening: the moved banners are fitted into what is visible again.
