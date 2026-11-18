@@ -151,7 +151,8 @@ export interface Cli {
 /** The harness's CLI (`claude`, `codex`); `product` names it when it is not installed. */
 export function harnessCli(command: string, product: string): Cli {
   const run = (...args: string[]): { ok: boolean; out: string } => {
-    const res = spawnSync(command, args, { encoding: "utf8" });
+    // `codex plugin list` prints the whole remote catalogue (2.7 MB on 18 Nov), past spawnSync's 1 MB default.
+    const res = spawnSync(command, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
     if (res.error) throw new Error(`Could not run ${command} (${res.error.message}); is ${product} installed?`);
     return { ok: res.status === 0, out: `${res.stdout ?? ""}${res.stderr ?? ""}`.trim() };
   };
