@@ -83,7 +83,7 @@ dom.checklistBtn.addEventListener("click", () => {
   }
   // Nothing pinned: say so, briefly, under the pin.
   note?.remove();
-  note = h("div", "pin-note", "Nothing pinned yet. Pin a message with 📌 on it.");
+  note = h("div", "pin-note", "Nothing pinned yet. Pin a message with the pin button on it.");
   note.setAttribute("role", "status");
   const r = dom.checklistBtn.getBoundingClientRect();
   note.style.top = `${Math.round(r.bottom + 6)}px`;
@@ -163,7 +163,7 @@ registerExtension({
     const root = h("div", "pinned pane-pad");
     root.append(
       listEl,
-      h("p", "check-foot", member ? "Pin a message with 📌 on it (hover, or tap it on a phone). Unpinning leaves the message where it is." : "Members pin and unpin.")
+      h("p", "check-foot", member ? "Pin a message with the pin button on it (hover, or tap it on a phone). Unpinning leaves the message where it is." : "Members pin and unpin.")
     );
     body.replaceChildren(root);
   },
