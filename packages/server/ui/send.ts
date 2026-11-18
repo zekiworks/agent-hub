@@ -29,21 +29,18 @@ export async function uploadFile(file: File): Promise<FileRef> {
   return res.file;
 }
 
-/** What a message answers and what it is, taken when its sending (or recording) starts (codex-ui #10825, #11603, #11711). */
+/** What a message answers, taken when its sending (or recording) starts (codex-ui #10825, #11603, #11711). */
 export interface Chosen {
   reply: Message | undefined;
   item: ItemReply | undefined;
-  /** The Message/Task picker's value ("" for a plain message). */
-  task: string;
 }
 
-/** What the open conversation's message answers now (a message, or a checklist item), and the picker's choice. */
+/** What the open conversation's message answers now: a message, or a checklist item. */
 export function chosenNow(view: View): Chosen {
   const here = (id: string) => view.kind === "conversation" && id === view.id;
   return {
     reply: state.replyTo && here(state.replyTo.conversationId) ? state.replyTo : undefined,
     item: state.itemReply && here(state.itemReply.conversationId) ? state.itemReply : undefined,
-    task: dom.taskSelect.value,
   };
 }
 
@@ -79,8 +76,6 @@ export async function postToView(view: View, text: string, fileIds: string[], ch
   if (session !== undefined) request.toSession = session;
   const hold = holdHours();
   if (hold !== undefined) request.holdHours = hold;
-  const taskType = chosen.task;
-  if (taskType === "task" || taskType === "approval" || taskType === "chore") request.task = { type: taskType };
 
   const res = await postJson<PostMessageResponse>("/api/messages", request);
   // Clear the reply this message answered, not a newer one chosen meanwhile (a message or a checklist item).
@@ -127,8 +122,6 @@ async function send(): Promise<void> {
     state.staged = state.staged.filter((f) => !files.includes(f));
     if (stillThere) {
       dom.input.value = rest;
-      // The picker goes back to Message only if nobody changed it while this was sending (codex-ui #11716).
-      if (dom.taskSelect.value === chosen.task) dom.taskSelect.value = "";
       autosize();
     }
   } catch (err) {

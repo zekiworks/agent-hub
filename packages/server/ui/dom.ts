@@ -134,7 +134,6 @@ export const dom = {
   toolsMenu: el<HTMLDivElement>("tools-menu"),
   launchers: el<HTMLSpanElement>("launchers"),
   gotoBtn: el<HTMLButtonElement>("goto-btn"),
-  taskSelect: el<HTMLSelectElement>("task-select"),
   gpuDialog: el<HTMLDialogElement>("gpu-dialog"),
   gpuClose: el<HTMLButtonElement>("gpu-close"),
   gpuFocus: el<HTMLParagraphElement>("gpu-focus"),

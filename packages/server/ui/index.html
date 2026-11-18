@@ -165,8 +165,9 @@
         <div class="composer-row">
           <input id="file-input" type="file" multiple hidden />
           <!-- The box: the draft, and under it inside the same frame every control, icons only (Can #11404, #11807):
-               attach, Message/Task, then at the right Expand, the microphone and Send. Recording puts its panel in the
-               draft's place; the microphone and Send stay. -->
+               attach, then at the right Expand, the microphone and Send. No Message/Task picker: no person ever used
+               it, agents send tasks with their tool (Ümit #12070). Recording puts its panel in the draft's place; the
+               microphone and Send stay. -->
           <div id="composer-input-wrap" class="composer-input-wrap">
             <ul id="mention-menu" class="mention-menu" role="listbox" hidden></ul>
             <!-- No inline word predictions and no red/blue spelling and grammar lines (Ümit #11651, #11653, #11657): in
@@ -183,12 +184,6 @@
             </div>
             <div class="composer-tools">
               <button id="attach-btn" type="button" class="icon-btn" title="Attach files (or drop them here)" aria-label="Attach files"></button>
-              <select id="task-select" class="task-select" title="Send as a task for those you @mention (in a DM: the other member)" aria-label="Send as">
-                <option value="" selected>Message</option>
-                <option value="task">Task</option>
-                <option value="approval">Approval</option>
-                <option value="chore">Chore</option>
-              </select>
               <span class="tools-spacer"></span>
               <!-- The message box tall, or back to its text's size (composer.ts; Ümit #11400). -->
               <button id="composer-size" type="button" class="icon-btn composer-size" aria-expanded="false"></button>

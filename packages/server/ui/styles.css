@@ -1008,16 +1008,6 @@ button:disabled {
   text-decoration: line-through;
 }
 
-.task-select {
-  flex: none;
-  max-width: 96px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-}
-
 .topbar {
   grid-area: top;
   display: flex;
@@ -2755,7 +2745,7 @@ ul.md-list ul.md-list { list-style: circle; }
   gap: 8px;
 }
 
-/* The box (Can #11404): one frame around the draft and, under it, its tools (📎, Message/Task, ⤢). */
+/* The box (Can #11404): one frame around the draft and, under it, its tools (attach, Expand). */
 .composer-input-wrap {
   position: relative;
   flex: 1;
@@ -2792,8 +2782,8 @@ ul.md-list ul.md-list { list-style: circle; }
   background: var(--hover);
 }
 
-/* Every control inside the box, icons only (Can #11807): attach and Message/Task at the left, then Expand, the
-   microphone and Send at the right. */
+/* Every control inside the box, icons only (Can #11807): attach at the left, then Expand, the microphone and Send at
+   the right. */
 .composer-tools .tools-spacer {
   flex: 1;
 }
@@ -2808,7 +2798,6 @@ ul.md-list ul.md-list { list-style: circle; }
 /* Recording: its panel in the draft's place; the tools at the left go, the microphone and Send stay. */
 .composer-input-wrap.recording #composer-input,
 .composer-input-wrap.recording #attach-btn,
-.composer-input-wrap.recording #task-select,
 .composer-input-wrap.recording #composer-size {
   display: none;
 }
@@ -3915,7 +3904,7 @@ ul.md-list ul.md-list { list-style: circle; }
   }
 
   /* Every other control a thumb hits is at least 44×44 (Ümit #10047): Back, ⓘ, ⋯, Workspace ▾, the Workspace's ‹ › ✕,
-     tabs and heading link, the Message/Task picker, 🗑 ⏸ while recording. Icons stay their size; the box grows. */
+     tabs and heading link, 🗑 ⏸ while recording. Icons stay their size; the box grows. */
   .back-btn,
   .conv-header .icon-btn,
   .pane-close,
@@ -3949,13 +3938,6 @@ ul.md-list ul.md-list { list-style: circle; }
 
   .link-btn.pane-source.expanded {
     -webkit-line-clamp: unset;
-  }
-
-  .task-select {
-    min-height: 44px;
-    max-width: none;
-    padding: 0 8px;
-    font-size: 15px;
   }
 
   .composer .voice-rec {
