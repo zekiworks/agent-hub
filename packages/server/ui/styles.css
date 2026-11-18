@@ -1123,6 +1123,9 @@ button:disabled {
 
 /* A heading that folds its section (sidebar.ts: Agents): looks like the heading text. */
 .side-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1131,6 +1134,11 @@ button:disabled {
   letter-spacing: inherit;
   text-transform: inherit;
   cursor: pointer;
+}
+
+.side-toggle .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .side-toggle:hover {
@@ -1142,10 +1150,44 @@ button:disabled {
   display: none;
 }
 
-/* A folded section (sidebar.ts; codex-ui #11405): its heading and + button only. */
+/* A folded section (sidebar.ts; codex-ui #11405): its heading and + button only, and a "Show …" row that says how to
+   open it again (Ümit #11839). */
 .side-section.folded > :not(.side-heading),
 .side-section.folded .unread-toggle {
   display: none;
+}
+
+.side-show {
+  display: none;
+}
+
+.side-section.folded > .side-show {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 0 8px;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sidebar-muted);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.side-section.folded > .side-show:hover {
+  color: var(--sidebar-text);
+  border-color: var(--sidebar-muted);
+}
+
+/* A conversation pinned as a tab: a small pin before its name (sidebar.ts). */
+.side-item-title .icon-pin {
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  color: var(--sidebar-muted);
 }
 
 .side-count {
@@ -3228,24 +3270,6 @@ ul.md-list ul.md-list { list-style: circle; }
   color: var(--sidebar-text);
 }
 
-.pin-mark {
-  position: absolute;
-  top: 6px;
-  right: 40px;
-  font-size: 12px;
-  line-height: 1;
-  pointer-events: none;
-}
-.pin-mark .icon {
-  width: 13px;
-  height: 13px;
-  color: var(--sidebar-muted);
-}
-
-.side-list li:has(.pin-mark) .side-item-time {
-  visibility: hidden;
-}
-
 @media (max-width: 640px) {
   .side-list li:has(.entry-btn) > .side-item {
     padding-right: 52px;
@@ -3257,8 +3281,8 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 22px;
   }
 
-  .pin-mark {
-    right: 52px;
+  .side-section.folded > .side-show {
+    min-height: 44px;
   }
 }
 

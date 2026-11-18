@@ -4,7 +4,7 @@ import { dom } from "./dom";
 import { postJson } from "./api";
 import { agentDetail, errorText, nameList, relativeTime } from "./format";
 import { h } from "./html";
-import { icon } from "./icons";
+import { icon, setIcon } from "./icons";
 import { renderLive } from "./live";
 import { applyTitle, renderNotifyButton } from "./notify";
 import { renderBackBadge } from "./phones";
@@ -157,6 +157,8 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   button.type = "button";
   if (isCurrent(conv.id)) button.classList.add("active");
   const title = h("span", "side-item-title", conversationTitle(conv));
+  // Pinned (a tab): a small pin before the name, never over the unread count (Ümit #11840 screenshot).
+  if (pinnedByMe(conv)) title.prepend(icon("pin", true));
   // Second line (Can #10855, codex-ui #10856): no room type or privacy, that is for the room's details. A named room or
   // project shows its address, so two similar names stay apart (#10623); then its topic, if it has one, and the members.
   const parts =
@@ -204,14 +206,7 @@ function conversationItem(conv: Conversation): HTMLLIElement {
     conv.kind === "all" ? "#all: delivered to every agent" : `${conversationTitle(conv)}\nMembers: ${nameList(conv.members)}`;
   button.addEventListener("click", () => navigate({ kind: "conversation", id: conv.id }));
   li.append(button);
-  if (conv.kind === "project" || conv.kind === "group") {
-    if (pinnedByMe(conv)) {
-      const mark = h("span", "pin-mark");
-      mark.append(icon("pin", true));
-      li.append(mark);
-    }
-    li.append(entryMenuButton(conv));
-  }
+  if (conv.kind === "project" || conv.kind === "group") li.append(entryMenuButton(conv));
   return li;
 }
 
@@ -460,39 +455,53 @@ function renderFilterNote(hidden: Conversation[]): void {
   dom.convFilter.hidden = false;
 }
 
+/**
+ * A section's fold: ▾/▸ as a drawn chevron beside its name, and while folded a plain "Show …" row under the heading, so
+ * a folded section says how to bring it back (Ümit #11839: a tap on "Agents" made them disappear, with nothing to say why).
+ */
+function renderFold(section: HTMLElement, toggle: HTMLButtonElement, label: string, folded: boolean, unfold: () => void): void {
+  section.classList.toggle("folded", folded);
+  setIcon(toggle, folded ? "chevronRight" : "chevronDown", label);
+  toggle.setAttribute("aria-expanded", folded ? "false" : "true");
+  toggle.title = folded ? `Show the ${label.toLowerCase()}` : `Hide the ${label.toLowerCase()}`;
+  let show = section.querySelector<HTMLButtonElement>(":scope > .side-show");
+  if (!show) {
+    show = h("button", "side-show", `Show ${label.toLowerCase()}`);
+    show.type = "button";
+    show.addEventListener("click", unfold);
+    section.querySelector(":scope > .side-heading")?.after(show);
+  }
+}
+
 /** The Agents section folded (Can, 15 Nov), per browser. Unread DMs from agents still show under Mentions. */
 const AGENTS_FOLDED_KEY = "agent-bus.agentsFolded";
 let agentsFolded = localStorage.getItem(AGENTS_FOLDED_KEY) === "1";
+const agentsSection = dom.agentsToggle.closest("section") as HTMLElement;
 
-dom.agentsToggle.addEventListener("click", () => {
-  agentsFolded = !agentsFolded;
-  localStorage.setItem(AGENTS_FOLDED_KEY, agentsFolded ? "1" : "0");
+function setAgentsFolded(folded: boolean): void {
+  agentsFolded = folded;
+  localStorage.setItem(AGENTS_FOLDED_KEY, folded ? "1" : "0");
   renderAgentList();
-});
+}
+dom.agentsToggle.addEventListener("click", () => setAgentsFolded(!agentsFolded));
 
 // Projects and Groups fold too (codex-ui #11405: Rooms first and roomy, the rest out of the way when not in use),
-// remembered per browser like Agents. Folded, a section keeps only its heading (and its + button).
+// remembered per browser like Agents. Folded, a section keeps its heading, its + button and "Show …".
 for (const [section, toggle, label] of [
   [dom.projectsSection, dom.projectsToggle, "Projects"],
   [dom.groupsSection, dom.groupsToggle, "Groups"],
 ] as const) {
   const key = `agent-bus.folded.${label.toLowerCase()}`;
   const apply = (folded: boolean): void => {
-    section.classList.toggle("folded", folded);
-    toggle.textContent = `${folded ? "▸" : "▾"} ${label}`;
-    toggle.setAttribute("aria-expanded", folded ? "false" : "true");
-  };
-  apply(localStorage.getItem(key) === "1");
-  toggle.addEventListener("click", () => {
-    const folded = !section.classList.contains("folded");
     localStorage.setItem(key, folded ? "1" : "0");
-    apply(folded);
-  });
+    renderFold(section, toggle, label, folded, () => apply(false));
+  };
+  renderFold(section, toggle, label, localStorage.getItem(key) === "1", () => apply(false));
+  toggle.addEventListener("click", () => apply(!section.classList.contains("folded")));
 }
 
 function renderAgentList(): void {
-  dom.agentsToggle.textContent = `${agentsFolded ? "▸" : "▾"} Agents`;
-  dom.agentsToggle.setAttribute("aria-expanded", agentsFolded ? "false" : "true");
+  renderFold(agentsSection, dom.agentsToggle, "Agents", agentsFolded, () => setAgentsFolded(false));
   dom.agentList.hidden = agentsFolded;
   dom.offlineBtn.hidden = agentsFolded;
   const all = agents();
