@@ -12,6 +12,7 @@ import { hooks } from "./hooks";
 import { h } from "./html";
 import { setIcon } from "./icons";
 import { setOwnTask } from "./inbox";
+import { copyText } from "./render";
 import { conversationTitle, state } from "./state";
 
 let box: HTMLElement | undefined;
@@ -95,7 +96,10 @@ function makeHandle(handle: HTMLElement, tap: () => void): void {
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", end);
       handle.removeEventListener("pointercancel", end);
-      if (!moving) return tap();
+      if (!moving) {
+        swallowNextClick();
+        return tap();
+      }
       if (!box) return;
       const r = box.getBoundingClientRect();
       localStorage.setItem(POSITION_KEY, JSON.stringify({ x: Math.round(r.left), y: Math.round(r.top) }));
@@ -104,6 +108,20 @@ function makeHandle(handle: HTMLElement, tap: () => void): void {
     handle.addEventListener("pointerup", end);
     handle.addEventListener("pointercancel", end);
   });
+}
+
+/**
+ * After a tap opens a message its banner is gone, and the browser's own click for that tap lands on whatever was under
+ * the finger: on a phone the tab row or the conversation's header, which took Ümit somewhere else (#12447). That one
+ * click is dropped.
+ */
+function swallowNextClick(): void {
+  const swallow = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  document.addEventListener("click", swallow, { capture: true, once: true });
+  setTimeout(() => document.removeEventListener("click", swallow, { capture: true }), 700);
 }
 
 // Rotation, a resized window, or the phone keyboard opening: the moved banners are fitted into what is visible again.
@@ -195,7 +213,18 @@ export function showAnswer(message: Message, conversation: Conversation): void {
       }
     );
   });
-  row.prepend(reply, take);
+  // Copy its text (Ümit #12447): dragging leaves no way to select it, so a button does it, and says whether it worked.
+  const copy = h("button", "link-btn answer-toast-reply");
+  copy.type = "button";
+  setIcon(copy, "copy", "Copy");
+  copy.title = "Copy the whole message";
+  copy.setAttribute("aria-live", "polite");
+  copy.addEventListener("click", async () => {
+    const copied = await copyText(message.text);
+    setIcon(copy, copied ? "check" : "x", copied ? "Copied" : "Not copied: open the message and copy it there");
+    setTimeout(() => setIcon(copy, "copy", "Copy"), copied ? 1500 : 4000);
+  });
+  row.prepend(reply, take, copy);
   toast.append(row);
   place(savedPosition());
 }

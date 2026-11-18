@@ -509,7 +509,7 @@ function announce(text: string): void {
 }
 
 /** Copies `value`: the Clipboard API, else a selected hidden text box (plain http, older browsers). Whether it worked. */
-async function copyText(value: string): Promise<boolean> {
+export async function copyText(value: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(value);
     return true;
