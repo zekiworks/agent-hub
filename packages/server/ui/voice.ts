@@ -167,14 +167,8 @@ async function start(): Promise<void> {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
-      // Blocked or refused: say how to allow it (iPhone Safari: aA → Website Settings), not the browser's wording.
-      const blocked = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "SecurityError");
       hideStatus();
-      showError(
-        blocked
-          ? "The microphone is not allowed for this site. On the iPhone: aA (left of the address) → Website Settings → Microphone → Allow; elsewhere, the lock or site settings next to the address. Then tap 🎤 again."
-          : `No microphone: ${errorText(err)}`
-      );
+      showError(microphoneError(err));
       return;
     }
     hideStatus();
@@ -320,6 +314,51 @@ function offerSilent(file: File, duration: number, view: View, chosen: Chosen): 
   drop.addEventListener("click", hideStatus);
 }
 
+/** Sending failed: the recording is not lost; say why in plain words and offer it again (Ümit #12058). */
+function offerResend(file: File, duration: number, view: View, chosen: Chosen, why: string): void {
+  const again = h("button", "link-btn", "Send it again");
+  again.type = "button";
+  const drop = h("button", "link-btn", "Discard");
+  drop.type = "button";
+  dom.voiceBar.replaceChildren(`Your voice message (${clock(duration)}) was not sent: ${why} The recording is kept until you choose. `, again, " · ", drop);
+  dom.voiceBar.hidden = false;
+  again.addEventListener("click", () => {
+    hideStatus();
+    void send(file, duration, view, chosen);
+  });
+  drop.addEventListener("click", hideStatus);
+}
+
+/**
+ * The recording's text from the bus, asked up to three times: an iPhone cancels a request while the page is in the
+ * background, which showed as "no connection" though the bus was fine (Ümit #12058). Undefined: no text could be made.
+ */
+async function transcribe(fileId: string): Promise<string | undefined> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return (await api<TranscriptResponse>(`/api/files/${encodeURIComponent(fileId)}/transcript`, { method: "POST" })).text;
+    } catch {
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+  return undefined;
+}
+
+/** Why the microphone did not open, and what to do, in the person's terms rather than the browser's (Ümit #12058). */
+function microphoneError(err: unknown): string {
+  const name = err instanceof DOMException ? err.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return "Nothing was recorded: the microphone is not allowed for this site. On the iPhone: aA (left of the address) → Website Settings → Microphone → Allow; elsewhere, the lock or site settings next to the address. Then tap the microphone again.";
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") {
+    return "Nothing was recorded: this device has no microphone the page can use. If you use AirPods or a headset, check it is connected, then tap the microphone again.";
+  }
+  if (name === "NotReadableError" || name === "AbortError") {
+    return "Nothing was recorded: the microphone is busy or would not start. Another app may be using it (a call, a video, another tab recording). Close that, then tap the microphone again.";
+  }
+  return `Nothing was recorded: the microphone did not open (${errorText(err)}). Tap the microphone again; if it keeps failing, reload the page.`;
+}
+
 async function send(file: File, duration: number, view: View, chosen: Chosen): Promise<void> {
   state.sending = true;
   dom.voiceBtn.disabled = true;
@@ -328,20 +367,21 @@ async function send(file: File, duration: number, view: View, chosen: Chosen): P
     showStatus(`Sending the voice message (${clock(duration)})…`);
     const ref = await uploadFile(file);
     showStatus("Turning speech into text…");
-    let text: string;
-    try {
-      const said = await api<TranscriptResponse>(`/api/files/${encodeURIComponent(ref.id)}/transcript`, { method: "POST" });
-      text = said.text ? `🎤 ${said.text}` : "🎤 (voice message: no speech recognized)";
-    } catch (err) {
-      // The voice still goes out; agents get only the file.
-      text = `🎤 (voice message; no text: ${errorText(err)})`;
-    }
+    const said = await transcribe(ref.id);
+    const text = said === undefined ? "🎤 (voice message: the recording only; its text could not be made)" : said ? `🎤 ${said}` : "🎤 (voice message: no speech recognized)";
     await postToView(view, text, [ref.id], chosen);
+    if (said === undefined) {
+      // Said in the person's terms, not as a connection error: the message did go out (Ümit #12058).
+      hideStatus();
+      showError("Your voice message was sent, but without its text: turning speech into text failed three times (the page was in the background, or the connection dropped). Agents get the recording, which few of them can play: if it matters, say it again or type it.");
+      return;
+    }
     if (viewHash(state.view) !== viewHash(view)) showStatus(`Voice message sent to ${viewLabel(view)}, where it was recorded.`);
     else hideStatus();
   } catch (err) {
-    hideStatus();
-    showError(`Voice message not sent: ${errorText(err)}`);
+    // "Nothing was lost: try again" is not true of a recording; the offer below says what is kept.
+    const why = errorText(err).replace(/ Nothing was lost: try again in a moment\.$/, "").replace(/\.$/, "");
+    offerResend(file, duration, view, chosen, `${why}.`);
   } finally {
     state.sending = false;
     dom.voiceBtn.disabled = false;
