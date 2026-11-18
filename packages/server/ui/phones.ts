@@ -54,6 +54,14 @@ document.addEventListener("focusout", () => {
   setTimeout(fitViewport, 0);
   for (const ms of [100, 400, 800]) setTimeout(fitViewport, ms);
 });
+// While a field has the focus the keyboard can also go without a blur (a hardware keyboard, iOS's own dismiss): check
+// the viewport twice a second and refit when its height changed, in case no event came (codex-ui #11836).
+let fittedHeight = 0;
+setInterval(() => {
+  if (!viewport || !PHONE.matches || !typing() || Math.round(viewport.height) === fittedHeight) return;
+  fittedHeight = Math.round(viewport.height);
+  fitViewport();
+}, 500);
 
 const LIST_KEY = "agent-bus.phoneList";
 
