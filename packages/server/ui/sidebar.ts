@@ -462,6 +462,8 @@ function renderFilterNote(hidden: Conversation[]): void {
 function renderFold(section: HTMLElement, toggle: HTMLButtonElement, label: string, folded: boolean, unfold: () => void): void {
   section.classList.toggle("folded", folded);
   setIcon(toggle, folded ? "chevronRight" : "chevronDown", label);
+  // The action in words on the heading itself (Ümit #11852: the arrow alone did not say a tap hides the list).
+  toggle.append(h("span", "side-toggle-hint", folded ? "show" : "hide"));
   toggle.setAttribute("aria-expanded", folded ? "false" : "true");
   toggle.title = folded ? `Show the ${label.toLowerCase()}` : `Hide the ${label.toLowerCase()}`;
   let show = section.querySelector<HTMLButtonElement>(":scope > .side-show");
