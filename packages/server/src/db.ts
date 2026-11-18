@@ -22,12 +22,30 @@ import {
   type ProjectVisibility,
   type Quote,
   type Checklist,
+  type ChecklistItem,
   type Home,
   type Task,
   type Receipt,
   type SharedFile,
   type StatsResponse,
 } from "@agent-bus/protocol";
+import { checklistItemId, checklistMarkdown, checklistTicks, parseChecklistMarkdown } from "./checklist-items";
+
+/** A checklist as stored: the protocol's without its derived markdown and ticks, with the next item's number. */
+export type StoredChecklist = Omit<Checklist, "text" | "ticks"> & { nextId: number };
+
+interface ChecklistRow {
+  updated_at: number;
+  updated_by: string;
+  owner: string | null;
+  assignees_json: string | null;
+  items_json: string | null;
+  version: number | null;
+  pinned: number | null;
+  next_id: number | null;
+  title: string | null;
+  intro: string | null;
+}
 
 /** Stored participant; `online`/`connections` are live state added by the server. */
 export interface ParticipantRecord {
@@ -218,7 +236,8 @@ CREATE TABLE IF NOT EXISTS homes (
   updated_by TEXT NOT NULL
 );
 
--- A conversation's checklist (Checklist in the protocol): its owner's markdown and people's ticks, by item text.
+-- A conversation's checklist (Checklist in the protocol): its items (items_json) with stable ids, done states and
+-- owners; text and ticks_json are derived from them. owner is the list's creator. version grows with every change.
 CREATE TABLE IF NOT EXISTS checklists (
   conversation_id TEXT PRIMARY KEY,
   text TEXT NOT NULL,
@@ -226,7 +245,13 @@ CREATE TABLE IF NOT EXISTS checklists (
   updated_at INTEGER NOT NULL,
   updated_by TEXT NOT NULL,
   owner TEXT,
-  assignees_json TEXT
+  assignees_json TEXT,
+  items_json TEXT,
+  version INTEGER,
+  pinned INTEGER,
+  next_id INTEGER,
+  title TEXT,
+  intro TEXT
 );
 
 -- Messages pinned in their conversation (#10757): a reference, never a copy; unpinning keeps the message.
@@ -444,6 +469,19 @@ export class BusDatabase {
     if (!checklistColumns.some((c) => c.name === "owner")) {
       this.db.exec("ALTER TABLE checklists ADD COLUMN owner TEXT; ALTER TABLE checklists ADD COLUMN assignees_json TEXT;");
     }
+    // Checklists from before items had ids (Ümit #12364, codex-ui #12379): each item line becomes an item owned by
+    // the list's owner, done when ticked (by its text) or marked [x]; the list is pinned. Nothing is dropped: the
+    // `# title`, the lines before the first item (intro) and the lines under an item (its detail) are kept.
+    if (!checklistColumns.some((c) => c.name === "items_json")) {
+      this.db.exec(
+        "ALTER TABLE checklists ADD COLUMN items_json TEXT; ALTER TABLE checklists ADD COLUMN version INTEGER; " +
+          "ALTER TABLE checklists ADD COLUMN pinned INTEGER; ALTER TABLE checklists ADD COLUMN next_id INTEGER;"
+      );
+    }
+    if (!checklistColumns.some((c) => c.name === "title")) {
+      this.db.exec("ALTER TABLE checklists ADD COLUMN title TEXT; ALTER TABLE checklists ADD COLUMN intro TEXT;");
+    }
+    this.migrateChecklistItems();
     // Pins were a members' column for a short while (15 Nov, 11:30): carried over to the pins table, then unused.
     if (this.db.query<{ name: string }, []>("PRAGMA table_info(conversation_members)").all().some((c) => c.name === "pinned")) {
       this.db
@@ -1197,32 +1235,79 @@ export class BusDatabase {
       .run(conversationId, home.text, home.owner, home.updatedAt, home.updatedBy);
   }
 
-  getChecklist(conversationId: string): Checklist | null {
+  /** Checklists stored as markdown only (items_json null): their items, with ids, owners and ticks (see the caller). */
+  private migrateChecklistItems(): void {
+    const rows = this.db
+      .query<{ conversation_id: string; text: string; ticks_json: string; updated_at: number; updated_by: string; owner: string | null }, []>(
+        "SELECT conversation_id, text, ticks_json, updated_at, updated_by, owner FROM checklists WHERE items_json IS NULL"
+      )
+      .all();
+    for (const row of rows) {
+      const ticks = JSON.parse(row.ticks_json) as Record<string, { by: string; at: number }>;
+      const creator = row.owner ?? row.updated_by;
+      const parsed = parseChecklistMarkdown(row.text);
+      const items: ChecklistItem[] = parsed.items.map((line, i) => {
+        const done = ticks[line.text] ?? (line.done ? { by: creator, at: row.updated_at } : undefined);
+        return {
+          id: checklistItemId(i + 1),
+          ...(line.heading ? { heading: line.heading } : {}),
+          text: line.text,
+          owner: creator,
+          ...(line.detail ? { detail: line.detail } : {}),
+          ...(done ? { done } : {}),
+        };
+      });
+      this.db
+        .query("UPDATE checklists SET items_json = ?2, version = 1, pinned = 1, next_id = ?3, owner = ?4, title = ?5, intro = ?6 WHERE conversation_id = ?1")
+        .run(row.conversation_id, JSON.stringify(items), items.length + 1, creator, parsed.title ?? null, parsed.intro ?? null);
+    }
+  }
+
+  getChecklist(conversationId: string): StoredChecklist | null {
     const row = this.db
-      .query<{ text: string; ticks_json: string; updated_at: number; updated_by: string; owner: string | null; assignees_json: string | null }, [string]>(
-        "SELECT text, ticks_json, updated_at, updated_by, owner, assignees_json FROM checklists WHERE conversation_id = ?1"
+      .query<ChecklistRow, [string]>(
+        "SELECT updated_at, updated_by, owner, assignees_json, items_json, version, pinned, next_id, title, intro FROM checklists WHERE conversation_id = ?1"
       )
       .get(conversationId);
     if (!row) return null;
     return {
-      text: row.text,
-      ticks: JSON.parse(row.ticks_json) as Checklist["ticks"],
+      version: row.version ?? 1,
+      pinned: row.pinned !== 0,
+      ...(row.title ? { title: row.title } : {}),
+      ...(row.intro ? { intro: row.intro } : {}),
+      items: row.items_json ? (JSON.parse(row.items_json) as ChecklistItem[]) : [],
+      creator: row.owner ?? row.updated_by,
+      assignees: row.assignees_json ? (JSON.parse(row.assignees_json) as string[]) : [],
       updatedAt: row.updated_at,
       updatedBy: row.updated_by,
-      owner: row.owner ?? row.updated_by,
-      assignees: row.assignees_json ? (JSON.parse(row.assignees_json) as string[]) : [],
+      nextId: row.next_id ?? 1,
     };
   }
 
-  /** Writes a conversation's checklist (text and ticks as given). */
-  saveChecklist(conversationId: string, list: Checklist): void {
+  /** Writes a conversation's checklist as given; its markdown and ticks columns are derived from the items. */
+  saveChecklist(conversationId: string, list: StoredChecklist): void {
     this.db
       .query(
-        `INSERT INTO checklists (conversation_id, text, ticks_json, updated_at, updated_by, owner, assignees_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-         ON CONFLICT(conversation_id) DO UPDATE SET text = ?2, ticks_json = ?3, updated_at = ?4, updated_by = ?5, owner = ?6, assignees_json = ?7`
+        `INSERT INTO checklists (conversation_id, text, ticks_json, updated_at, updated_by, owner, assignees_json, items_json, version, pinned, next_id, title, intro)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+         ON CONFLICT(conversation_id) DO UPDATE SET text = ?2, ticks_json = ?3, updated_at = ?4, updated_by = ?5, owner = ?6,
+           assignees_json = ?7, items_json = ?8, version = ?9, pinned = ?10, next_id = ?11, title = ?12, intro = ?13`
       )
-      .run(conversationId, list.text, JSON.stringify(list.ticks), list.updatedAt, list.updatedBy, list.owner, JSON.stringify(list.assignees));
+      .run(
+        conversationId,
+        checklistMarkdown(list),
+        JSON.stringify(checklistTicks(list.items)),
+        list.updatedAt,
+        list.updatedBy,
+        list.creator,
+        JSON.stringify(list.assignees),
+        JSON.stringify(list.items),
+        list.version,
+        list.pinned ? 1 : 0,
+        list.nextId,
+        list.title ?? null,
+        list.intro ?? null
+      );
   }
 
   /** Files shared in `conversationId`, newest first, without voice messages (audio named "voice-…"). */

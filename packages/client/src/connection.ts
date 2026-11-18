@@ -8,6 +8,8 @@ import * as path from "node:path";
 import type {
   ActivityEvent,
   AgentClientFrame,
+  Checklist,
+  ChecklistOp,
   Conversation,
   ConversationResponse,
   ReadResponse,
@@ -300,6 +302,34 @@ export class BusConnection {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ from: this.requireId(), text }),
+    });
+  }
+
+  /** A conversation's checklist, or null when it has none yet. */
+  async checklist(conversationId: string): Promise<Checklist | null> {
+    try {
+      return await this.request<Checklist>(`/api/conversations/${encodeURIComponent(conversationId)}/checklist?as=${encodeURIComponent(this.requireId())}`, { method: "GET" });
+    } catch (error) {
+      if (error instanceof Error && /has no checklist/.test(error.message)) return null;
+      throw error;
+    }
+  }
+
+  /** Applies `ops` to the checklist at version `base` (0 creates it); throws "…changed meanwhile…" when it moved on. */
+  editChecklist(conversationId: string, base: number, ops: ChecklistOp[]): Promise<Checklist> {
+    return this.request<Checklist>(`/api/conversations/${encodeURIComponent(conversationId)}/checklist/edit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: this.requireId(), base, ops }),
+    });
+  }
+
+  /** Ticks (or unticks) one of this agent's items. */
+  tickChecklist(conversationId: string, id: string, done: boolean): Promise<Checklist> {
+    return this.request<Checklist>(`/api/conversations/${encodeURIComponent(conversationId)}/checklist/tick`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: this.requireId(), id, done }),
     });
   }
 

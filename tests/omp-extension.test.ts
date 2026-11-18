@@ -381,6 +381,31 @@ test("op=home: an agent publishes its Home on @@<id> and reads it back", async (
   expect((await alpha.run({ op: "home" })).content[0]!.text).toContain("## Done\n- rooms");
 });
 
+test("op=checklist: an agent adds the steps of an instruction, ticks one, and on a stale version gets the list back unchanged", async () => {
+  const alpha = await startSession("alpha");
+  const { message } = await post({ from: "carol", to: "@alpha", text: "launch: notes, deploy" });
+  await alpha.injectedWith("launch: notes"); // connected
+  const at = { op: "checklist" as const, message_id: message.seq };
+  expect((await alpha.run(at)).content[0]!.text).toStartWith("@{alpha,carol} has no checklist yet");
+  const heading = `#${message.seq} Launch`;
+  const added = await alpha.run({ ...at, base: 0, ops: [
+    { op: "add", heading, text: "Write notes", source: message.seq },
+    { op: "add", heading, text: "Deploy", source: message.seq },
+  ] });
+  expect(added.content[0]!.text).toStartWith(
+    `Saved. Checklist of @{alpha,carol}, version 1 (pinned; started by @alpha):\n## ${heading}\n- [ ] i1: Write notes (@alpha; from #${message.seq})\n`
+  );
+  const ticked = await alpha.run({ ...at, tick: ["i1"] });
+  expect(ticked.content[0]!.text).toContain(`- [x] i1: Write notes (@alpha; from #${message.seq}; done by @alpha)`);
+  await expect(alpha.run({ ...at, base: 1, ops: [{ op: "update", id: "i2", blocked: "no token" }] })).rejects.toThrow(
+    /^Nothing was changed: The checklist changed meanwhile \(version 2, not 1\).*As it is now:\n\nChecklist of @\{alpha,carol\}, version 2/s
+  );
+  expect((await alpha.run({ ...at, base: 2, ops: [{ op: "update", id: "i2", blocked: "no token", detail: "staging first\nthen production" }] })).content[0]!.text).toContain(
+    "- [ ] i2: Deploy (@alpha; from #"
+  );
+  expect((await alpha.run(at)).content[0]!.text).toContain(`BLOCKED: no token)\n    staging first\n    then production`);
+});
+
 test("reply answers a message by its number, into that message's conversation", async () => {
   const alpha = await startSession("alpha");
   const beta = await rawAgent("beta");

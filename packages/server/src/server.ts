@@ -20,7 +20,7 @@ import { getFile, MAX_FILE_BYTES, postFile, transcribeFile } from "./files";
 import { CORS_HEADERS, errorResponse, HttpError, json, nonEmptyParam } from "./http";
 import type { SocketData } from "./hub";
 import { resolveLanAddresses } from "./lan";
-import { getChecklist, putChecklist, tickChecklist } from "./checklists";
+import { editChecklist, getChecklist, pinChecklist, putChecklist, tickChecklist } from "./checklists";
 import { getHome, putHome } from "./homes";
 import { changeMessage, getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, postBookmark, postMessage, postOwnTask, postTabs } from "./messages";
 import { getHistory, getInbox, getSearch } from "./reading";
@@ -230,12 +230,15 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     const homeMatch = /^\/api\/conversations\/([^/]+)\/home$/.exec(pathname);
     if (homeMatch?.[1] && method === "GET") return json(getHome(ctx, decodeURIComponent(homeMatch[1]), viewer));
     if (homeMatch?.[1] && method === "PUT") return json(await putHome(ctx, req, decodeURIComponent(homeMatch[1])));
-    const checklistMatch = /^\/api\/conversations\/([^/]+)\/checklist(\/tick)?$/.exec(pathname);
+    const checklistMatch = /^\/api\/conversations\/([^/]+)\/checklist(?:\/(tick|edit|pin))?$/.exec(pathname);
     if (checklistMatch?.[1]) {
       const id = decodeURIComponent(checklistMatch[1]);
-      if (!checklistMatch[2] && method === "GET") return json(getChecklist(ctx, id, viewer));
-      if (!checklistMatch[2] && method === "PUT") return json(await putChecklist(ctx, req, id));
-      if (checklistMatch[2] && method === "POST") return json(await tickChecklist(ctx, req, id));
+      const action = checklistMatch[2];
+      if (!action && method === "GET") return json(getChecklist(ctx, id, viewer));
+      if (!action && method === "PUT") return json(await putChecklist(ctx, req, id));
+      if (action === "tick" && method === "POST") return json(await tickChecklist(ctx, req, id));
+      if (action === "edit" && method === "POST") return json(await editChecklist(ctx, req, id));
+      if (action === "pin" && method === "POST") return json(await pinChecklist(ctx, req, id));
     }
     const sharedMatch = /^\/api\/conversations\/([^/]+)\/files$/.exec(pathname);
     if (method === "GET" && sharedMatch?.[1]) return json(getSharedFiles(ctx, decodeURIComponent(sharedMatch[1]), viewer));

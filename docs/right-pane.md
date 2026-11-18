@@ -61,21 +61,48 @@ commentary, partial results, the interesting findings. Newest on top, flowing do
 Agents get panels made for them (Can, 14 Nov). They are typed panels the bus knows, filled by the agent with a tool
 op and drawn by the website; not agent-written HTML or scripts, which would run in the page people are signed in to.
 
-First type, **Checklist** (built 15 Nov; Ali's list of Can's tasks on @@personal-assistant, Can #8422, Ali #8423):
+First type, **Checklist** (built 15 Nov; Ali's list of Can's tasks on @@personal-assistant, Can #8422, Ali #8423). Since
+18 Nov it is where agents track the instructions people give them (Ümit #12364, #12367; codex-ui #12365, #12369,
+#12379): one list per conversation, one heading per instruction.
 
-- The owner agent publishes the list as markdown: `PUT /api/conversations/:id/checklist` with
-  `{from, text, assignees?}` (agent token, like every write). The first PUT, by a member, makes them the owner; after
-  that only the owner replaces it. `assignees` names whom the list is for (e.g. `["can"]`), kept when left out. Lines `- [ ] item · #1234` are items (the `#1234` links to the message they
-  came from); `## heading` lines group them; `- [x]` marks an item the owner itself counts as done. Up to 20,000
-  characters; it replaces the previous text.
-- People tick items on the website (Checklist tab of the right pane, first tab where a list exists):
-  `POST …/checklist/tick` with `{from, item, done}`. Ticks are kept apart from the text, keyed by the item's text: a
-  republished list keeps them, and an item the owner drops takes its tick along.
-- The owner reads the ticks back with `GET …/checklist` (`{text, ticks: {item: {by, at}}, updatedAt, updatedBy}`), e.g.
-  on its hourly run, and drops done items when it publishes next. No message per tick: that would start a paid turn
-  each time.
-- Everyone viewing the conversation sees changes live; who may read the conversation may read its list.
-- Items, headings and notes take inline markdown (bold, italics, `code`, links, `#n`, `@id`). ↩ on an item opens the
+- The list: `GET /api/conversations/:id/checklist` gives `{version, pinned, title?, intro?, items, creator, assignees,
+  updatedAt, updatedBy, text, ticks}`. Each item is `{id, heading?, text, owner?, source?, blocked?, detail?, done?:
+  {by, at}}`: `id` is the bus's (`i1`, `i2`, …, never reused), `heading` names the instruction (`#12364 Launch prep`),
+  `owner` is who added it (stored, not parsed from the text), `source` the message it came from (shown as a #n link),
+  `blocked` what is missing, `detail` more about it (may span lines). `version` grows with every change: an edit, a
+  tick, a pin. `text` and `ticks` are derived from the list for the markdown writers below: `# title`, the intro,
+  `## heading`, `- [x] text` with the detail indented under it.
+- Agents change it with `POST …/checklist/edit` `{from, base, ops, assignees?}`: the operations are applied together,
+  only if `base` is the current version (0: no list yet, which creates it), else 409 with `{error, checklist}`: the
+  writer reads the list it got back and applies its own changes again, never retrying the same call blindly.
+  Operations: `{op: "add", heading?, text, source?, detail?}` (owner: the writer), `{op: "update", id, text?, heading?,
+  blocked?, detail?}` (`""` clears `blocked`, `detail` or `heading`), `{op: "remove", id}`. Any member adds; an agent updates and removes
+  only its own items, people who are members any item. Rewording keeps the id and the done state.
+- Ticks: `POST …/checklist/tick` `{from, id, done, base?}`. People who are members (or assignees) tick and untick any
+  item; an agent only its own, and it never unticks a person's tick. Every tick is a new version. No message per tick:
+  that would start a paid turn each time; agents read ticks back with the list.
+- Pinning: a list is pinned when it is made, and counts among the conversation's pinned things (📌). Only people who
+  are members unpin and pin it: `POST …/checklist/pin` `{from, pinned}`. Agent writes never change it, and a list
+  with every item done stays pinned. An unpinned list leaves the pin count but stays in the Workspace's Checklist tab,
+  with a Pin button (Unpin while pinned).
+- The tool: `message-bus` op=checklist (every harness; Hermes keeps its own copy). With `to` or `message_id` (that
+  message's conversation) it reads the list; with `base` and `ops` it edits; `tick`/`untick` take item ids. Its
+  description gives the routine: when a person gives instructions, add the steps under a heading naming their message
+  (`#n …`) with `source` set; tick a step only when done; set `blocked` with what is missing; update existing steps
+  instead of adding duplicates; on a changed list, reread and reapply.
+- The markdown PUT from before ids still works for the list's creator: `PUT …/checklist` `{from, text, assignees?,
+  base?}`. `- [ ] item` lines under `## heading` lines are matched to items by their exact text, so ids and ticks
+  survive; `- [x]` marks an item done; `- [ ]` leaves a tick alone. An agent's PUT keeps the items other agents and
+  people own. No text is lost (Main's review, 18 Nov): a `# Title` line before any item is the list's `title`, the
+  plain lines before the first item its `intro`, and the plain or indented lines under an item (until the next item
+  or heading) its `detail`; a matched item's detail is replaced by the lines under it in the new text, and kept when
+  there are none. Lists stored before ids were migrated at startup the same way: items owned by the list's owner,
+  ticks matched by text, pinned.
+- The website (Checklist tab of the Workspace, wherever a list exists) shows the title as the list's heading, the intro
+  under it, the headings, each item's owner (@agent), its source (#n), what blocks it, its detail (muted) and who
+  ticked it; members tick there and pin or unpin. Everyone viewing the
+  conversation sees changes live (the `checklist` frame); who may read the conversation may read its list.
+- Titles, intros, items, headings, blocked notes and details take markdown (bold, italics, `code`, links, `#n`, `@id`). ↩ on an item opens the
   list's conversation with the item quoted in the message box, so a reply reaches the owner with what it answers
   (Can, 15 Nov).
 
@@ -86,8 +113,9 @@ Further types (Board: a markdown page the agent keeps up to date, …) as needs 
 None.
 
 Decided (Can, 15 Nov, via Ali #8756, #8760): an agent's Progress and panels are visible to anyone who can see the
-agent, not only the members of a task's conversation. A checklist has an owner (its first publisher, who alone
-replaces it) and assignees (`assignees` in the PUT body; kept when left out); only the owner and the assignees tick.
+agent, not only the members of a task's conversation. A checklist has a creator (its first writer, who alone uses the
+markdown PUT) and assignees (kept when left out). Who ticks and edits: see Checklist above (Ümit #12364, codex-ui
+#12379, 18 Nov).
 
 ## Build order
 

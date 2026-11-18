@@ -1,7 +1,9 @@
-// Right-pane extension "Checklist": a conversation's checklist (Ali's list of Can's tasks on @@personal-assistant).
-// The owner agent publishes the markdown (PUT /api/conversations/:id/checklist); people tick items here, and the
-// owner reads the ticks back. Its tab shows only where a list exists.
-import type { Checklist } from "@agent-bus/protocol";
+// Right-pane extension "Checklist": a conversation's checklist, the one place agents track the instructions people give
+// them (Ümit #12364, #12367; codex-ui #12365, #12369, #12379). Agents add steps under a heading naming the instruction
+// (POST /api/conversations/:id/checklist/edit); each item shows who owns it, the message it came from, what blocks it
+// and who ticked it. People who are members tick any item here and pin or unpin the list. Its tab shows wherever a
+// list exists, pinned or not.
+import type { Checklist, ChecklistItem } from "@agent-bus/protocol";
 import { postJson, SESSION_KEY } from "./api";
 import { setItemReply } from "./composer";
 import { PHONE } from "./dom";
@@ -54,7 +56,7 @@ async function load(conversationId: string): Promise<void> {
     lists.set(conversationId, { error: errorText(error) });
   }
   refreshPane("checklist");
-  renderPane(); // the tab appears (or goes) with the answer
+  renderPane(); // the tab appears (or goes) with the answer; the pin count follows `pinned`
 }
 
 /** The list of `conversationId` changed on the bus (live frame): fetched again. */
@@ -62,60 +64,101 @@ export function checklistChanged(conversationId: string): void {
   if (lists.has(conversationId)) void load(conversationId);
 }
 
-/** One line of the list's markdown: an item, a heading, or a plain line. */
-function line(conversationId: string, list: Checklist, raw: string): HTMLElement | undefined {
-  const item = /^\s*[-*] \[([ xX])\] (.+)$/.exec(raw);
-  if (item) {
-    const text = (item[2] ?? "").trim();
-    const doneByOwner = item[1] !== " ";
-    const tick = list.ticks[text];
-    const li = h("li", "check-item");
-    const box = h("input");
-    box.type = "checkbox";
-    box.checked = doneByOwner || !!tick;
-    // An item its owner marked done is shown so; only the owner and the assignees tick (Can, 15 Nov).
-    const mayTick = state.me === list.owner || list.assignees.includes(state.me);
-    box.disabled = doneByOwner || !mayTick;
-    if (!mayTick) box.title = `Only ${[list.owner, ...list.assignees].map((a) => `@${a}`).join(", ")} tick this list`;
-    const label = h("label", "check-label");
-    label.append(box, h("span", "check-text"));
-    label.lastElementChild?.append(...inline(text));
-    const reply = h("button", "check-reply", "↩");
-    reply.type = "button";
-    reply.title = "Reply to this item: it shows above the message box and is quoted when you send";
-    reply.addEventListener("click", () => replyToItem(conversationId, text));
-    li.append(label, reply);
-    if (tick) li.append(h("span", "check-meta", `✓ ${tick.by} · ${relativeTime(tick.at)}`));
-    li.classList.toggle("done", box.checked);
-    box.addEventListener("change", async () => {
-      const done = box.checked;
-      li.classList.toggle("done", done);
+/** A newer list from the bus (the answer to a tick or a pin) replaces the shown one, unless a newer one came meanwhile. */
+function show(conversationId: string, list: Checklist): void {
+  const shown = lists.get(conversationId)?.list;
+  if (shown && shown.version > list.version) return;
+  lists.set(conversationId, { list });
+  refreshPane("checklist");
+  renderPane();
+}
+
+/** Whether the signed-in person ticks (any item) and pins this list: a member, or someone it is for. */
+function mayTick(conversationId: string, list: Checklist): boolean {
+  return !!state.conversations.get(conversationId)?.members.includes(state.me) || list.assignees.includes(state.me);
+}
+
+/** One item: its box, text, owner, source message, what blocks it, who ticked it, and ↩. */
+function itemRow(conversationId: string, list: Checklist, item: ChecklistItem): HTMLLIElement {
+  const li = h("li", "check-item");
+  const box = h("input");
+  box.type = "checkbox";
+  box.checked = !!item.done;
+  const allowed = mayTick(conversationId, list);
+  box.disabled = !allowed;
+  if (!allowed) box.title = "Members of this conversation tick its list";
+  const label = h("label", "check-label");
+  const text = h("span", "check-text");
+  text.append(...inline(item.text));
+  label.append(box, text);
+  const reply = h("button", "check-reply", "↩");
+  reply.type = "button";
+  reply.title = "Reply to this item: it shows above the message box and is quoted when you send";
+  reply.addEventListener("click", () => replyToItem(conversationId, item.text));
+  li.append(label, reply);
+  // Whose step it is and where it came from, under the text (codex-ui #12379).
+  const meta = h("div", "check-meta");
+  if (item.owner) meta.append(h("span", "check-owner", `@${item.owner}`));
+  if (item.source !== undefined) {
+    const source = h("span", "check-source");
+    source.append(...inline(`#${item.source}`));
+    meta.append(source);
+  }
+  if (item.done) meta.append(h("span", "check-done-by", `✓ ${item.done.by} · ${relativeTime(item.done.at)}`));
+  if (meta.childNodes.length > 0) li.append(meta);
+  if (item.blocked) {
+    const blocked = h("div", "check-blocked");
+    blocked.append(h("strong", undefined, "Blocked: "), ...inline(item.blocked));
+    li.append(blocked);
+  }
+  // The lines under an item of a markdown list, and more an agent wrote about it: muted, under the item.
+  if (item.detail) {
+    const detail = h("div", "check-detail");
+    detail.append(...renderMarkdown(item.detail, mentionNodes));
+    li.append(detail);
+  }
+  li.classList.toggle("done", box.checked);
+  li.classList.toggle("blocked", !!item.blocked && !item.done);
+  box.addEventListener("change", async () => {
+    const done = box.checked;
+    li.classList.toggle("done", done);
+    li.querySelector(".check-error")?.remove();
+    try {
+      const updated = await postJson<Checklist>(`/api/conversations/${encodeURIComponent(conversationId)}/checklist/tick`, {
+        from: state.me,
+        id: item.id,
+        done,
+      });
+      show(conversationId, updated);
+    } catch (error) {
+      box.checked = !done;
+      li.classList.toggle("done", !done);
+      li.append(h("span", "check-error", ` Not saved: ${errorText(error)}`));
+    }
+  });
+  return li;
+}
+
+/** Pin / Unpin (people who are members; Ümit #12367): an unpinned list leaves the pin count but stays here. */
+function pinBar(conversationId: string, list: Checklist): HTMLElement {
+  const bar = h("div", "check-pinbar");
+  bar.append(h("span", "check-pinstate", list.pinned ? "📌 Pinned in this conversation" : "Not pinned: only here in the Workspace"));
+  if (state.conversations.get(conversationId)?.members.includes(state.me)) {
+    const button = h("button", "link-btn check-pin", list.pinned ? "Unpin" : "Pin");
+    button.type = "button";
+    button.title = list.pinned ? "Take the list out of this conversation's pinned things (it stays here)" : "Count the list among this conversation's pinned things";
+    button.addEventListener("click", async () => {
+      button.disabled = true;
       try {
-        const updated = await postJson<Checklist>(`/api/conversations/${encodeURIComponent(conversationId)}/checklist/tick`, {
-          from: state.me,
-          item: text,
-          done,
-        });
-        lists.set(conversationId, { list: updated });
-        refreshPane("checklist");
+        show(conversationId, await postJson<Checklist>(`/api/conversations/${encodeURIComponent(conversationId)}/checklist/pin`, { from: state.me, pinned: !list.pinned }));
       } catch (error) {
-        box.checked = !done;
-        li.classList.toggle("done", !done);
-        li.append(h("span", "check-error", ` Not saved: ${errorText(error)}`));
+        button.disabled = false;
+        button.textContent = `Not saved: ${errorText(error)}`;
       }
     });
-    return li;
+    bar.append(button);
   }
-  const heading = /^\s*#{1,6}\s+(.+)$/.exec(raw);
-  if (heading) {
-    const h4 = h("h4", "check-heading");
-    h4.append(...inline(heading[1] ?? ""));
-    return h4;
-  }
-  if (!raw.trim()) return undefined;
-  const p = h("p", "check-note");
-  p.append(...inline(raw.trim()));
-  return p;
+  return bar;
 }
 
 registerExtension({
@@ -133,41 +176,43 @@ registerExtension({
     if (view.kind !== "conversation" || !entry?.list) return;
     const { list } = entry;
     const root = h("div", "checklist pane-pad");
-    // Items are grouped into lists between headings and notes.
-    let current: HTMLUListElement | undefined;
-    for (const raw of list.text.split("\n")) {
-      const node = line(view.id, list, raw);
-      if (!node) continue;
-      if (node.tagName === "LI") {
-        if (!current) {
-          current = h("ul", "check-list");
-          root.append(current);
-        }
-        current.append(node);
-      } else {
-        current = undefined;
-        root.append(node);
-      }
+    root.append(pinBar(view.id, list));
+    if (list.title) {
+      const title = h("h3", "check-title");
+      title.append(...inline(list.title));
+      root.append(title);
     }
+    if (list.intro) {
+      const intro = h("div", "check-intro");
+      intro.append(...renderMarkdown(list.intro, mentionNodes));
+      root.append(intro);
+    }
+    // Items under the same heading are next to each other (the bus keeps them so): one list per heading.
+    let current: HTMLUListElement | undefined;
+    let heading: string | undefined;
+    for (const item of list.items) {
+      if (!current || item.heading !== heading) {
+        heading = item.heading;
+        if (heading) {
+          const h4 = h("h4", "check-heading");
+          h4.append(...inline(heading));
+          root.append(h4);
+        }
+        current = h("ul", "check-list");
+        root.append(current);
+      }
+      current.append(itemRow(view.id, list, item));
+    }
+    if (list.items.length === 0) root.append(h("p", "check-note", "No items yet."));
     const forWhom = list.assignees.length > 0 ? ` For ${list.assignees.map((a) => `@${a}`).join(", ")}.` : "";
-    root.append(
-      h("p", "check-foot", `@${list.owner}'s list, updated ${relativeTime(list.updatedAt)}.${forWhom} Ticks go back to the bus; @${list.owner} reads them.`)
-    );
+    root.append(h("p", "check-foot", `Started by @${list.creator}, updated ${relativeTime(list.updatedAt)} by @${list.updatedBy}.${forWhom} Ticks go back to the bus; the agents read them.`));
     body.replaceChildren(root);
   },
 });
 
-/** Items in `list`, and how many are done (ticked here, or marked [x] by the owner). */
+/** Items in `list`, and how many are done. */
 export function checklistProgress(list: Checklist): { done: number; total: number } {
-  let done = 0;
-  let total = 0;
-  for (const raw of list.text.split("\n")) {
-    const item = /^\s*[-*] \[([ xX])\] (.+)$/.exec(raw);
-    if (!item) continue;
-    total++;
-    if (item[1] !== " " || list.ticks[(item[2] ?? "").trim()]) done++;
-  }
-  return { done, total };
+  return { done: list.items.filter((item) => item.done).length, total: list.items.length };
 }
 
 /** The checklist of `conversationId`, once known (asking for it the first time starts loading it). */
@@ -177,8 +222,7 @@ export function checklistOf(conversationId: string): Checklist | undefined {
   return entry?.list;
 }
 
-/** A checklist's name for lists of pinned things: its first heading, else "Checklist". */
+/** A checklist's name for lists of pinned things: its title, else its first heading, else "Checklist". */
 export function checklistName(list: Checklist): string {
-  const heading = /^#{1,6}\s+(.+)$/m.exec(list.text);
-  return heading?.[1]?.trim() || "Checklist";
+  return list.title ?? list.items.find((item) => item.heading)?.heading ?? "Checklist";
 }

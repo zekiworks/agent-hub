@@ -1,8 +1,9 @@
-// What is pinned in a conversation (#10757, Can and Ümit): its checklist, if it has one, and the messages its members
-// pinned, by reference (the message itself is never copied or changed). The 📌 at the top right of the conversation's
-// header shows how many: none (an outlined pin; a click says so), one (a click opens it), several (a click opens the
-// "Pinned" list in the Workspace, where each item opens its original and members unpin).
-import type { Conversation, Message } from "@agent-bus/protocol";
+// What is pinned in a conversation (#10757, Can and Ümit): its checklist, while pinned (people unpin it; it then stays
+// in the Workspace's Checklist tab only: Ümit #12367), and the messages its members pinned, by reference (the message
+// itself is never copied or changed). The 📌 at the top right of the conversation's header shows how many: none (an
+// outlined pin; a click says so), one (a click opens it), several (a click opens the "Pinned" list in the Workspace,
+// where each item opens its original and members unpin).
+import type { Checklist, Conversation, Message } from "@agent-bus/protocol";
 import { postJson } from "./api";
 import { checklistName, checklistOf, checklistProgress } from "./checklist";
 import { dom, PHONE } from "./dom";
@@ -17,9 +18,15 @@ function conversationOf(view: View): Conversation | undefined {
   return view.kind === "conversation" ? state.conversations.get(view.id) : undefined;
 }
 
-/** How many things are pinned in `conv`: its checklist (once known) and its pinned messages. */
+/** The checklist of `conv` while it is pinned (once known). */
+function pinnedChecklist(conv: Conversation): Checklist | undefined {
+  const list = checklistOf(conv.id);
+  return list?.pinned ? list : undefined;
+}
+
+/** How many things are pinned in `conv`: its checklist (once known, while pinned) and its pinned messages. */
 function pinCount(conv: Conversation): number {
-  return (checklistOf(conv.id) ? 1 : 0) + (conv.pinnedMessages?.length ?? 0);
+  return (pinnedChecklist(conv) ? 1 : 0) + (conv.pinnedMessages?.length ?? 0);
 }
 
 /** Pins or unpins message `message` in its conversation (members only; the bus checks). */
@@ -39,7 +46,7 @@ function renderHeaderButton(): void {
   dom.checklistBtn.hidden = view.kind !== "conversation";
   if (!conv) return;
   const n = pinCount(conv);
-  const list = checklistOf(conv.id);
+  const list = pinnedChecklist(conv);
   const messages = conv.pinnedMessages?.length ?? 0;
   dom.checklistBtn.classList.toggle("pinned", n > 0);
   dom.checklistCount.textContent = n > 0 ? String(n) : "";
@@ -63,7 +70,7 @@ let drawnSignature = "";
 onWorkspaceChange(() => {
   renderHeaderButton();
   const conv = conversationOf(state.view);
-  const signature = conv ? `${conv.id}:${conv.pinnedMessages?.map((p) => p.seq).join(",") ?? ""}:${checklistOf(conv.id) ? 1 : 0}` : "";
+  const signature = conv ? `${conv.id}:${conv.pinnedMessages?.map((p) => p.seq).join(",") ?? ""}:${pinnedChecklist(conv) ? 1 : 0}` : "";
   if (signature !== drawnSignature) {
     drawnSignature = signature;
     refreshPane("pinned");
@@ -94,7 +101,7 @@ dom.checklistBtn.addEventListener("click", () => {
 });
 
 // The "Pinned" list in the Workspace.
-function item(title: string, detail: string, open: () => void, unpin?: () => Promise<void>): HTMLLIElement {
+function item(title: string, detail: string, open: () => void, unpin?: () => Promise<void>, unpinTitle = "Unpin (the message stays in the conversation)"): HTMLLIElement {
   const li = h("li", "pinned-item");
   const button = h("button", "pinned-open");
   button.type = "button";
@@ -104,7 +111,7 @@ function item(title: string, detail: string, open: () => void, unpin?: () => Pro
   if (unpin) {
     const remove = h("button", "link-btn pinned-unpin", "Unpin");
     remove.type = "button";
-    remove.title = "Unpin (the message stays in the conversation)";
+    remove.title = unpinTitle;
     remove.addEventListener("click", () => {
       remove.disabled = true;
       unpin().catch((error) => {
@@ -133,10 +140,13 @@ registerExtension({
     if (!conv) return;
     const member = conv.members.includes(state.me);
     const listEl = h("ul", "pinned-list");
-    const list = checklistOf(conv.id);
+    const list = pinnedChecklist(conv);
     if (list) {
       const { done, total } = checklistProgress(list);
-      listEl.append(item(`☑ ${checklistName(list)}`, `Checklist · ${done} of ${total} tasks done`, () => openPane("checklist")));
+      // Unpinned, it stays in the Checklist tab (Ümit #12367).
+      listEl.append(item(`☑ ${checklistName(list)}`, `Checklist · ${done} of ${total} tasks done`, () => openPane("checklist"),
+        member ? () => postJson(`/api/conversations/${encodeURIComponent(conv.id)}/checklist/pin`, { from: state.me, pinned: false }).then(() => undefined) : undefined,
+        "Unpin the checklist: hides it from the pin; it stays in the Checklist tab"));
     }
     for (const pin of conv.pinnedMessages ?? []) {
       // On a phone the Workspace covers the conversation: it gives way to the message (as the inbox does).

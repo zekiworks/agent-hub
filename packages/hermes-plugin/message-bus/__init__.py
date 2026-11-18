@@ -102,14 +102,24 @@ SCHEMA = {
         "op=tasks lists yours (box=\"assigned\" for those you assigned; scope=\"all\" includes closed ones). "
         "Your Home: op=home (`message` = the whole markdown; without `message` it returns the current text, so you can "
         "prepend) publishes the Home tab of your project @@<your id> (`to` for another project you are in). Newest "
-        "first: what you finished, what you work on, blockers, links to messages (#1234)."
+        "first: what you finished, what you work on, blockers, links to messages (#1234). "
+        "Checklist (same as packages/client/src/tool.ts; the one place to track what people ask of you; it shows pinned "
+        "in the conversation, ticks come back from people): op=checklist with `to` (\"@@project\", \"#room\") or "
+        "`message_id` (that message's conversation) returns the conversation's checklist: its version and items (id, "
+        "heading, text, owner, source message, blocked, done). When a person gives you instructions, add the steps under "
+        "a heading naming their message (\"#<n> <what it is about>\") with `source` <n>: `ops` [{op:\"add\", heading, text, "
+        "source}] with `base` = the version you read (0 when there is no list yet). Update existing steps instead of "
+        "adding duplicates ({op:\"update\", id, text, heading}); when one is stuck, set `blocked` to what is missing (\"\" "
+        "clears it); {op:\"remove\", id}. You change only your own items. Tick a step only when it is done (`tick`: ids; "
+        "`untick` undoes yours; a person's tick stays). If the list changed since you read it, nothing is changed and you "
+        "get it as it is now: reread it and apply your own changes again on the new version; never retry the same call blindly."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "op": {"type": "string", "enum": ["reply", "write", "send", "set", "inbox", "show", "history", "search",
-                                               "tasks", "accept", "done", "reject", "withdraw", "home"],
-                   "description": "reply/write/send a message, set a setting, or read: inbox, show, history, search"},
+                                               "tasks", "accept", "done", "reject", "withdraw", "home", "checklist"],
+                   "description": "reply/write/send a message, set a setting, read: inbox, show, history, search, or the conversation's checklist"},
             "message_id": {"type": "integer", "description": "a message's #number (reply, show, history)"},
             "to": {"type": "string", "description": "\"@all\", \"@id\", \"@{id1,id2}\" (\"@{@@project,id1,id2}\" for the group under that project) or \"@@project\" (write/send, history)"},
             "message": {"type": "string", "description": "message text (reply/write; optional caption for send)"},
@@ -137,6 +147,19 @@ SCHEMA = {
             "hold_hours": {"type": "number",
                            "description": "reply/write: how long the bus keeps it for recipients that are offline, in hours "
                                           "(default 1, at most 168); after that it expires for them"},
+            "base": {"type": "integer", "description": "checklist: the version you read (0 when there is no list yet); required with `ops`"},
+            "ops": {"type": "array", "description": "checklist: changes applied together on version `base`, all or none",
+                    "items": {"type": "object", "required": ["op"], "properties": {
+                        "op": {"type": "string", "enum": ["add", "update", "remove"], "description": "add a step, update one (by id) or remove one"},
+                        "id": {"type": "string", "description": "update, remove: the item's id (i3)"},
+                        "heading": {"type": "string", "description": "add, update: the instruction it belongs to, e.g. \"#12364 Launch prep\" (\"\" for none)"},
+                        "text": {"type": "string", "description": "add, update: the step, one line"},
+                        "source": {"type": "integer", "description": "add: the #number of the message it came from"},
+                        "blocked": {"type": "string", "description": "update: what is missing before it can be done (\"\" clears it)"},
+                        "detail": {"type": "string", "description": "add, update: more about the step, under it (may span lines; \"\" clears it)"},
+                    }}},
+            "tick": {"type": "array", "items": {"type": "string"}, "description": "checklist: ids of your items that are done"},
+            "untick": {"type": "array", "items": {"type": "string"}, "description": "checklist: ids of your items that are not done after all"},
         },
         "required": ["op"],
     },
@@ -190,6 +213,37 @@ _HEADER_LIKE = re.compile(r"\[\s*message[\s_-]*bus\s*\]", re.IGNORECASE)
 def defang_headers(text: str) -> str:
     """Same as defangHeaders in packages/protocol/src/address.ts: text cannot pass itself off as a delivery."""
     return _HEADER_LIKE.sub("[quoted text, not a delivery]", text)
+
+
+def format_checklist(checklist: dict, where: str) -> str:
+    """Same as formatChecklist in packages/client/src/tool.ts."""
+    assignees = checklist.get("assignees") or []
+    for_whom = f"; for {', '.join('@' + a for a in assignees)}" if assignees else ""
+    lines = [f"Checklist of {where}, version {checklist['version']} ({'pinned' if checklist['pinned'] else 'not pinned'}; "
+             f"started by @{checklist['creator']}{for_whom}):"]
+    if checklist.get("title"):
+        lines.append(f"# {defang_headers(checklist['title'])}")
+    if checklist.get("intro"):
+        lines.append(defang_headers(checklist["intro"]))
+    heading = None
+    for item in checklist["items"]:
+        if item.get("heading") and item.get("heading") != heading:
+            lines.append(f"## {defang_headers(item['heading'])}")
+        heading = item.get("heading")
+        notes = [
+            f"@{item['owner']}" if item.get("owner") else "",
+            f"from #{item['source']}" if item.get("source") is not None else "",
+            f"BLOCKED: {defang_headers(item['blocked'])}" if item.get("blocked") else "",
+            f"done by @{item['done']['by']}" if item.get("done") else "",
+        ]
+        notes = [n for n in notes if n]
+        lines.append(f"- [{'x' if item.get('done') else ' '}] {item['id']}: {defang_headers(item['text'])}"
+                     + (f" ({'; '.join(notes)})" if notes else ""))
+        if item.get("detail"):
+            lines.extend(f"    {line}" for line in defang_headers(item["detail"]).split("\n"))
+    if not checklist["items"]:
+        lines.append("(no items)")
+    return "\n".join(lines)
 
 
 def provenance_mark(verified: bool | None) -> str:
@@ -400,6 +454,11 @@ class BusClient:
         """Replaces a project's Home (PUT /api/conversations/:id/home), as BusConnection.putHome."""
         body = {"from": self.my_id(), "text": text}
         return self._request("PUT", f"/api/conversations/{urllib.parse.quote(conversation_id)}/home", json.dumps(body).encode())
+
+    def checklist_post(self, conversation_id: str, action: str, body: dict) -> dict:
+        """POST /api/conversations/:id/checklist/{edit,tick}, as BusConnection.editChecklist and tickChecklist."""
+        return self._request("POST", f"/api/conversations/{urllib.parse.quote(conversation_id)}/checklist/{action}",
+                             json.dumps({"from": self.my_id(), **body}).encode())
 
     def task_action(self, seq: int, action: str, reason: str | None) -> dict:
         """One step on task #seq (accept, done, reject, withdraw), as in BusConnection.taskAction."""
@@ -774,17 +833,23 @@ def register(ctx: Any) -> None:
             word = {"accept": "accepted", "done": "done", "reject": "rejected", "withdraw": "withdrawn"}[op]
             return (f"#{args['message_id']} {word}; the conversation got the step as a reply. "
                     f"{task_states(res['message'])} (you are @{me})")
-        if op == "home":
-            target = (args.get("to") or f"@@{me}").strip()
+
+        def named_project(target: str) -> dict:
+            """The project or room `target` ("@@name", "#name") names, as this agent sees it."""
             room = target.startswith("#")
             name = target[1:] if room else target[2:] if target.startswith("@@") else ""
             if not name:
-                raise ValueError("home needs `to` as \"@@project\" or \"#room\" (default: your own @@<id>).")
+                raise ValueError(f"{op} needs `to` as \"@@project\" or \"#room\".")
             state = client.get("/api/state", {"as": me})
             project = next((c for c in state["conversations"] if c["kind"] == "project" and c.get("name") == name.lower()
                             and bool(c.get("room")) == room), None)
             if project is None:
                 raise ValueError(f"No project {target} that you can see. (you are @{me})")
+            return project
+
+        if op == "home":
+            target = (args.get("to") or f"@@{me}").strip()
+            project = named_project(target)
             if args.get("message") is None:
                 try:
                     home = client.get(f"/api/conversations/{project['id']}/home", {"as": me})
@@ -795,7 +860,47 @@ def register(ctx: Any) -> None:
                 return f"Home of {target} (by @{home['owner']}):\n\n{home['text']}\n (you are @{me})"
             home = client.put_home(project["id"], args["message"])
             return f"Published the Home of {target}: {len(home['text'])} chars; it shows in its Home tab. (you are @{me})"
-        raise ValueError("op must be reply, write, send, set, inbox, show, history, search, tasks, accept, done, reject, withdraw or home.")
+        if op == "checklist":
+            # Same as packages/client/src/tool.ts op=checklist (Ümit #12364, codex-ui #12379).
+            if args.get("message_id") is not None:
+                conversation_id = client.get(f"/api/messages/{int(args['message_id'])}", {"as": me, "scope": "all"})["message"]["conversationId"]
+                where = f"the conversation of #{args['message_id']}"
+            elif args.get("to"):
+                where = args["to"].strip()
+                conversation_id = named_project(where)["id"]
+            else:
+                raise ValueError("checklist needs `to` (\"@@project\" or \"#room\") or `message_id` (that message's conversation).")
+
+            def read() -> dict | None:
+                try:
+                    return client.get(f"/api/conversations/{urllib.parse.quote(conversation_id)}/checklist", {"as": me})
+                except RuntimeError as err:
+                    if "has no checklist" in str(err):
+                        return None
+                    raise
+
+            current = None
+            if args.get("ops"):
+                if args.get("base") is None:
+                    raise ValueError("checklist with `ops` needs `base`: the version you read (0 when there is no list yet). Read it with op=checklist first.")
+                try:
+                    current = client.checklist_post(conversation_id, "edit", {"base": int(args["base"]), "ops": args["ops"]})
+                except RuntimeError as err:
+                    if "changed meanwhile" not in str(err) and "no checklist here yet" not in str(err):
+                        raise
+                    now = read()
+                    raise ValueError(f"Nothing was changed: {err}." + (f" As it is now:\n\n{format_checklist(now, where)}" if now else ""))
+            for item_id in args.get("tick") or []:
+                current = client.checklist_post(conversation_id, "tick", {"id": item_id, "done": True})
+            for item_id in args.get("untick") or []:
+                current = client.checklist_post(conversation_id, "tick", {"id": item_id, "done": False})
+            if current:
+                return f"Saved. {format_checklist(current, where)}\n (you are @{me})"
+            now = read()
+            if now is None:
+                return f"{where} has no checklist yet; start one with op=checklist base=0 and `ops` adding its first steps. (you are @{me})"
+            return f"{format_checklist(now, where)}\n (you are @{me})"
+        raise ValueError("op must be reply, write, send, set, inbox, show, history, search, tasks, accept, done, reject, withdraw, home or checklist.")
 
     ctx.register_tool(name=TOOL_NAME, toolset="message_bus", schema=SCHEMA, handler=handle,
                       description=SCHEMA["description"], emoji="📨")

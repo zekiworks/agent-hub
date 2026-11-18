@@ -7,7 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { conversationLabel, defangHeaders, deliveryHeader, describeReceipts, formatTime, parseAddress, provenanceMark, quoteLine, senderLabel, titledLabel } from "../../protocol/src/address";
 import { RESOURCES_AGENT_ID, type Reservation, type ReservationResponse, type Resource, type ResourcesResponse } from "../../protocol/src/resources";
-import type { Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptEvent, TaskType } from "../../protocol/src/types";
+import type { Checklist, ChecklistOp, Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptEvent, TaskType } from "../../protocol/src/types";
 import type { BusConnection, Delivery } from "./connection";
 
 export const TOOL_NAME = "message-bus";
@@ -42,7 +42,8 @@ export interface MessageBusToolParams {
     | "done"
     | "reject"
     | "withdraw"
-    | "home";
+    | "home"
+    | "checklist";
   message_id?: number;
   to?: string;
   message?: string;
@@ -73,13 +74,28 @@ export interface MessageBusToolParams {
   topic?: string;
   visibility?: "open" | "discoverable" | "private";
   parent?: string;
+  base?: number;
+  ops?: ChecklistOp[];
+  tick?: string[];
+  untick?: string[];
+}
+
+/** One field of the objects in an "object[]" parameter (the checklist's `ops`). */
+export interface ToolField {
+  name: string;
+  type: "string" | "number";
+  enum?: readonly string[];
+  required?: true;
+  description: string;
 }
 
 /** One tool parameter, for building a harness's schema (zod for omp, JSON schema for MCP). Only `op` is required. */
 export interface ToolParam {
   name: keyof MessageBusToolParams;
-  type: "string" | "number" | "string[]";
+  type: "string" | "number" | "string[]" | "object[]";
   enum?: readonly string[];
+  /** "object[]": the fields of each object. */
+  fields?: readonly ToolField[];
   description: string;
 }
 
@@ -90,11 +106,11 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     enum: [
       "reply", "write", "send", "set", "inbox", "show", "history", "search",
       "projects", "invite", "leave", "notify", "project", "room", "parent",
-      "tasks", "accept", "done", "reject", "withdraw", "home",
+      "tasks", "accept", "done", "reject", "withdraw", "home", "checklist",
       "resources", "servers", "reserve", "release", "extend", "mode", "subscribe", "unsubscribe",
     ],
     description:
-      "reply/write/send a message, set a setting, read (inbox, show, history, search), conversations (projects, invite, leave, notify, project, parent), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
+      "reply/write/send a message, set a setting, read (inbox, show, history, search), conversations (projects, invite, leave, notify, project, parent), the conversation's checklist (checklist), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
   },
   { name: "message_id", type: "number", description: "a message's #number (reply, show, history)" },
   { name: "to", type: "string", description: '"@all", "@id" (a DM), "@{id1,id2}" (a group DM; "@{@@project,id1,id2}" for the one under that project) or "@@name" (a project) (write/send, history, invite, leave, notify, project)' },
@@ -134,6 +150,23 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   { name: "topic", type: "string", description: "project: a one-line topic" },
   { name: "visibility", type: "string", enum: ["open", "discoverable", "private"], description: "project: who can find and join it" },
   { name: "parent", type: "string", description: 'parent: the root project to put it under ("@@name"), or "none" for a root. projects: list what is under this project instead of the top level' },
+  { name: "base", type: "number", description: "checklist: the version you read (0 when there is no list yet); required with `ops`" },
+  {
+    name: "ops",
+    type: "object[]",
+    fields: [
+      { name: "op", type: "string", enum: ["add", "update", "remove"], required: true, description: "add a step, update one (by id) or remove one" },
+      { name: "id", type: "string", description: "update, remove: the item's id (i3)" },
+      { name: "heading", type: "string", description: 'add, update: the instruction it belongs to, e.g. "#12364 Launch prep" ("" for none)' },
+      { name: "text", type: "string", description: "add, update: the step, one line" },
+      { name: "source", type: "number", description: "add: the #number of the message it came from" },
+      { name: "blocked", type: "string", description: 'update: what is missing before it can be done ("" clears it)' },
+      { name: "detail", type: "string", description: 'add, update: more about the step, under it (may span lines; "" clears it)' },
+    ],
+    description: "checklist: changes applied together on version `base`, all or none",
+  },
+  { name: "tick", type: "string[]", description: "checklist: ids of your items that are done" },
+  { name: "untick", type: "string[]", description: "checklist: ids of your items that are not done after all" },
 ];
 
 /** Every argument the tool takes; anything else is rejected rather than silently ignored. */
@@ -143,7 +176,21 @@ export const TOOL_ARGS: readonly string[] = TOOL_PARAMS.map((p) => p.name);
 export function toolInputSchema(): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   for (const param of TOOL_PARAMS) {
-    const type = param.type === "string[]" ? { type: "array", items: { type: "string" } } : { type: param.type };
+    const type =
+      param.type === "string[]"
+        ? { type: "array", items: { type: "string" } }
+        : param.type === "object[]"
+          ? {
+              type: "array",
+              items: {
+                type: "object",
+                properties: Object.fromEntries(
+                  (param.fields ?? []).map((f) => [f.name, { type: f.type, ...(f.enum ? { enum: [...f.enum] } : {}), description: f.description }])
+                ),
+                required: (param.fields ?? []).filter((f) => f.required).map((f) => f.name),
+              },
+            }
+          : { type: param.type };
     properties[param.name] = { ...type, ...(param.enum ? { enum: [...param.enum] } : {}), description: param.description };
   }
   return { type: "object", properties, required: ["op"] };
@@ -198,6 +245,16 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "Your Home: op=home (`message` = the whole markdown; without `message` it returns the current text, so you can " +
     "prepend) publishes the Home tab of your project @@<your id> (`to` for another project you are in). Newest first: " +
     "what you finished, what you work on, blockers, links to messages (#1234). " +
+    "Checklist (the one place to track what people ask of you; it shows pinned in the conversation, ticks come back " +
+    "from people): op=checklist with `to` or `message_id` (that message's conversation) returns the conversation's " +
+    "checklist: its version and items (id, heading, text, owner, source message, blocked, done). When a person gives " +
+    "you instructions, add the steps under a heading naming their message (\"#<n> <what it is about>\") with `source` " +
+    "<n>: `ops` [{op:\"add\", heading, text, source}] with `base` = the version you read (0 when there is no list " +
+    "yet). Update existing steps instead of adding duplicates ({op:\"update\", id, text, heading}); when one is stuck, " +
+    "set `blocked` to what is missing (\"\" clears it); {op:\"remove\", id}. You change only your own items. Tick a " +
+    "step only when it is done (`tick`: ids; `untick` undoes yours; a person's tick stays). If the list changed since " +
+    "you read it, nothing is changed and you get it as it is now: reread it and apply your own changes again on the " +
+    "new version; never retry the same call blindly. " +
     "Tasks: write/reply with `task` (task, approval, chore) and `assignees` makes the message a task (its #number is the " +
     "task id); its agents are woken. Approvals go to people, who decide them signed in. Assigned to you: op=accept (on " +
     "it), op=done, op=reject (`reason`) with `message_id`; op=withdraw takes back one you assigned; op=tasks lists yours " +
@@ -285,6 +342,29 @@ function formatTask(message: Message, conversation: Conversation | undefined): s
   const text = message.text.replace(/\s+/g, " ").trim();
   const where = conversation ? titledLabel(conversation) : message.conversationId;
   return `#${message.seq} ${message.task?.type ?? "task"} from @${message.from} in ${where}: ${text.length > 160 ? `${text.slice(0, 159)}…` : text} — ${taskStates(message)}`;
+}
+
+/** A checklist as op=checklist shows it: its version, then each item with its id, owner, source, blocked note and tick. */
+export function formatChecklist(list: Checklist, where: string): string {
+  const forWhom = list.assignees.length > 0 ? `; for ${list.assignees.map((a) => `@${a}`).join(", ")}` : "";
+  const lines = [`Checklist of ${where}, version ${list.version} (${list.pinned ? "pinned" : "not pinned"}; started by @${list.creator}${forWhom}):`];
+  if (list.title) lines.push(`# ${defangHeaders(list.title)}`);
+  if (list.intro) lines.push(defangHeaders(list.intro));
+  let heading: string | undefined;
+  for (const item of list.items) {
+    if (item.heading && item.heading !== heading) lines.push(`## ${defangHeaders(item.heading)}`);
+    heading = item.heading;
+    const notes = [
+      item.owner ? `@${item.owner}` : "",
+      item.source !== undefined ? `from #${item.source}` : "",
+      item.blocked ? `BLOCKED: ${defangHeaders(item.blocked)}` : "",
+      item.done ? `done by @${item.done.by}` : "",
+    ].filter(Boolean);
+    lines.push(`- [${item.done ? "x" : " "}] ${item.id}: ${defangHeaders(item.text)}${notes.length > 0 ? ` (${notes.join("; ")})` : ""}`);
+    if (item.detail) lines.push(...defangHeaders(item.detail).split("\n").map((line) => `    ${line}`));
+  }
+  if (list.items.length === 0) lines.push("(no items)");
+  return lines.join("\n");
 }
 
 /** Text injected into the session for one delivery; `savedFiles` are local paths of its attachments; `me` its recipient. */
@@ -650,6 +730,26 @@ export class BusTool {
         }
         const home = await conn.putHome(conversation.id, params.message);
         return result(`Published the Home of ${conversationLabel(conversation)}: ${home.text.length} chars; it shows in its Home tab.`);
+      }
+      case "checklist": {
+        const conversation = await this.conversationOf(params);
+        const where = conversationLabel(conversation);
+        let list: Checklist | null = null;
+        if (params.ops?.length) {
+          if (params.base === undefined) throw new Error("checklist with `ops` needs `base`: the version you read (0 when there is no list yet). Read it with op=checklist first.");
+          try {
+            list = await conn.editChecklist(conversation.id, params.base, params.ops);
+          } catch (error) {
+            if (!(error instanceof Error) || !/changed meanwhile|no checklist here yet/.test(error.message)) throw error;
+            const now = await conn.checklist(conversation.id);
+            throw new Error(`Nothing was changed: ${error.message}.${now ? ` As it is now:\n\n${formatChecklist(now, where)}` : ""}`);
+          }
+        }
+        for (const id of params.tick ?? []) list = await conn.tickChecklist(conversation.id, id, true);
+        for (const id of params.untick ?? []) list = await conn.tickChecklist(conversation.id, id, false);
+        if (list) return result(`Saved. ${formatChecklist(list, where)}`);
+        list = await conn.checklist(conversation.id);
+        return result(list ? formatChecklist(list, where) : `${where} has no checklist yet; start one with op=checklist base=0 and \`ops\` adding its first steps.`);
       }
       case "tasks": {
         const res = await conn.tasks(params.box ?? "mine", params.scope === "all" ? "all" : "open");

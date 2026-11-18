@@ -532,21 +532,74 @@ export interface MessagesResponse {
 }
 
 /**
- * A conversation's checklist (the right pane's Checklist tab; first use: Ali's list of Can's tasks). `text` is markdown
- * its owner agent writes (PUT): `- [ ] item · #1234` lines, headings allowed. People tick items on the website; the
- * ticks are kept apart from the text, keyed by the item's text, so a republished list keeps them, and an item the owner
- * drops takes its tick with it.
+ * One step on a checklist. Its `id` is the bus's and never changes: rewording keeps the id and the done state (Ümit
+ * #12364, codex-ui #12379).
+ */
+export interface ChecklistItem {
+  id: string;
+  /** The instruction it belongs to, e.g. "#12364 Launch prep": items with the same heading show together. */
+  heading?: string;
+  text: string;
+  /** Who added it (stored, not parsed from the text): only they, and people, change or remove it. */
+  owner?: string;
+  /** The message it came from: shown as a #seq link. */
+  source?: number;
+  /** What is missing before it can be done. */
+  blocked?: string;
+  /** More about it, under the text (markdown, may span lines): e.g. the lines under an item of a markdown list. */
+  detail?: string;
+  done?: { by: string; at: number };
+}
+
+/**
+ * A conversation's checklist (the Workspace's Checklist tab), the one place agents track the instructions people give
+ * them (Ümit #12364, #12367; codex-ui #12365, #12369, #12379): items under headings naming the instruction, ticked when
+ * done. `version` grows with every change (an edit, a tick, a pin), so an agent's edit names the version it read.
  */
 export interface Checklist {
-  text: string;
-  /** Item text (without "- [ ] ") → who ticked it and when. */
-  ticks: Record<string, { by: string; at: number }>;
+  version: number;
+  /** Counted among the conversation's pinned things; set on creation, changed only by people. */
+  pinned: boolean;
+  /** The list's name (a markdown list's `# Title` line), and the text under it before the first item. */
+  title?: string;
+  intro?: string;
+  items: ChecklistItem[];
+  /** Who made it (its first writer): the only one who may replace it with the markdown PUT. */
+  creator: string;
+  /** Whom the list is for (Can, 15 Nov). */
+  assignees: string[];
   updatedAt: number;
   updatedBy: string;
-  /** Who first published it: only they replace it (Can, 15 Nov). */
-  owner: string;
-  /** Whom the list is for. Only the owner and these tick its items (Can, 15 Nov). */
-  assignees: string[];
+  /** The list as markdown (`# title`, intro, `## heading`, `- [x] text`, detail indented), for the markdown PUT's writers and plain displays. */
+  text: string;
+  /** Item text → its done state, for the markdown PUT's writers who read ticks back by text. */
+  ticks: Record<string, { by: string; at: number }>;
+}
+
+/** One change in an edit (ChecklistEditRequest), applied with the others or not at all. */
+export type ChecklistOp =
+  /** A new item; its owner is the writer. */
+  | { op: "add"; heading?: string; text: string; source?: number; detail?: string }
+  /** Rewords, moves to another heading ("" for none), sets what blocks it or its detail ("" clears either). */
+  | { op: "update"; id: string; text?: string; heading?: string; blocked?: string; detail?: string }
+  | { op: "remove"; id: string };
+
+/**
+ * POST /api/conversations/:id/checklist/edit: `ops` applied only if `base` is the current version (0: no list yet,
+ * which creates it), else 409 with `{error, checklist}`: read it, then apply your own changes again. Agents change and
+ * remove only their own items; people who are members change any.
+ */
+export interface ChecklistEditRequest {
+  from: string;
+  base: number;
+  ops: ChecklistOp[];
+  assignees?: string[];
+}
+
+/** POST /api/conversations/:id/checklist/pin: a person who is a member pins or unpins the list. */
+export interface ChecklistPinRequest {
+  from: string;
+  pinned: boolean;
 }
 
 /**
@@ -567,20 +620,29 @@ export interface PutHomeRequest {
 }
 
 /**
- * PUT /api/conversations/:id/checklist: the owner replaces the text (the first PUT, by a member, makes them the
- * owner). `assignees` (participant ids) is kept as it was when left out.
+ * PUT /api/conversations/:id/checklist: the list as markdown, from before items had ids (kept for the agents that
+ * write it so). The first PUT, by a member, creates the list; after that only its creator replaces it. Lines are
+ * matched to items by their exact text, so ids and ticks survive; `- [x]` marks an item done. `assignees` (participant
+ * ids) is kept as it was when left out; `base`, if given, must be the current version.
  */
 export interface PutChecklistRequest {
   from: string;
   text: string;
   assignees?: string[];
+  base?: number;
 }
 
-/** POST /api/conversations/:id/checklist/tick: the owner or an assignee ticks (or unticks) one item, by its text. */
+/**
+ * POST /api/conversations/:id/checklist/tick: ticks (or unticks) item `id`. People who are members (or assignees) tick
+ * any item; an agent only its own, and never unticks a person's tick. `base`, if given, must be the current version.
+ * `item` (an item's text) instead of `id` is for writers from before ids.
+ */
 export interface TickRequest {
   from: string;
-  item: string;
+  id?: string;
+  item?: string;
   done: boolean;
+  base?: number;
 }
 
 /** POST /api/tasks/:seq/{accept,done,reject,withdraw,read}: one participant's step on a task. */

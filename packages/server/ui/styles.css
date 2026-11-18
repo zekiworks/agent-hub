@@ -846,7 +846,66 @@ button:disabled {
 }
 
 .check-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
   margin-left: 28px;
+}
+
+/* Whose step it is (@agent) and the message it came from (#n): codex-ui #12379. */
+.check-owner {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--text);
+}
+
+.check-blocked {
+  margin: 2px 0 0 28px;
+  color: var(--warning);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* A markdown list's title, the text under it, and the lines under an item: nothing of the list is lost (Ümit #12364). */
+.check-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.check-intro {
+  margin-bottom: 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.check-detail {
+  margin: 2px 0 0 28px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.check-intro > :first-child,
+.check-detail > :first-child {
+  margin-top: 0;
+}
+
+.check-intro > :last-child,
+.check-detail > :last-child {
+  margin-bottom: 0;
+}
+
+/* Pinned or not, and Pin / Unpin for members (Ümit #12367). */
+.check-pinbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .check-error {
@@ -4008,6 +4067,21 @@ ul.md-list ul.md-list { list-style: circle; }
   .checklist-btn {
     min-width: 44px;
     justify-content: center;
+  }
+
+  .check-pin,
+  .check-reply {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .check-label {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .check-item {
+    padding-right: 48px;
   }
 
   /* A long Workspace heading ("Project · @@answer-check-private-review…") gets two lines on a phone, no tooltip there. */

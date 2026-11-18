@@ -20,6 +20,7 @@ import {
   TOOL_PARAMS,
   toolDescription,
   type MessageBusToolParams,
+  type ToolField,
   type ToolParam,
 } from "../../client/src/tool";
 import type { ReceiptEvent } from "../../protocol/src/types";
@@ -103,15 +104,15 @@ export interface MessageBusApi {
 
 /** The tool's parameters as an omp (zod) schema. */
 function zodParameters(z: ZodLike): ZodSchemaLike {
+  const scalar = (field: ToolParam | ToolField): ZodSchemaLike =>
+    field.enum !== undefined ? z.enum(field.enum as unknown as [string, ...string[]]) : field.type === "number" ? z.number() : z.string();
   const one = (param: ToolParam): ZodSchemaLike => {
     const base =
-      param.enum !== undefined
-        ? z.enum(param.enum as unknown as [string, ...string[]])
-        : param.type === "number"
-          ? z.number()
-          : param.type === "string[]"
-            ? z.array(z.string())
-            : z.string();
+      param.type === "string[]"
+        ? z.array(z.string())
+        : param.type === "object[]"
+          ? z.array(z.object(Object.fromEntries((param.fields ?? []).map((f) => [f.name, (f.required ? scalar(f) : scalar(f).optional()).describe(f.description)]))))
+          : scalar(param);
     return (param.name === "op" ? base : base.optional()).describe(param.description);
   };
   return z.object(Object.fromEntries(TOOL_PARAMS.map((param) => [param.name, one(param)])));

@@ -13,7 +13,9 @@ export const CORS_HEADERS: Record<string, string> = {
 export class HttpError extends Error {
   constructor(
     readonly status: number,
-    message: string
+    message: string,
+    /** More of the answer, beside `error` (a 409 on a checklist carries the list as it is now). */
+    readonly extra?: Record<string, unknown>
   ) {
     super(message);
   }
@@ -25,7 +27,8 @@ export function json(body: unknown, status = 200): Response {
 
 /** An /api/ request's failure as its response: `{error}` with the status of a known error, else 500 (logged). */
 export function errorResponse(error: unknown): Response {
-  if (error instanceof HttpError || error instanceof ScheduleError || error instanceof AuthError) {
+  if (error instanceof HttpError) return json({ error: error.message, ...error.extra }, error.status);
+  if (error instanceof ScheduleError || error instanceof AuthError) {
     return json({ error: error.message }, error.status);
   }
   console.error(error);
