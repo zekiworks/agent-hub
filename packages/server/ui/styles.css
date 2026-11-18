@@ -2039,6 +2039,29 @@ button:disabled {
   outline: 2px solid var(--accent);
 }
 
+/* A paragraph I marked as read (text.ts; Ümit #12189, #12190): dimmed with a green ✓ in the margin, so the unread
+   ones stand out. Its button shows under the paragraph I am in. */
+.msg-text > .md-read {
+  position: relative;
+  color: var(--muted);
+}
+
+.msg-text > .md-read::before {
+  content: "✓";
+  position: absolute;
+  left: -16px;
+  color: var(--success);
+  font-size: 12px;
+}
+
+.md-read-btn {
+  display: block;
+  min-height: 32px;
+  margin-top: 2px;
+  padding: 0;
+  font-size: 13px;
+}
+
 .msg-mentions-me:hover {
   background: rgba(240, 178, 50, 0.13);
 }

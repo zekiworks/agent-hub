@@ -19,7 +19,7 @@ import { isPinned, setMessagePinned } from "./pins";
 import { bookmarkButton, isBookmarked } from "./bookmarks";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, projectColor, state } from "./state";
-import { conversationLink, flashMessage, markSelected, mentionNodes, mentionsMe, selectMessage, shownMessage, textBlocks } from "./text";
+import { conversationLink, flashMessage, markReadParts, markSelected, mentionNodes, mentionsMe, selectMessage, shownMessage, textBlocks } from "./text";
 import { PULSE_MS } from "./toast";
 
 export function renderAll(): void {
@@ -285,6 +285,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   if (ask) li.append(ask);
   // Last: on phones it is a row under the message (on wider screens it floats top right).
   li.append(actions);
+  markReadParts(li, message.seq);
   if (state.selectedSeq === message.seq) markSelected(li);
   if (state.tappedSeq === message.seq) li.classList.add("msg-tapped");
   const pulsed = pulseAt(message);

@@ -119,6 +119,7 @@ export function selectMessage(seq: number | undefined, part?: number): void {
   for (const li of dom.messageList.querySelectorAll<HTMLElement>(".msg-selected")) {
     li.classList.remove("msg-selected", "msg-selected-part");
     for (const block of li.querySelectorAll(".md-selected")) block.classList.remove("md-selected");
+    for (const button of li.querySelectorAll(".md-read-btn")) button.remove();
   }
   const li = seq === undefined ? null : dom.messageList.querySelector<HTMLElement>(`.msg[data-seq="${seq}"]`);
   if (li) markSelected(li);
@@ -129,13 +130,66 @@ export function textBlocks(li: HTMLElement): HTMLElement[] {
   return [...(li.querySelector(":scope > .msg-text")?.children ?? [])] as HTMLElement[];
 }
 
-/** Draws the selection on `li`, the selected message: the clicked paragraph, or the whole message. */
+/**
+ * Draws the selection on `li`, the selected message: the clicked paragraph, or the whole message. The paragraph I am in
+ * (or the only one) gets a "Mark as read" button (Ümit #12189).
+ */
 export function markSelected(li: HTMLElement): void {
   li.classList.add("msg-selected");
   const blocks = textBlocks(li);
   const part = state.selectedPart !== undefined && blocks.length > 1 ? blocks[state.selectedPart] : undefined;
   li.classList.toggle("msg-selected-part", !!part);
   part?.classList.add("md-selected");
+  const target = part ?? (blocks.length === 1 ? blocks[0] : undefined);
+  if (target) target.append(readButton(Number(li.dataset.seq), blocks.indexOf(target), target));
+}
+
+// ---- Paragraphs I marked as read (Ümit #12189, #12190): read ones dim, so what is left to read stands out ----
+
+const READ_PARTS_KEY = "agent-bus.readParts";
+/** "me:seq:paragraph"; the newest kept last, at most READ_PARTS_MAX. This browser only. */
+const READ_PARTS_MAX = 5000;
+let readParts: string[] = (() => {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(READ_PARTS_KEY) ?? "[]");
+    return Array.isArray(saved) ? saved.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+})();
+let readSet = new Set(readParts);
+
+const partKey = (seq: number, index: number): string => `${state.me}:${seq}:${index}`;
+
+function setPartRead(seq: number, index: number, read: boolean): void {
+  const key = partKey(seq, index);
+  readParts = readParts.filter((k) => k !== key);
+  if (read) readParts.push(key);
+  readParts = readParts.slice(-READ_PARTS_MAX);
+  readSet = new Set(readParts);
+  localStorage.setItem(READ_PARTS_KEY, JSON.stringify(readParts));
+}
+
+/** Dims the paragraphs of message `seq` I marked as read (render.ts, at every drawing). */
+export function markReadParts(li: HTMLElement, seq: number): void {
+  textBlocks(li).forEach((block, i) => block.classList.toggle("md-read", readSet.has(partKey(seq, i))));
+}
+
+function readButton(seq: number, index: number, block: HTMLElement): HTMLButtonElement {
+  const button = h("button", "link-btn md-read-btn");
+  button.type = "button";
+  const draw = () => {
+    const read = readSet.has(partKey(seq, index));
+    button.textContent = read ? "✓ Read · undo" : "✓ Mark as read";
+    button.setAttribute("aria-pressed", String(read));
+    block.classList.toggle("md-read", read);
+  };
+  button.addEventListener("click", () => {
+    setPartRead(seq, index, !readSet.has(partKey(seq, index)));
+    draw();
+  });
+  draw();
+  return button;
 }
 
 /**
