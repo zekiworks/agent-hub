@@ -1,7 +1,7 @@
 // Inline nodes of message text: @mentions highlighted, #n message references linked.
 import { ALL_CONVERSATION_ID, mentionedIds, mentionSpans, type Conversation, type Message } from "@agent-bus/protocol";
 import { api } from "./api";
-import { dom } from "./dom";
+import { dom, holdInView, showInView } from "./dom";
 import { errorText } from "./format";
 import { hooks } from "./hooks";
 import { h } from "./html";
@@ -143,8 +143,10 @@ export function markSelected(li: HTMLElement): void {
  * it is found among the others (Ümit #11622: the short flash was over before the scroll ended).
  */
 export function flashMessage(el: HTMLElement): void {
-  selectMessage(Number(el.dataset.seq));
-  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  const seq = Number(el.dataset.seq);
+  selectMessage(seq);
+  holdInView(seq);
+  showInView(el, "smooth");
   el.classList.remove("msg-flash");
   void el.offsetWidth; // restart the animation
   el.classList.add("msg-flash");

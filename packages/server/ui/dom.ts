@@ -158,11 +158,46 @@ export const dom = {
 /** The phone layout of styles.css (one screen at a time: the conversation list or a conversation). */
 export const PHONE = window.matchMedia("(max-width: 640px)");
 
+/**
+ * A message I was just taken to (a link, a banner, search): for a few seconds the view keeps it in the middle instead
+ * of following the bottom. Pictures loading under it, and the first load of the conversation, pulled the view back
+ * down (Ümit #11931: a #/m/ link landed at the bottom). My own scrolling ends the hold.
+ */
+let held: { seq: number; until: number } | undefined;
+
+/** Scrolls message `el` into the middle of the view, or to its top when it is taller than the view (so it starts on screen). */
+export function showInView(el: HTMLElement, behavior: ScrollBehavior = "auto"): void {
+  el.scrollIntoView({ block: el.offsetHeight > dom.messageScroll.clientHeight - 16 ? "start" : "center", behavior });
+}
+
+export function holdInView(seq: number): void {
+  held = { seq, until: performance.now() + 3000 };
+}
+
+/** Whether a message is being held in view (scrollToBottom then centres it instead). */
+export function holdingView(): boolean {
+  return heldMessage() !== undefined;
+}
+
+function heldMessage(): HTMLElement | undefined {
+  if (held && performance.now() < held.until) {
+    const el = dom.messageList.querySelector<HTMLElement>(`.msg[data-seq="${held.seq}"]`);
+    if (el) return el;
+  }
+  held = undefined;
+  return undefined;
+}
+
+for (const kind of ["wheel", "touchstart", "keydown"] as const) dom.messageScroll.addEventListener(kind, () => (held = undefined), { passive: true });
+
 export function nearBottom(): boolean {
+  if (heldMessage()) return false;
   const s = dom.messageScroll;
   return s.scrollHeight - s.scrollTop - s.clientHeight < 80;
 }
 
 export function scrollToBottom(): void {
-  dom.messageScroll.scrollTop = dom.messageScroll.scrollHeight;
+  const el = heldMessage();
+  if (el) showInView(el);
+  else dom.messageScroll.scrollTop = dom.messageScroll.scrollHeight;
 }

@@ -1,7 +1,7 @@
 // Attachments of a message: download links, image previews with a viewer, markdown and text files in the right pane.
 import { formatBytes, type FileRef } from "@agent-bus/protocol";
 import { fileUrl } from "./api";
-import { dom, scrollToBottom } from "./dom";
+import { dom, holdingView, scrollToBottom } from "./dom";
 import { h } from "./html";
 import { openFile, viewKind } from "./files";
 
@@ -50,7 +50,8 @@ export function renderFile(file: FileRef): HTMLLIElement {
     // Keep the view pinned to the bottom when a preview loading late makes the list taller.
     img.addEventListener("load", () => {
       const s = dom.messageScroll;
-      if (s.scrollHeight - s.scrollTop - s.clientHeight < img.offsetHeight + 80) scrollToBottom();
+      // A message just jumped to stays centred however the pictures around it grow (Ümit #11931).
+      if (holdingView() || s.scrollHeight - s.scrollTop - s.clientHeight < img.offsetHeight + 80) scrollToBottom();
     });
     // Formats the browser cannot show (e.g. HEIC) stay a plain download.
     img.addEventListener("error", () => {
