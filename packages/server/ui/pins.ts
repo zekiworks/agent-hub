@@ -56,8 +56,11 @@ function renderHeaderButton(): void {
     ...(messages > 0 ? [`${messages} message${messages === 1 ? "" : "s"}`] : []),
   ];
   // The words are in its label, not on the button (Can #11463, codex-ui #11467: "Pinned here, 2 items").
-  const label = n > 0 ? `Pinned here, ${n} item${n === 1 ? "" : "s"}: ${parts.join(" and ")}` : "Pinned here, none";
-  dom.checklistBtn.title = n > 0 ? `${label}. ${n === 1 ? "Opens it" : "Opens the list in the Workspace on the right"}.` : "Nothing is pinned in this conversation yet";
+  const unpinned = n === 0 && !!checklistOf(conv.id);
+  const label = n > 0 ? `Pinned here, ${n} item${n === 1 ? "" : "s"}: ${parts.join(" and ")}` : unpinned ? "Pinned here, none; an unpinned checklist" : "Pinned here, none";
+  dom.checklistBtn.title = n > 0
+    ? `${label}. ${n === 1 ? "Opens it" : "Opens the list in the Workspace on the right"}.`
+    : unpinned ? "Nothing is pinned here. Opens the checklist, which is not pinned (Pin is at its top)" : "Nothing is pinned in this conversation yet";
   dom.checklistBtn.setAttribute("aria-label", label);
   const shown = dom.paneBtn.dataset.shown;
   const on = n > 0 && (shown === "pinned" || (shown === "checklist" && n === 1));
@@ -88,6 +91,8 @@ dom.checklistBtn.addEventListener("click", () => {
     if (only) return void hooks.showMessage(only.seq);
     return openPane("checklist");
   }
+  // Nothing pinned, but an unpinned checklist: the pin is its way back, with Pin at its top (codex-ui #12379).
+  if (checklistOf(conv.id)) return openPane("checklist");
   // Nothing pinned: say so, briefly, under the pin.
   note?.remove();
   note = h("div", "pin-note", "Nothing pinned yet. Pin a message with the pin button on it.");
