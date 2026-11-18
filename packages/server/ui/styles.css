@@ -4418,7 +4418,7 @@ ul.md-list ul.md-list { list-style: circle; }
   }
 }
 
-/* Under the text: More/Less, and Reset position once the banners were moved (toast.ts). */
+/* Under the text: Reply, Task for me, and More/Less for a long one (toast.ts). */
 .answer-toast-row {
   display: flex;
   flex: 1 1 100%;
@@ -4431,8 +4431,7 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .answer-toast-more,
-.answer-toast-reply,
-.answer-toast-reset {
+.answer-toast-reply {
   min-height: 32px;
   padding: 0;
   font-size: 13px;
@@ -4503,16 +4502,26 @@ ul.md-list ul.md-list { list-style: circle; }
   display: none;
 }
 
-.answer-toast-reset {
-  display: none;
+/* The whole banner moves them, mouse and touch (toast.ts; Ümit #12199): the grab hand says so, the grip ⠿ too
+   (codex-ui #10866); a tap opens the message. Its buttons keep their own pointer, the reply box its text cursor. */
+.answer-toast {
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.answer-toasts.moved .answer-toast-reset {
-  display: inline;
+.answer-toast:active {
+  cursor: grabbing;
 }
 
-/* The header row is the handle that moves them, mouse and touch (toast.ts): a grip ⠿, who and where, then ✕.
-   A grab cursor and the grip say it moves (codex-ui #10866); it is outside the text's button (Ümit #10864). */
+.answer-toast-form {
+  cursor: auto;
+  touch-action: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .answer-toast-head {
   display: flex;
   flex: 1 1 100%;
@@ -4520,14 +4529,6 @@ ul.md-list ul.md-list { list-style: circle; }
   gap: 6px;
   min-height: 44px;
   padding-left: 8px;
-  cursor: grab;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.answer-toast-head:active {
-  cursor: grabbing;
 }
 
 .answer-toast-grip {
@@ -4558,7 +4559,7 @@ ul.md-list ul.md-list { list-style: circle; }
   color: var(--text);
   font: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: inherit;
 }
 
 /* Under the mouse it lightens, and lighter still while pressed, so it reads as something to click (Ümit #11657). */
@@ -4591,11 +4592,7 @@ ul.md-list ul.md-list { list-style: circle; }
   overflow: hidden;
   font-size: 14px;
   overflow-wrap: anywhere;
-  /* Selectable, to copy a part (codex-ui #10815): a press and drag selects, it does not open the message. The pointer
-     is the hand all the same, as the whole text opens the message (Ümit #11657). */
-  -webkit-user-select: text;
-  user-select: text;
-  cursor: pointer;
+  cursor: inherit;
 }
 
 .answer-toast-text.expanded {

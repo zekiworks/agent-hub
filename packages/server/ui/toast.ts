@@ -49,7 +49,6 @@ function savedPosition(): Position | undefined {
 /** Puts the banners at `position`, kept inside the screen and above the message box; undefined: the default place. */
 function place(position: Position | undefined): void {
   if (!box) return;
-  box.classList.toggle("moved", !!position);
   if (!position) {
     box.style.left = box.style.top = box.style.right = box.style.maxHeight = "";
     return;
@@ -72,14 +71,14 @@ function place(position: Position | undefined): void {
   box.style.right = "auto";
 }
 
-/** A drag that just ended: the click it ends with must not open the message. */
-let dragged = false;
-
-/** Dragging a banner by its header row moves all of them (mouse and touch: pointer events); a tap on it, `tap`. The
- * handle is not inside the banner's button: Firefox gives a button's children no mouse events (Ümit #10864). */
+/**
+ * Pressing anywhere on a banner and dragging moves all of them (mouse and touch: pointer events); a tap opens its
+ * message (Ümit #12199: the hand cursor says it moves, no "Reset position"). Its buttons and reply box keep their own
+ * clicks. Not relying on the browser's click: after a touch drag Chrome sometimes sends none for the next tap.
+ */
 function makeHandle(handle: HTMLElement, tap: () => void): void {
   handle.addEventListener("pointerdown", (down) => {
-    if (!box || down.button !== 0 || (down.target as Element).closest("button")) return;
+    if (!box || down.button !== 0 || (down.target as Element).closest("button:not(.answer-toast-open), textarea, input, a, .answer-toast-form")) return;
     const start = box.getBoundingClientRect();
     let moving = false;
     // Captured at once: a quick mouse move leaves the line before the drag is recognised.
@@ -98,9 +97,6 @@ function makeHandle(handle: HTMLElement, tap: () => void): void {
       handle.removeEventListener("pointercancel", end);
       if (!moving) return tap();
       if (!box) return;
-      // The click that may follow this drag must not open the message; a later tap must.
-      dragged = true;
-      setTimeout(() => (dragged = false), 0);
       const r = box.getBoundingClientRect();
       localStorage.setItem(POSITION_KEY, JSON.stringify({ x: Math.round(r.left), y: Math.round(r.top) }));
     };
@@ -139,13 +135,12 @@ export function showAnswer(message: Message, conversation: Conversation): void {
     toast.remove();
     void hooks.showMessage(message.seq);
   };
-  // The header row: a visible grip and who/where, the handle that moves the banners (codex-ui #10866: it looked like
-  // ordinary text), and ✕.
+  // The header row: a visible grip, who/where, and ✕ (codex-ui #10866: the grip says it moves).
   const head = h("div", "answer-toast-head");
-  head.title = "Drag to move these notifications; click to open the message";
+  toast.title = "Drag to move these notifications; click to open the message";
   const where = `↩ @${message.from} in ${conversationTitle(conversation)}${count > 1 ? ` · ${count} new` : ""}`;
   head.append(h("span", "answer-toast-grip", "⠿"), h("span", "answer-toast-where", where));
-  makeHandle(head, activate);
+  makeHandle(toast, activate);
   const dismiss = h("button", "answer-toast-close", "✕");
   dismiss.type = "button";
   dismiss.title = "Close (the message stays in its conversation)";
@@ -156,28 +151,11 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   // The whole text, a few lines of it shown; "More" lets the rest out (Ümit #10782: she could not read them).
   const body = h("span", "answer-toast-text", text || "(file)");
   open.append(body);
-  // A tap or click on the text opens the message: a press and release in place. Pressing and moving selects text,
-  // not an open. Not relying on the browser's click: after a touch drag Chrome sometimes sends none for the next tap.
-  // The keyboard (Enter/Space) still opens it through click.
-  let pressed: { x: number; y: number } | undefined;
-  open.addEventListener("pointerdown", (event) => {
-    pressed = event.button === 0 ? { x: event.clientX, y: event.clientY } : undefined;
-  });
-  open.addEventListener("pointerup", (event) => {
-    const still = pressed && Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) < 6;
-    pressed = undefined;
-    if (still && !dragged) activate();
-  });
+  // A tap opens it through the handle above; the keyboard (Enter/Space) through click.
   open.addEventListener("click", (event) => {
     if (event.detail === 0) activate();
   });
   dismiss.addEventListener("click", () => toast.remove());
-  const reset = h("button", "link-btn answer-toast-reset", "Reset position");
-  reset.type = "button";
-  reset.addEventListener("click", () => {
-    localStorage.removeItem(POSITION_KEY);
-    place(undefined);
-  });
   toast.append(head, open);
   box.append(toast);
   const row = h("div", "answer-toast-row");
@@ -217,7 +195,6 @@ export function showAnswer(message: Message, conversation: Conversation): void {
     );
   });
   row.prepend(reply, take);
-  row.append(reset);
   toast.append(row);
   place(savedPosition());
 }
