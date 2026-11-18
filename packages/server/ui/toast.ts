@@ -4,10 +4,13 @@
 // until tapped, closed with ✕, or its conversation is opened (Ümit #10168: 12 s was too short to catch). One banner per
 // conversation, with how many answers it holds; no limit on how many conversations (Can #11976: dropping the oldest
 // silently was worse than a timer).
-import type { Conversation, Message } from "@agent-bus/protocol";
+import type { Conversation, Message, PostMessageResponse } from "@agent-bus/protocol";
+import { postJson } from "./api";
 import { dom } from "./dom";
+import { errorText } from "./format";
 import { hooks } from "./hooks";
 import { h } from "./html";
+import { setIcon } from "./icons";
 import { conversationTitle, state } from "./state";
 
 let box: HTMLElement | undefined;
@@ -120,6 +123,13 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   // A newer answer in the same conversation takes the old banner's place and counts it.
   const previous = box.querySelector<HTMLElement>(`.answer-toast[data-conversation="${CSS.escape(conversation.id)}"]:not(.answer-toast-leaving)`);
   const count = Number(previous?.dataset.count ?? 0) + 1;
+  // A reply being written there stays as it is; only its count moves.
+  if (previous?.querySelector(".answer-toast-form")) {
+    previous.dataset.count = String(count);
+    const where = previous.querySelector(".answer-toast-where");
+    if (where) where.textContent = `${where.textContent?.replace(/ · \d+ new$/, "")} · ${count} new`;
+    return;
+  }
   previous?.remove();
   const toast = h("div", "answer-toast");
   toast.dataset.conversation = conversation.id;
@@ -180,6 +190,13 @@ export function showAnswer(message: Message, conversation: Conversation): void {
     });
     row.append(more);
   }
+  // Answer it here, without going to its conversation (Ümit #12130): a box in the banner, sent as a reply to it.
+  const reply = h("button", "link-btn answer-toast-reply");
+  reply.type = "button";
+  setIcon(reply, "reply", "Reply");
+  reply.title = `Reply to @${message.from} here, without leaving this conversation`;
+  reply.addEventListener("click", () => replyIn(toast, message, conversation));
+  row.prepend(reply);
   row.append(reset);
   toast.append(row);
   place(savedPosition());
@@ -196,4 +213,58 @@ export function clearAnswersFor(conversationId: string): void {
     // A timer, not animationend: with reduced motion there is no animation to end.
     setTimeout(() => toast.remove(), PULSE_MS);
   }
+}
+
+/** The reply box inside a banner: Enter sends it as a reply to `message`, Shift+Enter is a new line, Esc closes it. */
+function replyIn(toast: HTMLElement, message: Message, conversation: Conversation): void {
+  const existing = toast.querySelector<HTMLTextAreaElement>(".answer-toast-input");
+  if (existing) return existing.focus();
+  const form = h("form", "answer-toast-form");
+  const input = h("textarea", "answer-toast-input");
+  input.rows = 2;
+  input.placeholder = `Reply to @${message.from} in ${conversationTitle(conversation)}…`;
+  input.setAttribute("aria-label", input.placeholder);
+  const send = h("button", "answer-toast-send");
+  send.type = "submit";
+  setIcon(send, "send");
+  send.setAttribute("aria-label", "Send the reply");
+  const note = h("div", "answer-toast-note");
+  note.setAttribute("role", "status");
+  form.append(input, send, note);
+  toast.append(form);
+  place(savedPosition());
+  input.focus();
+  let sending = false;
+  const submit = async () => {
+    const text = input.value.trim();
+    if (!text || sending) return;
+    sending = true;
+    send.disabled = true;
+    note.textContent = "Sending…";
+    try {
+      await postJson<PostMessageResponse>("/api/messages", { from: state.me, text, replyToSeq: message.seq });
+      // Sent: the banner says so for a moment and goes; the reply is in its conversation.
+      toast.classList.add("answer-toast-leaving");
+      form.replaceChildren(h("div", "answer-toast-note", `Sent to ${conversationTitle(conversation)} ✓`));
+      setTimeout(() => toast.remove(), PULSE_MS);
+    } catch (err) {
+      note.textContent = `Not sent: ${errorText(err)} Your text is still here.`;
+      send.disabled = false;
+      sending = false;
+    }
+  };
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void submit();
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      void submit();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      form.remove();
+      place(savedPosition());
+    }
+  });
 }

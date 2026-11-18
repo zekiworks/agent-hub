@@ -4378,10 +4378,76 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .answer-toast-more,
+.answer-toast-reply,
 .answer-toast-reset {
   min-height: 32px;
   padding: 0;
   font-size: 13px;
+}
+
+/* Reply from the banner (toast.ts replyIn; Ümit #12130): icon and word, then a box and Send inside the banner. */
+.answer-toast-reply {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.answer-toast-reply .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.answer-toast-form {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 6px;
+  padding: 0 14px 10px;
+}
+
+.answer-toast-input {
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* iOS zooms into smaller text */
+  resize: vertical;
+}
+
+.answer-toast-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.answer-toast-send {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.answer-toast-send:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.answer-toast-note {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.answer-toast-note:empty {
+  display: none;
 }
 
 .answer-toast-reset {
