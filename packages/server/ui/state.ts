@@ -157,10 +157,10 @@ export function sortedRooms(): Conversation[] {
   return [...rooms.filter(pinnedByMe), ...(all ? [all] : []), ...rooms.filter((c) => !pinnedByMe(c) && c.members.includes(state.me))];
 }
 
-/** The sidebar's Groups list: the group DMs I am in, and DMs with people (DMs with agents are their Agents rows). */
+/** The sidebar's Groups list: the group DMs I am in (DMs with people are their People rows, with agents Agents rows). */
 export function sortedGroups(): Conversation[] {
   return Array.from(state.conversations.values())
-    .filter((c) => (c.kind === "group" || c.kind === "dm") && !c.archived && c.members.includes(state.me) && !isDmWithAgent(c))
+    .filter((c) => c.kind === "group" && !c.archived && c.members.includes(state.me))
     .sort(byLast);
 }
 

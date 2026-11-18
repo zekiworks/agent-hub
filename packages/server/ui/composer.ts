@@ -42,7 +42,7 @@ export function updateComposerState(): void {
   if (open && alone) {
     // Short, without the name, so it never fills a phone's screen with the keyboard up (codex-ui #11719).
     const what = open.kind === "project" ? (open.room ? "room" : "project") : open.kind === "group" ? "group" : "conversation";
-    const add = open.kind === "project" || open.kind === "group" ? " Add people via the name ▾ → Settings." : "";
+    const add = open.kind === "project" || open.kind === "group" ? " Add people with the gear ⚙ next to its name." : "";
     dom.nobodyBar.textContent = `Only you are in this ${what}: a message here reaches no one.${add}`;
   }
   const offline = offlineRecipients();

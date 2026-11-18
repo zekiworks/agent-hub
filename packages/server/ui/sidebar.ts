@@ -65,6 +65,7 @@ export function renderSidebar(): void {
   renderUnreadToggle();
   renderOfflineToggle();
   renderConversationList();
+  renderPeopleList();
   renderAgentList();
   renderLive();
   renderWorkingLine();
@@ -364,6 +365,33 @@ function draftItem(): HTMLLIElement | undefined {
   button.append(text);
   li.append(button);
   return li;
+}
+
+/**
+ * People (Ümit #12286): a row for each other person, standing for my DM with them as an agent's row does; it opens the
+ * DM, or starts one when there is none yet. DMs with people are no longer listed under Groups.
+ */
+function renderPeopleList(): void {
+  const others = state.humans.filter((id) => id !== state.me);
+  dom.peopleSection.hidden = !state.me || others.length === 0;
+  dom.peopleList.replaceChildren(
+    ...others.map((id) => {
+      const dm = dmWith(id);
+      if (dm) return conversationItem(dm);
+      const li = h("li");
+      const button = h("button", "side-item conv-item");
+      button.type = "button";
+      const view = state.view;
+      if (view.kind === "draft" && view.project === undefined && view.to.length === 1 && view.to[0] === id) button.classList.add("active");
+      const text = h("span", "side-item-text");
+      text.append(h("span", "side-item-title", id), h("span", "side-item-detail", "no messages yet"));
+      button.append(text);
+      button.title = `Write to ${id} (a DM only the two of you see)`;
+      button.addEventListener("click", () => navigate({ kind: "draft", to: [id] }));
+      li.append(button);
+      return li;
+    })
+  );
 }
 
 let otherRoomsOpen = false;

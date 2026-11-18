@@ -49,7 +49,7 @@
       <button id="bookmarks-row" type="button" class="side-inbox" hidden><span data-icon="star"></span> Bookmarks <span id="bookmarks-row-count" class="side-count"></span></button>
       <!-- Search rooms, people and messages (search.ts; Can #11398): opens in the Workspace. -->
       <button id="search-row" type="button" class="side-inbox" aria-pressed="false" hidden><span data-icon="search"></span> Search</button>
-      <!-- Agents at the top (Can #11454), then Rooms, then Mentions, Projects and Groups; Agents, Projects and Groups fold. -->
+      <!-- Agents at the top (Can #11454), then People, Rooms, Mentions, Projects and Groups; Agents, Projects and Groups fold. -->
       <section class="side-section">
         <div class="side-heading">
           <button id="agents-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the agent list">▾ Agents</button>
@@ -59,6 +59,13 @@
           </span>
         </div>
         <ul id="agent-list" class="side-list"></ul>
+      </section>
+      <!-- People (Ümit #12286): a row per other person, my DM with them, beside the agents (sidebar.ts renderPeopleList). -->
+      <section id="people-section" class="side-section" hidden>
+        <div class="side-heading">
+          <span>People</span>
+        </div>
+        <ul id="people-list" class="side-list"></ul>
       </section>
       <section class="side-section">
         <div class="side-heading">
@@ -109,10 +116,10 @@
       <div class="conv-header">
         <div class="conv-bar">
           <button id="back-btn" type="button" class="back-btn" title="Conversations">←<span id="back-badge" class="badge" hidden></span></button>
-          <!-- The name is the conversation's short menu (Can #11463, #11480; codex-ui #11467, #11492): "#name ▾" opens
-               Settings… (rooms, projects, groups: the full form) and its tab (Pin as tab, Move, Unpin). Then the pin,
-               then Workspace at the right edge. -->
-          <h1 class="conv-title-wrap"><button id="conv-menu-btn" type="button" class="conv-name-btn no-menu" aria-haspopup="menu" aria-expanded="false"><span id="conv-title" class="conv-title"></span><span class="conv-name-caret" aria-hidden="true">▾</span></button><!-- "Parent: @@project", a link, where it is under one (render.ts; Can #11791). --><span id="conv-parent" class="conv-parent" hidden></span></h1>
+          <!-- The name is the conversation's short menu (Can #11463, #11480; codex-ui #11467, #11492): "#name ▾" opens its
+               tab (Pin as tab, Move, Unpin). The gear beside it opens the settings of a room, project or group: members
+               and adding people first (Ümit #12287, #12288). Then the pin, then Workspace at the right edge. -->
+          <h1 class="conv-title-wrap"><button id="conv-menu-btn" type="button" class="conv-name-btn no-menu" aria-haspopup="menu" aria-expanded="false"><span id="conv-title" class="conv-title"></span><span class="conv-name-caret" aria-hidden="true">▾</span></button><button id="conv-settings-btn" type="button" class="icon-btn conv-settings-btn" title="Settings: members, add people, name, notifications" aria-label="Settings of this conversation" hidden><span data-icon="settings"></span></button><!-- "Parent: @@project", a link, where it is under one (render.ts; Can #11791). --><span id="conv-parent" class="conv-parent" hidden></span></h1>
           <!-- What is pinned here (pins.ts): a drawn pin, filled with a count when something is pinned. -->
           <button id="checklist-btn" type="button" class="link-btn checklist-btn" aria-pressed="false" hidden><svg class="pin-icon icon" viewBox="0 0 24 24" aria-hidden="true"><path class="pin-needle" d="M12 17v5" /><path class="pin-head" d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg><span id="checklist-count" class="checklist-count"></span></button>
           <button id="pane-btn" type="button" class="link-btn ws-open-btn" title="Open this conversation's tools in the Workspace on the right" aria-haspopup="menu" aria-pressed="false" hidden>Workspace ▾</button>

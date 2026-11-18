@@ -1831,6 +1831,30 @@ button:disabled {
   font-size: 13px;
 }
 
+/* ⚙ beside the name (convmenu.ts; Ümit #12288): a room's, project's or group's settings, quiet until hovered. */
+.conv-settings-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.conv-settings-btn:hover,
+.conv-settings-btn:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.conv-settings-btn[hidden] {
+  display: none;
+}
+
 /* "Parent: @@reading" beside the name (render.ts; Can #11791): quiet, its own size, the project a link. */
 .conv-parent {
   margin-left: 10px;

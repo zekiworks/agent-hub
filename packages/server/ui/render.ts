@@ -45,6 +45,7 @@ export function renderHeader(): void {
   setNameMenu(undefined);
   dom.subgroupsPanel.hidden = true;
   dom.convParent.hidden = true;
+  dom.convSettingsBtn.hidden = true;
   if (view.kind === "draft") {
     const title = view.project !== undefined ? `@@${view.project}` : nameList(view.to);
     setConvTitle(title, view.project !== undefined ? title : `You and ${nameList(view.to)}`);
@@ -66,7 +67,9 @@ export function renderHeader(): void {
   setConvTitle(title, conv.kind === "all" ? "Everyone" : `Members: ${nameList(conv.members)}`);
   // The title in the text colour (#10099): a project's colour is its band in the list and the Workspace's shared tint.
   setTitleBase(`${title} · ${BRAND}`);
-  setNameMenu(conv.kind === "group" || conv.kind === "project" ? "settings and tab" : "tab");
+  setNameMenu("tab");
+  // ⚙ beside the name: a room's, project's or group's settings (Ümit #12288), not behind the name's menu.
+  dom.convSettingsBtn.hidden = conv.kind !== "group" && conv.kind !== "project";
   // "Parent: @@reading" beside the name, a link to it (Can #11791), where the conversation is under a project I can see.
   const parent = conv.parentId ? state.conversations.get(conv.parentId) : undefined;
   if (parent) {

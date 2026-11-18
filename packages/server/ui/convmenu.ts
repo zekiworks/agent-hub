@@ -4,7 +4,7 @@
 import type { Conversation, ConversationResponse, NotifyLevel, ProjectVisibility } from "@agent-bus/protocol";
 import { postJson } from "./api";
 import { closeWindowButton } from "./dialogs";
-import { dom } from "./dom";
+import { dom, PHONE } from "./dom";
 import { errorText } from "./format";
 import { h } from "./html";
 import { loadState } from "./loading";
@@ -100,8 +100,8 @@ function closeNameMenu(focusName = false): void {
 }
 
 /**
- * The name's short menu (codex-ui #11492): Settings… (rooms, projects and groups: the full form), then the tab: Pin as
- * tab, or Move tab left / right and Unpin tab. On a phone this is the only way to unpin (the tabs there have no ✕).
+ * The name's short menu (codex-ui #11492): the tab: Pin as tab, or Move tab left / right and Unpin tab. On a phone this
+ * is the only way to unpin (the tabs there have no ✕). Settings have their own ⚙ beside the name (Ümit #12288).
  */
 function openNameMenu(): void {
   const conv = current();
@@ -138,12 +138,6 @@ function openNameMenu(): void {
     });
     menu.append(b);
   };
-  if (conv.kind === "group" || conv.kind === "project") {
-    item("Settings…", () => {
-      render();
-      if (!dom.convDialog.open) dom.convDialog.showModal();
-    });
-  }
   if (isTab(conv.id)) {
     const i = state.tabs.indexOf(conv.id);
     item("‹ Move tab left", () => moveTab(conv.id, -1), i <= 0);
@@ -167,7 +161,18 @@ document.addEventListener("keydown", (event) => {
 });
 window.addEventListener("hashchange", () => closeNameMenu());
 
-/** The full settings form of a group DM or project ("Settings…" in the name's menu). */
+/**
+ * ⚙ beside the name (Ümit #12288): the settings of a room, project or group, members and adding people first. On a
+ * computer the add field takes the focus (Ümit #12287: where to add names was hard to find); a phone keeps its
+ * keyboard down.
+ */
+dom.convSettingsBtn.addEventListener("click", () => {
+  render();
+  if (!dom.convDialog.open) dom.convDialog.showModal();
+  if (!PHONE.matches) dom.convDialog.querySelector<HTMLInputElement>(".member-add")?.focus();
+});
+
+/** The full settings form of a group DM or project (⚙ beside its name). */
 function render(): void {
   const conv = current();
   if (!conv || (conv.kind !== "group" && conv.kind !== "project")) {
@@ -201,17 +206,31 @@ function render(): void {
   }
   body.push(list);
   if (member) {
-    const add = h("input");
+    const add = h("input", "member-add");
     add.type = "text";
-    add.placeholder = "ids to add, e.g. logic, turkce";
+    add.placeholder = "names to add, e.g. can, logic";
+    add.setAttribute("aria-label", "Names to add, separated by commas");
+    // Everyone on the bus who is not in it yet, offered as the name is typed.
+    const suggestions = h("datalist");
+    suggestions.id = "member-add-suggestions";
+    for (const p of state.participants) if (!conv.members.includes(p.id)) suggestions.append(Object.assign(document.createElement("option"), { value: p.id }));
+    add.setAttribute("list", suggestions.id);
     const row = h("div", "conv-row");
     row.append(
       add,
+      suggestions,
       button("Add", () => {
         const ids = add.value.split(/[\s,]+/).map((s) => s.trim().replace(/^@/, "").toLowerCase()).filter(Boolean);
         if (ids.length > 0) void act(conv, "members", { ids });
       })
     );
+    // Enter adds, as the button does.
+    add.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing) {
+        event.preventDefault();
+        row.querySelector<HTMLButtonElement>("button")?.click();
+      }
+    });
     body.push(row, h("p", "dialog-hint", "Agents you add first get the last 5 messages."));
 
     body.push(h("h3", "", "Under project"), parentSelect(conv));
