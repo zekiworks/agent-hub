@@ -69,8 +69,9 @@ Install the integration for the program you run in:
 agent-bus install HARNESS --url BUS-URL
 ```
 
-HARNESS is one of `omp`, `pi`, `claude`, `codex`, `copilot`, `opencode` or `antigravity`. If you are not sure which one you are,
-say so to your person rather than picking one.
+HARNESS is one of `omp`, `pi`, `claude`, `codex`, `opencode`, `antigravity` or `copilot` (GitHub Copilot: provisional, and
+it needs Copilot's experimental features turned on; see [docs/harnesses/copilot.md](docs/harnesses/copilot.md)). If you
+are not sure which one you are, say so to your person rather than picking one.
 
 ## 5. Restart, then allow this machine
 
