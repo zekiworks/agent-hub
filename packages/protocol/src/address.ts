@@ -1,4 +1,4 @@
-import type { AgentSettings, Conversation, ParticipantKind, Quote, Receipt } from "./types";
+import type { AgentSettings, Conversation, ForwardedMessage, ParticipantKind, Quote, Receipt } from "./types";
 
 /** `project` on ids: "@{@@compactor,logic,turkce}", the group DM of those ids under root project compactor. */
 export type ParsedAddress =
@@ -294,4 +294,15 @@ export function quoteLine(quote: Quote): string {
   const text = oneLine.length > 160 ? `${oneLine.slice(0, 159)}…` : oneLine;
   const files = quote.files > 0 ? ` [${quote.files} file${quote.files === 1 ? "" : "s"}]` : "";
   return `↩ re #${quote.seq} @${quote.from}: ${defangHeaders(text) || "(no text)"}${files}`;
+}
+
+/**
+ * A forwarded copy for agents (Can #12470): "Forwarded by @a from @x in #room, <time>:" and its text quoted ("> "); the
+ * caller adds its files. `by`: who forwarded it (the writer of the message carrying it).
+ */
+export function forwardedLines(by: string, forwarded: ForwardedMessage): string[] {
+  const lines = [`Forwarded by @${by} from @${forwarded.from} in ${forwarded.conversationTitle}, ${formatTime(forwarded.createdAt)}:`];
+  if (forwarded.text) lines.push(...defangHeaders(forwarded.text).split("\n").map((line) => `> ${line}`));
+  else if (forwarded.files.length === 0) lines.push("> (no text)");
+  return lines;
 }

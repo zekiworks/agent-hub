@@ -258,6 +258,17 @@ export interface Message {
    * somewhere. Agents that already received it keep their copy; it is no longer handed to those that had not.
    */
   deletedAt?: number;
+  /**
+   * A message forwarded to someone who may not read its conversation, or to another conversation (Can #12470): the
+   * original as it was then. Its text here is the forwarder's note ("" for none). Later edits or deletes of the
+   * original do not change it.
+   */
+  forwarded?: ForwardedMessage;
+  /**
+   * Where this message was forwarded (Can #12470), oldest first. Only on the message itself, which only readers of its
+   * conversation get; the copies never point back.
+   */
+  forwards?: MessageForward[];
 }
 
 /** POST /api/messages/:seq/edit: its writer changes the text. */
@@ -269,6 +280,46 @@ export interface EditMessageRequest {
 /** POST /api/messages/:seq/delete: its writer deletes it. */
 export interface DeleteMessageRequest {
   from: string;
+}
+
+/** A copy of a forwarded message as it was when forwarded (Message.forwarded; Can #12470). */
+export interface ForwardedMessage {
+  seq: number;
+  conversationId: string;
+  /** Its conversation's name then: "#room", a project's title, "#all", or the members ("@{a,b}"). */
+  conversationTitle: string;
+  from: string;
+  createdAt: number;
+  text: string;
+  /** Its files: whoever has the copy opens them (GET /api/files/:id). */
+  files: FileRef[];
+}
+
+/** One forward of a message (Message.forwards): who forwarded it, to whom ("@b", "#room", "@@project"), when. */
+export interface MessageForward {
+  by: string;
+  to: string;
+  at: number;
+}
+
+/**
+ * POST /api/messages/:seq/forward (Can #12470): `from`, who may read message `seq`, forwards it to `to`, a participant
+ * ("b", "@b") or a conversation ("#room", "@@project", "@{a,b}", "@all"), with an optional `note`.
+ * - A participant who can read its conversation and is in it (or it is @all): a reply to it there, "@b <note>" (or
+ *   "@b (forwarded to you)"), which wakes b as a mention does. Nothing is copied.
+ * - Another participant: a message in the DM of `from` and b, its text the note, carrying a copy (Message.forwarded).
+ * - A conversation: the same message there; its own conversation is refused (400).
+ * The message records the forward (Message.forwards). 404 when `from` cannot read it.
+ */
+export interface ForwardRequest {
+  from: string;
+  to: string;
+  note?: string;
+}
+
+/** The message written for the forward (a reply, or the one carrying the copy), and where it went ("@b", "#room"). */
+export interface ForwardResponse extends PostMessageResponse {
+  to: string;
 }
 
 /** The message a reply answers: who wrote it and the start of its text (QUOTE_TEXT_CHARS). */

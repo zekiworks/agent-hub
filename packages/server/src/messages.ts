@@ -2,13 +2,17 @@
 // website's message reads: conversation pages and a message with its receipts.
 import {
   ALL_CONVERSATION_ID,
+  conversationLabel,
   mentionedIds,
   mentions,
   RESOURCES_AGENT_ID,
+  titledLabel,
   type Bookmark,
   type OwnTask,
   type Conversation,
   type FileRef,
+  type ForwardedMessage,
+  type ForwardResponse,
   type Message,
   type MessagesResponse,
   type SharedFilesResponse,
@@ -112,8 +116,12 @@ function conversationFor(ctx: BusContext, writer: ParticipantRecord, parsed: Ret
  * are offline get it when they come back, within `holdHours` (default 1); after that it expires for them.
  */
 export async function postMessage(ctx: BusContext, req: Request): Promise<PostMessageResponse> {
+  return writeMessage(ctx, req, await readJsonObject(req));
+}
+
+/** Writes the message `body` asks for (POST /api/messages), carrying `forwarded` when it forwards one (Can #12470). */
+function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknown>, forwarded?: ForwardedMessage): PostMessageResponse {
   const { db, hub } = ctx;
-  const body = await readJsonObject(req);
   if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
   const writer = hub.knownParticipant(body.from.trim().toLowerCase());
   if (!writer) {
@@ -154,7 +162,8 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     if (!file) throw new HttpError(400, `Unknown file "${fileId}"`);
     files.push(file);
   }
-  if (text.trim() === "" && files.length === 0) throw new HttpError(400, "text is required");
+  // A forwarded copy may come without a note (Can #12470).
+  if (text.trim() === "" && files.length === 0 && !forwarded) throw new HttpError(400, "text is required");
 
   const now = Date.now();
   /** Sessions the writer chose: `@id-n` in `to`, or `toSession` (the website's picker) in a one-agent conversation. */
@@ -209,7 +218,7 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
   }
   // "exit" alone, from an agent in a group DM or project: it leaves (people have the website's Leave button).
   const leavable = conversation.kind === "group" || conversation.kind === "project";
-  if (leavable && writer.kind === "agent" && text.trim().toLowerCase() === "exit" && files.length === 0) {
+  if (leavable && writer.kind === "agent" && text.trim().toLowerCase() === "exit" && files.length === 0 && !forwarded) {
     const left = leave(ctx, conversation, writer.id);
     const message = db.insertMessage({
       conversationId: left.id,
@@ -286,6 +295,7 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
     ...(verified === undefined ? {} : { verified }),
     ...(wake ? { wake } : {}),
     ...(task ? { task } : {}),
+    ...(forwarded ? { forwarded } : {}),
   });
   if (writer.kind === "human") db.touchParticipant(writer.id, now);
   const updated = db.getConversation(conversation.id);
@@ -481,7 +491,8 @@ export async function changeMessage(ctx: BusContext, req: Request, seq: number, 
   if (action === "edit") {
     if (typeof body.text !== "string") throw new HttpError(400, "text must be a string");
     const text = body.text.trim();
-    if (text === "" && message.files.length === 0) throw new HttpError(400, "The text is empty: delete the message instead");
+    // A forwarded copy's note may be emptied: the copy is still there (Can #12470).
+    if (text === "" && message.files.length === 0 && !message.forwarded) throw new HttpError(400, "The text is empty: delete the message instead");
     if (text.length > MAX_TEXT_LENGTH) throw new HttpError(400, `text is longer than ${MAX_TEXT_LENGTH} characters`);
     if (text !== message.text) ctx.db.editMessage(seq, text);
   } else {
@@ -490,6 +501,75 @@ export async function changeMessage(ctx: BusContext, req: Request, seq: number, 
   const changed = ctx.db.getMessage(seq) ?? message;
   ctx.hub.messageChanged(changed, conversation);
   return { message: changed };
+}
+
+/**
+ * POST /api/messages/:seq/forward {from, to, note?} (Can #12470, #12471): `from`, who may read message `seq`, shows it to
+ * `to`. A participant in its conversation (or anyone, for @all) gets a reply to it there that @mentions them, which
+ * wakes them as a mention does; nothing is copied. Anyone else gets it in their DM with `from`, and a conversation
+ * (never its own) gets it posted there, as a copy of the message as it is now (Message.forwarded) under the note. A
+ * participant who may read the conversation without being in it gets the copy too: a mention there would not reach
+ * them. The message records the forward (Message.forwards), which its readers see.
+ */
+export async function forwardMessage(ctx: BusContext, req: Request, seq: number): Promise<ForwardResponse> {
+  const { db, hub } = ctx;
+  const body = await readJsonObject(req);
+  if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+  const writer = hub.knownParticipant(body.from.trim().toLowerCase());
+  if (!writer) throw new HttpError(400, `Unknown participant "${body.from}"`);
+  ctx.checkWriter(req, writer);
+  const original = db.getMessage(seq);
+  const source = original ? db.getConversation(original.conversationId) : null;
+  if (!original || !source || !mayRead(ctx, source, { id: writer.id, kind: writer.kind === "human" ? "human" : "agent" })) {
+    throw new HttpError(404, `Unknown message ${seq}`);
+  }
+  if (original.deletedAt) throw new HttpError(409, `#${seq} is deleted`);
+  if (typeof body.to !== "string" || body.to.trim() === "") throw new HttpError(400, "to must be a participant id or a conversation address");
+  if (body.note !== undefined && body.note !== null && typeof body.note !== "string") throw new HttpError(400, "note must be a string");
+  const note = typeof body.note === "string" ? body.note.trim() : "";
+  const to = body.to.trim();
+  const agentWriter = writer.kind === "agent";
+  // A copy of a copy without a note of its own passes the first copy on: the message itself says nothing more.
+  const copy: ForwardedMessage =
+    original.forwarded && original.text === "" && original.files.length === 0
+      ? original.forwarded
+      : {
+          seq,
+          conversationId: source.id,
+          conversationTitle: source.kind === "all" ? "#all" : titledLabel(source),
+          from: original.from,
+          createdAt: original.createdAt,
+          text: original.text,
+          files: original.files,
+        };
+  let sent: PostMessageResponse;
+  let label: string;
+  // "b" or "@b" is a participant; "#room", "@@project", "@{a,b}" and "@all" are conversations.
+  const id = /^@?([a-z0-9][a-z0-9_-]*(?:@[a-z0-9][a-z0-9_-]*)?)$/i.exec(to)?.[1]?.toLowerCase();
+  if (id && id !== ALL_CONVERSATION_ID) {
+    const target = hub.knownParticipant(id);
+    if (!target) throw new HttpError(400, `Unknown participant "${id}". Known ids: ${hub.knownIds().join(", ")}`);
+    if (target.id === writer.id) throw new HttpError(400, "Cannot forward to yourself");
+    label = `@${target.id}`;
+    // An agent's wake list names the agent it forwards to; people's lists follow the mention (or the DM).
+    const wake = agentWriter ? { wake: target.kind === "agent" ? [target.id] : [] } : {};
+    if (source.kind === "all" || source.members.includes(target.id)) {
+      sent = writeMessage(ctx, req, { from: writer.id, replyToSeq: seq, text: `${label} ${note || "(forwarded to you)"}`, ...wake });
+    } else {
+      sent = writeMessage(ctx, req, { from: writer.id, to: label, text: note, ...wake }, copy);
+    }
+  } else {
+    const target = conversationFor(ctx, writer, ctx.knownAddress(to), Date.now());
+    if (target.id === source.id) throw new HttpError(400, `#${seq} is in ${to} already`);
+    label = target.kind === "all" ? "#all" : conversationLabel(target);
+    // An agent forwarding into a DM wakes its other member; elsewhere nobody (it says whom in the note, with wake).
+    const wake = agentWriter ? { wake: target.kind === "dm" ? target.members.filter((m) => m !== writer.id && !hub.isHuman(m)) : [] } : {};
+    sent = writeMessage(ctx, req, { from: writer.id, conversationId: target.id, text: note, ...wake }, copy);
+  }
+  db.addForward(seq, writer.id, label);
+  const updated = db.getMessage(seq);
+  if (updated) hub.messageChanged(updated, db.getConversation(source.id) ?? source);
+  return { ...sent, to: label };
 }
 
 /** POST /api/tabs {from, order} (Can #11480): a person puts their tabs in a new order; exactly their pins, each once. */

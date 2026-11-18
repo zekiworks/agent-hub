@@ -20,6 +20,7 @@ import type {
   ViewerServerFrame,
 } from "@agent-bus/protocol";
 import type { BusServerHandle } from "@agent-bus/server";
+import { formatDelivery } from "../packages/client/src/tool";
 import { agentSocketUrl, busFetch, getJson, identity, postJson, startBus } from "./helpers";
 
 type Frame = AgentServerFrame | ViewerServerFrame;
@@ -1969,5 +1970,150 @@ describe("checklists with items (Ümit #12364, codex-ui #12379)", () => {
     // Archiving: the done item dropped in a PUT of its own.
     expect((await put(alpha, "- [ ] Deploy", 2)).status).toBe(200);
     expect((await get()).items.map((item) => item.id)).toEqual(["i2"]);
+  });
+});
+
+describe("forwarding (Can #12470)", () => {
+  type Sent = PostMessageResponse & { to: string };
+  const forward = (seq: number, body: Record<string, unknown>) => postJson(bus, `/api/messages/${seq}/forward`, body);
+  async function forwarded(seq: number, body: Record<string, unknown>): Promise<Sent> {
+    const res = await forward(seq, body);
+    if (!res.ok) throw new Error(`forward ${res.status}: ${await res.text()}`);
+    return (await res.json()) as Sent;
+  }
+  /** The delivery of message `seq` to `client` (earlier ones are skipped). */
+  async function deliveryOf(client: Client, seq: number): Promise<DeliverFrame> {
+    for (;;) {
+      const frame = await client.take("deliver");
+      if (frame.message.seq === seq) return frame;
+    }
+  }
+  const upload = async (name: string, from: string): Promise<FileRef> => {
+    const res = await busFetch(bus, `/api/files?from=${from}&name=${name}`, { method: "POST", headers: { "Content-Type": "text/plain" }, body: `contents of ${name}` }, from);
+    return ((await res.json()) as { file: FileRef }).file;
+  };
+
+  test("to a member of the conversation: a reply there that mentions and wakes them; nothing is copied", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const group = await send({ from: "carol", to: "@{alpha,beta}", text: "start" });
+    const original = await send({ from: alpha.id, conversationId: group.conversation.id, text: "results are in", wake: [] });
+    const sent = await forwarded(original.message.seq, { from: "carol", to: "@beta", note: "look at this" });
+    expect(sent.to).toBe("@beta");
+    expect(sent.conversation.id).toBe(group.conversation.id);
+    expect(sent.message).toMatchObject({ text: "@beta look at this", quote: { seq: original.message.seq, from: "alpha" } });
+    expect(sent.message.forwarded).toBeUndefined();
+    expect(sent.message.wake).toEqual(["beta"]);
+    expect((await deliveryOf(beta.client, sent.message.seq)).wake).toBe(true);
+    // Without a note it says why they are named.
+    const plain = await forwarded(original.message.seq, { from: "carol", to: "beta" });
+    expect(plain.message.text).toBe("@beta (forwarded to you)");
+    // An agent forwarding wakes the one it names.
+    const byAgent = await forwarded(original.message.seq, { from: alpha.id, to: "beta" });
+    expect(byAgent.message.wake).toEqual(["beta"]);
+    const { message } = await getJson<{ message: Message }>(bus, `/api/messages/${original.message.seq}`, "carol");
+    expect(message.forwards?.map((f) => [f.by, f.to])).toEqual([["carol", "@beta"], ["carol", "@beta"], ["alpha", "@beta"]]);
+    expect((await forward(original.message.seq, { from: "carol", to: "carol" })).status).toBe(400);
+  });
+
+  test("to someone who cannot read it: a copy in the DM with them; they open it and its files, never the original", async () => {
+    await joinPath("/tmp/x/alpha");
+    const file = await upload("plan.md", "carol");
+    const original = await send({ from: "carol", to: "@alpha", text: "the **plan**", fileIds: [file.id] });
+    const sent = await forwarded(original.message.seq, { from: "carol", to: "uma", note: "fyi" });
+    expect(sent.to).toBe("@uma");
+    expect(sent.conversation).toMatchObject({ kind: "dm", members: ["carol", "uma"] });
+    expect(sent.message.text).toBe("fyi");
+    expect(sent.message.files).toEqual([]);
+    expect(sent.message.forwarded).toEqual({
+      seq: original.message.seq,
+      conversationId: original.conversation.id,
+      conversationTitle: "@{alpha,carol}",
+      from: "carol",
+      createdAt: original.message.createdAt,
+      text: "the **plan**",
+      files: [file],
+    });
+    const copy = await getJson<{ message: Message }>(bus, `/api/messages/${sent.message.seq}`, "uma");
+    expect(copy.message.forwarded?.text).toBe("the **plan**");
+    const download = await busFetch(bus, `/api/files/${file.id}`, {}, "uma");
+    expect(await download.text()).toBe("contents of plan.md");
+    // The DM's shared files list the copy's file.
+    const shared = await getJson<SharedFilesResponse>(bus, `/api/conversations/${sent.conversation.id}/files`, "uma");
+    expect(shared.files.map((f) => [f.file.id, f.seq, f.from])).toEqual([[file.id, sent.message.seq, "carol"]]);
+    // The original stays carol's and alpha's.
+    expect((await busFetch(bus, `/api/messages/${original.message.seq}`, {}, "uma")).status).toBe(403);
+    expect((await busFetch(bus, `/api/conversations/${original.conversation.id}/messages`, {}, "uma")).status).toBe(404);
+    // A copy without a note is allowed; a note may be emptied later, the copy stays.
+    const bare = await forwarded(original.message.seq, { from: "carol", to: "uma" });
+    expect(bare.message.text).toBe("");
+    const edited = await postJson(bus, `/api/messages/${sent.message.seq}/edit`, { from: "carol", text: "" });
+    expect(edited.status).toBe(200);
+  });
+
+  test("the copy is the message as it was: later edits and deletes of the original leave it", async () => {
+    await joinPath("/tmp/x/alpha");
+    const original = await send({ from: "carol", to: "@alpha", text: "version one" });
+    const sent = await forwarded(original.message.seq, { from: "carol", to: "uma" });
+    expect((await postJson(bus, `/api/messages/${original.message.seq}/edit`, { from: "carol", text: "version two" })).status).toBe(200);
+    const read = async () => (await getJson<{ message: Message }>(bus, `/api/messages/${sent.message.seq}`, "uma")).message.forwarded;
+    expect((await read())?.text).toBe("version one");
+    expect((await postJson(bus, `/api/messages/${original.message.seq}/delete`, { from: "carol" })).status).toBe(200);
+    expect((await read())?.text).toBe("version one");
+    // A deleted message is not forwarded; deleting the copy's message takes the copy too.
+    expect((await forward(original.message.seq, { from: "carol", to: "uma" })).status).toBe(409);
+    const gone = (await (await postJson(bus, `/api/messages/${sent.message.seq}/delete`, { from: "carol" })).json()) as { message: Message };
+    expect(gone.message.forwarded).toBeUndefined();
+  });
+
+  test("to a conversation: a copy there; its own conversation is refused", async () => {
+    await joinPath("/tmp/x/alpha");
+    const lab = await send({ from: "carol", to: "#lab", text: "lab opens" });
+    const original = await send({ from: "carol", to: "@alpha", text: "numbers" });
+    const sent = await forwarded(original.message.seq, { from: "carol", to: "#lab", note: "for the lab" });
+    expect(sent.to).toBe("#lab");
+    expect(sent.conversation.id).toBe(lab.conversation.id);
+    expect(sent.message).toMatchObject({ text: "for the lab", forwarded: { seq: original.message.seq, text: "numbers" } });
+    expect((await forward(lab.message.seq, { from: "carol", to: "#lab" })).status).toBe(400);
+    const toAll = await forwarded(lab.message.seq, { from: "carol", to: "@all" });
+    expect(toAll).toMatchObject({ to: "#all", conversation: { kind: "all" }, message: { forwarded: { conversationTitle: "#lab" } } });
+  });
+
+  test("only someone who may read the message forwards it (404 otherwise); its forwards are shown to its readers only", async () => {
+    await joinPath("/tmp/x/alpha");
+    const original = await send({ from: "carol", to: "@alpha", text: "between us" });
+    expect((await forward(original.message.seq, { from: "uma", to: "carol" })).status).toBe(404);
+    expect((await forward(999_999, { from: "carol", to: "uma" })).status).toBe(404);
+    const viewer = await connectViewer();
+    const sent = await forwarded(original.message.seq, { from: "carol", to: "uma" });
+    // carol, who reads the DM, sees where it went, live and when reading it.
+    const changed = await viewer.take("changed");
+    expect(changed.message.seq).toBe(original.message.seq);
+    expect(changed.message.forwards).toMatchObject([{ by: "carol", to: "@uma" }]);
+    const page = await getJson<MessagesResponse>(bus, `/api/conversations/${original.conversation.id}/messages`, "carol");
+    expect(page.messages.find((m) => m.seq === original.message.seq)?.forwards).toMatchObject([{ by: "carol", to: "@uma" }]);
+    // uma gets the copy only: it does not point back, and the original's forwards never reach her.
+    const hers = await getJson<MessagesResponse>(bus, `/api/conversations/${sent.conversation.id}/messages`, "uma");
+    expect(hers.messages.map((m) => m.seq)).toEqual([sent.message.seq]);
+    expect(hers.messages[0]?.forwards).toBeUndefined();
+    expect((await busFetch(bus, `/api/messages/${original.message.seq}`, {}, "uma")).status).toBe(403);
+  });
+
+  test("an agent that cannot read the original is woken with the copy: its delivery quotes the text and names the files", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const file = await upload("data.csv", "carol");
+    const original = await send({ from: "carol", to: "@alpha", text: "line one\nline two", fileIds: [file.id] });
+    const sent = await forwarded(original.message.seq, { from: alpha.id, to: "@beta", note: "can you check?" });
+    expect(sent.conversation).toMatchObject({ kind: "dm", members: ["alpha", "beta"] });
+    const frame = await deliveryOf(beta.client, sent.message.seq);
+    expect(frame.wake).toBe(true);
+    expect(frame.message.forwarded).toMatchObject({ seq: original.message.seq, text: "line one\nline two", files: [file] });
+    // The copy's files come after the message's own (none here) in the saved paths.
+    const text = formatDelivery(frame, ["/tmp/received/data.csv"]);
+    expect(text).toContain("can you check?");
+    expect(text).toContain("Forwarded by @alpha from @carol in @{alpha,carol}, ");
+    expect(text).toContain("> line one\n> line two");
+    expect(text).toContain("> File: /tmp/received/data.csv (data.csv,");
   });
 });

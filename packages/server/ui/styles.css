@@ -2297,6 +2297,144 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* A forwarded copy (forward.ts, Can #12470): a quote-like box with where it came from, its text and files. */
+.msg-forwarded {
+  margin: 4px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  background: var(--panel-raised);
+}
+
+.msg-forwarded-head {
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.msg-forwarded-from {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* "Forwarded to @b by @a" under the message, for its readers. */
+.msg-forwards {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* The Forward dialog: a search over people, agents and conversations, then a note. */
+.forward-search,
+.forward-note {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.forward-note {
+  margin-bottom: 10px;
+  resize: vertical;
+}
+
+.forward-choices {
+  list-style: none;
+  margin: 8px 0 10px;
+  padding: 4px;
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.forward-choice {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.forward-choice.selected {
+  background: var(--accent-soft);
+}
+
+.forward-label {
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.forward-hint,
+.forward-empty {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forward-empty {
+  padding: 6px 10px;
+}
+
+.forward-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Forwarded to @b": briefly, bottom centre, above everything. */
+.forward-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 100;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--panel-raised);
+  color: var(--success);
+  box-shadow: 0 8px 24px var(--shadow);
+  font-size: 14px;
+}
+
+/* Phones: the dialog is a full-width sheet at the bottom, with 44 px targets; 16 px fields so iOS does not zoom.
+   `.dialog.` so it wins over the general `.dialog` width and padding further down. */
+@media (max-width: 640px) {
+  .dialog.forward-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    margin: auto 0 0;
+    border-radius: 12px 12px 0 0;
+    padding: 16px;
+  }
+
+  .forward-choice {
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .forward-search,
+  .forward-note {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .forward-dialog .dialog-actions .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  .forward-toast {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+  }
+}
+
 /* Arriving at it: a stronger glow that fades into the lit state above, long enough to outlast the scroll. */
 .msg-flash {
   animation: msg-flash 2.4s ease-out;

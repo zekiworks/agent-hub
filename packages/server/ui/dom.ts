@@ -114,6 +114,7 @@ export const dom = {
   settingsDialog: el<HTMLDialogElement>("settings-dialog"),
   convMenuBtn: el<HTMLButtonElement>("conv-menu-btn"),
   convDialog: el<HTMLDialogElement>("conv-dialog"),
+  forwardDialog: el<HTMLDialogElement>("forward-dialog"),
   statsBtn: el<HTMLButtonElement>("stats-btn"),
   statsDialog: el<HTMLDialogElement>("stats-dialog"),
   statsDays: el<HTMLSelectElement>("stats-days"),

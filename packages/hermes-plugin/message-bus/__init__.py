@@ -181,6 +181,28 @@ def quote_line(quote: dict) -> str:
     return f"↩ re #{quote['seq']} @{quote['from']}: {defang_headers(text) or '(no text)'}{files}"
 
 
+def forwarded_block(message: dict, saved: list[str]) -> list[str]:
+    """Same text as forwardedBlock in packages/client/src/tool.ts (Can #12470): a forwarded copy, its text quoted, its
+    files (`saved`: their local paths, in order)."""
+    forwarded = message.get("forwarded")
+    if not forwarded:
+        return []
+    lines = [f"Forwarded by @{message['from']} from @{forwarded['from']} in {forwarded['conversationTitle']}, "
+             f"{_utc(forwarded['createdAt'])}:"]
+    if forwarded.get("text"):
+        lines.extend(f"> {line}" for line in defang_headers(forwarded["text"]).split("\n"))
+    elif not forwarded.get("files"):
+        lines.append("> (no text)")
+    for i, f in enumerate(forwarded.get("files") or []):
+        lines.append(f"> File: {saved[i] if i < len(saved) else f['name']} ({defang_headers(f['name'])}, {f['size']} B)")
+    return lines
+
+
+def all_files(message: dict) -> list[dict]:
+    """A message's files, then those of the copy it forwards (Can #12470)."""
+    return (message.get("files") or []) + ((message.get("forwarded") or {}).get("files") or [])
+
+
 READ_TEXT_CHARS = 3000
 READ_BUDGET_CHARS = 30_000
 
@@ -268,8 +290,10 @@ def format_read_message(message: dict, conversations: dict, max_text: int, saved
     if text:
         shown = text if len(text) <= max_text else f"{text[:max_text]}… ({len(text)} chars; op=show message_id {message['seq']} for all)"
         lines.append("\n".join("  " + line for line in defang_headers(shown).split("\n")))
-    for i, f in enumerate(message.get("files") or []):
+    own = message.get("files") or []
+    for i, f in enumerate(own):
         lines.append(f"File: {saved[i] if saved and i < len(saved) else f['name']} ({defang_headers(f['name'])}, {f['size']} B)")
+    lines.extend("  " + line for line in forwarded_block(message, (saved or [])[len(own):]))
     return "\n".join(lines)
 
 
@@ -355,9 +379,11 @@ def format_delivery(frame: dict, saved_files: list[str], me: str | None = None) 
         lines.append(quote_line(message["quote"]))
     if message.get("text"):
         lines.append(defang_headers(message["text"]))
-    for i, f in enumerate(message.get("files") or []):
+    own = message.get("files") or []
+    for i, f in enumerate(own):
         local = saved_files[i] if i < len(saved_files) else f["name"]
         lines.append(f"File: {local} ({defang_headers(f['name'])}, {f['size']} B, sha256 {f['sha256'][:12]}…)")
+    lines.extend(forwarded_block(message, saved_files[len(own):]))
     task = message.get("task")
     mine = next((a for a in task["assignees"] if a["id"] == me), None) if task else None
     if task and mine and mine["state"] in ("open", "accepted"):
@@ -630,7 +656,7 @@ class GatewayBridge:
                                   f"(conversation {frame['conversationId']}).")
 
     async def _deliver(self, ws: Any, frame: dict) -> None:
-        files = frame["message"].get("files") or []
+        files = all_files(frame["message"])
         dest = STATE_DIR / "received" / self.client.my_id()
         saved = [await self._download(f, dest, frame["message"]["seq"]) for f in files]
         text = format_delivery(frame, saved, self.client.my_id())
@@ -795,7 +821,7 @@ def register(ctx: Any) -> None:
             if scope != "all" and conversation["kind"] != "all" and me not in conversation["members"]:
                 raise ValueError(f"#{message['seq']} is in a conversation you are not in "
                                  f"({_conversation_label(conversation)}); add scope \"all\" to read it.")
-            saved = [client.download(f, STATE_DIR / "received" / me) for f in message.get("files") or []]
+            saved = [client.download(f, STATE_DIR / "received" / me) for f in all_files(message)]
             return f"{format_read_message(message, {conversation['id']: conversation}, 10 ** 9, saved)}\n (you are @{me})"
         if op == "history":
             params: dict = {"from": me, "limit": limit, "scope": scope}

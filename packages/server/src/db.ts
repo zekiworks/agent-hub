@@ -13,7 +13,9 @@ import {
   type Conversation,
   type ConversationKind,
   type FileRef,
+  type ForwardedMessage,
   type Message,
+  type MessageForward,
   type NotifyLevel,
   type ParticipantKind,
   type PinnedMessage,
@@ -90,6 +92,8 @@ export interface NewMessage {
   task?: Task;
   /** Until when it is held for offline recipients. */
   expiresAt: number;
+  /** A copy of the message it forwards (Message.forwarded; Can #12470). */
+  forwarded?: ForwardedMessage;
 }
 
 interface ReceiptRow {
@@ -160,6 +164,7 @@ interface MessageRow {
   task_json?: string | null;
   edited_at?: number | null;
   deleted_at?: number | null;
+  forwarded_json?: string | null;
 }
 
 interface FileRow {
@@ -280,6 +285,15 @@ CREATE TABLE IF NOT EXISTS own_tasks (
   PRIMARY KEY (participant_id, seq)
 );
 
+-- Where a message was forwarded (Can #12470): who, to whom ("@b", "#room"), when. The copies are messages of their own.
+CREATE TABLE IF NOT EXISTS message_forwards (
+  seq INTEGER NOT NULL,
+  by_id TEXT NOT NULL,
+  to_label TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS message_forwards_seq ON message_forwards(seq);
+
 CREATE TABLE IF NOT EXISTS messages (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   id TEXT NOT NULL UNIQUE,
@@ -325,7 +339,11 @@ function parseSettings(json: string): AgentSettings {
 }
 
 function parseFiles(json: string): FileRef[] {
-  const parsed: unknown = JSON.parse(json);
+  return fileRefs(JSON.parse(json));
+}
+
+/** The well-formed file references in `parsed`. */
+function fileRefs(parsed: unknown): FileRef[] {
   if (!Array.isArray(parsed)) return [];
   const out: FileRef[] = [];
   for (const item of parsed) {
@@ -380,7 +398,7 @@ function expiresAt(row: MessageRow): number {
   return row.expires_at ?? row.created_at + DEFAULT_HOLD_MS;
 }
 
-function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefined): Message {
+function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefined, forwards: MessageForward[] = []): Message {
   return {
     seq: row.seq,
     id: row.id,
@@ -399,7 +417,15 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
     expiresAt: expiresAt(row),
     ...(row.edited_at ? { editedAt: row.edited_at } : {}),
     ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
+    ...(row.forwarded_json ? { forwarded: parseForwarded(row.forwarded_json) } : {}),
+    ...(forwards.length > 0 ? { forwards } : {}),
   };
+}
+
+/** A stored forwarded copy (Can #12470), its files checked as in files_json. */
+function parseForwarded(json: string): ForwardedMessage {
+  const f = JSON.parse(json) as ForwardedMessage;
+  return { ...f, files: fileRefs(f.files) };
 }
 
 /** A host name as a machine: without its domain, lowercase ("MacBook-Pro-2.local" and "macbook-pro-2.home" match). */
@@ -449,6 +475,8 @@ export class BusDatabase {
     // Databases created before editing and deleting one's messages lack the columns (Ümit #10890; null: never).
     if (!messageColumns.some((c) => c.name === "edited_at")) this.db.exec("ALTER TABLE messages ADD COLUMN edited_at INTEGER");
     if (!messageColumns.some((c) => c.name === "deleted_at")) this.db.exec("ALTER TABLE messages ADD COLUMN deleted_at INTEGER");
+    // Databases created before forwarding lack the column (Can #12470; null: not a forwarded copy).
+    if (!messageColumns.some((c) => c.name === "forwarded_json")) this.db.exec("ALTER TABLE messages ADD COLUMN forwarded_json TEXT");
     // Databases created before tabs lack the column (Can #11480; null: in the order they were pinned).
     const pinColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(pins)").all();
     if (!pinColumns.some((c) => c.name === "position")) this.db.exec("ALTER TABLE pins ADD COLUMN position INTEGER");
@@ -1205,6 +1233,7 @@ export class BusDatabase {
       this.db.query("DELETE FROM receipts WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM bookmarks WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM own_tasks WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
+      this.db.query("DELETE FROM message_forwards WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM messages WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_members WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM checklists WHERE conversation_id = ?1").run(conversationId);
@@ -1310,16 +1339,21 @@ export class BusDatabase {
       );
   }
 
-  /** Files shared in `conversationId`, newest first, without voice messages (audio named "voice-…"). */
+  /**
+   * Files shared in `conversationId`, newest first, without voice messages (audio named "voice-…"); a forwarded copy's
+   * files count as shared by its forwarder (Can #12470).
+   */
   sharedFiles(conversationId: string, limit: number): SharedFile[] {
     const rows = this.db
-      .query<{ seq: number; from_id: string; created_at: number; files_json: string }, [string]>(
-        "SELECT seq, from_id, created_at, files_json FROM messages WHERE conversation_id = ?1 AND files_json != '[]' ORDER BY seq DESC"
+      .query<{ seq: number; from_id: string; created_at: number; files_json: string; forwarded_json: string | null }, [string]>(
+        `SELECT seq, from_id, created_at, files_json, forwarded_json FROM messages
+         WHERE conversation_id = ?1 AND (files_json != '[]' OR forwarded_json IS NOT NULL) ORDER BY seq DESC`
       )
       .all(conversationId);
     const shared: SharedFile[] = [];
     for (const row of rows) {
-      for (const file of parseFiles(row.files_json)) {
+      const forwarded = row.forwarded_json ? parseForwarded(row.forwarded_json).files : [];
+      for (const file of [...parseFiles(row.files_json), ...forwarded]) {
         if (file.mimeType.startsWith("audio/") && file.name.startsWith("voice-")) continue;
         shared.push({ file, seq: row.seq, from: row.from_id, createdAt: row.created_at });
         if (shared.length >= limit) return shared;
@@ -1403,8 +1437,8 @@ export class BusDatabase {
     return this.db.transaction((): Message => {
       const result = this.db
         .query(
-          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json, task_json)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`
+          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json, task_json, forwarded_json)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`
         )
         .run(
           id,
@@ -1419,7 +1453,8 @@ export class BusDatabase {
           input.fromSession ?? null,
           input.expiresAt,
           input.wake ? JSON.stringify(input.wake) : null,
-          input.task ? JSON.stringify(input.task) : null
+          input.task ? JSON.stringify(input.task) : null,
+          input.forwarded ? JSON.stringify(input.forwarded) : null
         );
       const seq = Number(result.lastInsertRowid);
       const addReceipt = this.db.query("INSERT INTO receipts (seq, recipient, delivered_at, session) VALUES (?1, ?2, NULL, ?3)");
@@ -1446,6 +1481,7 @@ export class BusDatabase {
         ...(input.fromSession === undefined ? {} : { fromSession: input.fromSession }),
         ...(input.wake ? { wake: input.wake } : {}),
         ...(input.task ? { task: input.task } : {}),
+        ...(input.forwarded ? { forwarded: input.forwarded } : {}),
         expiresAt: input.expiresAt,
       };
     })();
@@ -1540,9 +1576,25 @@ export class BusDatabase {
     const quotes = this.quotesFor(
       Array.from(new Set(rows.map((r) => r.reply_to_seq).filter((s): s is number => s !== null)))
     );
+    const forwards = new Map<number, MessageForward[]>();
+    const forwardRows = this.db
+      .query<{ seq: number; by_id: string; to_label: string; at: number }, [string]>(
+        "SELECT seq, by_id, to_label, at FROM message_forwards WHERE seq IN (SELECT value FROM json_each(?1)) ORDER BY at, rowid"
+      )
+      .all(JSON.stringify(rows.map((r) => r.seq)));
+    for (const f of forwardRows) {
+      let list = forwards.get(f.seq);
+      if (!list) forwards.set(f.seq, (list = []));
+      list.push({ by: f.by_id, to: f.to_label, at: f.at });
+    }
     return rows.map((row) =>
-      toMessage(row, bySeq.get(row.seq) ?? [], row.reply_to_seq === null ? undefined : quotes.get(row.reply_to_seq))
+      toMessage(row, bySeq.get(row.seq) ?? [], row.reply_to_seq === null ? undefined : quotes.get(row.reply_to_seq), forwards.get(row.seq))
     );
+  }
+
+  /** `by` forwarded message `seq` to `to` ("@b", "#room"; Can #12470). Callers check who may. */
+  addForward(seq: number, by: string, to: string, at = Date.now()): void {
+    this.db.query("INSERT INTO message_forwards (seq, by_id, to_label, at) VALUES (?1, ?2, ?3, ?4)").run(seq, by, to, at);
   }
 
   getMessage(seq: number): Message | null {
@@ -1556,13 +1608,14 @@ export class BusDatabase {
   }
 
   /**
-   * Its writer deletes message `seq` (Ümit #10890): text and files go, the row stays (replies and #numbers point to
-   * it). It is no longer handed to recipients that had not received it (their receipts go, so no "expired" notice
-   * either), and it leaves the pinned list. The files themselves stay: another message may carry the same one.
+   * Its writer deletes message `seq` (Ümit #10890): text and files go (a forwarded copy it carries too), the row stays
+   * (replies and #numbers point to it). It is no longer handed to recipients that had not received it (their receipts
+   * go, so no "expired" notice either), and it leaves the pinned list. The files themselves stay: another message (or a
+   * forwarded copy) may carry the same one.
    */
   deleteMessage(seq: number, now = Date.now()): void {
     this.db.transaction(() => {
-      this.db.query("UPDATE messages SET text = '', files_json = '[]', deleted_at = ?2 WHERE seq = ?1").run(seq, now);
+      this.db.query("UPDATE messages SET text = '', files_json = '[]', forwarded_json = NULL, deleted_at = ?2 WHERE seq = ?1").run(seq, now);
       this.db.query("DELETE FROM receipts WHERE seq = ?1 AND delivered_at IS NULL").run(seq);
       this.db.query("DELETE FROM pinned_messages WHERE seq = ?1").run(seq);
     })();

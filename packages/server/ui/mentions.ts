@@ -8,8 +8,8 @@ import { agents, state, type MentionCandidate } from "./state";
 
 const MAX_MENTIONS = 8;
 
-/** Online agents, other agents, humans (not me), then `all`. */
-function mentionCandidates(): MentionCandidate[] {
+/** Online agents, other agents, humans (not me), then `all`; the Forward dialog lists them too (Can #12470). */
+export function mentionCandidates(): MentionCandidate[] {
   const out: MentionCandidate[] = agents().map((a) => ({
     id: a.id,
     label: `@${a.id}`,

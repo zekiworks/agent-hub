@@ -13,6 +13,7 @@ import { setTitleBase } from "./notify";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
 import { ownTaskButton, renderTaskBadge } from "./inbox";
+import { forwardButton, renderForwarded, renderForwards } from "./forward";
 import { updateJump } from "./jump";
 import { renderPane } from "./pane";
 import { isPinned, setMessagePinned } from "./pins";
@@ -247,6 +248,8 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   const actions = h("div", "msg-actions");
   const deleted = !!message.deletedAt;
   if (message.text && !deleted) actions.append(speakButton(message), copyButton(message));
+  // ↪ shows it to someone else (Can #12470), next to Copy.
+  if (state.me && !deleted) actions.append(forwardButton(message));
   actions.append(copyIdButton(message));
   // ☆ saves it in my own bookmarks, ★ drops it (Can #11065); a deleted one keeps its ★ so it can still be dropped here.
   if (!deleted || isBookmarked(message.seq)) actions.append(bookmarkButton(message));
@@ -293,11 +296,16 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
     if (box) li.append(box);
     else if (message.text) li.append(renderText(message.text));
   }
+  // A forwarded copy, under the forwarder's note (Can #12470).
+  if (message.forwarded && !deleted) li.append(renderForwarded(message.forwarded));
   if (message.files.length > 0) {
     const files = h("ul", "msg-files");
     for (const file of message.files) files.append(renderFile(file));
     li.append(files);
   }
+  // Where it was forwarded, for its readers (only they get the message).
+  const forwards = renderForwards(message);
+  if (forwards) li.append(forwards);
   const badge = renderTaskBadge(message);
   if (badge) li.append(badge);
   const receipts = renderReceipts(message);

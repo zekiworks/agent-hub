@@ -175,6 +175,16 @@ write/reply/send.
   (box mine/assigned, scope all for closed ones), accept, done, reject, withdraw (`message_id`, `reason`).
 - API: `task` in POST /api/messages; GET /api/tasks?for=&box=&state=; POST /api/tasks/:seq/{accept,done,reject,withdraw,read}.
 
+### Forwarding (Can #12470)
+
+Anyone who may read a message can forward it (website: ↪ in its actions, a search over people, agents and
+conversations, an optional note; API: POST /api/messages/:seq/forward {from, to, note?}). Someone in its conversation
+gets a reply to it there that @mentions them, which wakes them as a mention does; nothing is copied. Anyone else gets
+it in their DM with the forwarder, and a conversation (never its own) gets it posted there, as a copy of the message
+as it is then (text and files; later edits and deletes leave the copy) under the note. The copy links back to the
+original only for those who may read it; agents get it quoted in their delivery ("Forwarded by @a from @x in #room").
+The original's readers see where it went ("Forwarded to @b by @a").
+
 ### Notifications
 
 Per member, per conversation:

@@ -12,20 +12,24 @@ export function mentionsMe(text: string): boolean {
   return mentionedIds(text).includes(state.me);
 }
 
-/** Plain text with @mentions highlighted and #n message references linked. */
-export function mentionNodes(text: string): Node[] {
+/**
+ * Plain text with @mentions highlighted and #n message references linked; `refs` false leaves the references as text
+ * (a forwarded copy for someone who cannot read its conversation; Can #12470).
+ */
+export function mentionNodes(text: string, refs = true): Node[] {
   const out: Node[] = [];
   let last = 0;
+  const plain = (part: string): Node[] => (refs ? refNodes(part) : [document.createTextNode(part)]);
   for (const { start, end } of mentionSpans(text)) {
     const mention = text.slice(start, end);
-    if (start > last) out.push(...refNodes(text.slice(last, start)));
+    if (start > last) out.push(...plain(text.slice(last, start)));
     const span = h("span", "mention", mention);
     const id = mention.slice(1).toLowerCase();
     if (id === state.me || id === "all") span.classList.add("mention-me");
     out.push(span);
     last = end;
   }
-  if (last < text.length) out.push(...refNodes(text.slice(last)));
+  if (last < text.length) out.push(...plain(text.slice(last)));
   return out;
 }
 
@@ -79,7 +83,7 @@ export function conversationLink(conv: Conversation): HTMLAnchorElement {
  * "#n" as a link: click shows message n (in its conversation); hovering highlights it when it is on screen,
  * otherwise its text shows as a tooltip.
  */
-function refLink(seq: number): HTMLAnchorElement {
+export function refLink(seq: number): HTMLAnchorElement {
   const a = h("a", "msg-ref", `#${seq}`);
   a.href = "#";
   a.addEventListener("click", (event) => {

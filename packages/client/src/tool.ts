@@ -5,7 +5,7 @@
 import { realpathSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { conversationLabel, defangHeaders, deliveryHeader, describeReceipts, formatTime, parseAddress, provenanceMark, quoteLine, senderLabel, titledLabel } from "../../protocol/src/address";
+import { conversationLabel, defangHeaders, deliveryHeader, describeReceipts, formatTime, forwardedLines, parseAddress, provenanceMark, quoteLine, senderLabel, titledLabel } from "../../protocol/src/address";
 import { RESOURCES_AGENT_ID, type Reservation, type ReservationResponse, type Resource, type ResourcesResponse } from "../../protocol/src/resources";
 import type { Checklist, ChecklistOp, Conversation, FileRef, Message, PostMessageResponse, ReadResponse, ReceiptEvent, TaskType } from "../../protocol/src/types";
 import type { BusConnection, Delivery } from "./connection";
@@ -310,8 +310,10 @@ export function receivedDir(agentId: string): string {
  */
 export async function deliveryText(conn: BusConnection, delivery: Delivery): Promise<string> {
   const saved: string[] = [];
-  if (delivery.message.files.length > 0 && conn.id) {
-    for (const file of delivery.message.files) {
+  // A forwarded copy's files come after the message's own (Can #12470).
+  const files = [...delivery.message.files, ...(delivery.message.forwarded?.files ?? [])];
+  if (files.length > 0 && conn.id) {
+    for (const file of files) {
       try {
         saved.push(await conn.downloadFile(file, receivedDir(conn.id)));
       } catch (err) {
@@ -383,6 +385,7 @@ export function formatDelivery(delivery: Delivery, savedFiles: string[], me?: st
   message.files.forEach((file, i) => {
     lines.push(`File: ${savedFiles[i] ?? file.name} (${defangHeaders(file.name)}, ${file.size} B, sha256 ${file.sha256.slice(0, 12)}…)`);
   });
+  lines.push(...forwardedBlock(message, savedFiles.slice(message.files.length)));
   const task = message.task;
   const mine = task?.assignees.find((a) => a.id === me);
   if (task && mine && (mine.state === "open" || mine.state === "accepted")) {
@@ -443,7 +446,21 @@ export function formatReadMessage(message: Message, conversation: Conversation |
     lines.push(defangHeaders(text).replace(/^/gm, "  "));
   }
   message.files.forEach((file, i) => lines.push(`File: ${savedFiles[i] ?? file.name} (${defangHeaders(file.name)}, ${file.size} B)`));
+  lines.push(...forwardedBlock(message, savedFiles.slice(message.files.length)).map((line) => `  ${line}`));
   return lines.join("\n");
+}
+
+/**
+ * A forwarded copy (Can #12470): "Forwarded by @a from @x in #room, <time>:", its text quoted, then its files (`saved`:
+ * their local paths, in order).
+ */
+function forwardedBlock(message: Message, saved: readonly string[]): string[] {
+  const forwarded = message.forwarded;
+  if (!forwarded) return [];
+  return [
+    ...forwardedLines(message.from, forwarded),
+    ...forwarded.files.map((file, i) => `> File: ${saved[i] ?? file.name} (${defangHeaders(file.name)}, ${file.size} B)`),
+  ];
 }
 
 /** "#n · time · @from → where: …snippet…" around the first match of `query`. */
@@ -657,9 +674,7 @@ export class BusTool {
           throw new Error(`#${message.seq} is in a conversation you are not in (${conversationLabel(conversation)}); add scope "all" to read it.`);
         }
         const saved: string[] = [];
-        if (message.files.length > 0) {
-          for (const file of message.files) saved.push(await conn.downloadFile(file, receivedDir(conn.id ?? "")));
-        }
+        for (const file of [...message.files, ...(message.forwarded?.files ?? [])]) saved.push(await conn.downloadFile(file, receivedDir(conn.id ?? "")));
         return result(formatReadMessage(message, conversation, Number.MAX_SAFE_INTEGER, saved));
       }
       case "history": {
