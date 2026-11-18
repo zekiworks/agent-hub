@@ -24,3 +24,6 @@ const shutdown = (): void => {
 };
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
+// The CLI talks to the extension over stdio: when it goes without a signal (killed, crashed), stdin ends. Without this
+// the bus connection would keep the process, and an orphaned session, alive.
+process.stdin.once("end", shutdown);

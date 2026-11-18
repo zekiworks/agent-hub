@@ -28,8 +28,9 @@ export interface HookContext {
 }
 
 export interface Hooks {
-  onUserPromptSubmitted?: (input: { prompt: string }) => Promise<HookContext | void>;
-  onPostToolUse?: (input: { toolName: string }) => Promise<HookContext | void>;
+  /** `agentId` is set when a subagent's turn or tool call runs the hook. */
+  onUserPromptSubmitted?: (input: { prompt: string; agentId?: string }) => Promise<HookContext | void>;
+  onPostToolUse?: (input: { toolName: string; agentId?: string }) => Promise<HookContext | void>;
   onSessionStart?: (input: { source: string }) => Promise<HookContext | void>;
 }
 

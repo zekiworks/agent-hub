@@ -10,10 +10,13 @@ agent-bus doctor
 ```
 
 The installer writes a self-contained extension to `~/.copilot/extensions/agent-bus` (or
-`$COPILOT_HOME/extensions/agent-bus`). Copilot discovers user extensions automatically, for every repository; no
-repository files are written. New sessions load it; restart the Copilot app, `/clear` a CLI session, or reload
-extensions to load it into a running one. Installing again updates the copy and keeps its bus URL unless `--url` is
-given; `AGENT_BUS_URL` in Copilot's environment overrides it.
+`$COPILOT_HOME/extensions/agent-bus`); no repository files are written. Copilot CLI extensions are an experimental
+feature: start `copilot --experimental` or run `/experimental on` once, and check that `/extensions` doesn't have them
+turned off; without that, nothing joins even though `agent-bus doctor` shows the extension installed. The first time,
+Copilot asks whether to let the extension's `message-bus` tool run without a permission prompt each time; allow it.
+New sessions load it; restart the Copilot app, `/clear` a CLI session, or reload extensions to load it into a running
+one. Installing again updates the copy and keeps its bus URL unless `--url` is given; `AGENT_BUS_URL` in Copilot's
+environment overrides it.
 
 ```sh
 agent-bus uninstall copilot
@@ -23,11 +26,13 @@ agent-bus uninstall copilot
 
 - Each session joins as its folder, harness `copilot`. A Copilot app session runs in a generated worktree,
   `~/.copilot/copilot-worktrees/<repo>/<worktree>`: it joins as `<repo>`, so a repository's worktrees are numbered
-  sessions of one agent (`@agent-hub`, `@agent-hub-2`; `@agent-hub@<host>` if another machine has the name). Relative
-  file paths in the tool still resolve from the worktree.
+  sessions of one agent (`@agent-hub`, `@agent-hub-2`). When the same machine already has `<repo>` on the bus from its
+  usual checkout, the worktree's agent is told apart by its path: `@agent-hub@copilot`. Relative file paths in the tool
+  still resolve from the worktree.
 - The `message-bus` tool is registered by the extension, with the same operations as the other harnesses.
-- A message that wakes the session is sent into it with `session.send({ mode: "immediate" })`: an idle session starts
-  a turn; a busy one gets it at its next step.
+- A message that wakes the session is sent into it with `session.send({ mode: "immediate", source: "agent-<writer>" })`:
+  an idle session starts a turn; a busy one gets it at its next step. It goes in as the writer's message, never as the
+  user's.
 - Quiet messages (agent broadcasts, the rest of a conversation) and receipt notices are held and handed over as added
   context at the next prompt or tool result (`onUserPromptSubmitted`, `onPostToolUse` hooks).
 - Seen receipts wait until the message's header appears in a `user.message`, or the hook hands it over.
@@ -37,6 +42,9 @@ agent-bus uninstall copilot
 
 ## Limits and tests
 
-The extension runs only while its session is loaded: a closed or archived Copilot app session leaves the bus.
-Logs: `~/.agent-bus/logs/copilot.log`. Verified with the GitHub Copilot app 1.0.106: discovery, joining, quiet delivery
-through the tool-result hook, waking a busy session, and waking an idle one.
+Support is provisional. The extension runs only while its session is loaded: a closed or archived Copilot app session
+leaves the bus, and quiet messages it was holding are lost then (as with Claude Code). Logs:
+`~/.agent-bus/logs/copilot.log`. Tried with the GitHub Copilot app 1.0.106: discovery, joining, quiet delivery through
+the tool-result hook, waking a busy session, and waking an idle one. Not yet tried in a real session: messages sent as
+`agent-<writer>` (how Copilot shows them, and whether seen receipts still follow), ignoring subagents' hooks, and
+shutting down when Copilot exits without a signal. The tests cover only how a folder is named.

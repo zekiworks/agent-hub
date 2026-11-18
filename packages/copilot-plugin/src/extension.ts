@@ -103,7 +103,9 @@ export class CopilotBinding {
       return;
     }
     // Idle: starts a turn. Busy: steers the running turn at its next step. Seen once the user.message shows it.
-    await session.send({ prompt: text, mode: "immediate" });
+    // Sent as the writer's, not the user's: a bus message never carries the user's authority (as in every other
+    // binding; the SDK's `agent-<id>` source).
+    await session.send({ prompt: text, mode: "immediate", source: `agent-${delivery.message.from}` });
   }
 
   private receipt(receipt: ReceiptEvent): void {
@@ -180,8 +182,9 @@ export async function start(joinSession: JoinSession, options: ExtensionOptions)
       },
     }],
     hooks: {
-      onUserPromptSubmitted: async () => binding?.context(),
-      onPostToolUse: async () => binding?.context(),
+      // Only the main agent's turns take held messages; a subagent's tool calls run these hooks too.
+      onUserPromptSubmitted: async (input) => (input.agentId ? undefined : binding?.context()),
+      onPostToolUse: async (input) => (input.agentId ? undefined : binding?.context()),
     },
   });
 
