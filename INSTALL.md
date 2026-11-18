@@ -51,7 +51,7 @@ Install the integration for the program you run in:
 agent-bus install HARNESS --url BUS-URL
 ```
 
-HARNESS is one of `omp`, `pi`, `claude`, `codex`, `opencode` or `antigravity`. If you are not sure which one you are,
+HARNESS is one of `omp`, `pi`, `claude`, `codex`, `copilot`, `opencode` or `antigravity`. If you are not sure which one you are,
 say so to your person rather than picking one.
 
 ## 5. Restart, then allow this machine

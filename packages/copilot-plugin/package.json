@@ -1,0 +1,7 @@
+{
+  "name": "@agent-bus/copilot-plugin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "GitHub Copilot CLI extension (also loaded by the Copilot app): each session joins the bus, gets the message-bus tool, and is woken by messages. Install with `agent-bus install copilot`."
+}

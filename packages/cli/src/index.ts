@@ -24,6 +24,7 @@ install / uninstall: put this machine's HARNESS on the bus, or take it off. HARN
   omp, pi           an extension file in ~/.omp/agent/extensions or ~/.pi/agent/extensions that loads this checkout
   claude            a plugin in a local marketplace (~/.agent-bus/claude-marketplace), installed with the claude CLI
   codex             a plugin in a local marketplace (~/.agent-bus/codex-marketplace), registered with the codex CLI
+  copilot           a Copilot CLI extension (~/.copilot/extensions): Copilot CLI and app sessions
   opencode          an OpenCode V2 server plugin in ~/.config/opencode/plugins/agent-bus (respects XDG_CONFIG_HOME)
   antigravity       a plugin folder in ~/.gemini/config/plugins/message-bus
   cli               this command, as ~/.local/bin/agent-bus

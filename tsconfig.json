@@ -17,6 +17,8 @@
     "packages/codex-plugin/scripts/**/*.ts",
     "packages/opencode-plugin/src/**/*.ts",
     "packages/opencode-plugin/scripts/**/*.ts",
+    "packages/copilot-plugin/src/**/*.ts",
+    "packages/copilot-plugin/scripts/**/*.ts",
     "tests/**/*.ts"
   ]
 }

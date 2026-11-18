@@ -53,11 +53,15 @@ export function jsRuntime(): string {
   return Bun.which("node") ?? process.execPath;
 }
 
-/** Bundles each `[entry, name]` (entry relative to `root`) into a self-contained `<outdir>/<name>.mjs` for Node. */
+/**
+ * Bundles each `[entry, name]` (entry relative to `root`) into a self-contained `<outdir>/<name>.mjs` for Node;
+ * `external` modules are left as imports (the harness provides them).
+ */
 export async function bundleForNode(
   root: string,
   outdir: string,
-  entries: ReadonlyArray<readonly [entry: string, name: string]>
+  entries: ReadonlyArray<readonly [entry: string, name: string]>,
+  external: string[] = []
 ): Promise<void> {
   for (const [entry, name] of entries) {
     const result = await Bun.build({
@@ -66,6 +70,7 @@ export async function bundleForNode(
       target: "node",
       format: "esm",
       naming: `${name}.mjs`,
+      external,
     });
     if (!result.success) throw new AggregateError(result.logs, `Building ${entry} failed`);
   }
