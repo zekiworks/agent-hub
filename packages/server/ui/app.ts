@@ -35,6 +35,7 @@ import { connectViewer, setLinkStatus } from "./socket";
 import { draftConversation, isCurrent, state, type View } from "./state";
 import { flashMessage, fetchMessage, forgetFetched, selectMessage, shownMessage } from "./text";
 import { refreshPane } from "./pane";
+import { clearAnswersFor } from "./toast";
 import { loadReadMarkers, markRead, refreshUnread } from "./unread";
 
 // Esc outside a text field steps out of the message I am in (Ümit #11622).
@@ -72,6 +73,7 @@ function applyView(view: View): void {
   state.view = resolved;
   if (resolved.kind === "conversation") {
     markRead(resolved.id);
+    clearAnswersFor(resolved.id);
     if (!state.caches.has(resolved.id)) void loadMessages(resolved.id);
   }
   if (changed) {

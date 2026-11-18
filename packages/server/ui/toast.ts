@@ -116,6 +116,7 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   }
   const text = message.text.replace(/\s+/g, " ").trim();
   const toast = h("div", "answer-toast");
+  toast.dataset.conversation = conversation.id;
   const activate = () => {
     toast.remove();
     void hooks.showMessage(message.seq);
@@ -175,4 +176,12 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   row.append(reset);
   toast.append(row);
   place(savedPosition());
+}
+
+/**
+ * Opening a conversation clears its banners: the answers are in front of me now (Can #11972: only a click or ✕ made
+ * them go). Others stay.
+ */
+export function clearAnswersFor(conversationId: string): void {
+  for (const toast of box?.querySelectorAll<HTMLElement>(".answer-toast") ?? []) if (toast.dataset.conversation === conversationId) toast.remove();
 }
