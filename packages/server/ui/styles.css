@@ -1,0 +1,4954 @@
+/* Colours: a reading app's: charcoal surfaces, warm white text, lilac for
+   selection, links and focus (--accent), copper only for primary actions (--primary: Send, primary buttons), leaf green
+   for online. No blue. */
+:root {
+  color-scheme: dark;
+  --bg: #1b1b1b;
+  --panel: #242424;
+  --panel-raised: #2e2e2e;
+  --hover: #383838;
+  --input: #161616;
+  --sidebar: #161616;
+  --sidebar-hover: #242424;
+  --sidebar-active: #2e2e2e;
+  --sidebar-text: #faf8f5;
+  --sidebar-muted: #bdb8b1;
+  --text: #faf8f5;
+  --muted: #bdb8b1;
+  --border: #3a3a3a;
+  --accent: #b8a6dc;
+  --accent-strong: #a593cc;
+  --accent-soft: color-mix(in srgb, #b8a6dc 16%, transparent);
+  --primary: #d89068;
+  --primary-ink: #1b1b1b;
+  --human: #e2b48f;
+  --human-soft: color-mix(in srgb, #d89068 12%, transparent);
+  --human-soft-hover: color-mix(in srgb, #d89068 18%, transparent);
+  --agent: #c9bde6;
+  --agent-soft: color-mix(in srgb, #b8a6dc 14%, transparent);
+  --online: #9cc48a;
+  --offline: #8b8f98;
+  --error: #e5534b;
+  --error-soft: color-mix(in srgb, #e5534b 16%, transparent);
+  --success: #9cc48a;
+  --warning: #e3a547;
+  --highlight: #4a3f14;
+  --shadow: rgba(0, 0, 0, 0.45);
+  --radius: 8px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* ---- Layout ---- */
+
+.app {
+  height: 100vh;
+  /* Phones: the visible height, which shrinks when the on-screen keyboard opens. */
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "side main";
+}
+
+/* With the Workspace open (pane.ts), it takes its own width (~420 px, or what it was dragged to: --ws-width)
+   and the conversation the rest. */
+.app.with-pane {
+  grid-template-columns: 280px minmax(0, 1fr) var(--ws-width, 420px);
+  grid-template-areas:
+    "top top top"
+    "side main doc";
+}
+
+/* The Workspace: its label, a title bar (‹ › history, what it shows, ✕), an entity's tabs, then the body. */
+.pane {
+  grid-area: doc;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.pane[hidden] {
+  display: none;
+}
+
+/* Its left edge: drag to resize, double-click for the default width. */
+.ws-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 5;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.ws-resize:hover,
+.app.ws-resizing .ws-resize {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+/* Focused from the keyboard: a full-height lilac edge, plainly visible. */
+.ws-resize:focus-visible {
+  outline: none;
+  background: var(--accent);
+  opacity: 1;
+}
+
+.app.ws-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* While dragging, frames must not swallow the pointer. */
+.app.ws-resizing iframe {
+  pointer-events: none;
+}
+
+/* "Workspace": quiet, always there; the title below says what is open in it. */
+.ws-label {
+  padding: 8px 14px 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* "Reset width" beside it, only after the width was changed (pane.ts). */
+.ws-reset {
+  margin-left: 8px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ws-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px 6px;
+}
+
+.ws-nav {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+}
+
+.ws-nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* What the Workspace shows ("Agent · @webapp", "Your inbox"); a link while it is not the conversation on the left. */
+.link-btn.pane-source {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-btn.pane-source:not(.elsewhere) {
+  color: var(--text);
+  cursor: default;
+  text-decoration: none;
+}
+
+/* A global item (your inbox, GPUs) has no entity tabs. */
+.app.ws-global .pane-head {
+  display: none;
+}
+
+.app.ws-global .ws-titlebar {
+  border-bottom: 1px solid var(--border);
+}
+
+/* The same entity on both sides: one band across the divider, in a project's own colour. The Workspace's head
+   is as tall as the conversation's header (--conv-head-h, pane.ts), so tint and line end at the same height on both
+   sides. Desktop only: where the Workspace covers the conversation there is nothing side by side. */
+@media (min-width: 1101px) {
+  .app.ws-linked .ws-head {
+    min-height: var(--conv-head-h, auto);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+
+  .app.ws-linked .conv-header,
+  .app.ws-linked .ws-head {
+    background: color-mix(in srgb, var(--ws-tint) 13%, transparent);
+    box-shadow: inset 0 -2px 0 var(--ws-tint);
+  }
+
+  .app.ws-linked .conv-header {
+    border-bottom-color: transparent;
+  }
+}
+
+/* Phones: back to your inbox after a task opened its message (inbox.ts). */
+.inbox-return {
+  display: block;
+  min-height: 44px;
+  padding: 0;
+  font-size: 14px;
+}
+
+@media (max-width: 1100px) {
+  .ws-resize {
+    display: none;
+  }
+}
+
+/* "Workspace ▾": last in the bar, at the right edge, next to the Workspace it opens. */
+.ws-open-btn {
+  flex: none;
+  order: 11;
+  padding: 4px 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.ws-open-btn.on {
+  color: var(--accent);
+}
+
+/* What is pinned here (pins.ts): a plain drawn pin, outlined when nothing
+ * is pinned, filled with a count when something is; no pill, no words (they are in its label). */
+.checklist-btn {
+  flex: none;
+  order: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.checklist-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.checklist-btn.pinned {
+  color: var(--text);
+}
+
+/* Icons (icons.ts, Lucide): outline, 2 px stroke, in the text colour of their button;
+   18 px, 20–22 px on phones. A filled one (`icon-filled`) is a set state: a pinned pin, a saved star. */
+.icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  vertical-align: -3px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.icon-filled {
+  fill: currentColor;
+}
+.icon-label:empty {
+  display: none;
+}
+.msg-action-btn,
+.send-btn,
+.icon-btn.composer-size {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.icon-btn,
+.voice-rec-btn {
+  display: inline-grid;
+  place-items: center;
+}
+
+/* Outlined when nothing is pinned, filled when something is (the shape says it, not only the colour). */
+.pin-icon path {
+  fill: none;
+}
+
+.checklist-btn.pinned .pin-icon .pin-head {
+  fill: currentColor;
+}
+
+.pin-note {
+  position: fixed;
+  z-index: 50;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
+}
+
+/* The Workspace's "Pinned" list (pins.ts): each item opens its original; members unpin. */
+.pinned-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pinned-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.pinned-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pinned-open:hover {
+  background: var(--hover);
+}
+
+.pinned-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.pinned-detail {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pinned-unpin {
+  flex: none;
+  min-height: 44px;
+  font-size: 13px;
+}
+
+/* Search (search.ts): the box, where to search, and the matches, each opening its room or message. */
+.search-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--input);
+  color: var(--text);
+  font-size: 16px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.search-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.search-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  cursor: pointer;
+}
+/* "This conversation (#a-long-name)" wraps instead of running off the edge. */
+.search-scope > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.search-heading {
+  margin: 12px 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.search-list {
+  display: grid;
+}
+
+.search-hit {
+  display: grid;
+  gap: 2px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.search-hit:hover,
+.search-hit:focus-visible {
+  background: var(--hover);
+}
+
+.search-hit-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.search-hit-detail {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.search-excerpt {
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.search-excerpt mark {
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 650;
+}
+
+/* 📌 on a message that is pinned, ★ on one in my bookmarks (bookmarks.ts): lit, so the state shows at a glance. */
+.msg-pin-btn.pinned,
+.msg-bookmark-btn.bookmarked,
+.msg-owntask-btn.on {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.checklist-btn.on {
+  color: var(--accent);
+}
+
+.checklist-count {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.checklist-count:empty {
+  display: none;
+}
+
+.ws-menu-close {
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+/* Tools ▾ in the top bar (tools.ts). */
+.tools {
+  position: relative;
+}
+
+.entry-menu.tools-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+}
+
+/* Global Workspace items' buttons (GPUs) and ✉: lit while theirs is open. */
+.launcher-btn.active,
+.inbox-topbtn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* The top bar's launchers (agentpages.ts): a row as tall as the band, so an open one can run down as a tab. */
+.launchers {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  gap: 14px;
+}
+
+/* The open global item reads as a tab: its top-bar entry runs down to the bottom of the band and
+ * meets the Workspace's heading in one tint (one opaque colour, so both sides match), an accent edge
+ * on the tab's top, square corners (no rounded tabs). Follows ‹ › (the class goes with the item); gone when
+ * an entity's tools are shown. Desktop only: on phones the Workspace's heading names it. */
+@media (min-width: 1101px) {
+  .app.ws-global .launcher-btn.active,
+  .app.ws-global .inbox-topbtn.active {
+    position: relative;
+    z-index: 1;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    margin: -8px 0 -9px; /* the band's padding and its bottom border */
+    padding: 0 12px;
+    border: 0;
+    border-radius: 0;
+    background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+
+  .app.ws-global .ws-head {
+    background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  }
+}
+
+/* "✉ Your inbox" at the top of the left list. */
+.side-inbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 16px);
+  margin: 10px 8px 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sidebar-text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.side-inbox:hover,
+.side-inbox.active {
+  background: var(--hover);
+}
+
+.side-inbox .side-count {
+  margin-left: auto;
+}
+
+.side-inbox.inbox-unread .side-count {
+  color: var(--error);
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pane-tabs {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.pane-tab {
+  padding: 6px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pane-tab:hover {
+  color: var(--text);
+}
+
+.pane-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.pane-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.pane-host[hidden] {
+  display: none;
+}
+
+/* An agent's own page (agentpages.ts), filling the pane. */
+.agent-page {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--panel);
+}
+
+.pane-pad {
+  padding: 14px 16px;
+}
+
+.ws-open-btn.on {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* File: the viewer of an opened attachment (files.ts). */
+.doc-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.doc-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.doc-download {
+  font-size: 13px;
+}
+
+.doc-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 32px;
+  white-space: normal;
+}
+
+.doc-note {
+  color: var(--muted);
+}
+
+.doc-image {
+  max-width: 100%;
+  height: auto;
+}
+
+.doc-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+/* Shared: the files of the open conversation, newest first (files.ts). */
+.shared-list {
+  margin: 0;
+  padding: 8px 0;
+  list-style: none;
+}
+
+.shared-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.shared-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.shared-meta {
+  color: var(--muted);
+}
+
+.shared-at {
+  font-size: 13px;
+}
+
+/* Checklist: a conversation's list of tasks (checklist.ts). */
+.check-heading {
+  margin: 14px 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.check-heading:first-child {
+  margin-top: 0;
+}
+
+.check-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.check-item {
+  position: relative;
+  padding: 6px 28px 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ↩ on an item (checklist.ts replyToItem): on hover, always on touch screens. */
+.check-reply {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.check-item:hover .check-reply,
+.check-reply:focus-visible {
+  opacity: 1;
+}
+
+.check-reply:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+@media (hover: none) {
+  .check-reply {
+    opacity: 0.7;
+  }
+}
+
+.check-text code {
+  font-size: 12px;
+}
+
+.check-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.check-label input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--success);
+}
+
+.check-item.done .check-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.check-meta,
+.check-foot,
+.check-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.check-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-left: 28px;
+}
+
+/* Whose step it is (@agent) and the message it came from (#n). */
+.check-owner {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--text);
+}
+
+.check-blocked {
+  margin: 2px 0 0 28px;
+  color: var(--warning);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* A markdown list's title, the text under it, and the lines under an item: nothing of the list is lost. */
+.check-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.check-intro {
+  margin-bottom: 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.check-detail {
+  margin: 2px 0 0 28px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.check-intro > :first-child,
+.check-detail > :first-child {
+  margin-top: 0;
+}
+
+.check-intro > :last-child,
+.check-detail > :last-child {
+  margin-bottom: 0;
+}
+
+/* Pinned or not, and Pin / Unpin for members. */
+.check-pinbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.check-error {
+  color: var(--error);
+  font-size: 12px;
+}
+
+.check-foot {
+  margin-top: 14px;
+}
+
+/* Tasks (inbox.ts): the ✉ button (yellow: open tasks; red: some unread), the Inbox tab, and the line under a task. */
+.inbox-topbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* A navigation icon's holder (index.html data-icon, filled by icons.ts). */
+[data-icon] {
+  display: inline-flex;
+}
+
+/* ✉ and ☆ (bookmarks.ts) side by side, wrapping together on a narrow phone. */
+.topbar-pair {
+  display: inline-flex;
+  align-self: stretch;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.inbox-topbtn.inbox-open {
+  border-color: var(--warning);
+  background: rgb(227 165 71 / 0.18);
+}
+
+.inbox-topbtn.inbox-unread {
+  border-color: var(--error);
+  background: rgb(239 68 68 / 0.2);
+}
+
+.inbox-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.inbox-box {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.inbox-box.active {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.inbox-closed {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inbox-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inbox-item {
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+/* "Your own tasks" and "Given to you" under "For me" (inbox.ts). */
+.inbox-section {
+  margin: 12px 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.own-task .inbox-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.own-task .inbox-head input {
+  width: 18px;
+  height: 18px;
+  margin: 0 4px 0 0;
+}
+
+.own-task.own-done .inbox-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.inbox-item.inbox-unread {
+  box-shadow: inset 3px 0 0 var(--error);
+  padding-left: 8px;
+}
+
+.inbox-head,
+.inbox-where,
+.inbox-when {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.inbox-text {
+  margin: 4px 0;
+}
+
+.inbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.inbox-btn {
+  padding: 3px 10px;
+  font-size: 13px;
+}
+
+.inbox-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-label {
+  font-weight: 650;
+  margin-right: 4px;
+}
+
+.task-type-approval .task-label,
+.task-label.task-type-approval {
+  color: var(--warning);
+}
+
+.msg-task {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.task-states {
+  font-size: 12px;
+}
+
+.task-open,
+.task-accepted {
+  color: var(--warning);
+}
+
+.task-done {
+  color: var(--success);
+}
+
+.task-rejected {
+  color: var(--error);
+}
+
+.task-withdrawn {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.topbar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px;
+  background: var(--sidebar);
+  color: var(--sidebar-text);
+  border-bottom: 1px solid #000;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 17px;
+}
+
+.brand-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--primary-ink);
+  font-size: 14px;
+}
+
+/* A configured mark (`--brand-logo`, e.g. a leaf), contained: never cropped. */
+.brand-logo {
+  width: 24px;
+  height: 28px;
+  object-fit: contain;
+  flex: none;
+}
+
+/* A brand name of two words ("Agent Hub"): the first semibold, the rest regular in a lighter gray (website.ts). */
+.brand-rest {
+  font-weight: 400;
+  color: #c9ccd2;
+}
+
+.topbar-spacer {
+  flex: 1;
+}
+
+.link-status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--sidebar-hover);
+  color: var(--sidebar-muted);
+}
+
+.link-status::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 1px;
+}
+
+.link-status[data-state="live"] {
+  color: var(--online);
+}
+
+.link-status[data-state="offline"] {
+  color: #f87171;
+}
+
+/* ---- Sidebar ---- */
+
+.sidebar {
+  grid-area: side;
+  overflow-y: auto;
+  background: var(--sidebar);
+  color: var(--sidebar-text);
+  padding: 8px 8px 16px;
+}
+
+.side-section + .side-section {
+  margin-top: 18px;
+}
+
+.side-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sidebar-muted);
+}
+
+/* A heading that folds its section (sidebar.ts: Agents): looks like the heading text. */
+.side-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+/* "hide" / "show" beside a foldable heading's name: a small outlined word, so the heading reads as a button. */
+.side-toggle-hint {
+  margin-left: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 16px;
+}
+
+.side-toggle:hover .side-toggle-hint {
+  border-color: var(--sidebar-muted);
+}
+
+.side-toggle:hover {
+  color: var(--sidebar-text);
+}
+
+#agent-list[hidden],
+.unread-toggle[hidden] {
+  display: none;
+}
+
+/* A folded section (sidebar.ts): its heading, with "show", and + button only. */
+.side-section.folded > :not(.side-heading),
+.side-section.folded .unread-toggle {
+  display: none;
+}
+
+/* A conversation pinned as a tab: a small pin before its name (sidebar.ts). */
+.side-item-title .icon-pin {
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  color: var(--sidebar-muted);
+}
+
+.side-count {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Wraps under the heading's name when the sidebar is too narrow for all of them (Projects has four). */
+.side-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-left: auto;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.unread-toggle {
+  padding: 1px 8px;
+  border: 1px solid var(--sidebar-active);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sidebar-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.unread-toggle:hover {
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text);
+}
+
+.unread-toggle.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.side-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.side-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 0; /* square rows (no curved edge on the selected one) */
+  background: transparent;
+  text-align: left;
+  color: inherit;
+}
+
+.side-item:hover {
+  background: var(--sidebar-hover);
+}
+
+/* The open conversation: a flat raised row with a straight lilac edge, clear without colour on
+ * the name. */
+.side-item.active {
+  background: var(--sidebar-active);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--text);
+}
+
+.side-item.offline .side-item-title {
+  color: var(--sidebar-muted);
+}
+
+.side-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.side-item-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.side-item-detail {
+  font-size: 12px;
+  color: var(--sidebar-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A conversation's second line: what it is and its members, then the time of the last message at the end
+   (sidebar.ts). The description is cut first, never the time. */
+.side-item-second {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.side-item-second .side-item-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Keyboard focus shows the whole name, which a tooltip does not; hover has the tooltip. */
+.side-item:focus-visible .side-item-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.agent-status {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.agent-busy,
+.agent-busy-text {
+  color: var(--warning);
+}
+
+.agent-idle-text {
+  color: var(--success);
+}
+
+.agent-state {
+  font-weight: 600;
+}
+
+/* Live (live.ts): the agent's status, then its live output, filling the pane. */
+.live-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.agent-panel-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+}
+
+.agent-panel-list dt {
+  color: var(--muted);
+}
+
+.agent-panel-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-output-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-weight: 650;
+}
+
+.agent-output-note {
+  flex: 1;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--success);
+}
+
+.agent-output {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 6px;
+  padding-right: 4px;
+}
+
+.act {
+  margin: 6px 0;
+}
+
+.act-note {
+  color: var(--muted);
+}
+
+.act-user {
+  padding: 4px 8px;
+  border-left: 3px solid var(--human);
+  background: var(--human-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.act-streaming > :last-child::after {
+  content: " ▍";
+  color: var(--muted);
+}
+
+.act-thinking {
+  margin-bottom: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  font-style: italic;
+}
+
+.act-tool {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input);
+}
+
+.act-tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+}
+
+.act-tool-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 650;
+}
+
+.act-tool-intent {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.act-tool-state {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.act-running .act-tool-state {
+  color: var(--warning);
+}
+
+.act-error .act-tool-state {
+  color: var(--error);
+}
+
+.act-tool-input,
+.act-tool-output {
+  margin: 0;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.act-tool-input {
+  color: var(--agent);
+}
+
+.side-item-time {
+  flex: none;
+  font-size: 11px;
+  color: var(--sidebar-muted);
+}
+
+.side-empty {
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--sidebar-muted);
+}
+
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.agent-row .agent-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-filter {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sidebar-muted);
+  opacity: 0.45;
+  cursor: pointer;
+}
+
+.agent-filter svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
+.agent-row:hover .agent-filter,
+.agent-filter:focus-visible {
+  opacity: 1;
+}
+
+.agent-filter:hover {
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text);
+}
+
+.agent-filter.on {
+  opacity: 1;
+  color: #fff;
+  background: var(--accent);
+}
+
+.conv-filter {
+  padding: 0 8px 6px;
+  font-size: 12px;
+  color: var(--sidebar-muted);
+}
+
+.conv-filter .link-btn {
+  font-size: 12px;
+  padding: 0;
+}
+
+.filter-hidden-me {
+  color: #ff8a8d;
+}
+
+.conn-count {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--sidebar-muted);
+}
+
+/* An agent whose connections keep dropping: shown offline with this, its reason in the tooltip. */
+.agent-err {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.badge {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.attention-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: #e5484d;
+  box-shadow: 0 0 0 2px var(--sidebar);
+}
+
+.attention-dots {
+  flex: none;
+  display: inline-flex;
+  gap: 3px;
+  margin-left: -2px;
+}
+
+.attention-dots .attention-dot {
+  margin-left: 0;
+}
+
+.notify-btn {
+  color: var(--sidebar-text);
+  font-size: 13px;
+}
+
+.dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.dot-on {
+  background: var(--online);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--online) 25%, transparent);
+}
+
+/* Busy: a turning green arc, online and at work (an animation, not an orange dot). The same footprint as the
+   other dots, so the row does not move when it starts or stops. */
+.dot-busy {
+  width: 11px;
+  height: 11px;
+  margin: -1px;
+  border: 2px solid color-mix(in srgb, var(--online) 30%, transparent);
+  border-top-color: var(--online);
+  background: transparent;
+  animation: dot-spin 0.9s linear infinite;
+}
+
+@keyframes dot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reduced motion: the arc stands still, still different from idle's full ring. */
+@media (prefers-reduced-motion: reduce) {
+  .dot-busy {
+    animation: none;
+  }
+}
+
+.dot-off {
+  background: transparent;
+  border: 1.5px solid var(--offline);
+}
+
+/* Online, but its harness reports no busy/idle (sidebar.ts): a green ring. */
+.dot-unknown {
+  background: transparent;
+  border: 2px solid var(--online);
+}
+
+.dot-human {
+  background: var(--human);
+}
+
+.link-btn {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 2px 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar .link-btn {
+  color: var(--accent);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+/* ---- Main pane ---- */
+
+.main {
+  grid-area: main;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+}
+
+/* One column width for the agent panel (live output) and the chat box: 80 characters of message text,
+   plus a message's side padding (2 × 20px), its 3px left border and the box's borders (2 × 1px).
+   Registered as a length so `ch` is resolved once on .app, at the message font, not at each box's own font size. */
+@property --column {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+.app {
+  --column: calc(80ch + 45px);
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-width: var(--column);
+  margin: 12px 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+}
+
+/* My tabs above the conversation (tabs.ts): one flat row, square ends, the open one
+   underlined in the accent; it scrolls sideways when they do not fit. */
+.tab-row {
+  display: flex;
+  flex: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.tab-row[hidden] {
+  display: none;
+}
+.tab {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  max-width: 220px;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.tab.active {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.tab.unread .tab-open {
+  font-weight: 650;
+  color: var(--text);
+}
+.tab.dragging {
+  z-index: 1;
+  background: var(--panel-raised);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+  cursor: grabbing;
+}
+.tab-open {
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px 4px 7px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab-close {
+  flex: none;
+  padding: 0 8px;
+  align-self: stretch;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.tab-close:hover {
+  color: var(--text);
+}
+
+.conv-header {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Title, description and Sub-groups wrap at the width of the message column below them. */
+.conv-header > * {
+  max-width: var(--column);
+}
+
+/* The bar: title, then its buttons, the pin last at the right end. */
+.conv-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+/* The name, and on rooms and projects the button that opens their menu (convmenu.ts): "#name ▾". */
+.conv-title-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.conv-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-left: -6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conv-name-btn:hover,
+.conv-name-btn:focus-visible {
+  background: var(--hover);
+}
+
+.conv-name-caret {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ⚙ beside the name (convmenu.ts): a room's, project's or group's settings, quiet until hovered. */
+.conv-settings-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.conv-settings-btn:hover,
+.conv-settings-btn:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.conv-settings-btn[hidden] {
+  display: none;
+}
+
+/* "Parent: @@reading" beside the name (render.ts): quiet, its own size, the project a link. */
+.conv-parent {
+  margin-left: 10px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.conv-parent[hidden] {
+  display: none;
+}
+
+/* No menu here (DMs, #all, drafts): the name is plain text. */
+.conv-name-btn.no-menu {
+  cursor: default;
+}
+
+.conv-name-btn.no-menu:hover {
+  background: transparent;
+}
+
+.conv-name-btn.no-menu .conv-name-caret {
+  display: none;
+}
+
+.conv-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.conv-subtitle {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* A root project's "Sub-groups" (render.ts renderSubgroups): folds open or closed, in the project's colour. */
+.subgroups-panel {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-left: 4px solid var(--project-color, var(--accent));
+  background: var(--panel-raised);
+  font-size: 13px;
+}
+
+.subgroups-panel[hidden] {
+  display: none;
+}
+
+.subgroups-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--project-color, var(--accent));
+}
+
+.subgroups-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subgroup-link {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.subgroup-desc {
+  color: var(--muted);
+}
+
+.message-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 0 16px;
+}
+
+.load-earlier {
+  text-align: center;
+  padding: 6px;
+}
+
+.message-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.message-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.day-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 20px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.day-divider::before,
+.day-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.msg {
+  position: relative;
+  padding: 8px 20px 6px;
+  border-left: 3px solid transparent;
+  border-radius: 0 6px 6px 0;
+}
+
+/* The hovered message gets a frame, so it is clear which one Reply applies to (grouped messages included). */
+.msg:hover,
+.msg.msg-tapped {
+  background: var(--hover);
+  outline: 1px solid var(--muted);
+  outline-offset: -1px;
+}
+
+/* The message being replied to stays framed until the reply is sent or cancelled. */
+.msg.msg-replying,
+.msg.msg-replying:hover {
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The message being read aloud: outlined in green while it plays or is paused (speak.ts). */
+.msg.msg-speaking,
+.msg.msg-speaking:hover {
+  outline: 2px solid var(--success);
+  outline-offset: -2px;
+}
+
+.msg.msg-speaking .msg-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* "Reading #123 @carol ⏸ ■" above the message box, wherever the page is scrolled. */
+.speak-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--success);
+  border-radius: 0 4px 4px 0;
+  background: var(--panel-raised);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.speak-bar[hidden] {
+  display: none;
+}
+
+/* Following the reading (speak.ts, CSS Custom Highlight API): the sentence softly, the word more strongly. */
+::highlight(speak-sentence) {
+  background-color: rgba(70, 167, 88, 0.22);
+}
+
+::highlight(speak-word) {
+  background-color: rgba(70, 167, 88, 0.6);
+  color: #fff;
+}
+
+.msg-continued {
+  padding-top: 0;
+}
+
+.msg-continued .msg-head {
+  display: none;
+}
+
+.msg-human {
+  border-left-color: var(--human);
+}
+
+/* Your own messages: on the same neutral surface as the rest (no broad fill); their bar is a person's copper
+   one, 3 px like every message's (an extra inset line made it wider than the others). */
+.msg-mine:hover {
+  background: var(--hover);
+}
+
+/* Messages from others that mention the viewer (@me, @{…,me}): the left bar in gold, in the same place and width as
+   every message's bar (an inset bar sat beside it), and a light warm tint, enough to find them. */
+.msg-mentions-me {
+  border-left-color: #f0b232;
+  background: rgba(240, 178, 50, 0.07);
+}
+
+/* The message I am in (text.ts selectMessage): clicked, or reached from a banner, #number, bookmark or
+   search. Clearly lighter than the rest, framed in lilac, with a ▶ pointing at it in the left margin ("like
+   an arrow"), so it is found at a glance and stays lit until I move on. */
+.msg.msg-selected,
+.msg.msg-selected:hover {
+  background: color-mix(in srgb, var(--text) 18%, var(--panel));
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.msg.msg-selected::before {
+  content: "▶";
+  position: absolute;
+  top: 9px;
+  left: 4px;
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Only the paragraph clicked is lit: the message keeps its ▶, the frame goes round that paragraph. */
+.msg.msg-selected.msg-selected-part,
+.msg.msg-selected.msg-selected-part:hover {
+  background: var(--hover);
+  outline: none;
+}
+.msg-text > .md-selected {
+  margin-inline: -6px;
+  padding-inline: 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 18%, var(--panel));
+  outline: 2px solid var(--accent);
+}
+
+/* A paragraph I marked as read (text.ts): dimmed with a green ✓ in the margin, so the unread
+   ones stand out. Its button shows under the paragraph I am in. */
+.msg-text > .md-read {
+  position: relative;
+  color: var(--muted);
+}
+
+.msg-text > .md-read::before {
+  content: "✓";
+  position: absolute;
+  left: -16px;
+  color: var(--success);
+  font-size: 12px;
+}
+
+.md-read-btn {
+  display: block;
+  min-height: 32px;
+  margin-top: 2px;
+  padding: 0;
+  font-size: 13px;
+}
+
+.msg-mentions-me:hover {
+  background: rgba(240, 178, 50, 0.13);
+}
+
+.msg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.msg-sender {
+  border: 0;
+  padding: 0;
+  background: none;
+  font-weight: 700;
+}
+
+.msg-agent .msg-sender {
+  color: var(--agent);
+}
+
+.msg-agent .msg-sender:hover {
+  text-decoration: underline;
+}
+
+.msg-human .msg-sender {
+  color: var(--human);
+  cursor: default;
+}
+
+.kind-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* HUMAN / AGENT: a quiet word after the name, not a coloured chip. */
+.kind-agent,
+.kind-human {
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+/* #123 and the time: secondary, smaller and paler than the name and the text. */
+.msg-seq,
+.msg-time {
+  font-size: 11.5px;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/* ▶ read aloud and ↩ Reply, top right of a message: on hover, on phones after a tap, and while replying to it. */
+.msg-actions {
+  position: absolute;
+  top: 4px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.msg:hover .msg-actions,
+.msg.msg-tapped .msg-actions,
+.msg-actions:focus-within,
+.msg-replying .msg-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.msg-action-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
+.msg-action-btn:hover,
+.msg-replying .msg-reply-btn {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.msg-quote {
+  display: flex;
+  gap: 6px;
+  max-width: 100%;
+  margin: 2px 0 4px;
+  padding: 3px 8px;
+  border: 0;
+  border-left: 3px solid var(--border);
+  border-radius: 0 4px 4px 0;
+  background: var(--panel-raised);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.msg-quote-from {
+  flex: none;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.msg-quote-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A forwarded copy (forward.ts): a quote-like box with where it came from, its text and files. */
+.msg-forwarded {
+  margin: 4px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  background: var(--panel-raised);
+}
+
+.msg-forwarded-head {
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.msg-forwarded-from {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* "Forwarded to @b by @a" under the message, for its readers. */
+.msg-forwards {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* The Forward dialog: a search over people, agents and conversations, then a note. */
+.forward-search,
+.forward-note {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.forward-note {
+  margin-bottom: 10px;
+  resize: vertical;
+}
+
+.forward-choices {
+  list-style: none;
+  margin: 8px 0 10px;
+  padding: 4px;
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.forward-choice {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.forward-choice.selected {
+  background: var(--accent-soft);
+}
+
+.forward-label {
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.forward-hint,
+.forward-empty {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forward-empty {
+  padding: 6px 10px;
+}
+
+.forward-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Forwarded to @b": briefly, bottom centre, above everything. */
+.forward-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 100;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--panel-raised);
+  color: var(--success);
+  box-shadow: 0 8px 24px var(--shadow);
+  font-size: 14px;
+}
+
+/* Phones: the dialog is a full-width sheet at the bottom, with 44 px targets; 16 px fields so iOS does not zoom.
+   `.dialog.` so it wins over the general `.dialog` width and padding further down. */
+@media (max-width: 640px) {
+  .dialog.forward-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    margin: auto 0 0;
+    border-radius: 12px 12px 0 0;
+    padding: 16px;
+  }
+
+  .forward-choice {
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .forward-search,
+  .forward-note {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .forward-dialog .dialog-actions .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  .forward-toast {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+  }
+}
+
+/* Arriving at it: a stronger glow that fades into the lit state above, long enough to outlast the scroll. */
+.msg-flash {
+  animation: msg-flash 2.4s ease-out;
+}
+
+@keyframes msg-flash {
+  0%,
+  40% {
+    background: color-mix(in srgb, var(--accent) 35%, var(--panel));
+  }
+}
+
+/* Unread messages as their conversation opens (render.ts pulseUnread): a flash that fades back. The
+   conversation's banners fade out over the same 1.6 s (.answer-toast-leaving). */
+.msg-pulse {
+  animation: msg-pulse 1.6s ease-out;
+}
+
+@keyframes msg-pulse {
+  25% {
+    background: color-mix(in srgb, var(--accent) 30%, var(--panel));
+  }
+}
+
+.reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  background: var(--panel-raised);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.reply-bar[hidden] {
+  display: none;
+}
+
+.reply-bar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.msg-text > * + * {
+  margin-top: 6px;
+}
+
+.md-h {
+  font-weight: 700;
+  line-height: 1.3;
+}
+.md-h1 { font-size: 1.3em; }
+.md-h2 { font-size: 1.18em; }
+.md-h3 { font-size: 1.06em; }
+.md-h4,
+.md-h5,
+.md-h6 { font-size: 1em; color: var(--muted); }
+
+.md-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--input);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+.md-pre {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input);
+  overflow-x: auto;
+  white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  line-height: 1.4;
+}
+
+.md-list {
+  margin: 0;
+  padding-left: 1.5em;
+}
+ul.md-list { list-style: disc; }
+ul.md-list ul.md-list { list-style: circle; }
+.md-list li + li { margin-top: 2px; }
+.md-list li > * + * { margin-top: 4px; }
+
+.md-quote {
+  margin: 0;
+  padding: 2px 10px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.md-hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.md-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.md-table {
+  border-collapse: collapse;
+  white-space: normal;
+  font-size: 0.93em;
+}
+.md-table th,
+.md-table td {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.md-table th {
+  background: var(--panel-raised);
+  font-weight: 650;
+}
+
+.mention {
+  color: var(--agent);
+  font-weight: 600;
+}
+
+.msg-ref {
+  color: var(--accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+/* The message a hovered "#n" refers to, when it is on screen. */
+.msg.msg-ref-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.mention-me {
+  background: var(--highlight);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.msg-files {
+  list-style: none;
+  margin: 6px 0 2px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.msg-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.file-link {
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.file-link:hover .file-name {
+  text-decoration: underline;
+}
+
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.file-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.msg-file.msg-image {
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px;
+}
+
+.image-preview {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.image-preview img {
+  display: block;
+  max-width: 320px;
+  max-height: 240px;
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.lightbox {
+  max-width: none;
+  max-height: none;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-out;
+}
+
+.lightbox[open] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.lightbox::backdrop {
+  background: rgba(16, 16, 16, 0.88);
+}
+
+.lightbox img {
+  max-width: 96vw;
+  max-height: calc(100vh - 70px);
+  object-fit: contain;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+.lightbox-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.lightbox-bar .link-btn {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* ‹ Previous / Next › through the message's images (attachments.ts): finger-sized, plainly off at the ends. */
+.lightbox-step {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.lightbox-bar .lightbox-step:disabled {
+  color: var(--muted);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.lightbox-hint {
+  color: var(--muted);
+}
+
+/* Copying was blocked (render.ts copier): the text under the message, selected, to copy by hand. */
+.copy-manual {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.copy-manual input {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* Editing and deleting one's own messages (edit.ts). */
+.msg-edited {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.msg-deleted-text {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.msg-edit {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.msg-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  max-height: 50vh;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  resize: vertical;
+}
+
+.msg-edit-actions,
+.msg-delete-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 8px;
+}
+
+.msg-delete-ask {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--error);
+  border-radius: 8px;
+  background: var(--error-soft);
+}
+
+.msg-edit-hint,
+.msg-delete-text {
+  flex: 1 1 200px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.msg-delete-text {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.msg-edit-error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--error);
+  font-size: 12px;
+}
+
+/* Read by screen readers, not shown. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.msg-receipts {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--muted);
+  cursor: default;
+}
+
+/* "Seen by can" under my newest message (render.ts seenLine): the people's counterpart of receipts. */
+.msg-seen {
+  margin-top: 3px;
+  color: var(--success);
+  font-size: 11.5px;
+}
+
+.msg-receipts.receipts-delivered {
+  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
+}
+
+/* "Show routing details" off (settings.ts): a delivered message's line shows on hover, tap or keyboard focus
+   inside the message only; one still waiting, held or expired keeps it. */
+.app.routing-hidden .msg:not(:hover):not(.msg-tapped):not(:focus-within) .msg-receipts.receipts-delivered {
+  display: none;
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.msg-receipts.receipts-pending {
+  color: var(--warning);
+}
+
+/* ↓ back to the newest message (jump.ts): a round button centred over the list's bottom edge. */
+.jump-anchor {
+  position: relative;
+  flex: none;
+  height: 0;
+}
+
+.jump-btn {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
+  cursor: pointer;
+  z-index: 2;
+}
+
+.jump-btn:hover {
+  background: var(--hover);
+}
+
+.jump-btn[hidden] {
+  display: none;
+}
+
+/* "helper is working ···" between the messages and the message box (Discord's typing line); fixed height, so the
+ * message box does not move when it appears. */
+.working-line {
+  flex: none;
+  height: 20px;
+  padding: 0 20px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.working-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 2px;
+  vertical-align: middle;
+}
+
+.working-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warning);
+  animation: working-dot 1.2s ease-in-out infinite;
+}
+
+.working-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.working-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes working-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* ---- Composer ---- */
+
+.composer {
+  border-top: 1px solid var(--border);
+  padding: 10px 16px 14px;
+  background: transparent;
+}
+
+.composer-error {
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--error-soft);
+  color: var(--error);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.staged-files {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.staged-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+
+.staged-file:has(.staged-preview) {
+  border-radius: 8px;
+  padding-left: 4px;
+}
+
+.staged-preview {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.staged-remove {
+  border: 0;
+  background: transparent;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.staged-remove:hover:not(:disabled) {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* The box: one frame around the draft and, under it, its tools (attach, Expand). */
+.composer-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--input);
+}
+
+.composer-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.composer-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 4px;
+}
+
+.composer-tools .icon-btn {
+  width: 32px;
+  height: 32px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 16px;
+}
+
+.composer-tools .icon-btn:hover {
+  background: var(--hover);
+}
+
+/* The Message/Task switch while on Task (send.ts): the checkbox in the accent colour. */
+.composer-tools .kind-btn.is-task {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* Every control inside the box, icons only: attach at the left, then Expand, the microphone and Send at
+   the right. */
+.composer-tools .tools-spacer {
+  flex: 1;
+}
+
+.composer-tools .send-btn {
+  height: 32px;
+  min-width: 40px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+
+/* Recording: its panel in the draft's place; the tools at the left go, the microphone and Send stay. */
+.composer-input-wrap.recording #composer-input,
+.composer-input-wrap.recording #attach-btn,
+.composer-input-wrap.recording #composer-size {
+  display: none;
+}
+
+.composer-input-wrap .voice-rec {
+  border: 0;
+  background: transparent;
+}
+
+/* The grip above the message box: a visible pill with a finger-sized target. */
+.composer-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  margin: -10px 0 0;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.composer-grip::before {
+  content: "";
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--muted);
+  opacity: 0.7;
+}
+
+.composer-grip:hover::before,
+.composer-grip:focus-visible::before,
+.composer-grip.dragging::before {
+  background: var(--text);
+  opacity: 1;
+}
+
+.composer-grip:focus-visible {
+  outline: none;
+}
+
+.composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  /* Grows with its text up to 240px (composer.ts autosize), or the height dragged with the grip above it. */
+  resize: none;
+  padding: 9px 12px 4px;
+  border: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: transparent;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.composer textarea:focus {
+  outline: none;
+}
+
+/* Misspelled words (the browser's spell check): its thin dark-red wave hardly showed on the dark box
+  , so a bright, thicker one over a red tint. Chrome and Safari draw it; Firefox keeps its own. */
+.composer textarea::spelling-error {
+  background-color: rgba(255, 107, 107, 0.22);
+  text-decoration: underline wavy #ff6b6b 2px;
+  text-underline-offset: 3px;
+}
+
+/* Typing suggestions (suggest.ts): grey words after the cursor, laid over the box (suggest.ts
+   copies its place, font and padding); the draft under them is invisible, only there to push the words into place. */
+.composer-ghost {
+  position: absolute;
+  z-index: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.composer-ghost .ghost-draft {
+  color: transparent;
+}
+
+.composer-ghost .ghost-words {
+  color: var(--muted);
+}
+
+.composer textarea {
+  position: relative;
+  z-index: 1;
+}
+
+/* On touch screens (no Tab key): the words as a chip under the text, a tap adds them. */
+.suggest-chip {
+  align-self: flex-start;
+  max-width: calc(100% - 24px);
+  min-height: 32px;
+  margin: 0 12px 4px;
+  padding: 4px 10px;
+  overflow: hidden;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.suggest-chip[hidden] {
+  display: none;
+}
+
+.icon-btn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 17px;
+}
+
+.icon-btn:hover {
+  background: var(--bg);
+}
+
+.send-btn {
+  flex: none;
+  height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--primary-ink);
+  font-weight: 650;
+}
+
+/* Nothing to send yet: still a button, neutral, with an outline ("only white letters, Send");
+ * copper only once it can send. */
+.send-btn:disabled {
+  background: var(--input);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted);
+}
+
+.mention-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 10;
+  min-width: 260px;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+.mention-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.mention-item.selected {
+  background: var(--accent-soft);
+}
+
+.mention-label {
+  font-weight: 650;
+}
+
+.mention-hint {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 8px;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: rgba(27, 27, 27, 0.9);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 650;
+  pointer-events: none;
+}
+
+/* ---- Dialogs ---- */
+
+.dialog {
+  width: min(440px, calc(100vw - 32px));
+  border: 0;
+  border-radius: 12px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(10, 20, 40, 0.3);
+}
+
+.dialog::backdrop {
+  background: rgba(16, 16, 16, 0.6);
+}
+
+.dialog h2 {
+  margin: 0 0 4px;
+  font-size: 19px;
+}
+
+.dialog-hint {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.profile-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.profile-choice {
+  flex: 1;
+  min-width: 120px;
+  padding: 12px;
+  font-size: 16px;
+}
+
+/* New room's fields (group.ts): one per row, full width. */
+.room-fields {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* "Address: #model-research" under the new room's name. */
+.room-fields .room-address {
+  margin: -6px 0 0;
+  font-size: 12px;
+}
+
+.room-fields .room-address:empty {
+  display: none;
+}
+
+.room-fields[hidden] {
+  display: none;
+}
+
+.room-fields label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.room-fields input,
+.room-fields select,
+.room-fields textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.group-choices {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.group-choices li + li {
+  border-top: 1px solid var(--border);
+}
+
+.group-choices .side-empty {
+  color: var(--muted);
+}
+
+.group-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.group-choice:hover {
+  background: var(--bg);
+}
+
+.group-choice .side-item-detail {
+  color: var(--muted);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* New room / group (group.ts): its buttons stay at the dialog's bottom edge while the participant list and the fields
+ * scroll, so a phone with the keyboard open still shows them (they started 200 px below at 360×400). */
+#group-dialog .dialog-actions {
+  position: sticky;
+  bottom: -22px; /* the dialog's padding */
+  margin: 0 -22px -22px;
+  padding: 12px 22px 22px;
+  border-top: 1px solid var(--border);
+  background: Canvas; /* the dialog's own colour */
+}
+
+/* "Close window" at the bottom of every dialog (dialogs.ts). */
+.close-window-row {
+  margin-top: 16px;
+}
+
+/* Members in the ⋯ menu (convmenu.ts): one chip each; agents carry ✕ to take them out. */
+.member-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+
+.member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.member-chip:not(:has(.member-remove)) {
+  padding-right: 10px;
+}
+
+.member-remove {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.member-remove:hover {
+  background: var(--hover);
+  color: var(--error);
+}
+
+.btn {
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.btn:hover {
+  background: var(--bg);
+}
+
+.btn-primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-ink);
+}
+
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--primary) 88%, white);
+}
+
+/* Deleting a message (edit.ts): the one destructive button, in the error colour. */
+.btn-danger {
+  border-color: var(--error);
+  background: var(--error);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--error) 88%, white);
+}
+
+/* The GPUs dialog: schedule per resource, your bookings, the booking form. */
+.gpu-dialog {
+  width: min(680px, calc(100vw - 24px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+/* Opened for one action from a Workspace page (gpus.ts) the sections are reordered in the page itself, so Tab
+   follows what is seen: the line naming the action, that action's section, then the rest, the fleet folded last. */
+
+.gpu-focus {
+  margin: 4px 0 6px;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+#gpu-fleet > summary {
+  margin: 14px 0 6px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+#gpu-fleet[open] > summary {
+  margin-bottom: 0;
+}
+
+.gpu-dialog h3 {
+  margin: 18px 0 6px;
+  font-size: 15px;
+}
+
+.gpu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* The ⋯ menu of a group DM or project, and how projects show in the sidebar. */
+.conv-dialog select,
+.conv-dialog input[type="text"] {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.conv-row {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+
+.conv-row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Each project in its own colour (state.ts projectColor): a straight band on the left and its name. The band is its
+ * own element: an inset shadow follows the entry's rounded corners and bends at both ends. */
+.conv-item.conv-project {
+  position: relative;
+}
+
+.conv-item.conv-project::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 4px;
+  background: var(--project-color, var(--accent));
+}
+
+/* The name in the text colour; the band alone carries the project's colour. */
+.conv-item.conv-project .side-item-title {
+  color: var(--sidebar-text);
+}
+
+/* ⋯ on a project, room or group (sidebar.ts entryMenuButton): always visible with readable contrast (small and invisible), at the entry's right edge; the entry keeps room for it, so the name and time never sit
+ * under it and a tap on ⋯ never opens the conversation. A pinned entry shows 📌 where its time was. */
+.side-list li {
+  position: relative;
+}
+
+.side-list li:has(.entry-btn) > .side-item {
+  padding-right: 40px;
+}
+
+.entry-btn {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sidebar-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.entry-btn:hover,
+.entry-btn:focus-visible {
+  background: var(--hover);
+  color: var(--sidebar-text);
+}
+
+@media (max-width: 640px) {
+  .side-list li:has(.entry-btn) > .side-item {
+    padding-right: 52px;
+  }
+
+  .entry-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+}
+
+.entry-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-raised);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
+}
+
+.entry-menu-item {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.entry-menu-item:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.entry-menu-item:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* Rename in the ⋯ menu (sidebar.ts renameIn): the field, then Cancel and Save. */
+.entry-menu.entry-menu-form {
+  width: 220px;
+  padding: 10px;
+}
+
+.entry-rename-label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.entry-rename-label input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  font-size: 15px;
+}
+
+.entry-rename-error {
+  margin: 6px 0 0;
+  color: var(--error);
+  font-size: 12px;
+}
+
+.entry-rename-hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.entry-rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .entry-menu-item,
+  .entry-rename-actions .btn {
+    min-height: 44px;
+  }
+
+  .entry-rename-label input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+
+.conv-item.conv-muted {
+  opacity: 0.7;
+}
+
+.browse-btn {
+  margin: 6px 8px 0;
+  font-size: 13px;
+}
+
+/* Stats dialog: per-participant table and per-day bars. */
+.stats-dialog .gpu-head h2 {
+  margin-right: auto;
+}
+
+.stats-dialog .gpu-head select {
+  margin-right: 12px;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.stats-table th {
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.stats-table th.sorted {
+  color: var(--accent);
+}
+
+.stats-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-table .zero {
+  color: var(--muted);
+}
+
+.stats-total td {
+  font-weight: 700;
+  border-bottom: 0;
+}
+
+.stats-daily {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.stats-daily li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stats-day {
+  flex: none;
+  width: 40px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-track {
+  flex: 1;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--panel-raised);
+}
+
+.stats-bar {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.stats-day-text {
+  flex: none;
+  width: 150px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.gpu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gpu-row {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-raised);
+  font-size: 13px;
+}
+
+.gpu-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.gpu-label {
+  font-weight: 700;
+}
+
+.gpu-model,
+.gpu-use,
+.gpu-free {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gpu-hold {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.gpu-overdue,
+.gpu-unbooked {
+  color: var(--warning);
+}
+
+.gpu-planned,
+.gpu-queued {
+  color: var(--muted);
+}
+
+/* A hold of yours: its text, then its buttons; where they don't fit side by side (phones), the text takes the full
+   width and the buttons wrap below it, never squeezing the text to a column. */
+.gpu-mine-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.gpu-mine-text {
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.gpu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 0 1 auto;
+}
+
+.gpu-action {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* The control a Workspace page asked for (gpus.ts): outlined until the person acts. */
+.gpu-pointed {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.gpu-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+  font-size: 13px;
+}
+
+.gpu-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--muted);
+}
+
+.gpu-form .gpu-purpose,
+.gpu-form .gpu-private,
+.gpu-form .composer-error,
+.gpu-form .dialog-actions {
+  grid-column: 1 / -1;
+}
+
+.gpu-subscribe {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.gpu-form .gpu-private {
+  flex-direction: row;
+  align-items: center;
+}
+
+.gpu-form label[hidden] {
+  display: none;
+}
+
+/* ---- Narrow screens ---- */
+
+@media (max-width: 900px) {
+  .app {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1100px) {
+  /* Too narrow for three columns: the document covers the conversation instead. */
+  .app.with-pane {
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-areas:
+      "top top"
+      "side doc";
+  }
+
+  .app.with-pane .main {
+    display: none;
+  }
+}
+
+.back-btn,
+.details-btn {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  /* One screen at a time: the open conversation, or (.phone-list) the top bar and the conversation list.
+     The page is pinned to the visible area above the iOS keyboard (--vvh, --vvt set by phones.ts). */
+  .app,
+  .app.with-pane {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--vvt, 0px);
+    height: var(--vvh, 100dvh);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "main";
+  }
+
+  .app.with-pane {
+    grid-template-areas: "doc";
+  }
+
+  .app:not(.phone-list) .topbar,
+  .app:not(.phone-list) .sidebar {
+    display: none;
+  }
+
+  /* The phone's top bar (three busy rows): brand, then Settings, Tools, GPUs, notifications, ✉ ☆ and the
+     account under it. "#…" (also …/#/m/1234) stays on wider screens only. */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+
+  #goto-btn {
+    display: none;
+  }
+
+  .app.phone-list {
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "side";
+  }
+
+  .app.phone-list .main,
+  .app.phone-list .pane {
+    display: none;
+  }
+
+  /* Phones have no hover: the agent filter button is always visible and finger-sized (44px touch target). */
+  .agent-filter {
+    width: 44px;
+    height: 44px;
+    opacity: 0.8;
+  }
+
+  .agent-filter svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* Conversation bar: ← (unread elsewhere), title, ⓘ for members and the agent panel. */
+  .conv-header {
+    padding: 4px 8px;
+  }
+
+  /* Two rows (360 px): ← name ⓘ, then the pin and Workspace at the right, so the name keeps
+   * the width it needs. */
+  .conv-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    min-height: 36px;
+  }
+
+  .conv-title-wrap {
+    order: 1;
+    flex: 1 1 calc(100% - 120px);
+    font-size: 17px;
+  }
+
+  .conv-name-btn {
+    min-height: 44px;
+  }
+
+  .conv-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .conv-bar .details-btn {
+    order: 2;
+  }
+
+  .conv-bar .checklist-btn {
+    order: 3;
+    margin-left: auto;
+  }
+
+  .conv-bar .ws-open-btn {
+    order: 4;
+  }
+
+  /* Tapped where there is no menu (phones.ts): the whole name, on as many lines as it needs. */
+  .conv-title.expanded {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    padding: 4px 8px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .badge-for-me {
+    background: #e5484d;
+  }
+
+  .details-btn {
+    display: grid;
+    flex: none;
+  }
+
+  .details-btn[aria-pressed="true"] {
+    color: var(--accent);
+  }
+
+  .main:not(.show-details) .conv-subtitle {
+    display: none;
+  }
+
+  /* Few messages sit at the bottom, right above the box (as in chat apps), not at the top. */
+  .message-scroll {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 8px;
+  }
+
+  .message-list {
+    margin-top: auto;
+  }
+
+  /* The chat fills the screen: no box. Message box: one compact row on the keyboard, [📎] [Message…] [➤]. */
+  .chat {
+    max-width: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--panel);
+  }
+
+  /* A sheet with the grip on top: pull the line up for a taller box, down for a shorter one. */
+  .composer {
+    /* More room at the bottom: the box sat right above Safari's address bar, and thumbs landed on it. */
+    padding: 0 8px 14px;
+    border-top: 1px solid var(--border);
+    border-radius: 14px 14px 0 0;
+    background: var(--panel-raised);
+  }
+
+  /* The box across the width, every control inside it. */
+  .composer-row {
+    display: block;
+  }
+
+  /* The box's tools: a thumb's size, icons only, Send among them. */
+  .composer .composer-tools .icon-btn,
+  .composer .composer-tools .send-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .composer-grip {
+    height: 26px;
+    margin: 0;
+  }
+
+  /* iOS zooms into inputs with text under 16px. */
+  #composer-input {
+    font-size: 16px;
+  }
+
+  /* 22 px icons: attach, microphone, Send, the recording's delete and pause. */
+  .composer .icon,
+  .voice-rec .icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .msg-actions .icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* A tapped message's ▶ ⧉ # ↩ (they were 39 px high). */
+  .msg-actions .msg-action-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Editing and deleting a message (edit.ts): Save, Cancel and Delete a thumb can hit; 16 px so iOS does not zoom. */
+  .msg-edit-actions .btn,
+  .msg-delete-ask .btn {
+    min-height: 44px;
+    min-width: 64px;
+  }
+
+  .msg-edit-input {
+    font-size: 16px;
+  }
+
+  /* Tabs: a thumb's height, and no ✕ (swiping the row must not unpin one); the name's menu unpins. */
+  .tab-open {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+  .tab-close {
+    display: none;
+  }
+
+  /* The ▸/▾ section folds (Agents, Projects, Groups): a thumb's height. */
+  .side-toggle {
+    min-height: 44px;
+  }
+
+  /* ✉, ☆ and the account in the phone's top bar: a thumb's size. */
+  .inbox-topbtn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .account-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 6px;
+  }
+
+  /* The GPU booking form: fields, checkbox rows and hold buttons a thumb can hit; 16 px text so iOS
+     does not zoom into the fields. */
+  .gpu-form select,
+  .gpu-form input:not([type="checkbox"]),
+  .gpu-subscribe,
+  .gpu-form .gpu-private,
+  .gpu-action,
+  #gpu-book,
+  #gpu-close {
+    min-height: 44px;
+  }
+
+  .gpu-form select,
+  .gpu-form input:not([type="checkbox"]) {
+    font-size: 16px;
+  }
+
+  .gpu-subscribe,
+  .gpu-form .gpu-private {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .gpu-subscribe input,
+  .gpu-form .gpu-private input {
+    width: 22px;
+    height: 22px;
+  }
+
+  #gpu-close {
+    min-width: 44px;
+  }
+
+  /* Every other control a thumb hits is at least 44×44: Back, ⓘ, ⋯, Workspace ▾, the Workspace's ‹ › ✕,
+     tabs and heading link, 🗑 ⏸ while recording. Icons stay their size; the box grows. */
+  .back-btn,
+  .conv-header .icon-btn,
+  .pane-close,
+  .ws-nav {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .pane-tab,
+  .link-btn.pane-source.elsewhere,
+  .ws-open-btn,
+  .checklist-btn,
+  .side-inbox {
+    min-height: 44px;
+  }
+
+  .checklist-btn {
+    min-width: 44px;
+    justify-content: center;
+  }
+
+  .check-pin,
+  .check-reply {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .check-label {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .check-item {
+    padding-right: 48px;
+  }
+
+  /* A long Workspace heading ("Project · @@answer-check-private-review…") gets two lines on a phone, no tooltip there. */
+  .link-btn.pane-source {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+  }
+
+  .link-btn.pane-source.expanded {
+    -webkit-line-clamp: unset;
+  }
+
+  .composer .voice-rec {
+    height: 48px;
+    gap: 8px;
+  }
+
+  .composer .voice-rec-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 24px;
+  }
+
+  .composer .voice-time {
+    font-size: 16px;
+  }
+
+  /* No hover on phones: tapping a message frames it and shows its buttons, finger-sized, in a row under the message
+   * (floating over it covered the text). Up to eight on one's own messages (☆ 📌 ✎ 🗑 joined ▶ ⧉ # ↩): they wrap to a
+   * second row rather than run off the left edge. */
+  .msg-actions {
+    position: static;
+    display: none;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  .msg.msg-tapped .msg-actions,
+  .msg-replying .msg-actions {
+    display: flex;
+  }
+
+  .msg-action-btn {
+    padding: 4px 12px;
+    font-size: 20px;
+  }
+
+  .msg-reply-label {
+    display: none;
+  }
+}
+
+/* ---- Sign-in page (auth.html) and verified marks (experimental) ---- */
+
+.res-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.res-page .brand {
+  color: inherit;
+  text-decoration: none;
+}
+
+.res-crumb {
+  font-weight: 600;
+}
+
+.res-experimental {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--warning);
+  color: #000;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.res-main {
+  padding: 16px 20px 40px;
+  color: var(--text);
+}
+
+.res-main h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.res-msg {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.topbar-link {
+  color: var(--sidebar-text);
+  font-size: 13px;
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+.topbar-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.verified-tag {
+  color: var(--online);
+  font-weight: 700;
+}
+
+.unverified-tag {
+  padding: 0 5px;
+  border: 1px solid var(--warning);
+  border-radius: 4px;
+  color: var(--warning);
+  font-size: 11px;
+}
+
+.auth-main {
+  max-width: 640px;
+}
+
+.auth-card {
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.auth-card h3 {
+  margin: 14px 0 6px;
+  font-size: 14px;
+}
+
+.auth-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.auth-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Machines asking to put agents on the bus (first contact with an agent token): over the page, top right. */
+.agent-requests {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(440px, calc(100vw - 32px));
+}
+
+.agent-request {
+  padding: 14px 16px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 10px 28px var(--shadow);
+}
+
+.agent-request-title {
+  font-weight: 600;
+}
+
+.agent-request-what {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.agent-request-code {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.agent-request-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.agent-request-error {
+  margin-top: 6px;
+  color: var(--warning);
+  font-size: 13px;
+}
+
+/* An agent's live sessions on its page; the picked (or latest) one gets messages and shows its live output. */
+.session-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.session-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.session-chip.on {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.msg-receipts.receipts-expired {
+  color: var(--muted);
+}
+
+/* Under the message box when an agent of the conversation is offline: how long the bus keeps the message for it. */
+.hold-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--warning);
+  border-radius: 0 4px 4px 0;
+  background: var(--panel-raised);
+  font-size: 13px;
+  color: var(--muted);
+  /* A long name without spaces breaks instead of running off the right edge. */
+  overflow-wrap: anywhere;
+}
+
+.hold-bar select {
+  font-size: 13px;
+}
+
+/* "Nobody else is in it": a warning, not a note (composer.ts). */
+.nobody-bar {
+  border-left-color: var(--error);
+  color: var(--text);
+}
+
+.hold-bar[hidden] {
+  display: none;
+}
+
+/* Voice messages: the 🎤 button (red while recording), the recording panel in the box's place, the status bar above
+   the box, and the player in a message. */
+.voice-btn {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.voice-btn.recording {
+  border-color: #e5484d;
+  background: #e5484d;
+  color: #fff;
+}
+
+.voice-rec {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+}
+
+.voice-rec[hidden],
+.composer-input-wrap[hidden] {
+  display: none;
+}
+
+.voice-rec-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.voice-rec-btn:hover {
+  background: var(--bg);
+}
+
+.voice-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e5484d;
+  animation: voice-blink 1s ease-in-out infinite;
+}
+
+.voice-rec.paused .voice-dot,
+.voice-rec.waiting .voice-dot {
+  animation: none;
+  background: var(--muted);
+}
+
+/* The microphone is still opening (voice.ts waitForSignal): "Wait…" in muted text and a grey dot, then "Speak now". */
+.voice-rec.waiting .voice-time {
+  color: var(--muted);
+}
+
+@keyframes voice-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.voice-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+
+/* Bars of the recording's loudness, scrolling left as it records; their colour is this element's. */
+.voice-wave {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  color: var(--accent);
+}
+
+.voice-rec.paused .voice-wave {
+  color: var(--muted);
+}
+
+.voice-hint {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.voice-hint:empty {
+  display: none;
+}
+
+.voice-bar {
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  background: var(--panel-raised);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.voice-bar[hidden] {
+  display: none;
+}
+
+.msg-audio {
+  width: min(320px, 100%);
+}
+
+.msg-audio audio {
+  display: block;
+  width: 100%;
+  height: 40px;
+}
+
+/* "Add a device": the one-time QR code on the sign-in page */
+.auth-link {
+  margin: 10px 0 14px;
+}
+.auth-link-qr svg {
+  display: block;
+  margin: 8px 0;
+  border-radius: 4px;
+}
+.auth-link select {
+  max-width: 100%;
+  font-size: 13px;
+}
+.auth-link a {
+  overflow-wrap: anywhere;
+}
+
+/* Answers elsewhere (toast.ts): tap to open the message, ✕ to close. Desktop: at the right, below the top bar and the
+ * headers, so the room's controls and the message box stay free; never taller than
+ * the space between them. */
+.answer-toasts {
+  position: fixed;
+  top: 150px;
+  right: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100dvh - 310px);
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+.answer-toast {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--panel-raised);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
+  pointer-events: auto;
+}
+
+/* Its conversation was opened: it stays while the unread messages flash, then fades out as they settle (toast.ts). */
+.answer-toast-leaving {
+  animation: answer-leave 1.6s ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes answer-leave {
+  0%,
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+/* Under the text: Reply, Task for me, and More/Less for a long one (toast.ts). */
+.answer-toast-row {
+  display: flex;
+  flex: 1 1 100%;
+  gap: 14px;
+  padding: 0 14px 6px;
+}
+
+.answer-toast-row:empty {
+  display: none;
+}
+
+.answer-toast-more,
+.answer-toast-reply {
+  min-height: 32px;
+  padding: 0;
+  font-size: 13px;
+}
+
+/* Reply from the banner (toast.ts replyIn): icon and word, then a box and Send inside the banner. */
+.answer-toast-reply {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.answer-toast-reply .icon {
+  width: 15px;
+  height: 15px;
+}
+
+/* ▶ read aloud in a banner: the messages' button, dressed like the banner's other links. */
+.answer-toast .answer-toast-speak {
+  min-height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+}
+
+.answer-toast .answer-toast-speak .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.answer-toast-form {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 6px;
+  padding: 0 14px 10px;
+}
+
+.answer-toast-input {
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* iOS zooms into smaller text */
+  resize: vertical;
+}
+
+.answer-toast-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.answer-toast-send {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.answer-toast-send:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.answer-toast-note {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.answer-toast-note:empty {
+  display: none;
+}
+
+/* The whole banner moves them, mouse and touch (toast.ts): the grab hand says so, the grip ⠿ too
+  ; a tap opens the message. Its buttons keep their own pointer, the reply box its text cursor. */
+.answer-toast {
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.answer-toast:active {
+  cursor: grabbing;
+}
+
+.answer-toast-form {
+  cursor: auto;
+  touch-action: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.answer-toast-head {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding-left: 8px;
+}
+
+.answer-toast-grip {
+  flex: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.answer-toast-where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--accent);
+}
+
+.answer-toast-open {
+  flex: 1 1 100%;
+  min-width: 0;
+  display: grid;
+  padding: 0 14px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: inherit;
+}
+
+/* Under the mouse it lightens, and lighter still while pressed, so it reads as something to click. */
+.answer-toast:has(.answer-toast-open:hover) {
+  background: color-mix(in srgb, var(--text) 12%, var(--panel-raised));
+}
+.answer-toast:has(.answer-toast-open:active) {
+  background: color-mix(in srgb, var(--text) 20%, var(--panel-raised));
+}
+
+.answer-toast-close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.answer-toast-close:hover {
+  color: var(--text);
+}
+
+.answer-toast-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  cursor: inherit;
+}
+
+.answer-toast-text.expanded {
+  -webkit-line-clamp: unset;
+}
+
+/* Phones: across the screen just below the conversation's two-row header (it ends at ~101 px) and ending above the
+ * message box (~210 px tall), so ←, the title, ⓘ and the pin stay free; ✕ stays 44×44. */
+@media (max-width: 640px) {
+  .answer-toasts {
+    top: 108px;
+    right: 8px;
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 330px);
+  }
+}
+
+/* The optional reason of ✕ / Withdraw, in the card (inbox.ts). */
+.inbox-reason {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.inbox-reason input {
+  flex: 1 1 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}

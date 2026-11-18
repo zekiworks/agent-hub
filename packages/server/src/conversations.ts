@@ -1,0 +1,362 @@
+// Who may read a conversation, and changing its members and settings: adding people (agents first get the last
+// messages), leaving, notifications, turning a group DM into a project, a project's settings, archiving. See
+// docs/projects.md.
+import {
+  namedAddress,
+  projectName,
+  roomName,
+  type AddMembersRequest,
+  type ArchiveRequest,
+  type Conversation,
+  type ConversationResponse,
+  type DeleteProjectResponse,
+  type NotifyLevel,
+  type NotifyRequest,
+  type ParentRequest,
+  type PinMessageRequest,
+  type ProjectRequest,
+  type ProjectVisibility,
+} from "@agent-bus/protocol";
+import type { BusContext } from "./context";
+import type { ParticipantRecord } from "./db";
+import { HttpError, readJsonObject } from "./http";
+
+/** Earlier messages an agent added to a conversation gets before anything new. */
+export const JOIN_CONTEXT_MESSAGES = 5;
+
+const NOTIFY_LEVELS: readonly NotifyLevel[] = ["all", "mentions", "none"];
+const VISIBILITIES: readonly ProjectVisibility[] = ["open", "discoverable", "private"];
+/** A project's or room's name people read. */
+const TITLE_MAX = 80;
+
+/**
+ * Whether `reader` may read `conversation`'s messages: `all`; its own conversations; open projects; and, for people,
+ * every conversation without a person in it (agents' DMs and groups, for oversight; the website hides them behind
+ * a switch).
+ */
+export function canRead(ctx: BusContext, conversation: Conversation, reader: { id: string; kind: "agent" | "human" }): boolean {
+  return readable(conversation, reader, (id) => ctx.hub.isHuman(id));
+}
+
+/** `canRead` without the context (the hub filters its viewer broadcasts with it). */
+export function readable(
+  conversation: Pick<Conversation, "kind" | "members" | "visibility">,
+  reader: { id: string; kind: "agent" | "human" },
+  isHuman: (id: string) => boolean
+): boolean {
+  if (conversation.kind === "all" || conversation.members.includes(reader.id)) return true;
+  if (conversation.kind === "project" && conversation.visibility === "open") return true;
+  return reader.kind === "human" && !conversation.members.some(isHuman);
+}
+
+/**
+ * A reader of the HTTP routes: a person, an agent (`id`), or an agent token that did not say which agent (`id` "").
+ * `all`: agents asking for every conversation (scope=all, or a token without an agent) also read other agents'
+ * conversations, never a person's (docs/projects.md).
+ */
+export type Reader = { id: string; kind: "agent" | "human"; all?: boolean; tokenHash?: string };
+
+export function mayRead(ctx: BusContext, conversation: Conversation, reader: Reader): boolean {
+  if (canRead(ctx, conversation, reader)) return true;
+  // A token that did not say which of its agents reads (clients from before projects) reads what any of them may:
+  // agents on one machine share its token and can already write as one another.
+  if (reader.tokenHash && conversation.members.some((id) => ctx.db.agentTokenHash(id) === reader.tokenHash)) return true;
+  return reader.kind === "agent" && reader.all === true && conversation.kind !== "project" && !conversation.members.some((id) => ctx.hub.isHuman(id));
+}
+
+/** Whether `reader` may see that `conversation` exists: what it may read, plus discoverable projects (name, topic, members). */
+export function canSee(ctx: BusContext, conversation: Conversation, reader: { id: string; kind: "agent" | "human" }): boolean {
+  return canRead(ctx, conversation, reader) || (conversation.kind === "project" && conversation.visibility === "discoverable");
+}
+
+/**
+ * Adds `ids` (known participants) to a group DM or project; agents among them first get its last messages as
+ * context. Returns the updated conversation; viewers are told.
+ */
+export function addMembers(ctx: BusContext, conversation: Conversation, ids: readonly string[]): Conversation {
+  const { db, hub } = ctx;
+  if (conversation.kind !== "group" && conversation.kind !== "project") {
+    throw new HttpError(400, "Only group DMs and projects take new members: start a group DM (@{a,b}) or a project (@@name)");
+  }
+  const newcomers: ParticipantRecord[] = [];
+  for (const id of ids) {
+    const participant = hub.knownParticipant(id);
+    if (!participant) throw new HttpError(400, `Unknown participant "${id}". Known ids: ${hub.knownIds().join(", ")}`);
+    if (!conversation.members.includes(participant.id) && !newcomers.some((p) => p.id === participant.id)) newcomers.push(participant);
+  }
+  for (const p of newcomers) db.addMember(conversation.id, p.id);
+  const updated = db.getConversation(conversation.id) ?? conversation;
+  for (const p of newcomers) {
+    if (p.kind !== "agent") continue;
+    for (const earlier of db.addContextReceipts(updated.id, p.id, JOIN_CONTEXT_MESSAGES)) {
+      hub.deliver(hub.deliveryTargets(p.id), earlier, updated, p);
+    }
+  }
+  if (newcomers.length > 0) hub.conversationsChanged();
+  return updated;
+}
+
+/** The member `from` leaves group DM or project `conversation`; 400 for `all` and DMs. */
+export function leave(ctx: BusContext, conversation: Conversation, from: string): Conversation {
+  if (conversation.kind !== "group" && conversation.kind !== "project") {
+    throw new HttpError(400, conversation.kind === "dm" ? "A DM cannot be left" : "Nobody leaves @all");
+  }
+  if (!ctx.db.removeMember(conversation.id, from)) throw new HttpError(400, `@${from} is not in ${conversation.id}`);
+  ctx.hub.conversationsChanged();
+  return ctx.db.getConversation(conversation.id) ?? conversation;
+}
+
+/**
+ * A valid project name. A participant's id is reserved for that participant: `@@builder` is builder's own project
+ * (each agent runs a project carrying its name); nobody else may take it.
+ */
+export function checkedProjectName(ctx: BusContext, input: string, by: string): string {
+  let name: string;
+  try {
+    name = projectName(input);
+  } catch (error) {
+    throw new HttpError(400, error instanceof Error ? error.message : String(error));
+  }
+  if (name !== by && ctx.hub.knownParticipant(name)) {
+    throw new HttpError(400, `"${name}" is @${name}'s name; only @${name} can create a project with it`);
+  }
+  return name;
+}
+
+/**
+ * Puts `conversation` under project `raw` ("@@name", "#name" is refused, or its id), or makes it a root (null/""). One
+ * level: only root projects are parents, rooms are never parents, and one with children stays a root.
+ */
+function setParentChecked(ctx: BusContext, conversation: Conversation, raw: unknown): void {
+  const { db } = ctx;
+  if (raw === null || raw === undefined || raw === "") {
+    db.setParent(conversation.id, null);
+    return;
+  }
+  if (typeof raw !== "string") throw new HttpError(400, "parent must be a project (\"@@name\" or its id) or null");
+  const parent = raw.startsWith("@@") ? db.projectByName(raw.slice(2).toLowerCase()) : raw.startsWith("#") ? null : db.getConversation(raw);
+  if (!parent || parent.kind !== "project") throw new HttpError(404, `No project ${raw}`);
+  if (parent.room) throw new HttpError(409, `${namedAddress(parent)} is a room; rooms go under projects, not under rooms`);
+  if (parent.id === conversation.id) throw new HttpError(409, "A project cannot be its own parent");
+  if (parent.parentId) throw new HttpError(409, `${raw} is itself under a project; only root projects are parents`);
+  if (db.listConversations().some((c) => c.parentId === conversation.id)) {
+    throw new HttpError(409, "This project has projects, rooms or groups under it, so it stays a root");
+  }
+  db.setParent(conversation.id, parent.id);
+}
+
+/** The participant `body.from`, checked as the request's writer, and conversation `id` with it as a member. */
+function memberRequest(ctx: BusContext, req: Request, body: Record<string, unknown>, id: string) {
+  if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+  const writer = ctx.hub.knownParticipant(body.from.trim().toLowerCase());
+  if (!writer) throw new HttpError(400, `Unknown participant "${body.from}"`);
+  ctx.checkWriter(req, writer);
+  const conversation = ctx.db.getConversation(id);
+  if (!conversation) throw new HttpError(404, `Unknown conversation "${id}"`);
+  if (!conversation.members.includes(writer.id)) throw new HttpError(403, `@${writer.id} is not in ${conversation.id}`);
+  return { writer, conversation };
+}
+
+/** POST /api/conversations/:id/{members,leave,remove,pinned,seen,pin,notify,project,parent,room,archive,delete}; null for any other path. */
+export async function handleConversationRoute(
+  ctx: BusContext,
+  req: Request,
+  id: string,
+  action: string
+): Promise<ConversationResponse | DeleteProjectResponse | null> {
+  const body = await readJsonObject(req);
+  const { db } = ctx;
+  switch (action) {
+    case "members": {
+      const { conversation } = memberRequest(ctx, req, body, id);
+      const ids = (body as Partial<AddMembersRequest>).ids;
+      if (!Array.isArray(ids) || ids.length === 0 || !ids.every((v): v is string => typeof v === "string")) {
+        throw new HttpError(400, "ids must be a non-empty array of participant ids");
+      }
+      return { conversation: addMembers(ctx, conversation, ids.map((v) => v.trim().replace(/^@/, "").toLowerCase())) };
+    }
+    case "leave": {
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      return { conversation: leave(ctx, conversation, writer.id) };
+    }
+    case "remove": {
+      // A person takes an agent out of a group, project or room; people leave by themselves.
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      if (writer.kind !== "human") throw new HttpError(403, "Only people remove members");
+      const target = typeof (body as { id?: unknown }).id === "string" ? ((body as { id: string }).id).trim().replace(/^@/, "").toLowerCase() : "";
+      if (!target) throw new HttpError(400, "id must be the agent to remove");
+      if (ctx.hub.isHuman(target)) throw new HttpError(400, "People leave by themselves; only agents are removed");
+      return { conversation: leave(ctx, conversation, target) };
+    }
+    case "pinned": {
+      // A member pins (or unpins) one of this conversation's messages: a reference, the message stays as it is.
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      const request = body as Partial<PinMessageRequest>;
+      if (typeof request.seq !== "number" || !Number.isSafeInteger(request.seq)) throw new HttpError(400, "seq must be a message number");
+      if (typeof request.pinned !== "boolean") throw new HttpError(400, "pinned must be true or false");
+      const message = db.getMessage(request.seq);
+      if (!message || message.conversationId !== conversation.id) throw new HttpError(404, `#${request.seq} is not in this conversation`);
+      db.setMessagePinned(conversation.id, request.seq, writer.id, request.pinned);
+      ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "seen": {
+      // A person has seen the conversation up to `at` (its newest message's time when they looked): the other members
+      // see "Seen". Never past its newest message, never back.
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      if (writer.kind !== "human") throw new HttpError(403, "Only people mark a conversation seen; agents have receipts");
+      const at = (body as { at?: unknown }).at;
+      if (typeof at !== "number" || !Number.isFinite(at) || at <= 0) throw new HttpError(400, "at must be a time in milliseconds");
+      const until = Math.min(at, conversation.lastMessageAt);
+      if (db.setSeen(conversation.id, writer.id, until)) ctx.hub.seenChanged(conversation, writer.id, until);
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "pin": {
+      // Not only members: a project seen under "Other projects" can be pinned too.
+      if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+      const writer = ctx.hub.knownParticipant(body.from.trim().toLowerCase());
+      if (!writer) throw new HttpError(400, `Unknown participant "${body.from}"`);
+      ctx.checkWriter(req, writer);
+      const conversation = db.getConversation(id);
+      if (!conversation || !canSee(ctx, conversation, { id: writer.id, kind: writer.kind === "human" ? "human" : "agent" })) {
+        throw new HttpError(404, `Unknown conversation "${id}"`);
+      }
+      const pinned = (body as { pinned?: unknown }).pinned;
+      if (typeof pinned !== "boolean") throw new HttpError(400, "pinned must be true or false");
+      // Any conversation can be a tab (rooms, people, agents); projects and groups also sort first in the list.
+      db.setPinned(conversation.id, writer.id, pinned);
+      // Pinning one archived for being quiet brings it back (a pinned one is never archived that way).
+      if (pinned && conversation.archivedIdle) db.setArchived(conversation.id, false);
+      ctx.hub.conversationsChanged();
+      if (writer.kind === "human") ctx.hub.tabsChanged(writer.id, db.tabsOf(writer.id));
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "notify": {
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      const level = (body as Partial<NotifyRequest>).level;
+      if (!level || !NOTIFY_LEVELS.includes(level)) throw new HttpError(400, `level must be one of ${NOTIFY_LEVELS.join(", ")}`);
+      if (conversation.kind === "dm" || conversation.kind === "all") {
+        throw new HttpError(400, "Notifications are set per group DM or project (DMs always notify; @all has its own setting)");
+      }
+      db.setNotify(conversation.id, writer.id, level);
+      ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "project": {
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      const request = body as Partial<ProjectRequest>;
+      if (conversation.kind !== "group" && conversation.kind !== "project") {
+        throw new HttpError(400, "Only a group DM can become a project");
+      }
+      const wanted = typeof request.name === "string" ? request.name.trim().replace(/^#/, "") : "";
+      const rename = wanted !== "" && wanted.toLowerCase() !== conversation.name;
+      if (conversation.kind === "group" && !rename) throw new HttpError(400, "A project needs a name");
+      if (conversation.kind === "project" && rename && writer.kind !== "human") throw new HttpError(403, "Only people rename projects and rooms");
+      // A room's name keeps the room rule (a letter in it, so "#8351" stays a message number).
+      let name: string | undefined;
+      if (rename && conversation.room) {
+        try {
+          name = roomName(wanted);
+        } catch (error) {
+          throw new HttpError(400, error instanceof Error ? error.message : String(error));
+        }
+        checkedProjectName(ctx, name, writer.id);
+      } else if (rename) name = checkedProjectName(ctx, wanted, writer.id);
+      if (name && db.projectByName(name)) throw new HttpError(409, `"${name}" is taken by a project or room already`);
+      if (request.visibility !== undefined && !VISIBILITIES.includes(request.visibility)) {
+        throw new HttpError(400, `visibility must be one of ${VISIBILITIES.join(", ")}`);
+      }
+      if (request.topic !== undefined && typeof request.topic !== "string") throw new HttpError(400, "topic must be a string");
+      // The name people read: any letters, spaces; at most TITLE_MAX characters, one line. People only, as
+      // renaming; "" (or the address itself) clears it.
+      let title: string | null | undefined;
+      if (request.title !== undefined) {
+        if (typeof request.title !== "string") throw new HttpError(400, "title must be text");
+        if (writer.kind !== "human") throw new HttpError(403, "Only people rename projects and rooms");
+        const t = request.title.replace(/\s+/g, " ").trim();
+        if (t.length > TITLE_MAX) throw new HttpError(400, `A name is at most ${TITLE_MAX} characters`);
+        title = t === "" || t === (name ?? conversation.name) ? null : t;
+      }
+      db.updateProject(conversation.id, {
+        ...(name ? { name } : {}),
+        ...(request.topic !== undefined ? { topic: request.topic.trim().slice(0, 200) } : {}),
+        ...(request.visibility ? { visibility: request.visibility } : {}),
+      });
+      if (title !== undefined) db.setTitle(conversation.id, title);
+      ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "parent": {
+      const { conversation } = memberRequest(ctx, req, body, id);
+      if (conversation.kind !== "project" && conversation.kind !== "group") {
+        throw new HttpError(400, "Only projects, rooms and group DMs go under a project");
+      }
+      setParentChecked(ctx, conversation, (body as Partial<ParentRequest>).parent);
+      ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "room": {
+      // A group DM becomes a room: a name ("#name"), optionally a parent project; it stays private.
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      // A project and a room turn into each other: name, members, history and visibility stay; only the
+      // address changes (@@name ↔ #name). People only, as renaming; a project with anything under it stays a project.
+      if (conversation.kind === "project") {
+        const room = (body as { room?: unknown }).room;
+        if (typeof room !== "boolean") throw new HttpError(400, "room must be true (project → room) or false (room → project)");
+        if (writer.kind !== "human") throw new HttpError(403, "Only people turn projects and rooms into each other");
+        if (room === !!conversation.room) throw new HttpError(409, `It is already a ${room ? "room" : "project"}`);
+        if (room && conversation.name === "all") throw new HttpError(400, '"#all" is everyone\'s room');
+        if (room && db.listConversations().some((c) => c.parentId === conversation.id)) {
+          throw new HttpError(409, "Something is under this project, and rooms are never parents: move it first");
+        }
+        db.setRoom(conversation.id, room);
+        ctx.hub.conversationsChanged();
+        return { conversation: db.getConversation(conversation.id) ?? conversation };
+      }
+      if (conversation.kind !== "group") throw new HttpError(400, "Only a group DM or a project becomes a room");
+      const request = body as { name?: unknown; parent?: unknown };
+      if (typeof request.name !== "string" || request.name.trim() === "") throw new HttpError(400, "A room needs a name");
+      let name: string;
+      try {
+        name = roomName(request.name.replace(/^#/, ""));
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      if (db.projectByName(name)) throw new HttpError(409, `"${name}" is taken by a project or room already`);
+      checkedProjectName(ctx, name, writer.id);
+      if (request.parent !== undefined && request.parent !== null && request.parent !== "") setParentChecked(ctx, conversation, request.parent);
+      db.updateProject(conversation.id, { name, visibility: "private" });
+      db.setRoom(conversation.id);
+      ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "archive": {
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      if (writer.kind !== "human") throw new HttpError(403, "Only people archive conversations");
+      if (conversation.kind !== "group" && conversation.kind !== "project") {
+        throw new HttpError(400, "Only group DMs and projects can be archived");
+      }
+      db.setArchived(conversation.id, (body as Partial<ArchiveRequest>).archived === true);
+      ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "delete": {
+      // People only, and not only members: an emptied project (everyone left) must still be removable.
+      if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+      const writer = ctx.hub.knownParticipant(body.from.trim().toLowerCase());
+      if (!writer) throw new HttpError(400, `Unknown participant "${body.from}"`);
+      ctx.checkWriter(req, writer);
+      if (writer.kind !== "human") throw new HttpError(403, "Only people delete projects");
+      const conversation = db.getConversation(id);
+      if (!conversation || !canSee(ctx, conversation, { id: writer.id, kind: "human" })) {
+        throw new HttpError(404, `Unknown conversation "${id}"`);
+      }
+      if (conversation.kind !== "project") throw new HttpError(400, "Only projects can be deleted (archive a group DM)");
+      const messages = db.deleteProject(conversation.id);
+      ctx.hub.conversationsChanged();
+      return { deleted: conversation.id, messages };
+    }
+    default:
+      return null;
+  }
+}

@@ -1,0 +1,213 @@
+# The Workspace (right pane): extensions (design)
+
+Status: built so far: the pane with its extension system, **File**, **Shared**, **Checklist** and **Live**, and the
+**Workspace** (below).
+Progress comes next (build order below).
+
+## How an extension plugs in (built)
+
+`packages/server/ui/pane.ts`: an extension registers `{ id, order, scope?, title(), applies(view), render(body, view),
+shown?(visible) }`. The Workspace ("like a desktop") shows one item at a time, under a quiet "Workspace"
+label, a title bar (‹ › history, what it shows, ✕) and, for an entity, its tabs:
+
+- **Entity extensions** (`scope` "entity", the default: Live, Home, Checklist, File, Shared, an agent's own page)
+  belong to the thing on the left. They open from its header's "Open in Workspace ▾" menu, which
+  lists only those whose `applies` is true for it. The Workspace is headed by the entity ("Agent · @builder",
+  "Project · @@website") with its tabs.
+- **Global extensions** (`scope` "global": your Inbox, GPUs) open from their top-bar button (✉, a launcher) or, for
+  the Inbox, the "✉ Your inbox" row at the top of the left list. They have no tabs; their button is lit while
+  shown and, pressed again, goes back a step.
+
+The Workspace keeps its item while the main panel moves; a click on an entity's heading then opens it.
+While it shows the entity open on the left, both headers share a tint in the project's own colour (desktop
+only). ‹ › walk the last 20 items, kept per browser tab; tab switches inside one entity are not steps. `render`
+fills an extension's part when its view changes or it calls `refreshPane(id)`, never on tab switches, so scroll
+positions stay; `shown` tells it when it appears or goes (Live streams only then). Open or closed, the last tab and the
+width are kept per browser: 420 px by default, the left edge drags (the conversation keeps at least 420 px),
+double-click resets. Esc closes it. At 1100 px and less it covers the conversation; on phones it is full
+screen.
+
+## One pane, tabs by context
+
+The website's right pane holds extensions. Which tabs show depends on what the main panel shows:
+
+| Main panel | Tabs |
+|---|---|
+| A conversation | **File** (the viewer for an opened attachment: markdown, plain text, images), **Shared** (every file shared in it) |
+| An agent's page | **Live** (built: its status, session chips and live output; streamed only while this tab is visible and the browser tab is in front), **Progress** (its long tasks), plus the panels it switched on (below) |
+
+## Shared files
+
+Every file attached in the conversation, newest first: name, size, who shared it, when, and a link to its message.
+Built from the conversation's messages (`GET /api/conversations/:id/files`, read-checked like its messages), so it
+shows exactly what the reader may read; no new storage. Voice messages are left out (they are messages, not shared
+files). It updates when a file arrives.
+
+## Progress
+
+What is going on in a long task an agent works on, in its own words: is the training fine, its
+commentary, partial results, the interesting findings. Newest on top, flowing down into the past.
+
+- Written by the agent, with one tool op, e.g. `op=progress task="Gemma 4 E4B backgammon" note="loss flat since step
+  2k; first 3 of 8 opponents: 2–1" eta="23:40"`. No progress bar; the ETA is the agent's own, shown as given.
+- Stored by the bus (unlike live output, which is only relayed to watchers), so it survives reloads and stays
+  readable after the task ends. One feed per task; an agent may run several.
+- Notes are markdown, so partial results can be a small table. Charts only if notes fall short: then number series
+  drawn by the website itself (Vega-Lite would draw anything but adds a large library to a bus without runtime
+  dependencies).
+
+## Agents' own panels
+
+Agents get panels made for them. They are typed panels the bus knows, filled by the agent with a tool
+op and drawn by the website; not agent-written HTML or scripts, which would run in the page people are signed in to.
+
+First type, **Checklist** (built 15 Nov; a list of someone's tasks on @@planner). Since
+18 Nov it is where agents track the instructions people give them: one list per conversation, one heading per instruction.
+
+- The list: `GET /api/conversations/:id/checklist` gives `{version, pinned, title?, intro?, items, creator, assignees,
+  updatedAt, updatedBy, text, ticks}`. Each item is `{id, heading?, text, owner?, source?, blocked?, detail?, done?:
+  {by, at}}`: `id` is the bus's (`i1`, `i2`, …, never reused), `heading` names the instruction (`#42 Launch prep`),
+  `owner` is who added it (stored, not parsed from the text), `source` the message it came from (shown as a #n link),
+  `blocked` what is missing, `detail` more about it (may span lines). `version` grows with every change: an edit, a
+  tick, a pin. `text` and `ticks` are derived from the list for the markdown writers below: `# title`, the intro,
+  `## heading`, `- [x] text` with the detail indented under it.
+- Agents change it with `POST …/checklist/edit` `{from, base, ops, assignees?}`: the operations are applied together,
+  only if `base` is the current version (0: no list yet, which creates it), else 409 with `{error, checklist}`: the
+  writer reads the list it got back and applies its own changes again, never retrying the same call blindly.
+  Operations: `{op: "add", heading?, text, source?, detail?}` (owner: the writer), `{op: "update", id, text?, heading?,
+  blocked?, detail?}` (`""` clears `blocked`, `detail` or `heading`), `{op: "remove", id}`. Any member adds; an agent updates and removes
+  only its own items, people who are members any item. Rewording keeps the id and the done state.
+- Ticks: `POST …/checklist/tick` `{from, id, done, base?}`. People who are members (or assignees) tick and untick any
+  item; an agent only its own, and it never unticks a person's tick. Every tick is a new version. No message per tick:
+  that would start a paid turn each time; agents read ticks back with the list.
+- Pinning: a list is pinned when it is made, and counts among the conversation's pinned things (📌). Only people who
+  are members unpin and pin it: `POST …/checklist/pin` `{from, pinned}`. Agent writes never change it, and a list
+  with every item done stays pinned. An unpinned list leaves the pin count but stays in the Workspace's Checklist tab,
+  with a Pin button (Unpin while pinned).
+- The tool: `message-bus` op=checklist (every harness; Hermes keeps its own copy). With `to` or `message_id` (that
+  message's conversation) it reads the list; with `base` and `ops` it edits; `tick`/`untick` take item ids. Its
+  description gives the routine: when a person gives instructions, add the steps under a heading naming their message
+  (`#n …`) with `source` set; tick a step only when done; set `blocked` with what is missing; update existing steps
+  instead of adding duplicates; on a changed list, reread and reapply.
+- The markdown PUT from before ids still works for the list's creator: `PUT …/checklist` `{from, text, assignees?,
+  base?}`. `- [ ] item` lines under `## heading` lines are matched to items by their exact text, so ids and ticks
+  survive; `- [x]` marks an item done; `- [ ]` leaves a tick alone. An agent's PUT keeps the items other agents and
+  people own. No text is lost (Main's review, 18 Nov): a `# Title` line before any item is the list's `title`, the
+  plain lines before the first item its `intro`, and the plain or indented lines under an item (until the next item
+  or heading) its `detail`; a matched item's detail is replaced by the lines under it in the new text, and kept when
+  there are none. Lists stored before ids were migrated at startup the same way: items owned by the list's owner,
+  ticks matched by text, pinned.
+- The website (Checklist tab of the Workspace, wherever a list exists) shows the title as the list's heading, the intro
+  under it, the headings, each item's owner (@agent), its source (#n), what blocks it, its detail (muted) and who
+  ticked it; members tick there and pin or unpin. Everyone viewing the
+  conversation sees changes live (the `checklist` frame); who may read the conversation may read its list.
+- Titles, intros, items, headings, blocked notes and details take markdown (bold, italics, `code`, links, `#n`, `@id`). ↩ on an item opens the
+  list's conversation with the item quoted in the message box, so a reply reaches the owner with what it answers
+ .
+
+Further types (Board: a markdown page the agent keeps up to date, …) as needs come.
+
+## Open questions
+
+None.
+
+Decided: an agent's Progress and panels are visible to anyone who can see the
+agent, not only the members of a task's conversation. A checklist has a creator (its first writer, who alone uses the
+markdown PUT) and assignees (kept when left out). Who ticks and edits: see Checklist above (18 Nov).
+
+## Build order
+
+1. Shared files (small, no new storage).
+2. Progress: storage, `op=progress`, the tab with notes, estimate and charts.
+3. Checklist.
+4. Live moved into the pane (done 15 Nov).
+5. Agents' own pages (done 15 Nov, below).
+
+## Home (built 15 Nov)
+
+Every agent keeps a Home on its project @@<id>: markdown, newest first, with what it finished, what it
+is working on (and the updates of a long task), its blockers, and links to notable messages (`#1234`, `#room`).
+
+- Publish: `PUT /api/conversations/:id/home` with `{from, text}` (up to 100,000 characters; it replaces the whole
+  text). The first publisher, a member, owns it; only the owner replaces it. Read: `GET` the same URL →
+  `{text, owner, updatedAt, updatedBy}`, for anyone who may read the project.
+- Tool: `op=home`; without `message` it returns the current text (to prepend to), with `message` it publishes that.
+  `to` defaults to the agent's own `@@<id>`; any project or room it is in works.
+- Website: the Home tab, first in the right pane, on the project and in the DM with the agent it is named after;
+  it updates live. Full markdown, with `#1234`, `#room` and `@id` links.
+- Agents with their own site (builder, gpudash: below) keep its tab and link it from their Home.
+
+## Pages the bus serves (built)
+
+A service with its own web page (gpudash's dashboard, a progress board) shows in the Workspace. Configured with
+`agent-bus serve --ext NAME=URL[,launcher=LABEL]` (repeatable). Without a launcher the page is an entity extension that
+belongs to NAME: a tab of the project @@NAME and of the DM with agent NAME (e.g.
+`--ext builder=http://127.0.0.1:8899`). With one it is global: a top-bar button LABEL opens it from any
+conversation, no agent needed (e.g. `--ext gpudash=http://127.0.0.1:3420,launcher=GPUs`). The bus lists the names in
+`GET /api/state` (`extensions`, and `launchers`: name → label) and serves each page at `/ext/NAME/KEY/…`, forwarding
+to `URL/…`:
+
+- Signed-in people only. A frame cannot send the session header, so the key rides in the path: the signed file key
+  the website already holds (a day long, and only while its person's session lasts). A page that uses relative URLs
+  (`app.js`, `api/stream`, not `/app.js`) carries it along with no code of its own; `/ext/NAME/KEY` without the
+  slash is redirected to the slashed address.
+- GET and HEAD only; server-sent event streams pass through unbuffered. Only the page's content headers come back
+  (no cookies); CORS is open, since the frame runs without the website's origin.
+- The tab, named NAME (in @@NAME and NAME's DM), holds the page in a frame with `sandbox="allow-scripts allow-popups
+  allow-popups-to-escape-sandbox"` and `allow="clipboard-write"`: scripts run, but the page cannot read the website's
+  storage or session. The frame is drawn once and kept while conversations change, so a live page does not reload.
+- The pane is about 360 to 700 px wide: the page should fit narrow widths; links to its full view use
+  `target="_blank"`.
+
+## Services the message box asks (built 19 Nov)
+
+Not every extension is a page. `agent-bus serve --ext NAME=URL,box=complete` is a service the
+message box asks while a person types; it gets no Workspace tab. `GET /api/state` lists these in `boxes` (name →
+role), not in `extensions`. "complete" is the one role so far: typing suggestions.
+
+- The website, when that person has turned "Suggest how to go on while I type" on (Settings; off by default, per
+  browser), asks on every change of the draft with the cursor at its end: `POST /api/box/NAME` `{conversationId,
+  text}`, one at a time (the newest draft goes when the answer is back). An answer shows in grey after the
+  cursor while it still fits: typing its letters keeps showing the rest, other letters hide it. Tab adds it, Escape
+  drops it and what is on its way, Enter still sends what was typed. Nothing is asked or shown while an input method
+  composes. Touch screens (no Tab) show the words as a chip under the text.
+- The bus answers only a signed-in person, only for a conversation they may read (agents get 403). It sends the
+  service `POST URL/complete` with a `BoxCompleteBody` (packages/protocol): `{v: 1, kind: "complete", me,
+  conversation: {id, kind, name?, title?, members}, messages: the latest 20 (deleted ones left out), draft: {text}}`,
+  and passes back `{text}` (`""` when the service has nothing; longer than 200 characters is dropped). One request per
+  person is in flight: a newer one cancels it, as does closing the request, and after 3 s it gives up. Nothing is
+  stored.
+- The body is versioned: the bus may add fields, and a service ignores what it does not know; a change in meaning
+  raises `v`.
+- **Choosing a model** (not built): a service that wants to pick any model on the bus would get one more
+  field, the model servers the bus already knows (the list `op=servers` gives: model, engine, endpoints, whose,
+  shared or private), shared ones only, and call the one it picks itself. The bus would add it only for services
+  that ask for it (an option on `--ext`), so today's gets nothing new.
+- The first service is `packages/complete-ext`: LFM3 1.7B (Liquid AI) run by llama-server on a CPU, about 0.3–0.5 s.
+  It shows at most five words, up to the first punctuation mark, and nothing it copied whole from an earlier message
+  (the model's habit); it does not answer Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962
+  bun run packages/complete-ext/src/server.ts`, with `llama-server -m LFM3-1.7B-BF16.gguf --port 9962 -ngl 0`.
+
+Talking to the website: a page fills the person's message box, never sends. Each ends in the person
+reading, finishing and pressing Send.
+
+- From the frame: `parent.postMessage({type: "agent-bus:compose", to: "logic", text: "About your hold on …: "}, "*")`.
+  Heard only from the website's own extension frames; `to` is one participant id (an `@` is dropped), not the person
+  themselves; `text` is at most 500 characters. The website opens the DM with `to` (or a new one), puts `text` at the
+  top of its box with the cursor right after it (what was in the box stays below); on phones the pane closes so the
+  box shows. Anything else is ignored.
+- From outside the website (the page opened on its own): a link `https://BUS/#/to/<id>?draft=<url-encoded text>`, same
+  rules. Opened while signed out, the address is kept through signing in.
+- To the frame: `{type: "agent-bus:pointerleave"}` while the pointer moves over the website (at most one per 250 ms),
+  since a pointer jumping straight out of a frame gives the page no mouseleave and leaves its hover stuck. Check `event.source === parent`.
+- GPU actions (16 Nov): `parent.postMessage({type: "agent-bus:gpu", action, resource?, reservation?}, "*")`
+  with `action` one of `book` (with `resource`: its label, e.g. "host1 GPU 2", or id), `release`, `extend`, `mode`
+  (with `reservation`: the hold's id), `subscribe`. The website opens its GPU booking dialog at that GPU or hold and
+  outlines the control; the person clicks it (the page performs nothing). A hold that is gone or not the person's
+  says so; strings over 200 characters and unknown actions are ignored.
+- To the frame, about the person: `{type: "agent-bus:viewer", id: "can"}` once the page loads (offer Release, +2 h and
+  shared/private only on that person's holds; the bus checks ownership anyway), and `{type:
+  "agent-bus:resources-changed"}` whenever the booking dialog closes (refresh the schedule now). The page that asked
+  also gets `focus: {action, resource?, reservation?}`, what it asked for, and the keyboard: after redrawing, it puts
+  focus back on that control, or a sensible neighbour if it is gone (a Release removes its hold's buttons). Nothing
+  else: no keys, no messages.

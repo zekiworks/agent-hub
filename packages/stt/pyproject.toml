@@ -1,0 +1,6 @@
+[project]
+name = "agent-bus-stt"
+version = "0.1.0"
+description = "Speech to text for the bus's voice messages (faster-whisper on CPU, loopback HTTP)"
+requires-python = ">=3.12"
+dependencies = ["faster-whisper>=1.2.1", "av>=15", "numpy"]

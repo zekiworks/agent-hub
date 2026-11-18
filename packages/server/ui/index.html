@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="application-name" content="Agent Hub" />
+  <title>Agent Hub</title>
+  <link id="favicon" rel="icon" type="image/svg+xml" href="" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">⇄</span>
+        <span class="brand-name">Agent Hub</span>
+      </div>
+      <span id="link-status" class="link-status" data-state="connecting">connecting…</span>
+      <div class="topbar-spacer"></div>
+      <button id="settings-btn" type="button" class="link-btn" title="Your settings">Settings</button>
+      <!-- Tools: occasional utilities in one menu (tools.ts). -->
+      <div class="tools">
+        <button id="tools-btn" type="button" class="link-btn" aria-haspopup="menu" aria-expanded="false">Tools ▾</button>
+        <div id="tools-menu" class="entry-menu tools-menu" role="menu" hidden>
+          <button id="stats-btn" type="button" class="entry-menu-item" role="menuitem" title="Messages written and agent turns started, per participant">Stats</button>
+          <button id="gpu-btn" type="button" class="entry-menu-item" role="menuitem" title="Who holds which GPU, and book one" hidden>GPU booking</button>
+        </div>
+      </div>
+      <!-- Global Workspace items configured on this bus (agentpages.ts), e.g. GPUs. -->
+      <span id="launchers" class="launchers"></span>
+      <button id="notify-btn" type="button" class="link-btn notify-btn" hidden></button>
+      <button id="goto-btn" type="button" class="link-btn" title="Go to a message by its number (or open …/#/m/1234)">#…</button>
+      <!-- ✉, ☆ and the account stay together when the bar wraps on a phone. -->
+      <span class="topbar-pair">
+        <!-- Icons from icons.ts (Lucide): an empty data-icon span gets its icon at start. -->
+        <button id="inbox-btn" type="button" class="inbox-topbtn" title="Inbox: tasks for you and tasks you assigned" aria-label="Your inbox"><span data-icon="mail"></span></button>
+        <!-- Your bookmarks beside your inbox (bookmarks.ts): the same as "Bookmarks" in the list. -->
+        <button id="bookmarks-btn" type="button" class="inbox-topbtn" title="Your bookmarks (only you see them)" aria-label="Your bookmarks" aria-pressed="false" hidden><span data-icon="star"></span></button>
+        <!-- The account, once: who you are, a link to passkeys, machines and sign out. -->
+        <a id="auth-link" class="topbar-link account-link" href="/auth" hidden>Sign in</a>
+      </span>
+    </header>
+    <div id="agent-requests" class="agent-requests" role="alert" hidden></div>
+
+    <aside class="sidebar">
+      <!-- Your inbox, always reachable; opens in the Workspace. -->
+      <button id="inbox-row" type="button" class="side-inbox" hidden><span data-icon="mail"></span> Your inbox <span id="inbox-row-count" class="side-count"></span></button>
+      <!-- Your own bookmarks, across rooms (bookmarks.ts): opens in the Workspace. -->
+      <button id="bookmarks-row" type="button" class="side-inbox" hidden><span data-icon="star"></span> Bookmarks <span id="bookmarks-row-count" class="side-count"></span></button>
+      <!-- Search rooms, people and messages (search.ts): opens in the Workspace. -->
+      <button id="search-row" type="button" class="side-inbox" aria-pressed="false" hidden><span data-icon="search"></span> Search</button>
+      <!-- Agents at the top, then People, Rooms, Mentions, Projects and Groups; Agents, Projects and Groups fold. -->
+      <section class="side-section">
+        <div class="side-heading">
+          <button id="agents-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the agent list">▾ Agents</button>
+          <span id="agent-count" class="side-count"></span>
+          <span class="side-heading-actions">
+            <button id="offline-btn" type="button" class="unread-toggle" aria-pressed="false">Include offline</button>
+          </span>
+        </div>
+        <ul id="agent-list" class="side-list"></ul>
+      </section>
+      <!-- People: a row per other person, my DM with them, beside the agents (sidebar.ts renderPeopleList). -->
+      <section id="people-section" class="side-section" hidden>
+        <div class="side-heading">
+          <span>People</span>
+        </div>
+        <ul id="people-list" class="side-list"></ul>
+      </section>
+      <section class="side-section">
+        <div class="side-heading">
+          <span>Rooms</span>
+          <span class="side-heading-actions">
+            <button id="new-room-btn" type="button" class="link-btn" title="Open a room: a name, the people and agents in it, and a first message">+ Room</button>
+          </span>
+        </div>
+        <ul id="room-list" class="side-list"></ul>
+        <button id="other-rooms-btn" type="button" class="link-btn browse-btn" hidden></button>
+        <ul id="other-rooms-list" class="side-list" hidden></ul>
+      </section>
+      <section id="mention-section" class="side-section" hidden>
+        <div class="side-heading" title="Unread messages for you directly: they mention you, or a conversation of just you and one other. Each also stays in its own list.">
+          <span>Mentions</span>
+          <span id="mention-count" class="side-count"></span>
+        </div>
+        <ul id="mention-list" class="side-list"></ul>
+      </section>
+      <section id="projects-section" class="side-section">
+        <div class="side-heading">
+          <button id="projects-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the projects">▾ Projects</button>
+          <span class="side-heading-actions">
+            <button id="unread-btn" type="button" class="unread-toggle" aria-pressed="false" title="Show only conversations with unread messages">Unread</button>
+            <button id="new-project-btn" type="button" class="link-btn" title="Start a project: a named conversation others can join">+ Project</button>
+          </span>
+        </div>
+        <div id="conv-filter" class="conv-filter" hidden></div>
+        <ul id="conversation-list" class="side-list"></ul>
+        <button id="browse-btn" type="button" class="link-btn browse-btn" hidden></button>
+        <ul id="browse-list" class="side-list" hidden></ul>
+      </section>
+      <section id="groups-section" class="side-section">
+        <div class="side-heading">
+          <button id="groups-toggle" type="button" class="side-toggle" aria-expanded="true" title="Fold or unfold the groups">▾ Groups</button>
+          <span class="side-heading-actions">
+            <button id="new-group-btn" type="button" class="link-btn" title="Start a group DM with several participants">+ Group</button>
+          </span>
+        </div>
+        <ul id="group-list" class="side-list"></ul>
+        <div id="group-folds"></div>
+      </section>
+    </aside>
+
+    <main id="main" class="main">
+      <!-- My tabs (tabs.ts): conversations pinned as tabs, in my order. -->
+      <nav id="tab-row" class="tab-row" aria-label="Your tabs" hidden></nav>
+      <div class="conv-header">
+        <div class="conv-bar">
+          <button id="back-btn" type="button" class="back-btn" title="Conversations">←<span id="back-badge" class="badge" hidden></span></button>
+          <!-- The name is the conversation's short menu: "#name ▾" opens its
+               tab (Pin as tab, Move, Unpin). The gear beside it opens the settings of a room, project or group: members
+               and adding people first. Then the pin, then Workspace at the right edge. -->
+          <h1 class="conv-title-wrap"><button id="conv-menu-btn" type="button" class="conv-name-btn no-menu" aria-haspopup="menu" aria-expanded="false"><span id="conv-title" class="conv-title"></span><span class="conv-name-caret" aria-hidden="true">▾</span></button><button id="conv-settings-btn" type="button" class="icon-btn conv-settings-btn" title="Settings: members, add people, name, notifications" aria-label="Settings of this conversation" hidden><span data-icon="settings"></span></button><!-- "Parent: @@project", a link, where it is under one (render.ts). --><span id="conv-parent" class="conv-parent" hidden></span></h1>
+          <!-- What is pinned here (pins.ts): a drawn pin, filled with a count when something is pinned. -->
+          <button id="checklist-btn" type="button" class="link-btn checklist-btn" aria-pressed="false" hidden><svg class="pin-icon icon" viewBox="0 0 24 24" aria-hidden="true"><path class="pin-needle" d="M12 17v5" /><path class="pin-head" d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg><span id="checklist-count" class="checklist-count"></span></button>
+          <button id="pane-btn" type="button" class="link-btn ws-open-btn" title="Open this conversation's tools in the Workspace on the right" aria-haspopup="menu" aria-pressed="false" hidden>Workspace ▾</button>
+          <button id="details-btn" type="button" class="icon-btn details-btn" title="Members and details" aria-pressed="false">ⓘ</button>
+        </div>
+        <!-- Phones: after a task opened its message from Your inbox, the way back to it (inbox.ts). -->
+        <button id="inbox-return" type="button" class="link-btn inbox-return" hidden>‹ <span data-icon="mail"></span> Back to your inbox</button>
+        <button id="bookmarks-return" type="button" class="link-btn inbox-return" hidden>‹ <span data-icon="star"></span> Back to bookmarks</button>
+        <button id="search-return" type="button" class="link-btn inbox-return" hidden>‹ <span data-icon="search"></span> Back to search</button>
+        <div id="conv-subtitle" class="conv-subtitle"></div>
+        <details id="subgroups-panel" class="subgroups-panel" open hidden>
+          <summary id="subgroups-summary"></summary>
+          <ul id="subgroups-list" class="subgroups-list"></ul>
+        </details>
+      </div>
+      <div class="chat">
+      <div id="message-scroll" class="message-scroll">
+        <div id="load-earlier" class="load-earlier" hidden>
+          <button id="load-earlier-btn" type="button" class="link-btn">Load earlier messages</button>
+        </div>
+        <ol id="message-list" class="message-list"></ol>
+        <div id="message-empty" class="message-empty" hidden></div>
+      </div>
+      <!-- ↓ back to the newest message while scrolled up (jump.ts); a zero-height anchor over the list's bottom edge. -->
+      <div class="jump-anchor">
+        <button id="jump-btn" type="button" class="jump-btn" title="Back to the newest message" aria-label="Back to the newest message" hidden>↓</button>
+      </div>
+      <div id="working-line" class="working-line" aria-live="polite"></div>
+      <form id="composer" class="composer" autocomplete="off">
+        <div id="composer-grip" class="composer-grip" role="separator" aria-orientation="horizontal" aria-label="Message box height" tabindex="0" title="Drag to make the message box taller or shorter (double-click: automatic)"></div>
+        <div id="composer-error" class="composer-error" role="alert" hidden></div>
+        <div id="reply-bar" class="reply-bar" hidden>
+          <span id="reply-bar-text" class="reply-bar-text"></span>
+          <button id="reply-cancel" type="button" class="link-btn" title="Cancel the reply (Esc)">✕</button>
+        </div>
+        <ul id="staged-files" class="staged-files" hidden></ul>
+        <div id="nobody-bar" class="hold-bar nobody-bar" role="alert" hidden></div>
+        <div id="hold-bar" class="hold-bar" hidden>
+          <span id="hold-bar-text"></span>
+          <label>kept for
+            <select id="hold-select" title="How long the bus keeps the message for agents that are offline; after that it expires for them">
+              <option value="1" selected>1 hour</option>
+              <option value="4">4 hours</option>
+              <option value="24">1 day</option>
+              <option value="168">1 week</option>
+            </select>
+          </label>
+        </div>
+        <div id="voice-bar" class="voice-bar" role="status" hidden></div>
+        <div class="composer-row">
+          <input id="file-input" type="file" multiple hidden />
+          <!-- The box: the draft, and under it inside the same frame every control, icons only:
+               attach and the Message/Task switch (one icon),
+               then at the right Expand, the microphone and Send. Recording puts its panel in the draft's place; the
+               microphone and Send stay. -->
+          <div id="composer-input-wrap" class="composer-input-wrap">
+            <ul id="mention-menu" class="mention-menu" role="listbox" hidden></ul>
+            <!-- Misspelled words are underlined as she types, as in ChatGPT and Claude; a right-click (Mac)
+                 or a tap on the word (iPhone) offers the corrections. autocomplete="on" here, though the form is "off" (no
+                 autofill): on the iPhone "off" also hides the keyboard's word suggestions. No inline word
+                 predictions with a mouse: in Safari on the Mac the grey completion took Enter for itself and
+                 flickered while she typed; composer.ts turns them on for touch screens. -->
+            <textarea id="composer-input" rows="1" placeholder="Write a message…" aria-label="Message" writingsuggestions="false" spellcheck="true" autocorrect="on" autocomplete="on" autocapitalize="sentences"></textarea>
+            <div id="voice-rec" class="voice-rec" hidden>
+              <button id="voice-delete" type="button" class="voice-rec-btn" title="Delete the recording (Esc)" aria-label="Delete the recording"></button>
+              <span class="voice-dot" aria-hidden="true"></span>
+              <span id="voice-time" class="voice-time">0:00</span>
+              <canvas id="voice-wave" class="voice-wave" aria-label="Recording level"></canvas>
+              <span id="voice-hint" class="voice-hint"></span>
+              <button id="voice-pause" type="button" class="voice-rec-btn" title="Pause" aria-label="Pause the recording"></button>
+            </div>
+            <div class="composer-tools">
+              <button id="attach-btn" type="button" class="icon-btn" title="Attach files (or drop them here)" aria-label="Attach files"></button>
+              <!-- Message or Task: a click switches what the next message is (send.ts). -->
+              <button id="kind-btn" type="button" class="icon-btn kind-btn" aria-pressed="false"></button>
+              <span class="tools-spacer"></span>
+              <!-- The message box tall, or back to its text's size (composer.ts). -->
+              <button id="composer-size" type="button" class="icon-btn composer-size" aria-expanded="false"></button>
+              <button id="voice-btn" type="button" class="icon-btn voice-btn" title="Voice message: click to record, then Send; or hold and let go to send" aria-label="Voice message"></button>
+              <button id="send-btn" type="submit" class="send-btn" aria-label="Send"></button>
+            </div>
+          </div>
+        </div>
+      </form>
+      </div>
+      <div id="drop-overlay" class="drop-overlay" hidden>Drop files to attach</div>
+    </main>
+
+    <!-- The Workspace (pane.ts, docs/right-pane.md): one item at a time, an entity's tabs or a global view. -->
+    <aside id="pane" class="pane" hidden>
+      <div id="ws-resize" class="ws-resize" role="separator" aria-orientation="vertical" aria-label="Workspace width" tabindex="0" title="Drag, or ← / → with the keyboard, to resize; double-click or Home for the default width"></div>
+      <div class="ws-head">
+        <div class="ws-label">Workspace <button id="ws-reset" type="button" class="link-btn ws-reset" title="Back to the default width" hidden>Reset width</button></div>
+        <div class="ws-titlebar">
+          <button id="ws-back" type="button" class="icon-btn ws-nav" aria-label="Previous workspace item" title="Previous">‹</button>
+          <button id="ws-forward" type="button" class="icon-btn ws-nav" aria-label="Next workspace item" title="Next">›</button>
+          <button id="pane-source" type="button" class="link-btn pane-source"></button>
+          <button id="pane-close" type="button" class="icon-btn pane-close" title="Close (Esc)">✕</button>
+        </div>
+      </div>
+      <div class="pane-head">
+        <div id="pane-tabs" class="pane-tabs" role="tablist"></div>
+      </div>
+      <div id="pane-body" class="pane-body"></div>
+    </aside>
+  </div>
+
+  <dialog id="lightbox" class="lightbox">
+    <img id="lightbox-img" alt="" />
+    <div class="lightbox-bar">
+      <!-- This message's other images (attachments.ts): hidden when it has one, disabled at the ends. -->
+      <button id="lightbox-prev" type="button" class="link-btn lightbox-step" aria-label="Previous image" hidden>‹ Previous</button>
+      <span id="lightbox-name"></span>
+      <button id="lightbox-next" type="button" class="link-btn lightbox-step" aria-label="Next image" hidden>Next ›</button>
+      <a id="lightbox-download" class="link-btn">Download</a>
+      <span id="lightbox-hint" class="lightbox-hint">click or Esc to close</span>
+    </div>
+  </dialog>
+
+  <dialog id="profile-dialog" class="dialog">
+    <h2>Who are you?</h2>
+    <p class="dialog-hint">Pick your name. It is remembered in this browser and can be switched in the header.</p>
+    <div id="profile-choices" class="profile-choices"></div>
+  </dialog>
+
+  <dialog id="group-dialog" class="dialog">
+    <form id="group-form" method="dialog">
+      <h2 id="group-heading">New group</h2>
+      <div id="room-fields" class="room-fields" hidden>
+        <label>Name <input id="room-name" type="text" placeholder="Model Research" autocomplete="off" maxlength="80" /></label>
+        <p id="room-address" class="dialog-hint room-address" aria-live="polite"></p>
+        <label>Under project <select id="room-parent"></select></label>
+        <label>First message <textarea id="room-first" rows="2" placeholder="What is this room for?"></textarea></label>
+      </div>
+      <p class="dialog-hint">Pick the participants. You are included automatically.</p>
+      <ul id="group-choices" class="group-choices"></ul>
+      <div id="group-error" class="composer-error" hidden></div>
+      <div class="dialog-actions">
+        <button type="button" id="group-cancel" class="btn">Cancel</button>
+        <button type="submit" id="group-open" class="btn btn-primary">Open conversation</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog" class="dialog gpu-dialog conv-dialog"></dialog>
+
+  <dialog id="conv-dialog" class="dialog gpu-dialog conv-dialog"></dialog>
+
+  <dialog id="forward-dialog" class="dialog forward-dialog" aria-label="Forward a message"></dialog>
+
+  <dialog id="stats-dialog" class="dialog gpu-dialog stats-dialog">
+    <div class="gpu-head">
+      <h2>Stats</h2>
+      <select id="stats-days" title="Period">
+        <option value="1">last 24 hours</option>
+        <option value="7" selected>last 7 days</option>
+        <option value="30">last 30 days</option>
+      </select>
+      <button type="button" id="stats-close" class="link-btn" title="Close (Esc)">✕</button>
+    </div>
+    <p class="dialog-hint">
+      Turns: messages that woke the agent (a model turn, or added to the one already running).
+      Quiet: taken in at its next turn (@all from agents). Caused: turns your messages woke in agents.
+      Click a column to sort.
+    </p>
+    <table class="stats-table">
+      <thead id="stats-head"></thead>
+      <tbody id="stats-body"></tbody>
+    </table>
+    <h3>Per day</h3>
+    <ul id="stats-daily" class="stats-daily"></ul>
+  </dialog>
+
+  <!-- GPU booking (gpus.ts). Opened for one action from a Workspace page, it leads with that: the focus line,
+       then that action's section; the other sections follow and the fleet list folds. -->
+  <dialog id="gpu-dialog" class="dialog gpu-dialog">
+    <div class="gpu-head">
+      <h2>GPU booking</h2>
+      <button type="button" id="gpu-close" class="link-btn" title="Close (Esc)">✕</button>
+    </div>
+    <p id="gpu-focus" class="gpu-focus" hidden></p>
+    <div id="gpu-error" class="composer-error" role="alert" hidden></div>
+    <section id="gpu-sec-fleet" class="gpu-sec">
+      <details id="gpu-fleet" open>
+        <summary id="gpu-fleet-summary">All GPUs</summary>
+        <p class="dialog-hint">Who holds what now and next. A booking is the claim; release it when you are done.</p>
+        <ul id="gpu-list" class="gpu-list"></ul>
+      </details>
+    </section>
+    <section id="gpu-sec-mine" class="gpu-sec">
+      <h3>Your bookings</h3>
+      <ul id="gpu-mine" class="gpu-list"></ul>
+    </section>
+    <section id="gpu-sec-subscribe" class="gpu-sec">
+      <label class="gpu-subscribe"><input id="gpu-subscribe" type="checkbox" /> Tell me when a GPU is free (no booking, nothing computing for 15 min)</label>
+    </section>
+    <section id="gpu-sec-book" class="gpu-sec">
+      <h3>Book</h3>
+      <form id="gpu-form" class="gpu-form">
+        <label>Resource <select id="gpu-resource" required></select></label>
+        <label>Start
+          <select id="gpu-start">
+            <option value="now" selected>now</option>
+            <option value="next">as soon as it is free (queue)</option>
+            <option value="at">at…</option>
+          </select>
+        </label>
+        <label id="gpu-at-label" hidden>At <input id="gpu-at" type="datetime-local" /></label>
+        <label>Hours <input id="gpu-hours" type="number" min="0.5" max="48" step="0.5" value="4" required /></label>
+        <label class="gpu-purpose">Purpose <input id="gpu-purpose" type="text" placeholder="one line: what it is for" required /></label>
+        <label class="gpu-private"><input id="gpu-private" type="checkbox" /> Private (others should not send requests to it)</label>
+        <div class="dialog-actions">
+          <button type="submit" id="gpu-book" class="btn btn-primary">Book</button>
+        </div>
+      </form>
+    </section>
+  </dialog>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

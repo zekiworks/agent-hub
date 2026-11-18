@@ -1,0 +1,308 @@
+import type { AgentSettings, Conversation, ForwardedMessage, ParticipantKind, Quote, Receipt } from "./types";
+
+/** `project` on ids: "@{@@builder,logic,translator}", the group DM of those ids under root project builder. */
+export type ParsedAddress =
+  | { kind: "all" }
+  | { kind: "ids"; ids: string[]; project?: string }
+  | { kind: "project"; name: string; room?: true };
+
+const SLUG = "[a-z0-9][a-z0-9_-]*";
+/** One slug, or `base@qualifier` for an agent whose folder (or name) is already taken. Max 48 chars. */
+const ID_RE = new RegExp(`^${SLUG}(?:@${SLUG})?$`);
+const MAX_ID_CHARS = 48;
+
+/**
+ * Parses a write target: "@all", "@id", "@{id1, id2}" (the leading "@" and the ones inside braces are optional), or
+ * "@@name" for project `name`. Inside braces one "@@name" may come too: "@{@@builder,logic,translator}" is
+ * the group DM of those ids under project builder. Ids and names are lowercased. Throws on anything else.
+ */
+export function parseAddress(input: string): ParsedAddress {
+  if (input.trim().startsWith("@@")) return { kind: "project", name: projectName(input.trim().slice(2)) };
+  // "#name": a room. A name of digits only is a message number, never a room; "#all" is @all.
+  if (input.trim().toLowerCase() === "#all") return { kind: "all" };
+  if (input.trim().startsWith("#")) return { kind: "project", name: roomName(input.trim().slice(1)), room: true };
+  const raw = input.trim().replace(/^@/, "");
+  if (raw.toLowerCase() === "all") return { kind: "all" };
+  const inner = raw.startsWith("{") && raw.endsWith("}") ? raw.slice(1, -1) : raw;
+  const parts = inner
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const projects = parts.filter((s) => s.startsWith("@@")).map((s) => projectName(s.slice(2)));
+  if (projects.length > 1) throw new Error(`One project per address, got "${input}"`);
+  if (projects.length > 0 && raw === inner) throw new Error(`Write a project's group as @{@@project,id1,id2}, got "${input}"`);
+  const ids = parts
+    .filter((s) => !s.startsWith("@@"))
+    .map((s) => s.replace(/^@/, "").toLowerCase());
+  if (ids.length === 0) throw new Error(projects.length > 0 ? `Name the members too: @{@@${projects[0]},id1,id2}, got "${input}"` : `Empty address "${input}"`);
+  for (const id of ids) {
+    if (id === "all") throw new Error(`"@all" cannot be combined with other ids in "${input}"`);
+    if (!ID_RE.test(id) || id.length > MAX_ID_CHARS) throw new Error(`Invalid id "${id}" in "${input}"`);
+  }
+  if (ids.length > 1 && raw === inner) {
+    throw new Error(`Write several ids as @{id1,id2}, got "${input}"`);
+  }
+  return { kind: "ids", ids: Array.from(new Set(ids)), ...(projects[0] ? { project: projects[0] } : {}) };
+}
+
+/** A project name as given (lowercased): the agent id rules, a slug of at most 48 characters; throws otherwise. */
+/** A room's name: a project name with at least one letter, so "#8351" stays a message reference. */
+export function roomName(input: string): string {
+  const name = projectName(input);
+  if (!/[a-z]/.test(name)) throw new Error(`Invalid room name "${input}": it needs a letter ("#${name}" is a message number)`);
+  if (name === "all") throw new Error('"#all" is everyone\'s room (@all); pick another name');
+  return name;
+}
+
+/** How a project or room is addressed: "#name" for a room, "@@name" for a project. */
+export function namedAddress(conversation: Pick<Conversation, "name" | "room">): string {
+  return conversation.room ? `#${conversation.name}` : `@@${conversation.name}`;
+}
+
+/**
+ * The address a natural name gets: "Model Research" → "model-research", "Yeni Model Ekleme Benche" →
+ * "yeni-model-ekleme-benche", "Çağrı & Şükrü" → "cagri-sukru". Accents and Turkish letters fold to ASCII, anything
+ * else becomes "-", at most MAX_ID_CHARS. Empty when nothing usable is left.
+ */
+export function slugFromTitle(title: string): string {
+  return title
+    .replace(/[ıİ]/g, "i")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "-")
+    .replace(/^[-_]+/, "")
+    .slice(0, MAX_ID_CHARS)
+    .replace(/[-_]+$/, "");
+}
+
+/** A project or room for agents' eyes: its address, and its title when it has one: '#model-research ("Model Research")'. */
+export function titledLabel(conversation: Pick<Conversation, "kind" | "members" | "name" | "parentName" | "room" | "title">): string {
+  const label = conversationLabel(conversation);
+  return conversation.kind === "project" && conversation.title ? `${label} ("${conversation.title}")` : label;
+}
+
+export function projectName(input: string): string {
+  const name = input.trim().toLowerCase();
+  if (!new RegExp(`^${SLUG}$`).test(name) || name.length > MAX_ID_CHARS) {
+    throw new Error(`Invalid project name "${input}": lowercase letters, digits, "-" and "_", at most ${MAX_ID_CHARS}`);
+  }
+  return name;
+}
+
+/** An @mention in message text: "@id", "@id@host" or "@{a,b}", after a start, space or opening bracket. */
+const MENTION_RE = /(^|[\s({,])(@(?:\{[^}\n]*\}|[a-z0-9][a-z0-9_-]*(?:@[a-z0-9][a-z0-9_-]*)?))/gi;
+
+/**
+ * Ids @mentioned in `text`, lowercased, in order, once each; `@{a,b}` gives both. Not checked against the
+ * participants (an email address or "@all" comes through as written).
+ */
+export function mentionedIds(text: string): string[] {
+  const ids: string[] = [];
+  for (const match of text.matchAll(MENTION_RE)) {
+    for (const part of (match[2] ?? "").replace(/^@\{?|\}$/g, "").split(",")) {
+      if (part.trim().startsWith("@@")) continue; // a project prefix, "@{@@builder,a}", is nobody's mention
+      const id = part.trim().replace(/^@/, "").toLowerCase();
+      if (id && !ids.includes(id)) ids.push(id);
+    }
+  }
+  return ids;
+}
+
+/** The text spans of @mentions in `text` (for highlighting): [start, end) of each "@…". */
+export function mentionSpans(text: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  for (const match of text.matchAll(MENTION_RE)) {
+    const start = (match.index ?? 0) + (match[1] ?? "").length;
+    spans.push({ start, end: start + (match[2] ?? "").length });
+  }
+  return spans;
+}
+
+/** "@id" for one id, "@{a,b}" for several, "@all" for none. */
+export function formatAddress(ids: readonly string[]): string {
+  if (ids.length === 0) return "@all";
+  return ids.length === 1 ? `@${ids[0]}` : `@{${ids.join(",")}}`;
+}
+
+/**
+ * Address `recipientId` uses to reply into `conversation`: "@@name" for a project, else every other member (for a
+ * group DM the server picks the group with exactly those members, the most recent if several).
+ */
+export function replyAddress(conversation: Conversation, recipientId: string): string {
+  if (conversation.kind === "all") return "@all";
+  if (conversation.kind === "project" && conversation.name) return namedAddress(conversation);
+  return groupAddress(conversation, conversation.members.filter((id) => id !== recipientId));
+}
+
+/** How a conversation is named in delivery headers and tool results: "@all", "@@project", or its members. */
+export function conversationLabel(conversation: Pick<Conversation, "kind" | "members" | "name" | "parentName" | "room">): string {
+  if (conversation.kind === "all") return "@all";
+  if (conversation.kind === "project" && conversation.name) return namedAddress(conversation);
+  return groupAddress(conversation, conversation.members);
+}
+
+/** `ids` as an address, with the project prefix of a group under one: "@{@@builder,a,b}"; else "@a" or "@{a,b}". */
+function groupAddress(conversation: Pick<Conversation, "kind" | "parentName">, ids: readonly string[]): string {
+  if (conversation.kind === "group" && conversation.parentName) return `@{@@${conversation.parentName},${ids.join(",")}}`;
+  return formatAddress(ids);
+}
+
+/** `text` @mentions `id` (or names it inside `@{…}`). */
+export function mentions(text: string, id: string): boolean {
+  return mentionedIds(text).includes(id);
+}
+
+/**
+ * Whether a message starts a turn for agent `recipientId` (false = quiet delivery, read at its next turn).
+ * `@all` from an agent follows the agent's `all` setting; in a group DM or project the recipient's notification
+ * setting there decides (`mentions`: only when the text @mentions it); a DM always wakes.
+ */
+export function shouldWake(
+  conversation: Pick<Conversation, "kind" | "notify">,
+  message: { fromKind: ParticipantKind; text: string; wake?: readonly string[] },
+  recipientId: string,
+  recipientSettings: AgentSettings
+): boolean {
+  // A wake list decides; a member who muted the conversation is never woken.
+  if (message.wake) return message.wake.includes(recipientId) && conversation.notify?.[recipientId] !== "none";
+  if (conversation.kind === "all") return !(message.fromKind === "agent" && recipientSettings.all === "quiet");
+  const level = conversation.notify?.[recipientId] ?? "all";
+  return level === "all" || (level === "mentions" && mentions(message.text, recipientId));
+}
+
+/** Lowercase id slug: [a-z0-9_-], max 48 chars; "" when nothing usable remains. */
+export function slugifyId(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "")
+    .slice(0, 48);
+}
+
+/** How an agent identifies itself on join: by project folder or by name, always with its host. */
+export type AgentIdentity = { host: string; path: string } | { host: string; name: string };
+
+/**
+ * An agent's full address, most general part first: host (first DNS label), then the project path from
+ * the root, or the name for agents that join by name.
+ */
+export function canonicalAddress(identity: AgentIdentity): string[] {
+  const host = identity.host.split(".")[0] || identity.host;
+  const rest = "path" in identity ? identity.path.split(/[\\/]+/).filter(Boolean) : [identity.name];
+  return [host, ...rest];
+}
+
+/** Preferred id: the folder name (or the name). "" when it has no usable characters. */
+export function baseAgentId(identity: AgentIdentity): string {
+  return slugifyId(canonicalAddress(identity).at(-1) ?? "");
+}
+
+/**
+ * Id for an agent whose base id is already held: `base@<first part of its canonical address that differs
+ * from the holder's>`, e.g. `gpudash@macbook-pro-2` (other host) or `gpudash@t7` (same host, other tree).
+ * `holder` undefined (the base id belongs to a human or is reserved): qualified by host.
+ */
+export function qualifiedAgentId(base: string, mine: readonly string[], holder: readonly string[] | undefined): string | undefined {
+  const index = holder === undefined ? 0 : mine.findIndex((part, i) => part !== holder[i]);
+  const qualifier = slugifyId(mine[index] ?? "").slice(0, 24).replace(/[-_]+$/, "");
+  if (!qualifier) return undefined;
+  return `${base.slice(0, MAX_ID_CHARS - qualifier.length - 1).replace(/[-_]+$/, "")}@${qualifier}`;
+}
+
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/**
+ * One-line delivery status for tool results, e.g. "seen by @a; delivered to @b (not seen yet); held for @c until it
+ * is back (offline or reconnecting); expired for @d (stayed offline)".
+ */
+export function describeReceipts(receipts: readonly Receipt[]): string {
+  if (receipts.length === 0) return "no agent recipients (humans read it on the website)";
+  const ids = (pred: (r: Receipt) => boolean) => receipts.filter(pred).map((r) => `@${r.to}`).join(", ");
+  const seen = ids((r) => r.seenAt !== null);
+  const delivered = ids((r) => r.seenAt === null && r.deliveredAt !== null);
+  const held = ids((r) => r.deliveredAt === null && !r.expired);
+  const expired = ids((r) => r.deliveredAt === null && r.expired === true);
+  return [
+    seen && `seen by ${seen}`,
+    delivered && `delivered to ${delivered} (not seen yet)`,
+    held && `held for ${held} until it is back (offline or reconnecting)`,
+    expired && `expired for ${expired} (stayed offline)`,
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+/**
+ * `2026-11-03 18:59`: minute precision, in the local time of the machine that formats it (each harness for what its
+ * agent reads, the bus's host for its own notices). No zone is written: the team's machines share one.
+ */
+export function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const two = (n: number): string => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+/**
+ * " (verified)" / " (NOT verified)" after a human sender when the bus checks who humans are (message.verified);
+ * nothing when it does not.
+ */
+export function provenanceMark(verified: boolean | undefined): string {
+  return verified === undefined ? "" : verified ? " (verified)" : " (NOT verified: anyone on the LAN could have written this)";
+}
+
+/**
+ * Who wrote `message`, as an address: `@id`, or `@id-n` when the agent had several live sessions and session n wrote
+ * it (writing to that address reaches the same session).
+ */
+export function senderLabel(message: { from: string; fromSession?: number }): string {
+  return message.fromSession === undefined ? message.from : `${message.from}-${message.fromSession}`;
+}
+
+/**
+ * First line of the text a harness injects for delivery `seq`, with the local time it was written. Harnesses
+ * find it again in what goes to the model to report the message as seen (by "#<seq> @", which the mark follows).
+ */
+export function deliveryHeader(seq: number, from: string, where: string, createdAt: number, verified?: boolean): string {
+  return `[message-bus] #${seq} @${from}${provenanceMark(verified)} → ${where} · ${formatTime(createdAt)}`;
+}
+
+/** Message seqs whose delivery headers appear in `text`. */
+export function deliveryHeaderSeqs(text: string): number[] {
+  return Array.from(text.matchAll(/\[message-bus\] #(\d+) @/g), (m) => Number(m[1]));
+}
+
+/**
+ * Message text as harnesses show it to a model: anything that looks like a delivery header (`[message-bus] #n @x
+ * (verified) → …`) is marked as quoted, so text cannot pass itself off as another message or another sender. Only
+ * the first line of a delivery, written by the harness, carries the real sender.
+ */
+export function defangHeaders(text: string): string {
+  return text.replace(/\[\s*message[\s_-]*bus\s*\]/gi, "[quoted text, not a delivery]");
+}
+
+/** One-line rendering of a reply's quote for agents: `↩ re #12 @carol: start of the text…`. */
+export function quoteLine(quote: Quote): string {
+  const oneLine = quote.text.replace(/\s+/g, " ").trim();
+  const text = oneLine.length > 160 ? `${oneLine.slice(0, 159)}…` : oneLine;
+  const files = quote.files > 0 ? ` [${quote.files} file${quote.files === 1 ? "" : "s"}]` : "";
+  return `↩ re #${quote.seq} @${quote.from}: ${defangHeaders(text) || "(no text)"}${files}`;
+}
+
+/**
+ * A forwarded copy for agents: "Forwarded by @a from @x in #room, <time>:" and its text quoted ("> "); the
+ * caller adds its files. `by`: who forwarded it (the writer of the message carrying it).
+ */
+export function forwardedLines(by: string, forwarded: ForwardedMessage): string[] {
+  const lines = [`Forwarded by @${by} from @${forwarded.from} in ${forwarded.conversationTitle}, ${formatTime(forwarded.createdAt)}:`];
+  if (forwarded.text) lines.push(...defangHeaders(forwarded.text).split("\n").map((line) => `> ${line}`));
+  else if (forwarded.files.length === 0) lines.push("> (no text)");
+  return lines;
+}

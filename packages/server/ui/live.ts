@@ -1,0 +1,245 @@
+// Right-pane extension "Live": the status and live output of the agent whose page is open (its DM). The output is
+// streamed only while the Live tab is visible and the browser tab is in front (moved out of the header).
+import type { ActivityEvent, AgentSession, ViewerServerFrame } from "@agent-bus/protocol";
+import { elapsed, relativeTime, shortPath } from "./format";
+import { h } from "./html";
+import { renderMarkdown } from "./markdown";
+import { paneView, registerExtension } from "./pane";
+import { sendViewer } from "./socket";
+import { directAgentOf, state, type View } from "./state";
+import { mentionNodes } from "./text";
+
+/** If the agent sends no replay within this long, its session predates live output. */
+const NO_STREAM_AFTER_MS = 3000;
+
+/** The extension's own elements: the status list, then the live output under a small head. */
+const info = h("div", "live-info");
+const outputNote = h("span", "agent-output-note");
+const outputHead = h("div", "agent-output-head");
+outputHead.append(h("span", "", "Live output"), outputNote);
+const output = h("div", "agent-output");
+const root = h("div", "live-pane pane-pad");
+root.append(info, outputHead, output);
+
+const live = {
+  /** The Live tab is visible (pane open on it). */
+  visible: false,
+  /** Agent the server was last told this page watches. */
+  sent: null as string | null,
+  agentId: null as string | null,
+  entries: new Map<string, ActivityEvent>(),
+  replayed: false,
+  silentTimer: undefined as Timer | undefined,
+  silent: false,
+};
+
+/** The session picked on an agent's page: its live output is shown and messages go to it (else: the latest). */
+const chosen = new Map<string, number>();
+
+/** The session of `agentId` picked on its page, while that session is live. */
+export function chosenSession(agentId: string): number | undefined {
+  const n = chosen.get(agentId);
+  const agent = state.participants.find((p) => p.id === agentId);
+  return n !== undefined && agent?.sessions?.some((s) => s.n === n) ? n : undefined;
+}
+
+/** "Sessions" row: one chip per live session; picking one sends messages there and shows its live output. */
+function sessionChips(agentId: string, sessions: AgentSession[]): HTMLElement {
+  const latest = sessions.reduce((a, b) => (b.activeAt > a.activeAt ? b : a));
+  const picked = chosenSession(agentId);
+  const row = h("span", "session-chips");
+  for (const s of sessions) {
+    const label = `${agentId}-${s.n} · ${s.status?.state ?? "online"}${s.n === latest.n ? " · latest" : ""}`;
+    const chip = h("button", `session-chip${(picked ?? latest.n) === s.n ? " on" : ""}`, label);
+    chip.type = "button";
+    chip.title =
+      picked === s.n
+        ? "Messages go to this session; click again to follow the latest one"
+        : "Send messages to this session and show its live output";
+    chip.addEventListener("click", () => {
+      if (picked === s.n) chosen.delete(agentId);
+      else chosen.set(agentId, s.n);
+      live.entries.clear();
+      live.replayed = false;
+      renderLive();
+      syncWatch(true);
+    });
+    row.append(chip);
+  }
+  return row;
+}
+
+/** The agent of `view` (its DM, or a draft to it), if it is an agent. */
+function agentOf(view: View | undefined) {
+  const agentId = view ? directAgentOf(view) : undefined;
+  return agentId ? state.participants.find((p) => p.id === agentId && p.kind === "agent") : undefined;
+}
+
+/** The agent the pane shows (its source may be another conversation than the open one). */
+function pageAgent() {
+  return agentOf(paneView());
+}
+
+/** Draws the status of the agent whose page is open (called on every sidebar redraw: status changes live). */
+export function renderLive(): void {
+  const agent = pageAgent();
+  if (!agent) {
+    syncWatch();
+    return;
+  }
+  const rows: Array<[string, string | HTMLElement]> = [];
+  const status = agent.online ? agent.status : undefined;
+  if (!agent.online) {
+    rows.push(["State", `offline · last seen ${relativeTime(agent.lastSeenAt)}`]);
+  } else if (!status) {
+    rows.push(["State", "online · no status reported (session started before status reporting; restart it to see more)"]);
+  } else {
+    rows.push(["State", h("span", `agent-state agent-${status.state}-text`, `${status.state} for ${elapsed(status.since)}`)]);
+    if (status.state === "busy" && status.tool) {
+      rows.push(["Running", `${status.tool}${status.toolSince ? ` for ${elapsed(status.toolSince)}` : ""}`]);
+    }
+    if (status.state === "busy" && status.activity) rows.push(["Doing", status.activity]);
+  }
+  if (agent.online && agent.waiting !== undefined) {
+    rows.push([
+      "Waiting",
+      agent.waiting === 0
+        ? "no bus messages waiting"
+        : `${agent.waiting} bus message${agent.waiting === 1 ? "" : "s"} delivered, not seen by its model yet`,
+    ]);
+  }
+  const where = [agent.path ? shortPath(agent.path) : "", agent.host ?? "", agent.harness ?? ""].filter(Boolean).join(" · ");
+  if (where) rows.push(["Where", where]);
+  if (agent.sessions && agent.sessions.length > 1) rows.push(["Sessions", sessionChips(agent.id, agent.sessions)]);
+  rows.push(["To all", agent.settings.all === "wake" ? "starts a turn" : "quiet (read at its next turn)"]);
+  const list = h("dl", "agent-panel-list");
+  for (const [label, value] of rows) {
+    const dd = h("dd");
+    dd.append(value);
+    list.append(h("dt", "", label), dd);
+  }
+  info.replaceChildren(list);
+  syncWatch();
+  renderLiveOutput();
+}
+
+/** The agent to watch now: its page is open, the Live tab is visible and the browser tab is in front. */
+function wantedWatch(): string | null {
+  if (!live.visible || document.visibilityState !== "visible") return null;
+  const agent = pageAgent();
+  return agent?.online ? agent.id : null;
+}
+
+/** Tells the server which agent this page watches when that changes (and after reconnects, `force`). */
+export function syncWatch(force = false): void {
+  const wanted = wantedWatch();
+  if (wanted !== live.agentId) {
+    live.agentId = wanted;
+    live.entries.clear();
+    live.replayed = false;
+    live.silent = false;
+    clearTimeout(live.silentTimer);
+    live.silentTimer = undefined;
+  }
+  if (!force && wanted === live.sent) return;
+  const session = wanted ? chosenSession(wanted) : undefined;
+  if (!sendViewer({ type: "watch", agentId: wanted, ...(session === undefined ? {} : { session }) })) return;
+  live.sent = wanted;
+  if (wanted !== null && !live.replayed) {
+    clearTimeout(live.silentTimer);
+    live.silentTimer = setTimeout(() => {
+      if (live.agentId === wanted && !live.replayed) {
+        live.silent = true;
+        renderLiveOutput();
+      }
+    }, NO_STREAM_AFTER_MS);
+  }
+}
+
+export function applyActivity(frame: Extract<ViewerServerFrame, { type: "activity" }>): void {
+  if (frame.agentId !== live.agentId) return;
+  if (frame.replay) {
+    live.entries.clear();
+    live.replayed = true;
+    live.silent = false;
+  }
+  for (const event of frame.events) live.entries.set(event.id, event);
+  renderLiveOutput();
+}
+
+function renderActivityEntry(event: ActivityEvent): HTMLElement {
+  if (event.kind === "user") {
+    const text = event.text.length > 1200 ? `${event.text.slice(0, 1199)}…` : event.text;
+    return h("div", "act act-user", text);
+  }
+  if (event.kind === "assistant") {
+    const wrap = h("div", `act act-assistant${event.done ? "" : " act-streaming"}`);
+    if (event.thinking) {
+      const thought = h("div", "act-thinking msg-text");
+      thought.append(...renderMarkdown(event.thinking, mentionNodes));
+      wrap.append(thought);
+    }
+    if (event.text) {
+      const text = h("div", "msg-text");
+      text.append(...renderMarkdown(event.text, mentionNodes));
+      wrap.append(text);
+    }
+    return wrap;
+  }
+  const el = h("div", `act act-tool act-${event.state}`);
+  const head = h("div", "act-tool-head");
+  head.append(h("span", "act-tool-name", event.name));
+  if (event.intent) head.append(h("span", "act-tool-intent", event.intent));
+  head.append(h("span", "act-tool-state", event.state === "running" ? "running…" : event.state === "error" ? "error" : "done"));
+  el.append(head);
+  if (event.input) el.append(h("pre", "act-tool-input", event.input));
+  if (event.output) el.append(h("pre", "act-tool-output", event.output));
+  return el;
+}
+
+function renderLiveOutput(): void {
+  if (live.agentId === null) {
+    outputNote.textContent = "";
+    output.replaceChildren(h("div", "act-note", "Shown while the agent is online."));
+    return;
+  }
+  if (!live.replayed) {
+    outputNote.textContent = "";
+    output.replaceChildren(
+      h(
+        "div",
+        "act-note",
+        live.silent
+          ? "This agent's session does not stream its output yet; it needs an omp restart."
+          : "Connecting…"
+      )
+    );
+    return;
+  }
+  outputNote.textContent = "live";
+  const box = output;
+  const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  const entries = [...live.entries.values()];
+  box.replaceChildren(
+    ...(entries.length > 0 ? entries.map(renderActivityEntry) : [h("div", "act-note", "Nothing yet in this session.")])
+  );
+  if (stick) box.scrollTop = box.scrollHeight;
+}
+
+document.addEventListener("visibilitychange", () => syncWatch());
+
+registerExtension({
+  id: "live",
+  order: 0,
+  title: () => "Live",
+  applies: (view) => agentOf(view) !== undefined,
+  render: (body) => {
+    if (root.parentElement !== body) body.replaceChildren(root);
+    renderLive();
+  },
+  shown: (visible) => {
+    live.visible = visible;
+    syncWatch();
+    if (visible) renderLive();
+  },
+});
