@@ -2645,6 +2645,13 @@ ul.md-list ul.md-list { list-style: circle; }
   cursor: default;
 }
 
+/* "Seen by can" under my newest message (render.ts seenLine; Ümit #12323): the people's counterpart of receipts. */
+.msg-seen {
+  margin-top: 3px;
+  color: var(--success);
+  font-size: 11.5px;
+}
+
 .msg-receipts.receipts-delivered {
   color: color-mix(in srgb, var(--accent) 70%, var(--muted));
 }

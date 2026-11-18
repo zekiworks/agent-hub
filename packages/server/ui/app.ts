@@ -227,6 +227,15 @@ function handleFrame(frame: ViewerServerFrame): void {
     case "ownTasks":
       ownTasksChanged(frame.ownTasks);
       break;
+    case "seen": {
+      // Someone in it saw a conversation (Ümit #12323): its row and "Seen by" follow.
+      const conv = state.conversations.get(frame.conversationId);
+      if (!conv) break;
+      conv.seen = { ...conv.seen, [frame.participant]: Math.max(frame.at, conv.seen?.[frame.participant] ?? 0) };
+      renderSidebar();
+      if (isCurrent(conv.id)) renderMessages();
+      break;
+    }
     case "tabs":
       tabsChanged(frame.tabs);
       break;

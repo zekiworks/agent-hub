@@ -152,6 +152,15 @@ function renderMentionList(): void {
   dom.mentionList.replaceChildren(...mentions.map(conversationItem));
 }
 
+/** A DM's second line (Ümit #12323): with a person, whether they saw my last message or answered; else "DM". */
+function dmStatus(conv: Conversation): string {
+  const other = conv.members.find((id) => id !== state.me);
+  if (!other || !state.humans.includes(other) || !conv.members.includes(state.me)) return "DM";
+  if (conv.lastMessageFrom === other) return "Answered";
+  if (conv.lastMessageFrom === state.me) return (conv.seen?.[other] ?? 0) >= conv.lastMessageAt ? "Seen ✓" : "Sent · not seen yet";
+  return "DM";
+}
+
 function conversationItem(conv: Conversation): HTMLLIElement {
   const li = h("li");
   const button = h("button", "side-item conv-item");
@@ -166,7 +175,7 @@ function conversationItem(conv: Conversation): HTMLLIElement {
     conv.kind === "all"
       ? ["everyone"]
       : conv.kind === "dm"
-        ? ["DM"]
+        ? [dmStatus(conv)]
         : [
             ...(conv.kind === "project" && conv.title ? [conversationAddress(conv) ?? ""] : []),
             ...(conv.kind === "project" && conv.topic ? [conv.topic] : []),

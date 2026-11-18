@@ -157,7 +157,7 @@ function memberRequest(ctx: BusContext, req: Request, body: Record<string, unkno
   return { writer, conversation };
 }
 
-/** POST /api/conversations/:id/{members,leave,remove,notify,pin,project,room,parent,archive,delete}; null for any other path. */
+/** POST /api/conversations/:id/{members,leave,remove,pinned,seen,pin,notify,project,parent,room,archive,delete}; null for any other path. */
 export async function handleConversationRoute(
   ctx: BusContext,
   req: Request,
@@ -198,6 +198,17 @@ export async function handleConversationRoute(
       if (!message || message.conversationId !== conversation.id) throw new HttpError(404, `#${request.seq} is not in this conversation`);
       db.setMessagePinned(conversation.id, request.seq, writer.id, request.pinned);
       ctx.hub.conversationsChanged();
+      return { conversation: db.getConversation(conversation.id) ?? conversation };
+    }
+    case "seen": {
+      // A person has seen the conversation up to `at` (its newest message's time when they looked): the other members
+      // see "Seen" (Ümit #12323). Never past its newest message, never back.
+      const { writer, conversation } = memberRequest(ctx, req, body, id);
+      if (writer.kind !== "human") throw new HttpError(403, "Only people mark a conversation seen; agents have receipts");
+      const at = (body as { at?: unknown }).at;
+      if (typeof at !== "number" || !Number.isFinite(at) || at <= 0) throw new HttpError(400, "at must be a time in milliseconds");
+      const until = Math.min(at, conversation.lastMessageAt);
+      if (db.setSeen(conversation.id, writer.id, until)) ctx.hub.seenChanged(conversation, writer.id, until);
       return { conversation: db.getConversation(conversation.id) ?? conversation };
     }
     case "pin": {

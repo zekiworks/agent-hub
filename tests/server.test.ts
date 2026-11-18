@@ -1016,6 +1016,30 @@ describe("delivery", () => {
     expect((await getJson<{ message: Message }>(bus, `/api/messages/${second.message.seq}`, "carol")).message.task).toBeUndefined();
   });
 
+  test("seen: a person marks a conversation seen up to its newest message, never back; members see it, with who wrote last", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const dm = await send({ from: "carol", to: "@uma", text: "did you see this?" });
+    const id = dm.conversation.id;
+    const seen = (from: string, at: number) => postJson(bus, `/api/conversations/${id}/seen`, { from, at });
+    const conv = async (who: string) => (await state(who)).conversations.find((c) => c.id === id);
+    expect((await conv("carol"))?.seen?.uma).toBeUndefined();
+    expect((await conv("carol"))?.lastMessageFrom).toBe("carol");
+    // A time past its newest message is held at that message.
+    expect((await seen("uma", Date.now() + 60_000)).status).toBe(200);
+    expect((await conv("carol"))?.seen?.uma).toBe(dm.message.createdAt);
+    // Never back.
+    await seen("uma", 1);
+    expect((await conv("carol"))?.seen?.uma).toBe(dm.message.createdAt);
+    // People only, members only, a real time.
+    expect((await postJson(bus, `/api/conversations/${id}/seen`, { from: alpha.id, at: Date.now() })).status).toBe(403);
+    const crew = await send({ from: "carol", to: "#crew-seen", text: "only carol here" });
+    expect((await postJson(bus, `/api/conversations/${crew.conversation.id}/seen`, { from: "uma", at: Date.now() })).status).toBe(403);
+    expect((await seen("uma", Number.NaN)).status).toBe(400);
+    // Her answer: carol sees who wrote last.
+    await send({ from: "uma", conversationId: id, text: "yes" });
+    expect((await conv("carol"))?.lastMessageFrom).toBe("uma");
+  });
+
   test("a room's name people read (title) changes without its address: #address keeps reaching it; people only; empty clears", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const room = await send({ from: "carol", to: "#model-research", text: "start" });

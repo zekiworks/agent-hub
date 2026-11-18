@@ -145,6 +145,13 @@ export interface Conversation {
   /** Who pinned it (members or not): it sorts first in their own sidebar (Can, 15 Nov). */
   pinnedBy?: string[];
   /**
+   * People who have seen it, and up to when (the time of the newest message they saw): "Seen" for the others (Ümit
+   * #12323). Members only; agents have receipts instead.
+   */
+  seen?: Record<string, number>;
+  /** Who wrote its newest message: "answered" when it is the other person (Ümit #12323). */
+  lastMessageFrom?: string;
+  /**
    * Messages pinned in this conversation (#10757), oldest pin first: references, never copies. The header's 📌 counts
    * them, together with the conversation's checklist.
    */
@@ -388,6 +395,8 @@ export type ViewerServerFrame =
   | { type: "bookmarks"; bookmarks: Bookmark[] }
   /** The viewer's own tasks changed (another of their pages, or this one): the list as it is now. */
   | { type: "ownTasks"; ownTasks: OwnTask[] }
+  /** A person saw a conversation up to `at` (POST /api/conversations/:id/seen): its other members show "Seen". */
+  | { type: "seen"; conversationId: string; participant: string; at: number }
   /** The viewer's own tab order changed (another of their pages, or this one). */
   | { type: "tabs"; tabs: string[] }
   | { type: "participants"; participants: Participant[] }

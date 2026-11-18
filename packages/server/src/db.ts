@@ -102,6 +102,7 @@ const PARENT_NAME = "(SELECT p.name FROM conversations p WHERE p.id = c.parent_i
 interface MemberRow {
   participant_id: string;
   notify: string | null;
+  seen_at: number | null;
 }
 
 interface ConversationRow {
@@ -186,6 +187,8 @@ CREATE TABLE IF NOT EXISTS conversation_members (
   participant_id TEXT NOT NULL,
   -- null: "all"; else "mentions" or "none" (NotifyLevel)
   notify TEXT,
+  -- people: the time of the newest message they have seen here (Ümit #12323); null: not yet
+  seen_at INTEGER,
   PRIMARY KEY (conversation_id, participant_id)
 );
 CREATE INDEX IF NOT EXISTS conversation_members_participant
@@ -451,6 +454,10 @@ export class BusDatabase {
     // Databases created before rooms lack the column (null: a project addressed as @@name).
     if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "room")) {
       this.db.exec("ALTER TABLE conversations ADD COLUMN room INTEGER");
+    }
+    // Databases created before "seen" lack the column (null: not seen yet; Ümit #12323).
+    if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversation_members)").all().some((c) => c.name === "seen_at")) {
+      this.db.exec("ALTER TABLE conversation_members ADD COLUMN seen_at INTEGER");
     }
     // Databases created before titles lack the column (null: the address is the name; #10623).
     if (!this.db.query<{ name: string }, []>("PRAGMA table_info(conversations)").all().some((c) => c.name === "title")) {
@@ -843,7 +850,7 @@ export class BusDatabase {
   private membersOf(conversationId: string): MemberRow[] {
     return this.db
       .query<MemberRow, [string]>(
-        "SELECT participant_id, notify FROM conversation_members WHERE conversation_id = ?1 ORDER BY participant_id"
+        "SELECT participant_id, notify, seen_at FROM conversation_members WHERE conversation_id = ?1 ORDER BY participant_id"
       )
       .all(conversationId);
   }
@@ -911,10 +918,12 @@ export class BusDatabase {
       .run(participantId, seq, taskState === "done" ? now : null);
   }
 
-  private toConversation(row: ConversationRow, members: MemberRow[], pins: string[], pinned: PinnedMessage[] = []): Conversation {
+  private toConversation(row: ConversationRow, members: MemberRow[], pins: string[], pinned: PinnedMessage[] = [], lastFrom?: string): Conversation {
     const kind: ConversationKind = row.kind === "dm" || row.kind === "group" || row.kind === "project" ? row.kind : "all";
     const notify: Record<string, "mentions" | "none"> = {};
     for (const m of members) if (m.notify === "mentions" || m.notify === "none") notify[m.participant_id] = m.notify;
+    const seen: Record<string, number> = {};
+    for (const m of members) if (m.seen_at !== null) seen[m.participant_id] = m.seen_at;
     return {
       id: row.id,
       kind,
@@ -932,6 +941,8 @@ export class BusDatabase {
       ...(Object.keys(notify).length > 0 ? { notify } : {}),
       ...(pins.length > 0 ? { pinnedBy: pins } : {}),
       ...(pinned.length > 0 ? { pinnedMessages: pinned } : {}),
+      ...(Object.keys(seen).length > 0 ? { seen } : {}),
+      ...(lastFrom ? { lastMessageFrom: lastFrom } : {}),
       createdAt: row.created_at,
       lastMessageAt: row.last_message_at,
     };
@@ -945,7 +956,20 @@ export class BusDatabase {
     const row = this.db
       .query<ConversationRow, [string]>(`SELECT c.*, ${PARENT_NAME} FROM conversations c WHERE c.id = ?1`)
       .get(alias?.new_id ?? id);
-    return row ? this.toConversation(row, this.membersOf(row.id), this.pinsOf(row.id), this.pinnedOf(row.id)) : null;
+    if (!row) return null;
+    const last = this.db
+      .query<{ from_id: string }, [string]>("SELECT from_id FROM messages WHERE conversation_id = ?1 ORDER BY seq DESC LIMIT 1")
+      .get(row.id);
+    return this.toConversation(row, this.membersOf(row.id), this.pinsOf(row.id), this.pinnedOf(row.id), last?.from_id);
+  }
+
+  /** `participantId` (a member) has seen conversation `id` up to `at`; it never goes back. True when it moved on. */
+  setSeen(id: string, participantId: string, at: number): boolean {
+    return (
+      this.db
+        .query("UPDATE conversation_members SET seen_at = ?3 WHERE conversation_id = ?1 AND participant_id = ?2 AND COALESCE(seen_at, 0) < ?3")
+        .run(id, participantId, at).changes > 0
+    );
   }
 
   /** Every conversation: `all` first, then by lastMessageAt desc. Who may see which is the server's business. */
@@ -959,7 +983,7 @@ export class BusDatabase {
     const members = new Map<string, MemberRow[]>();
     for (const m of this.db
       .query<MemberRow & { conversation_id: string }, []>(
-        "SELECT conversation_id, participant_id, notify FROM conversation_members ORDER BY participant_id"
+        "SELECT conversation_id, participant_id, notify, seen_at FROM conversation_members ORDER BY participant_id"
       )
       .all()) {
       const list = members.get(m.conversation_id);
@@ -980,7 +1004,18 @@ export class BusDatabase {
       .all()) {
       pinned.set(p.conversation_id, [...(pinned.get(p.conversation_id) ?? []), { seq: p.seq, by: p.pinned_by, at: p.pinned_at }]);
     }
-    return rows.map((row) => this.toConversation(row, members.get(row.id) ?? [], pins.get(row.id) ?? [], pinned.get(row.id) ?? []));
+    // Who wrote each conversation's newest message, in one pass.
+    const lastFrom = new Map<string, string>();
+    for (const r of this.db
+      .query<{ conversation_id: string; from_id: string }, []>(
+        "SELECT conversation_id, from_id FROM messages WHERE seq IN (SELECT MAX(seq) FROM messages GROUP BY conversation_id)"
+      )
+      .all()) {
+      lastFrom.set(r.conversation_id, r.from_id);
+    }
+    return rows.map((row) =>
+      this.toConversation(row, members.get(row.id) ?? [], pins.get(row.id) ?? [], pinned.get(row.id) ?? [], lastFrom.get(row.id))
+    );
   }
 
   /**

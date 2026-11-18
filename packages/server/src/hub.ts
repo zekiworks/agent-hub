@@ -540,6 +540,12 @@ export class Hub {
     for (const ws of this.viewers) if (ws.data.kind === "viewer" && ws.data.human === human) ws.send(frame);
   }
 
+  /** `participant` saw `conversation` up to `at` (Ümit #12323): its people's open pages hear of it. */
+  seenChanged(conversation: Conversation, participant: string, at: number): void {
+    const frame = JSON.stringify({ type: "seen", conversationId: conversation.id, participant, at } satisfies ViewerServerFrame);
+    for (const ws of this.viewers) if (ws.data.kind === "viewer" && ws.data.human && conversation.members.includes(ws.data.human)) ws.send(frame);
+  }
+
   /** `human`'s tab order changed (Can #11480): only their own open pages hear of it. */
   tabsChanged(human: string, tabs: string[]): void {
     const frame = JSON.stringify({ type: "tabs", tabs } satisfies ViewerServerFrame);

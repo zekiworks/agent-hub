@@ -1,6 +1,6 @@
 // Unread counts per conversation (from per-profile read markers), and which unread messages are for me.
 import { isJsonObject, type Conversation, type Message, type MessagesResponse } from "@agent-bus/protocol";
-import { api } from "./api";
+import { api, postJson } from "./api";
 import { renderSidebar } from "./sidebar";
 import { isCurrent, PAGE_SIZE, state } from "./state";
 import { mentionsMe } from "./text";
@@ -31,7 +31,13 @@ export function markRead(conversationId: string): void {
   state.attention.delete(conversationId);
   state.urgent.delete(conversationId);
   const conv = state.conversations.get(conversationId);
-  if (!conv || !state.me || (state.readAt[conversationId] ?? 0) >= conv.lastMessageAt) return;
+  if (!conv || !state.me) return;
+  // The bus learns it too, so the others see "Seen" (Ümit #12323): members, people, only when it moves on.
+  if (conv.kind !== "all" && conv.members.includes(state.me) && (conv.seen?.[state.me] ?? 0) < conv.lastMessageAt) {
+    conv.seen = { ...conv.seen, [state.me]: conv.lastMessageAt };
+    void postJson(`/api/conversations/${encodeURIComponent(conversationId)}/seen`, { from: state.me, at: conv.lastMessageAt }).catch(() => undefined);
+  }
+  if ((state.readAt[conversationId] ?? 0) >= conv.lastMessageAt) return;
   state.readAt[conversationId] = conv.lastMessageAt;
   saveReadMarkers();
 }

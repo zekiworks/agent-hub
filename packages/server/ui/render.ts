@@ -185,9 +185,25 @@ export function renderMessages(): void {
     nodes.push(renderMessage(message, continued));
     previous = message;
   }
+  seenLine(cache.messages.at(-1), nodes.at(-1));
   dom.messageList.replaceChildren(...nodes);
   renderSpeaking();
   updateJump();
+}
+
+/**
+ * "Seen by can" under my message when it is the newest (Ümit #12323): the people in the conversation who have seen it
+ * (agents have their receipts).
+ */
+function seenLine(last: Message | undefined, li: HTMLElement | undefined): void {
+  if (!last || !li || last.from !== state.me) return;
+  const conv = state.conversations.get(last.conversationId);
+  const by = (conv?.members ?? []).filter((id) => id !== state.me && state.humans.includes(id) && (conv?.seen?.[id] ?? 0) >= last.createdAt);
+  if (by.length === 0) return;
+  const line = h("div", "msg-seen", `Seen by ${nameList(by)}`);
+  const actions = li.querySelector(":scope > .msg-actions");
+  if (actions) actions.before(line);
+  else li.append(line);
 }
 
 function renderMessage(message: Message, continued: boolean): HTMLLIElement {
