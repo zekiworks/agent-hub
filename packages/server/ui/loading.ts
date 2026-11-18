@@ -20,6 +20,7 @@ export async function loadState(): Promise<void> {
   state.participants = res.participants;
   state.conversations = new Map(res.conversations.map((c) => [c.id, c]));
   state.bookmarks = res.bookmarks ?? [];
+  state.ownTasks = res.ownTasks ?? [];
   state.tabs = res.tabs ?? [];
   registerAgentPages(res.extensions ?? [], res.launchers ?? {});
   // GPU booking only where the bus knows GPUs (`serve --gpudash`); a fresh install has none (launch check, 16 Nov).

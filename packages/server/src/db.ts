@@ -18,6 +18,7 @@ import {
   type ParticipantKind,
   type PinnedMessage,
   type Bookmark,
+  type OwnTask,
   type ProjectVisibility,
   type Quote,
   type Checklist,
@@ -239,6 +240,15 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   participant_id TEXT NOT NULL,
   seq INTEGER NOT NULL,
   at INTEGER NOT NULL,
+  PRIMARY KEY (participant_id, seq)
+);
+
+-- A person's own tasks (Can #12197): messages they took as a task for themselves; nobody else sees them.
+CREATE TABLE IF NOT EXISTS own_tasks (
+  participant_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  done_at INTEGER,
   PRIMARY KEY (participant_id, seq)
 );
 
@@ -879,6 +889,28 @@ export class BusDatabase {
     else this.db.query("DELETE FROM bookmarks WHERE participant_id = ?1 AND seq = ?2").run(participantId, seq);
   }
 
+  /** `participantId`'s own tasks (Can #12197): open ones newest first, then done ones, latest done first. */
+  ownTasksOf(participantId: string): OwnTask[] {
+    return this.db
+      .query<{ seq: number; at: number; done_at: number | null }, [string]>(
+        "SELECT seq, at, done_at FROM own_tasks WHERE participant_id = ?1 ORDER BY done_at IS NOT NULL, COALESCE(done_at, at) DESC, rowid DESC"
+      )
+      .all(participantId)
+      .map((r) => (r.done_at === null ? { seq: r.seq, at: r.at } : { seq: r.seq, at: r.at, doneAt: r.done_at }));
+  }
+
+  /** Takes message `seq` as one of `participantId`'s own tasks, marks it done or open again, or drops it. */
+  setOwnTask(participantId: string, seq: number, taskState: "open" | "done" | "none", now = Date.now()): void {
+    if (taskState === "none") {
+      this.db.query("DELETE FROM own_tasks WHERE participant_id = ?1 AND seq = ?2").run(participantId, seq);
+      return;
+    }
+    this.db.query("INSERT OR IGNORE INTO own_tasks (participant_id, seq, at) VALUES (?1, ?2, ?3)").run(participantId, seq, now);
+    this.db
+      .query("UPDATE own_tasks SET done_at = ?3 WHERE participant_id = ?1 AND seq = ?2")
+      .run(participantId, seq, taskState === "done" ? now : null);
+  }
+
   private toConversation(row: ConversationRow, members: MemberRow[], pins: string[], pinned: PinnedMessage[] = []): Conversation {
     const kind: ConversationKind = row.kind === "dm" || row.kind === "group" || row.kind === "project" ? row.kind : "all";
     const notify: Record<string, "mentions" | "none"> = {};
@@ -1099,6 +1131,7 @@ export class BusDatabase {
       this.db.query("UPDATE conversations SET parent_id = NULL WHERE parent_id = ?1").run(conversationId);
       this.db.query("DELETE FROM receipts WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM bookmarks WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
+      this.db.query("DELETE FROM own_tasks WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM messages WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_members WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM checklists WHERE conversation_id = ?1").run(conversationId);

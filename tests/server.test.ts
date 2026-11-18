@@ -993,6 +993,29 @@ describe("delivery", () => {
     expect((await getJson<{ message: Message }>(bus, `/api/messages/${open.message.seq}`, "carol")).message.text).toBe("worth keeping");
   });
 
+  test("a person's own tasks: taken from messages they can read, open then done, only theirs, the message untouched", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const first = await send({ from: "carol", to: "#crew", text: "check the backup" });
+    const second = await send({ from: "carol", to: "#crew", text: "renew the certificate" });
+    const secret = await send({ from: "carol", to: "@{alpha}", text: "between carol and alpha" });
+    const take = (from: string, seq: number, taskState: string) => postJson(bus, "/api/own-tasks", { from, seq, state: taskState });
+    const list = async (res: Response) => ((await res.json()) as { ownTasks: Array<{ seq: number; doneAt?: number }> }).ownTasks;
+    await take("uma", first.message.seq, "open");
+    expect((await list(await take("uma", second.message.seq, "open"))).map((t) => t.seq)).toEqual([second.message.seq, first.message.seq]);
+    // Done goes after the open ones, and back to open on request.
+    const done = await list(await take("uma", second.message.seq, "done"));
+    expect(done.map((t) => [t.seq, t.doneAt !== undefined])).toEqual([[first.message.seq, false], [second.message.seq, true]]);
+    expect((await list(await take("uma", second.message.seq, "open"))).find((t) => t.seq === second.message.seq)?.doneAt).toBeUndefined();
+    expect((await state("uma")).ownTasks?.length).toBe(2);
+    expect((await state("carol")).ownTasks ?? []).toEqual([]); // not carol's
+    expect((await take("uma", secret.message.seq, "open")).status).toBe(404); // a conversation uma can't read
+    expect((await take(alpha.id, first.message.seq, "open")).status).toBe(403); // people only
+    expect((await take("uma", first.message.seq, "later")).status).toBe(400);
+    expect((await list(await take("uma", first.message.seq, "none"))).map((t) => t.seq)).toEqual([second.message.seq]);
+    // Nobody else sees a task: the message carries none.
+    expect((await getJson<{ message: Message }>(bus, `/api/messages/${second.message.seq}`, "carol")).message.task).toBeUndefined();
+  });
+
   test("a room's name people read (title) changes without its address: #address keeps reaching it; people only; empty clears", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const room = await send({ from: "carol", to: "#model-research", text: "start" });

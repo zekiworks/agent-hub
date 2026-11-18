@@ -12,7 +12,7 @@ import { renderMarkdown } from "./markdown";
 import { setTitleBase } from "./notify";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
-import { renderTaskBadge } from "./inbox";
+import { ownTaskButton, renderTaskBadge } from "./inbox";
 import { updateJump } from "./jump";
 import { renderPane } from "./pane";
 import { isPinned, setMessagePinned } from "./pins";
@@ -231,6 +231,8 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   actions.append(copyIdButton(message));
   // ☆ saves it in my own bookmarks, ★ drops it (Can #11065); a deleted one keeps its ★ so it can still be dropped here.
   if (!deleted || isBookmarked(message.seq)) actions.append(bookmarkButton(message));
+  // Take it as a task for myself, into my inbox (Can #12197); people only.
+  if (state.me && (!deleted || state.ownTasks.some((t) => t.seq === message.seq))) actions.append(ownTaskButton(message.seq));
   // 📌 for members: pins the message in its conversation, or unpins it (#10757).
   if (!deleted && state.conversations.get(message.conversationId)?.members.includes(state.me)) actions.append(pinButton(message));
   // ✎ 🗑 on my own messages (Ümit #10890).

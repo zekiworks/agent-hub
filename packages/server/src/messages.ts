@@ -6,6 +6,7 @@ import {
   mentions,
   RESOURCES_AGENT_ID,
   type Bookmark,
+  type OwnTask,
   type Conversation,
   type FileRef,
   type Message,
@@ -532,4 +533,30 @@ export async function postBookmark(ctx: BusContext, req: Request): Promise<{ boo
   const bookmarks = ctx.db.bookmarksOf(who.id);
   ctx.hub.bookmarksChanged(who.id, bookmarks);
   return { bookmarks };
+}
+
+/**
+ * POST /api/own-tasks {from, seq, state} (Can #12197): a person takes a message they can read as a task for themselves
+ * ("open"), marks it "done" (or "open" again), or drops it ("none"). Only people, signed in as themselves; only they
+ * see their tasks, the message is not touched and nobody is told.
+ */
+export async function postOwnTask(ctx: BusContext, req: Request): Promise<{ ownTasks: OwnTask[] }> {
+  const body = await readJsonObject(req);
+  if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+  const who = ctx.hub.knownParticipant(body.from.trim().toLowerCase());
+  if (!who) throw new HttpError(400, `Unknown participant "${body.from}"`);
+  if (who.kind !== "human") throw new HttpError(403, "Own tasks are people's");
+  ctx.checkWriter(req, who);
+  if (typeof body.seq !== "number" || !Number.isSafeInteger(body.seq)) throw new HttpError(400, "seq must be a message number");
+  const taskState = body.state;
+  if (taskState !== "open" && taskState !== "done" && taskState !== "none") throw new HttpError(400, 'state must be "open", "done" or "none"');
+  if (taskState !== "none") {
+    const message = ctx.db.getMessage(body.seq);
+    const conversation = message ? ctx.db.getConversation(message.conversationId) : null;
+    if (!message || !conversation || !mayRead(ctx, conversation, { id: who.id, kind: "human" })) throw new HttpError(404, `Unknown message ${body.seq}`);
+  }
+  ctx.db.setOwnTask(who.id, body.seq, taskState);
+  const ownTasks = ctx.db.ownTasksOf(who.id);
+  ctx.hub.ownTasksChanged(who.id, ownTasks);
+  return { ownTasks };
 }

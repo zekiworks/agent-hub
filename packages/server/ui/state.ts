@@ -1,5 +1,5 @@
 // The page's shared mutable state (one object, read and written by every module) and the queries over it.
-import { ALL_CONVERSATION_ID, type Bookmark, type Conversation, type Message, type Participant } from "@agent-bus/protocol";
+import { ALL_CONVERSATION_ID, type Bookmark, type Conversation, type Message, type OwnTask, type Participant } from "@agent-bus/protocol";
 import { nameList, sortedUnique } from "./format";
 
 export const UNREAD_ONLY_KEY = "agent-bus.unreadOnly";
@@ -40,6 +40,8 @@ export const state = {
   conversations: new Map<string, Conversation>(),
   /** My own bookmarks (Can #11065), newest first: the bus keeps them, only I see them. */
   bookmarks: [] as Bookmark[],
+  /** My own tasks (Can #12197): messages I took as a task for myself; open first. The bus keeps them, only I see them. */
+  ownTasks: [] as OwnTask[],
   /** My tabs (Can #11480): conversations I pinned, in my order; the bus keeps them, only I see them. */
   tabs: [] as string[],
   caches: new Map<string, MessageCache>(),

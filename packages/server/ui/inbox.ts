@@ -2,18 +2,19 @@
 // the right pane, with the tasks assigned to you and those you assigned. A task is a message (its #number its id);
 // ✓ finishes it (approves an approval), ✕ rejects it, "On it" accepts it, ↩ answers it with a quote. Each step is
 // posted in the conversation as a reply to the task by the bus.
-import type { Conversation, Message, Task, TasksResponse } from "@agent-bus/protocol";
+import type { Conversation, Message, OwnTask, Task, TasksResponse } from "@agent-bus/protocol";
 import { api, postJson } from "./api";
 import { setReplyTo } from "./composer";
 import { dom, PHONE } from "./dom";
 import { errorText, relativeTime } from "./format";
+import { hooks } from "./hooks";
 import { h } from "./html";
-import { setIcon } from "./icons";
+import { icon, setIcon } from "./icons";
 import { renderMarkdown } from "./markdown";
 import { closePane, globalShown, onWorkspaceChange, refreshPane, registerExtension, toggleGlobal } from "./pane";
 import { navigate, viewHash } from "./routing";
 import { conversationTitle, state } from "./state";
-import { mentionNodes } from "./text";
+import { fetchMessage, mentionNodes } from "./text";
 
 type Box = "mine" | "assigned";
 let box: Box = "mine";
@@ -39,19 +40,121 @@ export async function refreshInbox(): Promise<void> {
   if (visible) markShownRead();
 }
 
+/** Open tasks for me: assigned ones and my own (Can #12197). */
+function openTotal(): number {
+  return counts.open + state.ownTasks.filter((t) => t.doneAt === undefined).length;
+}
+
 function renderButton(): void {
   const btn = dom.inboxBtn;
-  setIcon(btn, "mail", counts.open > 0 ? String(counts.open) : "");
-  btn.setAttribute("aria-label", counts.open > 0 ? `Your inbox, ${counts.open} open` : "Your inbox");
-  btn.classList.toggle("inbox-open", counts.open > 0 && counts.unread === 0);
+  const open = openTotal();
+  setIcon(btn, "mail", open > 0 ? String(open) : "");
+  btn.setAttribute("aria-label", open > 0 ? `Your inbox, ${open} open` : "Your inbox");
+  btn.classList.toggle("inbox-open", open > 0 && counts.unread === 0);
   btn.classList.toggle("inbox-unread", counts.unread > 0);
   btn.title =
-    counts.open === 0
+    open === 0
       ? "Your inbox: no open tasks"
-      : `Your inbox: ${counts.open} open task${counts.open === 1 ? "" : "s"}${counts.unread ? `, ${counts.unread} unread` : ""}`;
+      : `Your inbox: ${open} open task${open === 1 ? "" : "s"}${counts.unread ? `, ${counts.unread} unread` : ""}`;
   dom.inboxRow.hidden = !state.me;
-  dom.inboxRowCount.textContent = counts.open > 0 ? String(counts.open) : "";
+  dom.inboxRowCount.textContent = open > 0 ? String(open) : "";
   dom.inboxRow.classList.toggle("inbox-unread", counts.unread > 0);
+}
+
+// ---- My own tasks (Can #12197): a message I took as a task for myself; only I see it, the message is untouched ----
+
+/** Takes message `seq` as my task ("open"), marks it "done", or drops it ("none"). */
+export async function setOwnTask(seq: number, taskState: "open" | "done" | "none"): Promise<void> {
+  const res = await postJson<{ ownTasks: OwnTask[] }>("/api/own-tasks", { from: state.me, seq, state: taskState });
+  ownTasksChanged(res.ownTasks);
+}
+
+/** My list as the bus has it now (my answer, or another of my pages changed it). */
+export function ownTasksChanged(ownTasks: OwnTask[]): void {
+  state.ownTasks = ownTasks;
+  renderButton();
+  refreshPane("inbox");
+  for (const button of document.querySelectorAll<HTMLButtonElement>(".msg-owntask-btn")) drawOwnTaskButton(button);
+}
+
+function drawOwnTaskButton(button: HTMLButtonElement): void {
+  const seq = Number(button.dataset.seq);
+  const on = state.ownTasks.some((t) => t.seq === seq);
+  button.classList.toggle("on", on);
+  button.disabled = false;
+  button.title = on ? "One of your tasks (in your inbox); click to remove it" : "Task for me: put it in your inbox as a task (only you see it)";
+  button.setAttribute("aria-label", on ? `Remove message #${seq} from your tasks` : `Make message #${seq} a task for yourself`);
+  button.setAttribute("aria-pressed", on ? "true" : "false");
+}
+
+/** "Task for me" among a message's actions: takes it into my inbox, or drops it again. */
+export function ownTaskButton(seq: number): HTMLButtonElement {
+  const button = h("button", "msg-action-btn msg-owntask-btn");
+  button.type = "button";
+  button.dataset.seq = String(seq);
+  button.append(icon("task"));
+  drawOwnTaskButton(button);
+  button.addEventListener("click", () => {
+    button.disabled = true;
+    const on = state.ownTasks.some((t) => t.seq === seq);
+    setOwnTask(seq, on ? "none" : "open").catch((error) => {
+      button.disabled = false;
+      button.title = `Not saved: ${errorText(error)}`;
+    });
+  });
+  return button;
+}
+
+/** "Your own tasks" at the top of "For me": open ones, and done ones with "closed too". False when there are none. */
+function renderOwnTasks(root: HTMLElement): boolean {
+  const shown = state.ownTasks.filter((t) => showClosed || t.doneAt === undefined);
+  if (shown.length === 0) return false;
+  root.append(h("h3", "inbox-section", "Your own tasks"));
+  const list = h("ul", "inbox-list");
+  for (const own of shown) {
+    const card = h("li", `inbox-item own-task${own.doneAt !== undefined ? " own-done" : ""}`);
+    const head = h("label", "inbox-head");
+    const check = h("input");
+    check.type = "checkbox";
+    check.checked = own.doneAt !== undefined;
+    check.title = check.checked ? "Done; untick to open it again" : "Tick when done";
+    const note = h("span", "inbox-note");
+    check.addEventListener("change", () => {
+      setOwnTask(own.seq, check.checked ? "done" : "open").catch((error) => (note.textContent = `Not saved: ${errorText(error)}`));
+    });
+    const from = h("span", "", ` #${own.seq}`);
+    const when = h("span", "inbox-when", ` · taken ${relativeTime(own.at)}`);
+    head.append(check, h("span", "task-label task-type-task", "My task"), from, when);
+    const text = h("div", "inbox-text", "…");
+    const actions = h("div", "inbox-actions");
+    const open = h("button", "btn inbox-btn", "Open");
+    open.type = "button";
+    open.title = "Go to the message in its conversation";
+    open.addEventListener("click", () => {
+      leaveForMessage();
+      void hooks.showMessage(own.seq);
+    });
+    const remove = h("button", "btn inbox-btn", "Remove");
+    remove.type = "button";
+    remove.title = "Take it off your tasks (the message stays where it is)";
+    remove.addEventListener("click", () => {
+      setOwnTask(own.seq, "none").catch((error) => (note.textContent = `Not removed: ${errorText(error)}`));
+    });
+    actions.append(open, remove, note);
+    card.append(head, text, actions);
+    list.append(card);
+    // Sender, conversation and text from the bus (it may not be loaded on the left).
+    void fetchMessage(own.seq).then(
+      ({ message, conversation }) => {
+        from.replaceChildren(...mentionNodes(` #${own.seq} from @${message.from}`), h("span", "inbox-where", ` in ${conversationTitle(state.conversations.get(conversation.id) ?? conversation)}`));
+        const body = message.deletedAt ? "(message deleted)" : message.text;
+        text.replaceChildren(...inline(body.length > 600 ? `${body.slice(0, 599)}…` : body));
+      },
+      (error) => (text.textContent = `(${errorText(error)})`)
+    );
+  }
+  root.append(list);
+  return true;
 }
 
 /** Marks the tasks shown under "For me" as read (the button turns from red to yellow). */
@@ -188,7 +291,7 @@ registerExtension({
   order: 40,
   // Yours, not the conversation's (Can, #10037): a Workspace item of its own, beside whatever is open on the left.
   scope: "global",
-  title: () => (counts.open > 0 ? `Your inbox · ${counts.open} open` : "Your inbox"),
+  title: () => (openTotal() > 0 ? `Your inbox · ${openTotal()} open` : "Your inbox"),
   applies: () => !!state.me,
   render: (body) => {
     const root = h("div", "inbox pane-pad");
@@ -217,9 +320,13 @@ registerExtension({
     closed.append(check, " closed too");
     bar.append(closed);
     root.append(bar);
+    // Under "For me": my own tasks first, then those others gave me.
+    const own = box === "mine" && renderOwnTasks(root);
     if (!data) root.append(h("p", "check-note", "Loading…"));
-    else if (data.messages.length === 0) root.append(h("p", "check-note", box === "mine" ? "No tasks for you." : "No tasks you assigned."));
-    else {
+    else if (data.messages.length === 0) {
+      if (!own) root.append(h("p", "check-note", box === "mine" ? "No tasks for you. Make any message a task for yourself with its task button (hover, or tap it on a phone)." : "No tasks you assigned."));
+    } else {
+      if (own) root.append(h("h3", "inbox-section", "Given to you"));
       const list = h("ul", "inbox-list");
       const byId = new Map(data.conversations.map((c) => [c.id, c]));
       for (const message of data.messages) list.append(renderCard(message, byId.get(message.conversationId)));

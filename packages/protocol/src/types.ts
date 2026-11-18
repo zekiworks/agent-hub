@@ -386,6 +386,8 @@ export type ViewerServerFrame =
   | { type: "changed"; message: Message; conversation: Conversation }
   /** The viewer's own bookmarks changed (another of their pages, or this one): the list as it is now. */
   | { type: "bookmarks"; bookmarks: Bookmark[] }
+  /** The viewer's own tasks changed (another of their pages, or this one): the list as it is now. */
+  | { type: "ownTasks"; ownTasks: OwnTask[] }
   /** The viewer's own tab order changed (another of their pages, or this one). */
   | { type: "tabs"; tabs: string[] }
   | { type: "participants"; participants: Participant[] }
@@ -441,6 +443,8 @@ export interface StateResponse {
   gpuBooking?: true;
   /** The signed-in person's own bookmarks (Can #11065), newest first; only people have them. */
   bookmarks?: Bookmark[];
+  /** The signed-in person's own tasks (Can #12197): messages they took as a task for themselves. */
+  ownTasks?: OwnTask[];
   /**
    * The signed-in person's tabs (Can #11463, #11480): the conversations they pinned, in their order. Theirs alone; the
    * same set the list shows first ("Pin to the top").
@@ -465,6 +469,25 @@ export interface BookmarkRequest {
   from: string;
   seq: number;
   bookmarked: boolean;
+}
+
+/**
+ * A message a person took as a task for themselves (Can #12197): in their own inbox, open until they mark it done.
+ * Only they see it; the message itself is not touched and nobody is told.
+ */
+export interface OwnTask {
+  seq: number;
+  /** When it was taken as a task. */
+  at: number;
+  /** When it was marked done (absent while open). */
+  doneAt?: number;
+}
+
+/** POST /api/own-tasks: a person takes a message they can read as a task ("open"), marks it "done", or drops it ("none"). */
+export interface OwnTaskRequest {
+  from: string;
+  seq: number;
+  state: "open" | "done" | "none";
 }
 
 /**

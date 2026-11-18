@@ -11,6 +11,7 @@ import { errorText } from "./format";
 import { hooks } from "./hooks";
 import { h } from "./html";
 import { setIcon } from "./icons";
+import { setOwnTask } from "./inbox";
 import { conversationTitle, state } from "./state";
 
 let box: HTMLElement | undefined;
@@ -196,7 +197,26 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   setIcon(reply, "reply", "Reply");
   reply.title = `Reply to @${message.from} here, without leaving this conversation`;
   reply.addEventListener("click", () => replyIn(toast, message, conversation));
-  row.prepend(reply);
+  // Or keep it as a task for myself, in my inbox (Can #12197).
+  const take = h("button", "link-btn answer-toast-reply");
+  take.type = "button";
+  const drawTake = (taken: boolean) => {
+    setIcon(take, "task", taken ? "In your inbox ✓" : "Task for me");
+    take.disabled = taken;
+    take.title = taken ? "One of your tasks, in your inbox" : "Put it in your inbox as a task for yourself (only you see it)";
+  };
+  drawTake(state.ownTasks.some((t) => t.seq === message.seq));
+  take.addEventListener("click", () => {
+    take.disabled = true;
+    setOwnTask(message.seq, "open").then(
+      () => drawTake(true),
+      (error) => {
+        take.disabled = false;
+        take.title = `Not saved: ${errorText(error)}`;
+      }
+    );
+  });
+  row.prepend(reply, take);
   row.append(reset);
   toast.append(row);
   place(savedPosition());

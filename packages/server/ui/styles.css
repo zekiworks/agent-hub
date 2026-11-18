@@ -492,7 +492,8 @@ button:disabled {
 
 /* 📌 on a message that is pinned, ★ on one in my bookmarks (bookmarks.ts): lit, so the state shows at a glance. */
 .msg-pin-btn.pinned,
-.msg-bookmark-btn.bookmarked {
+.msg-bookmark-btn.bookmarked,
+.msg-owntask-btn.on {
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
@@ -934,6 +935,35 @@ button:disabled {
   padding: 8px 0 10px;
   border-bottom: 1px solid var(--border);
   overflow-wrap: anywhere;
+}
+
+/* "Your own tasks" and "Given to you" under "For me" (inbox.ts; Can #12197). */
+.inbox-section {
+  margin: 12px 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.own-task .inbox-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.own-task .inbox-head input {
+  width: 18px;
+  height: 18px;
+  margin: 0 4px 0 0;
+}
+
+.own-task.own-done .inbox-text {
+  color: var(--muted);
+  text-decoration: line-through;
 }
 
 .inbox-item.inbox-unread {

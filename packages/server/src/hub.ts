@@ -7,6 +7,7 @@ import {
   type AgentSession,
   type AgentStatus,
   type Bookmark,
+  type OwnTask,
   type Conversation,
   type ExpiredFrame,
   type Message,
@@ -530,6 +531,12 @@ export class Hub {
   /** `human`'s own bookmarks changed (Can #11065): only their own open pages hear of it. */
   bookmarksChanged(human: string, bookmarks: Bookmark[]): void {
     const frame = JSON.stringify({ type: "bookmarks", bookmarks } satisfies ViewerServerFrame);
+    for (const ws of this.viewers) if (ws.data.kind === "viewer" && ws.data.human === human) ws.send(frame);
+  }
+
+  /** `human`'s own tasks changed (Can #12197): only their own open pages hear of it. */
+  ownTasksChanged(human: string, ownTasks: OwnTask[]): void {
+    const frame = JSON.stringify({ type: "ownTasks", ownTasks } satisfies ViewerServerFrame);
     for (const ws of this.viewers) if (ws.data.kind === "viewer" && ws.data.human === human) ws.send(frame);
   }
 

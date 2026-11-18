@@ -23,7 +23,7 @@ import "./send";
 import "./convmenu";
 import { checklistChanged } from "./checklist";
 import { homeChanged } from "./home";
-import { refreshInbox } from "./inbox";
+import { ownTasksChanged, refreshInbox } from "./inbox";
 import "./files";
 import "./settings";
 import "./stats";
@@ -223,6 +223,9 @@ function handleFrame(frame: ViewerServerFrame): void {
       break;
     case "bookmarks":
       bookmarksChanged(frame.bookmarks);
+      break;
+    case "ownTasks":
+      ownTasksChanged(frame.ownTasks);
       break;
     case "tabs":
       tabsChanged(frame.tabs);
