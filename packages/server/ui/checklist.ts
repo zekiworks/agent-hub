@@ -41,20 +41,31 @@ function replyToItem(conversationId: string, item: string): void {
 
 /** Per conversation: its list, none, or loading (no entry: not asked yet). */
 const lists = new Map<string, { list?: Checklist; none?: true; error?: string }>();
+/** Per conversation, the latest load asked for: an answer to an earlier one is dropped (codex-ui #12403). */
+const loads = new Map<string, number>();
 
 async function load(conversationId: string): Promise<void> {
-  lists.set(conversationId, {});
+  const generation = (loads.get(conversationId) ?? 0) + 1;
+  loads.set(conversationId, generation);
+  // A list on screen stays while its newer version loads.
+  if (!lists.get(conversationId)?.list) lists.set(conversationId, {});
+  let answer: { list?: Checklist; none?: true; error?: string };
   try {
     // fetch, not api(): a 404 ("no checklist here") is an answer, not an error.
     const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/checklist`, {
       headers: { Authorization: `Bearer ${localStorage.getItem(SESSION_KEY) ?? ""}` },
     });
-    if (res.status === 404) lists.set(conversationId, { none: true });
+    if (res.status === 404) answer = { none: true };
     else if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    else lists.set(conversationId, { list: (await res.json()) as Checklist });
+    else answer = { list: (await res.json()) as Checklist };
   } catch (error) {
-    lists.set(conversationId, { error: errorText(error) });
+    answer = { error: errorText(error) };
   }
+  if (loads.get(conversationId) !== generation) return;
+  // Never an older version over a newer one (a tick's answer may have come first).
+  const shown = lists.get(conversationId)?.list;
+  if (answer.list && shown && shown.version > answer.list.version) return;
+  lists.set(conversationId, answer);
   refreshPane("checklist");
   renderPane(); // the tab appears (or goes) with the answer; the pin count follows `pinned`
 }
@@ -124,16 +135,20 @@ function itemRow(conversationId: string, list: Checklist, item: ChecklistItem): 
     li.classList.toggle("done", done);
     li.querySelector(".check-error")?.remove();
     try {
+      // The version on screen: a tick on a list someone changed meanwhile is refused, not applied to a reworded item.
       const updated = await postJson<Checklist>(`/api/conversations/${encodeURIComponent(conversationId)}/checklist/tick`, {
         from: state.me,
         id: item.id,
         done,
+        base: list.version,
       });
       show(conversationId, updated);
     } catch (error) {
       box.checked = !done;
       li.classList.toggle("done", !done);
-      li.append(h("span", "check-error", ` Not saved: ${errorText(error)}`));
+      const stale = /changed meanwhile/.test(errorText(error));
+      li.append(h("span", "check-error", stale ? " The list changed meanwhile; it is shown again, look and tick again." : ` Not saved: ${errorText(error)}`));
+      if (stale) void load(conversationId);
     }
   });
   return li;

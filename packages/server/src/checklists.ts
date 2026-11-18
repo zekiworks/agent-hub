@@ -214,8 +214,11 @@ export async function editChecklist(ctx: BusContext, req: Request, id: string): 
 
 /**
  * PUT /api/conversations/:id/checklist: the list as markdown (PutChecklistRequest), for the agents that write it so.
- * Only its creator replaces it. Lines keep the ids, ticks and blocked notes of the items with the same text; an agent's PUT
- * keeps the items other agents and people own (an agent changes only its own items).
+ * Only its creator replaces it, on the version it read (`base`, required once a list exists; codex-ui #12403). Lines
+ * keep the ids, ticks and blocked notes of the items with the same text. An agent's PUT keeps the items other agents and
+ * people own and may not change them (their done state, heading or detail). Dropping an item a person ticked is allowed
+ * (archiving it), but not in the same PUT as new lines: that could be a rewording that loses the tick, which the
+ * id-based edit does safely.
  */
 export async function putChecklist(ctx: BusContext, req: Request, id: string): Promise<Checklist> {
   const body = await readJsonObject(req);
@@ -224,18 +227,24 @@ export async function putChecklist(ctx: BusContext, req: Request, id: string): P
   const before = ctx.db.getChecklist(conversation.id);
   // The first publisher owns the list; only they replace it.
   if (before && before.creator !== from.id) throw new HttpError(403, `This checklist is @${before.creator}'s; only @${before.creator} replaces it`);
+  if (before && body.base === undefined) {
+    throw new HttpError(400, `base is required: the version you read (GET …/checklist gives it; now ${before.version})`);
+  }
   if (body.base !== undefined) checkBase(before, body.base);
   const { text } = body;
   if (typeof text !== "string") throw new HttpError(400, "text must be the checklist's markdown");
   if (text.length > MAX_CHECKLIST_CHARS) throw new HttpError(400, `text is longer than ${MAX_CHECKLIST_CHARS} characters`);
   const list = before ?? newList(from);
+  const person = ctx.hub.isHuman(from.id);
   const now = Date.now();
   const unmatched = [...list.items];
   let nextId = list.nextId;
+  let added = 0;
   const parsed = parseChecklistMarkdown(text);
   const items: ChecklistItem[] = parsed.items.map((line) => {
     const at = unmatched.findIndex((item) => item.text === line.text);
     const kept = at >= 0 ? unmatched.splice(at, 1)[0] : undefined;
+    if (!kept) added += 1;
     const item: ChecklistItem = kept ? { ...kept } : { id: checklistItemId(nextId++), text: line.text, owner: from.id };
     if (line.heading) item.heading = line.heading;
     else delete item.heading;
@@ -243,9 +252,18 @@ export async function putChecklist(ctx: BusContext, req: Request, id: string): P
     if (line.detail) item.detail = line.detail;
     // `- [x]`: the writer counts it done. `- [ ]` keeps a tick: ticks were never part of the text.
     if (line.done && !item.done) item.done = { by: from.id, at: now };
+    // An agent's PUT leaves other owners' items exactly as they are.
+    if (kept && !person && kept.owner !== from.id && changedFrom(kept, item)) {
+      throw new HttpError(403, `Item ${kept.id} is ${kept.owner ? `@${kept.owner}'s` : "nobody's"}: write it as it is (its tick, heading and lines under it), or leave it out`);
+    }
     return item;
   });
-  if (!ctx.hub.isHuman(from.id)) for (const other of unmatched.filter((item) => item.owner !== from.id)) place(items, other);
+  const droppedTicked = unmatched.filter((item) => (person || item.owner === from.id) && item.done && ctx.hub.isHuman(item.done.by));
+  if (droppedTicked.length > 0 && added > 0) {
+    const ids = droppedTicked.map((item) => item.id).join(", ");
+    throw new HttpError(409, `This would drop ${ids}, ticked by a person, while adding new lines: if you reworded it, change it with op=checklist update (by id) so the tick stays; to archive it, drop it in a PUT of its own`, { checklist: view(list) });
+  }
+  if (!person) for (const other of unmatched.filter((item) => item.owner !== from.id)) place(items, other);
   if (items.length > MAX_ITEMS) throw new HttpError(400, `A checklist holds at most ${MAX_ITEMS} items`);
   // The title and intro are the text's: a PUT replaces the whole text.
   const { title: _title, intro: _intro, ...rest } = list;
@@ -258,6 +276,11 @@ export async function putChecklist(ctx: BusContext, req: Request, id: string): P
     assignees: assigneesOf(ctx, body.assignees, list.assignees),
   };
   return save(ctx, conversation, replaced, from);
+}
+
+/** Whether a PUT's line changes an existing item beyond its place in the list: its tick, heading or detail. */
+function changedFrom(kept: ChecklistItem, item: ChecklistItem): boolean {
+  return !!kept.done !== !!item.done || (kept.heading ?? "") !== (item.heading ?? "") || (kept.detail ?? "") !== (item.detail ?? "");
 }
 
 /**
@@ -274,13 +297,14 @@ export async function tickChecklist(ctx: BusContext, req: Request, id: string): 
   if (!conversation.members.includes(from.id) && !(person && list.assignees.includes(from.id))) {
     throw new HttpError(403, `@${from.id} is not in ${conversation.id}`);
   }
-  if (body.base !== undefined) checkBase(list, body.base);
+  // Ticks name the version they were read at, like edits: a tick from before a rewording must not land (codex-ui #12403).
+  if (body.base === undefined) throw new HttpError(400, "base is required: the version of the list you ticked from");
+  checkBase(list, body.base);
   const { done } = body;
   if (typeof done !== "boolean") throw new HttpError(400, "done must be true or false");
-  const wanted = typeof body.id === "string" ? body.id : typeof body.item === "string" ? body.item.trim() : undefined;
-  if (wanted === undefined) throw new HttpError(400, "Give id (the item's id) and done (true or false)");
+  if (typeof body.id !== "string") throw new HttpError(400, "Give id (the item's id), done (true or false) and base");
   const items = list.items.map((item) => ({ ...item }));
-  const item = items.find((i) => (typeof body.id === "string" ? i.id === wanted : i.text === wanted));
+  const item = items.find((i) => i.id === body.id);
   if (!item) throw new HttpError(409, "That item is no longer on the list (it changed meanwhile)", { checklist: view(list) });
   if (!person) {
     if (item.owner !== from.id) throw new HttpError(403, `Item ${item.id} is ${item.owner ? `@${item.owner}'s` : "nobody's"}; an agent ticks only its own items`);

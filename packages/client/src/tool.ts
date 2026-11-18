@@ -150,7 +150,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   { name: "topic", type: "string", description: "project: a one-line topic" },
   { name: "visibility", type: "string", enum: ["open", "discoverable", "private"], description: "project: who can find and join it" },
   { name: "parent", type: "string", description: 'parent: the root project to put it under ("@@name"), or "none" for a root. projects: list what is under this project instead of the top level' },
-  { name: "base", type: "number", description: "checklist: the version you read (0 when there is no list yet); required with `ops`" },
+  { name: "base", type: "number", description: "checklist: the version you read (0 when there is no list yet); required with `ops`, `tick` or `untick`" },
   {
     name: "ops",
     type: "object[]",
@@ -735,18 +735,27 @@ export class BusTool {
         const conversation = await this.conversationOf(params);
         const where = conversationLabel(conversation);
         let list: Checklist | null = null;
-        if (params.ops?.length) {
-          if (params.base === undefined) throw new Error("checklist with `ops` needs `base`: the version you read (0 when there is no list yet). Read it with op=checklist first.");
+        const ticks = [...(params.tick ?? []).map((id) => [id, true] as const), ...(params.untick ?? []).map((id) => [id, false] as const)];
+        if (params.ops?.length || ticks.length) {
+          if (params.base === undefined) throw new Error("checklist with `ops`, `tick` or `untick` needs `base`: the version you read (0 when there is no list yet). Read it with op=checklist first.");
+          // Each change names the version the one before it left, so nothing lands on a list someone changed meanwhile.
+          let version = params.base;
           try {
-            list = await conn.editChecklist(conversation.id, params.base, params.ops);
+            if (params.ops?.length) {
+              list = await conn.editChecklist(conversation.id, version, params.ops);
+              version = list.version;
+            }
+            for (const [id, done] of ticks) {
+              list = await conn.tickChecklist(conversation.id, id, done, version);
+              version = list.version;
+            }
           } catch (error) {
             if (!(error instanceof Error) || !/changed meanwhile|no checklist here yet/.test(error.message)) throw error;
             const now = await conn.checklist(conversation.id);
-            throw new Error(`Nothing was changed: ${error.message}.${now ? ` As it is now:\n\n${formatChecklist(now, where)}` : ""}`);
+            const saved = list ? " Your changes up to that point were saved." : "";
+            throw new Error(`Not all saved: ${error.message}.${saved}${now ? ` As it is now:\n\n${formatChecklist(now, where)}` : ""}`);
           }
         }
-        for (const id of params.tick ?? []) list = await conn.tickChecklist(conversation.id, id, true);
-        for (const id of params.untick ?? []) list = await conn.tickChecklist(conversation.id, id, false);
         if (list) return result(`Saved. ${formatChecklist(list, where)}`);
         list = await conn.checklist(conversation.id);
         return result(list ? formatChecklist(list, where) : `${where} has no checklist yet; start one with op=checklist base=0 and \`ops\` adding its first steps.`);

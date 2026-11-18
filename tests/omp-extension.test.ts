@@ -381,7 +381,7 @@ test("op=home: an agent publishes its Home on @@<id> and reads it back", async (
   expect((await alpha.run({ op: "home" })).content[0]!.text).toContain("## Done\n- rooms");
 });
 
-test("op=checklist: an agent adds the steps of an instruction, ticks one, and on a stale version gets the list back unchanged", async () => {
+test("op=checklist: an agent adds the steps of an instruction, ticks one on the version it read, and on a stale version gets the list back", async () => {
   const alpha = await startSession("alpha");
   const { message } = await post({ from: "carol", to: "@alpha", text: "launch: notes, deploy" });
   await alpha.injectedWith("launch: notes"); // connected
@@ -395,15 +395,41 @@ test("op=checklist: an agent adds the steps of an instruction, ticks one, and on
   expect(added.content[0]!.text).toStartWith(
     `Saved. Checklist of @{alpha,carol}, version 1 (pinned; started by @alpha):\n## ${heading}\n- [ ] i1: Write notes (@alpha; from #${message.seq})\n`
   );
-  const ticked = await alpha.run({ ...at, tick: ["i1"] });
+  // Ticks name the version they were read at, like edits (codex-ui #12403).
+  await expect(alpha.run({ ...at, tick: ["i1"] })).rejects.toThrow(/needs `base`/);
+  const ticked = await alpha.run({ ...at, base: 1, tick: ["i1"] });
   expect(ticked.content[0]!.text).toContain(`- [x] i1: Write notes (@alpha; from #${message.seq}; done by @alpha)`);
   await expect(alpha.run({ ...at, base: 1, ops: [{ op: "update", id: "i2", blocked: "no token" }] })).rejects.toThrow(
-    /^Nothing was changed: The checklist changed meanwhile \(version 2, not 1\).*As it is now:\n\nChecklist of @\{alpha,carol\}, version 2/s
+    /^Not all saved: The checklist changed meanwhile \(version 2, not 1\)[^\n]*\. As it is now:\n\nChecklist of @\{alpha,carol\}, version 2/
   );
   expect((await alpha.run({ ...at, base: 2, ops: [{ op: "update", id: "i2", blocked: "no token", detail: "staging first\nthen production" }] })).content[0]!.text).toContain(
     "- [ ] i2: Deploy (@alpha; from #"
   );
   expect((await alpha.run(at)).content[0]!.text).toContain(`BLOCKED: no token)\n    staging first\n    then production`);
+
+  // An edit, then a tick on the version the edit left: carol rewords i2 in between, so the tick does not land.
+  const realFetch = globalThis.fetch;
+  let raced = false;
+  const racing = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): Promise<Response> => {
+    const res = await realFetch(input, init);
+    if (!raced && String(input).endsWith("/checklist/edit")) {
+      raced = true;
+      const reworded = await postJson(bus, `/api/conversations/${message.conversationId}/checklist/edit`, { from: "carol", base: 4, ops: [{ op: "update", id: "i2", text: "Deploy to production" }] });
+      expect(reworded.status).toBe(200);
+    }
+    return res;
+  };
+  globalThis.fetch = Object.assign(racing, { preconnect: realFetch.preconnect });
+  try {
+    await expect(alpha.run({ ...at, base: 3, ops: [{ op: "add", heading, text: "Tag the release" }], tick: ["i2"] })).rejects.toThrow(
+      /^Not all saved: The checklist changed meanwhile \(version 5, not 4\)[^\n]*\. Your changes up to that point were saved\. As it is now:/
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  const after = (await alpha.run(at)).content[0]!.text;
+  expect(after).toContain("i3: Tag the release");
+  expect(after).toContain("- [ ] i2: Deploy to production");
 });
 
 test("reply answers a message by its number, into that message's conversation", async () => {

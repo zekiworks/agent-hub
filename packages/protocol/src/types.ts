@@ -621,9 +621,11 @@ export interface PutHomeRequest {
 
 /**
  * PUT /api/conversations/:id/checklist: the list as markdown, from before items had ids (kept for the agents that
- * write it so). The first PUT, by a member, creates the list; after that only its creator replaces it. Lines are
- * matched to items by their exact text, so ids and ticks survive; `- [x]` marks an item done. `assignees` (participant
- * ids) is kept as it was when left out; `base`, if given, must be the current version.
+ * write it so). The first PUT, by a member, creates the list; after that only its creator replaces it, naming the
+ * version it read (`base`, required once the list exists). Lines are matched to items by their exact text, so ids and
+ * ticks survive; `- [x]` marks an item done. An agent's PUT may not change other owners' items, and may not drop an item
+ * a person ticked while adding new lines (a rewording: use the edit). `assignees` (participant ids) is kept as it was
+ * when left out.
  */
 export interface PutChecklistRequest {
   from: string;
@@ -633,16 +635,14 @@ export interface PutChecklistRequest {
 }
 
 /**
- * POST /api/conversations/:id/checklist/tick: ticks (or unticks) item `id`. People who are members (or assignees) tick
- * any item; an agent only its own, and never unticks a person's tick. `base`, if given, must be the current version.
- * `item` (an item's text) instead of `id` is for writers from before ids.
+ * POST /api/conversations/:id/checklist/tick: ticks (or unticks) item `id` of the list at version `base`. People who are
+ * members (or assignees) tick any item; an agent only its own, and never unticks a person's tick.
  */
 export interface TickRequest {
   from: string;
-  id?: string;
-  item?: string;
+  id: string;
   done: boolean;
-  base?: number;
+  base: number;
 }
 
 /** POST /api/tasks/:seq/{accept,done,reject,withdraw,read}: one participant's step on a task. */

@@ -147,7 +147,7 @@ SCHEMA = {
             "hold_hours": {"type": "number",
                            "description": "reply/write: how long the bus keeps it for recipients that are offline, in hours "
                                           "(default 1, at most 168); after that it expires for them"},
-            "base": {"type": "integer", "description": "checklist: the version you read (0 when there is no list yet); required with `ops`"},
+            "base": {"type": "integer", "description": "checklist: the version you read (0 when there is no list yet); required with `ops`, `tick` or `untick`"},
             "ops": {"type": "array", "description": "checklist: changes applied together on version `base`, all or none",
                     "items": {"type": "object", "required": ["op"], "properties": {
                         "op": {"type": "string", "enum": ["add", "update", "remove"], "description": "add a step, update one (by id) or remove one"},
@@ -880,20 +880,25 @@ def register(ctx: Any) -> None:
                     raise
 
             current = None
-            if args.get("ops"):
+            ticks = [(i, True) for i in args.get("tick") or []] + [(i, False) for i in args.get("untick") or []]
+            if args.get("ops") or ticks:
                 if args.get("base") is None:
-                    raise ValueError("checklist with `ops` needs `base`: the version you read (0 when there is no list yet). Read it with op=checklist first.")
+                    raise ValueError("checklist with `ops`, `tick` or `untick` needs `base`: the version you read (0 when there is no list yet). Read it with op=checklist first.")
+                # Each change names the version the one before it left, so nothing lands on a list someone changed meanwhile.
+                version = int(args["base"])
                 try:
-                    current = client.checklist_post(conversation_id, "edit", {"base": int(args["base"]), "ops": args["ops"]})
+                    if args.get("ops"):
+                        current = client.checklist_post(conversation_id, "edit", {"base": version, "ops": args["ops"]})
+                        version = current["version"]
+                    for item_id, done in ticks:
+                        current = client.checklist_post(conversation_id, "tick", {"id": item_id, "done": done, "base": version})
+                        version = current["version"]
                 except RuntimeError as err:
                     if "changed meanwhile" not in str(err) and "no checklist here yet" not in str(err):
                         raise
                     now = read()
-                    raise ValueError(f"Nothing was changed: {err}." + (f" As it is now:\n\n{format_checklist(now, where)}" if now else ""))
-            for item_id in args.get("tick") or []:
-                current = client.checklist_post(conversation_id, "tick", {"id": item_id, "done": True})
-            for item_id in args.get("untick") or []:
-                current = client.checklist_post(conversation_id, "tick", {"id": item_id, "done": False})
+                    saved = " Your changes up to that point were saved." if current else ""
+                    raise ValueError(f"Not all saved: {err}.{saved}" + (f" As it is now:\n\n{format_checklist(now, where)}" if now else ""))
             if current:
                 return f"Saved. {format_checklist(current, where)}\n (you are @{me})"
             now = read()

@@ -324,12 +324,12 @@ export class BusConnection {
     });
   }
 
-  /** Ticks (or unticks) one of this agent's items. */
-  tickChecklist(conversationId: string, id: string, done: boolean): Promise<Checklist> {
+  /** Ticks (or unticks) one of this agent's items on the list at version `base`; throws "…changed meanwhile…" when it moved on. */
+  tickChecklist(conversationId: string, id: string, done: boolean, base: number): Promise<Checklist> {
     return this.request<Checklist>(`/api/conversations/${encodeURIComponent(conversationId)}/checklist/tick`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from: this.requireId(), id, done }),
+      body: JSON.stringify({ from: this.requireId(), id, done, base }),
     });
   }
 

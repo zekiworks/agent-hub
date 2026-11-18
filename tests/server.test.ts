@@ -1089,14 +1089,24 @@ describe("delivery", () => {
     await send({ from: "carol", conversationId: project.conversation.id, text: "joining" });
     await send({ from: "uma", conversationId: project.conversation.id, text: "me too" });
     const route = `/api/conversations/${project.conversation.id}/checklist`;
-    const put = (text: string, from = alpha.id, assignees?: string[]) =>
+    const get = async (as = "carol") => (await busFetch(bus, route, {}, as)).json() as Promise<Checklist>;
+    /** The current version, as a writer that just read the list names it (none before the first PUT). */
+    const current = async (): Promise<{ base?: number }> => {
+      const res = await busFetch(bus, route, {}, "carol");
+      return res.status === 404 ? {} : { base: ((await res.json()) as Checklist).version };
+    };
+    const put = async (text: string, from = alpha.id, assignees?: string[]) =>
       busFetch(bus, route, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ from, text, ...(assignees ? { assignees } : {}) }),
+        body: JSON.stringify({ from, text, ...(await current()), ...(assignees ? { assignees } : {}) }),
       }, from === "carol" || from === "uma" ? from : undefined); // people write with their session
-    const tick = (item: string, done: boolean, from = "carol") => postJson(bus, `${route}/tick`, { from, item, done });
-    const get = async (as = "carol") => (await busFetch(bus, route, {}, as)).json() as Promise<Checklist>;
+    /** Ticks the item with `text` (by its id, on the version just read). */
+    const tick = async (text: string, done: boolean, from = "carol") => {
+      const list = await get();
+      const id = list.items.find((item) => item.text === text)?.id ?? "i99";
+      return postJson(bus, `${route}/tick`, { from, id, done, base: list.version });
+    };
 
     expect((await busFetch(bus, route, {}, "carol")).status).toBe(404); // none yet
     expect((await put("## Money\n- [ ] Approve disk cleanup · #8264\n- [ ] Top up OpenRouter", alpha.id, ["@carol"])).status).toBe(200);
@@ -1106,7 +1116,7 @@ describe("delivery", () => {
       ["Money", "Approve disk cleanup · #8264", "alpha"],
       ["Money", "Top up OpenRouter", "alpha"],
     ]);
-    // A person who is a member ticks any item (by its text, as before ids); the creator ticks its own.
+    // A person who is a member ticks any item; the creator ticks its own.
     expect((await tick("Approve disk cleanup · #8264", true)).status).toBe(200);
     expect((await get()).ticks["Approve disk cleanup · #8264"]?.by).toBe("carol");
     expect((await tick("Top up OpenRouter", true, alpha.id)).status).toBe(200);
@@ -1670,11 +1680,20 @@ describe("checklists with items (Ümit #12364, codex-ui #12379)", () => {
     const instruction = await send({ from: "carol", conversationId: id, text: "Prepare the launch: notes, deploy" });
     const route = `/api/conversations/${id}/checklist`;
     const edit = (from: string, base: number, ops: unknown[]) => postJson(bus, `${route}/edit`, { from, base, ops });
-    const tick = (from: string, item: string, done: boolean, base?: number) =>
+    /** Ticks need the version they were read at (codex-ui #12403); `base` undefined leaves it out. */
+    const tick = (from: string, item: string, done: boolean, base: number | undefined) =>
       postJson(bus, `${route}/tick`, { from, id: item, done, ...(base === undefined ? {} : { base }) });
     const pin = (from: string, pinned: boolean) => postJson(bus, `${route}/pin`, { from, pinned });
     const get = async (): Promise<Checklist> => (await busFetch(bus, route, {}, "carol")).json() as Promise<Checklist>;
-    return { alpha: alpha.id, beta: beta.id, id, seq: instruction.message.seq, route, edit, tick, pin, get };
+    const version = async (): Promise<number> => (await get()).version;
+    /** The markdown PUT as `from` (people with their session); `base` undefined leaves it out. */
+    const put = (from: string, text: string, base: number | undefined) =>
+      busFetch(bus, route, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from, text, ...(base === undefined ? {} : { base }) }),
+      }, from === "carol" || from === "uma" ? from : undefined);
+    return { alpha: alpha.id, beta: beta.id, id, seq: instruction.message.seq, route, edit, tick, pin, get, version, put };
   }
 
   test("two agents adding on the same version: one gets 409 with the list, rereads and reapplies; both items are there", async () => {
@@ -1708,21 +1727,21 @@ describe("checklists with items (Ümit #12364, codex-ui #12379)", () => {
     const { alpha, edit, tick, get } = await room();
     await edit(alpha, 0, [{ op: "add", text: "Write release notes" }]);
     const read = await get(); // alpha reads version 1
-    expect((await tick("carol", "i1", true)).status).toBe(200); // carol ticks meanwhile: version 2
+    expect((await tick("carol", "i1", true, read.version)).status).toBe(200); // carol ticks meanwhile: version 2
     const stale = await edit(alpha, read.version, [{ op: "update", id: "i1", text: "Write the release notes" }]);
     expect(stale.status).toBe(409);
     const conflict = (await stale.json()) as { checklist: Checklist };
     expect(conflict.checklist.items[0]?.done?.by).toBe("carol");
     expect((await edit(alpha, conflict.checklist.version, [{ op: "update", id: "i1", text: "Write the release notes" }])).status).toBe(200);
     expect((await get()).items).toEqual([expect.objectContaining({ id: "i1", text: "Write the release notes", done: expect.objectContaining({ by: "carol" }) })]);
-    // A tick on a version that moved on 409s too, when it names one.
+    // A tick on a version that moved on 409s too.
     expect((await tick("carol", "i1", false, 1)).status).toBe(409);
   });
 
   test("rewording or moving an item keeps its id and done state; blocked is set and cleared", async () => {
     const { alpha, edit, tick, get } = await room();
     await edit(alpha, 0, [{ op: "add", heading: "A", text: "first" }, { op: "add", heading: "B", text: "second" }]);
-    expect((await tick(alpha, "i1", true)).status).toBe(200);
+    expect((await tick(alpha, "i1", true, 1)).status).toBe(200);
     let list = await get();
     const res = await edit(alpha, list.version, [
       { op: "update", id: "i1", text: "first, reworded", heading: "B" },
@@ -1748,48 +1767,47 @@ describe("checklists with items (Ümit #12364, codex-ui #12379)", () => {
   });
 
   test("an agent changes and ticks only its own items and never unticks a person's tick; people tick and change any", async () => {
-    const { alpha, beta, edit, tick, get } = await room();
+    const { alpha, beta, edit, tick, get, version: now } = await room();
     await edit(alpha, 0, [{ op: "add", text: "alpha's step" }]);
     await edit(beta, 1, [{ op: "add", text: "beta's step" }]);
-    let version = (await get()).version;
+    let version = await now();
     // beta may not touch alpha's item: update, remove, tick.
     const denied = await edit(beta, version, [{ op: "update", id: "i1", text: "mine now" }]);
     expect(denied.status).toBe(403);
     expect(await errorOf(denied)).toContain(`@${alpha}`);
     expect((await edit(beta, version, [{ op: "remove", id: "i1" }])).status).toBe(403);
-    expect((await tick(beta, "i1", true)).status).toBe(403);
+    expect((await tick(beta, "i1", true, version)).status).toBe(403);
     // A person who is a member ticks any item; the owning agent may not untick it.
-    expect((await tick("carol", "i1", true)).status).toBe(200);
-    const untick = await tick(alpha, "i1", false);
+    expect((await tick("carol", "i1", true, version)).status).toBe(200);
+    const untick = await tick(alpha, "i1", false, await now());
     expect(untick.status).toBe(403);
     expect(await errorOf(untick)).toContain("only people untick it");
     // Ticking it again keeps the person's tick.
-    expect((await tick(alpha, "i1", true)).status).toBe(200);
+    expect((await tick(alpha, "i1", true, await now())).status).toBe(200);
     expect((await get()).items[0]?.done?.by).toBe("carol");
     // An agent ticks and unticks its own.
-    expect((await tick(beta, "i2", true)).status).toBe(200);
-    expect((await tick(beta, "i2", false)).status).toBe(200);
+    expect((await tick(beta, "i2", true, await now())).status).toBe(200);
+    expect((await tick(beta, "i2", false, await now())).status).toBe(200);
     expect((await get()).items[1]?.done).toBeUndefined();
     // People change and remove any item; they untick any tick.
-    version = (await get()).version;
+    version = await now();
     expect((await edit("uma", version, [{ op: "update", id: "i2", text: "beta's step, as uma says" }])).status).toBe(200);
-    expect((await tick("uma", "i1", false)).status).toBe(200);
+    expect((await tick("uma", "i1", false, await now())).status).toBe(200);
     // Agents outside the conversation do nothing.
     const gamma = await joinPath("/tmp/x/gamma");
     expect((await edit(gamma.id, (await get()).version, [{ op: "add", text: "intruder" }])).status).toBe(403);
-    expect((await tick(gamma.id, "i2", true)).status).toBe(403);
+    expect((await tick(gamma.id, "i2", true, await now())).status).toBe(403);
   });
 
   test("pinned on creation; only people unpin and pin; an agent's edit leaves an unpinned list unpinned", async () => {
-    const { alpha, route, edit, pin, get } = await room();
+    const { alpha, edit, pin, get, put } = await room();
     await edit(alpha, 0, [{ op: "add", text: "step" }]);
     expect((await get()).pinned).toBe(true);
     expect((await pin(alpha, false)).status).toBe(403);
     const unpinned = await pin("carol", false);
     expect(await unpinned.json()).toMatchObject({ pinned: false, version: 2 });
     expect((await edit(alpha, 2, [{ op: "add", text: "another step" }])).status).toBe(200);
-    const put = await busFetch(bus, route, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: alpha, text: "- [ ] step\n- [ ] another step\n- [x] done" }) });
-    expect(put.status).toBe(200);
+    expect((await put(alpha, "- [ ] step\n- [ ] another step\n- [x] done", 3)).status).toBe(200);
     expect(await get()).toMatchObject({ pinned: false, version: 4 });
     // Done for all items does not unpin either; a person pins it again.
     expect((await pin("uma", true)).status).toBe(200);
@@ -1797,11 +1815,10 @@ describe("checklists with items (Ümit #12364, codex-ui #12379)", () => {
   });
 
   test("the markdown PUT keeps other agents' items and the ids of matching lines; only its creator uses it", async () => {
-    const { alpha, beta, route, edit, get } = await room();
-    const put = (text: string) => busFetch(bus, route, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: alpha, text }) });
-    expect((await put("## Today\n- [ ] one\n- [ ] two")).status).toBe(200);
+    const { alpha, beta, edit, get, put } = await room();
+    expect((await put(alpha, "## Today\n- [ ] one\n- [ ] two", undefined)).status).toBe(200); // the first PUT makes it
     await edit(beta, 1, [{ op: "add", heading: "Today", text: "beta's" }]);
-    expect((await put("## Today\n- [ ] two\n- [ ] three")).status).toBe(200);
+    expect((await put(alpha, "## Today\n- [ ] two\n- [ ] three", 2)).status).toBe(200);
     const list = await get();
     expect(list.items.map((item) => [item.id, item.text, item.owner])).toEqual([
       ["i2", "two", alpha],
@@ -1809,9 +1826,9 @@ describe("checklists with items (Ümit #12364, codex-ui #12379)", () => {
       ["i3", "beta's", beta],
     ]);
     expect(list.text).toBe("## Today\n- [ ] two\n- [ ] three\n- [ ] beta's");
-    // Only its creator replaces it, with the current version when it names one.
-    expect((await busFetch(bus, route, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: beta, text: "- [ ] x" }) })).status).toBe(403);
-    expect((await busFetch(bus, route, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: alpha, text: "- [ ] x", base: 1 }) })).status).toBe(409);
+    // Only its creator replaces it, on the current version.
+    expect((await put(beta, "- [ ] x", list.version)).status).toBe(403);
+    expect((await put(alpha, "- [ ] x", 1)).status).toBe(409);
   });
 
   /** Stops the bus, stores `text` as a checklist of `id` the way the bus did before items, and starts it again. */
@@ -1844,7 +1861,7 @@ describe("checklists with items (Ümit #12364, codex-ui #12379)", () => {
   });
 
   test("no text is lost: a title, an intro and the lines under items survive the migration, the derived markdown and a PUT", async () => {
-    const { alpha, id, route, get } = await room();
+    const { alpha, id, get, put: putAs } = await room();
     // The two shapes of the live bus's lists: an intro under the `# Title`; indented and plain lines under an item.
     const original = [
       "# Hilde Hub launch",
@@ -1876,12 +1893,12 @@ describe("checklists with items (Ümit #12364, codex-ui #12379)", () => {
     for (const line of original.split("\n").filter((l) => l.trim())) expect(derived).toContain(line.trim());
 
     // Writing the derived markdown back changes nothing but the version.
-    const put = (text: string) => busFetch(bus, route, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: alpha, text }) });
-    expect((await put(list.text)).status).toBe(200);
+    const put = (text: string, base: number) => putAs(alpha, text, base);
+    expect((await put(list.text, list.version)).status).toBe(200);
     const again = await get();
     expect({ ...again, version: 0, updatedAt: 0 }).toEqual({ ...list, version: 0, updatedAt: 0 });
     // A PUT with other lines under an item replaces its detail; one with none keeps it.
-    expect((await put("# Hilde Hub launch\n- [x] Website review\n  closed for good\n- [ ] Docs pass")).status).toBe(200);
+    expect((await put("# Hilde Hub launch\n- [x] Website review\n  closed for good\n- [ ] Docs pass", again.version)).status).toBe(200);
     const replaced = await get();
     expect(replaced.items.map((item) => [item.id, item.detail])).toEqual([["i1", "closed for good"], ["i2", "A plain line under an item\nAnother plain line"]]);
     expect(replaced.intro).toBeUndefined();
@@ -1894,5 +1911,63 @@ describe("checklists with items (Ümit #12364, codex-ui #12379)", () => {
     expect((await get()).text).toBe("- [ ] Deploy\n  staging first\n    then production");
     await edit(alpha, 1, [{ op: "update", id: "i1", detail: "" }]);
     expect((await get()).items[0]?.detail).toBeUndefined();
+  });
+
+  test("a person rewords an agent's item: the agent's tick on the version before it 409s and the item stays unticked", async () => {
+    const { alpha, edit, tick, get } = await room();
+    await edit(alpha, 0, [{ op: "add", text: "Deploy to staging" }]);
+    expect((await edit("carol", 1, [{ op: "update", id: "i1", text: "Deploy to production" }])).status).toBe(200);
+    const stale = await tick(alpha, "i1", true, 1);
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as { checklist: Checklist }).checklist.items[0]?.text).toBe("Deploy to production");
+    expect((await get()).items).toEqual([{ id: "i1", text: "Deploy to production", owner: alpha }]);
+  });
+
+  test("ticks, unticks and a PUT on an existing list need base (400 without); ticks take an id, not the item's text", async () => {
+    const { alpha, edit, tick, get, put, route } = await room();
+    expect((await put(alpha, "- [ ] Write notes", undefined)).status).toBe(200); // the first PUT may leave it out
+    await edit(alpha, 1, [{ op: "add", text: "Deploy" }]);
+    expect((await tick(alpha, "i1", true, undefined)).status).toBe(400);
+    expect((await tick(alpha, "i1", false, undefined)).status).toBe(400);
+    expect((await tick("carol", "i1", true, undefined)).status).toBe(400);
+    expect((await postJson(bus, `${route}/tick`, { from: "carol", item: "Write notes", done: true, base: 2 })).status).toBe(400);
+    expect((await put(alpha, "- [ ] Write notes\n- [ ] Deploy\n- [ ] More", undefined)).status).toBe(400);
+    const list = await get();
+    expect(list.version).toBe(2);
+    expect(list.items.map((item) => [item.text, item.done])).toEqual([["Write notes", undefined], ["Deploy", undefined]]);
+  });
+
+  test("the creator agent's PUT may not tick, move or redetail another agent's item (403); written as it is, it passes", async () => {
+    const { alpha, beta, edit, get, put } = await room();
+    await put(alpha, "## Today\n- [ ] one", undefined);
+    await edit(beta, 1, [{ op: "add", heading: "Today", text: "beta's" }]);
+    const betas = { id: "i2", heading: "Today", text: "beta's", owner: beta };
+    for (const text of [
+      "## Today\n- [ ] one\n- [x] beta's", // its tick
+      "## Today\n- [ ] one\n- [ ] beta's\n  my note on it", // its detail
+      "## Today\n- [ ] one\n\n## Other\n- [ ] beta's", // its heading
+    ]) {
+      const res = await put(alpha, text, 2);
+      expect(res.status).toBe(403);
+      expect(await errorOf(res)).toContain(`@${beta}'s`);
+    }
+    expect(await get()).toMatchObject({ version: 2, items: [expect.anything(), betas] });
+    expect((await put(alpha, "## Today\n- [ ] one, reworded\n- [ ] beta's", 2)).status).toBe(200);
+    expect((await get()).items.find((item) => item.id === "i2")).toEqual(betas);
+  });
+
+  test("a PUT that drops a person-ticked item while adding lines 409s (a rewording would lose the tick); dropping it alone archives it", async () => {
+    const { alpha, tick, get, put } = await room();
+    await put(alpha, "- [ ] Write notes\n- [ ] Deploy", undefined);
+    expect((await tick("carol", "i1", true, 1)).status).toBe(200);
+    const reworded = await put(alpha, "- [ ] Write the notes\n- [ ] Deploy", 2);
+    expect(reworded.status).toBe(409);
+    const conflict = (await reworded.json()) as { error: string; checklist: Checklist };
+    expect(conflict.error).toContain("i1");
+    expect(conflict.checklist.items[0]?.done?.by).toBe("carol");
+    expect(await get()).toMatchObject({ version: 2, items: [{ id: "i1", text: "Write notes", done: { by: "carol" } }, { id: "i2", text: "Deploy" }] });
+    // Archiving: the done item dropped in a PUT of its own.
+    expect((await put(alpha, "- [ ] Deploy", 2)).status).toBe(200);
+    expect((await get()).items.map((item) => item.id)).toEqual(["i2"]);
   });
 });

@@ -46,27 +46,34 @@ after the backup are gone. On bariton `~/.agent-bus` also holds this machine's a
 
 ## Upgrade
 
+Run the bus from a checkout of its own, not the one you develop in. The server reads its code at start, and the website
+serves a `ui/` source file directly whenever it is newer than its build, so unfinished work in a working copy would
+otherwise go live as soon as it is saved. Here the live checkout is a git worktree, `~/code/agent-hub-live`, at a
+commit (the service's `WorkingDirectory`):
+
 ```sh
-cd ~/code/agent-hub && git pull && bun install && bun run build
+git -C ~/code/agent-hub worktree add --detach ~/code/agent-hub-live main   # once
+cd ~/code/agent-hub-live && git checkout --detach main && bun install && bun run build
 systemctl --user restart agent-bus.service
 ```
 
-A change only to the website (`packages/server/ui`) is live after `bun run build` and a page refresh; no restart.
-Anything else needs the restart: connections drop for a few seconds and come back by themselves. Tell the agents first
-(a short `@all` message) so nobody mistakes the gap for a failure. The database upgrades itself at start; since 14 Nov
-upgrades only add tables and columns.
+Only committed code goes live: push or commit to `main` in the working copy first. A change only to the website
+(`packages/server/ui`) is live after `bun run build` in the live checkout and a page refresh; no restart. Anything else
+needs the restart: connections drop for a few seconds and come back by themselves. Tell the agents first (a short
+`@all` message) so nobody mistakes the gap for a failure. The database upgrades itself at start; since 14 Nov upgrades
+only add tables and columns.
 
 ## Rollback
 
 ```sh
-cd ~/code/agent-hub && git checkout <the commit that ran before> && bun run build
+cd ~/code/agent-hub-live && git checkout --detach <the commit that ran before> && bun run build
 systemctl --user restart agent-bus.service
 ```
 
 Older code reads a database a newer one has upgraded (it ignores the added columns): checked 16 Nov with the code of
 15 Nov (`f0e919c`) on that day's database, which read, wrote and served the site. So a rollback keeps all messages.
 If the older code misbehaves on the newer database, restore the backup taken before the upgrade (above); messages since
-are lost. Return to the current code with `git checkout main`.
+are lost. Return to the current code with `git checkout --detach main`.
 
 ## Access defaults
 
