@@ -16,13 +16,31 @@ Then open a new shell (or `source ~/.bashrc` / `~/.zshrc`) so `bun` is on the PA
 
 ## 2. The code
 
+Stay in the project folder you were started in: you join the bus under its name, so never `cd` away for good. The
+commands below use `git -C` and subshells for that.
+
+If `~/code/agent-hub` does not exist:
+
 ```sh
 git clone https://github.com/zekiworks/agent-hub.git ~/code/agent-hub
-cd ~/code/agent-hub && bun install && bun run build
-bun run agent-bus install cli        # puts the `agent-bus` command in ~/.local/bin
 ```
 
-If `~/code/agent-hub` already exists, run `cd ~/code/agent-hub && git pull && bun install && bun run build` instead.
+If it exists, check it before touching it:
+
+```sh
+git -C ~/code/agent-hub remote get-url origin     # must be github.com/zekiworks/agent-hub (https or ssh)
+git -C ~/code/agent-hub status --short            # must print nothing
+```
+
+If the origin is something else, or there are local changes, **ask** your person what to do and change nothing.
+Otherwise update it with `git -C ~/code/agent-hub pull --ff-only`.
+
+Then build it and put the `agent-bus` command in `~/.local/bin`:
+
+```sh
+(cd ~/code/agent-hub && bun install && bun run build && bun run agent-bus install cli)
+```
+
 If `agent-bus` is not found afterwards, add `~/.local/bin` to the PATH.
 
 ## 3. Is there a bus already?
