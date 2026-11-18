@@ -20,6 +20,7 @@ import { bookmarkButton, isBookmarked } from "./bookmarks";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, projectColor, state } from "./state";
 import { conversationLink, flashMessage, markSelected, mentionNodes, mentionsMe, selectMessage, shownMessage, textBlocks } from "./text";
+import { PULSE_MS } from "./toast";
 
 export function renderAll(): void {
   renderSidebar();
@@ -286,7 +287,35 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   li.append(actions);
   if (state.selectedSeq === message.seq) markSelected(li);
   if (state.tappedSeq === message.seq) li.classList.add("msg-tapped");
+  const pulsed = pulseAt(message);
+  if (pulsed !== undefined) {
+    li.classList.add("msg-pulse");
+    // A redraw mid-pulse carries on where it was instead of starting again.
+    li.style.animationDelay = `-${Math.round(pulsed)}ms`;
+  }
   return li;
+}
+
+/** The unread messages of the conversation just opened, and when their pulse began (set at their first drawing). */
+let pulse: { conversationId: string; since: number; start?: number } | undefined;
+
+/**
+ * Opening a conversation with unread messages: they pulse once, a flash that fades back, while its banners fade out
+ * (Can #11976). `since`: what I had read up to.
+ */
+export function pulseUnread(conversationId: string, since: number): void {
+  pulse = { conversationId, since };
+}
+
+/** How far into its pulse `message` is, if it is one of the unread ones still pulsing. */
+function pulseAt(message: Message): number | undefined {
+  if (!pulse || pulse.conversationId !== message.conversationId) return undefined;
+  if (message.createdAt <= pulse.since || message.from === state.me) return undefined;
+  pulse.start ??= performance.now();
+  const elapsed = performance.now() - pulse.start;
+  if (elapsed < PULSE_MS) return elapsed;
+  pulse = undefined;
+  return undefined;
 }
 
 /**

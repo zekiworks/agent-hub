@@ -17,7 +17,7 @@ import { loadAgentRequests } from "./machines";
 import { closeMention, updateMention } from "./mentions";
 import { setDetails, setPhoneList, wasOnPhoneList } from "./phones";
 import { askProfile } from "./profile";
-import { applyReceipt, renderAll, renderMessages, showEmpty } from "./render";
+import { applyReceipt, pulseUnread, renderAll, renderMessages, showEmpty } from "./render";
 import { navigate, parseHash, viewHash } from "./routing";
 import "./send";
 import "./convmenu";
@@ -72,6 +72,8 @@ function applyView(view: View): void {
   }
   state.view = resolved;
   if (resolved.kind === "conversation") {
+    // What was unread pulses once as I arrive, and its banners fade with it (Can #11976).
+    if (changed && (state.unread.get(resolved.id) ?? 0) > 0) pulseUnread(resolved.id, state.readAt[resolved.id] ?? 0);
     markRead(resolved.id);
     clearAnswersFor(resolved.id);
     if (!state.caches.has(resolved.id)) void loadMessages(resolved.id);

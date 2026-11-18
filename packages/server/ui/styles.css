@@ -2213,6 +2213,18 @@ button:disabled {
   }
 }
 
+/* Unread messages as their conversation opens (render.ts pulseUnread; Can #11976): a flash that fades back. The
+   conversation's banners fade out over the same 1.6 s (.answer-toast-leaving). */
+.msg-pulse {
+  animation: msg-pulse 1.6s ease-out;
+}
+
+@keyframes msg-pulse {
+  25% {
+    background: color-mix(in srgb, var(--accent) 30%, var(--panel));
+  }
+}
+
 .reply-bar {
   display: flex;
   align-items: center;
@@ -4386,6 +4398,23 @@ ul.md-list ul.md-list { list-style: circle; }
   background: var(--panel-raised);
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
   pointer-events: auto;
+}
+
+/* Its conversation was opened: it stays while the unread messages flash, then fades out as they settle (toast.ts). */
+.answer-toast-leaving {
+  animation: answer-leave 1.6s ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes answer-leave {
+  0%,
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
 }
 
 /* Under the text: More/Less, and Reset position once the banners were moved (toast.ts). */

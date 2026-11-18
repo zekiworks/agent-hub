@@ -1,17 +1,19 @@
 // An answer elsewhere (Ümit, 16 Nov: "I write in one room and go to another; how do I know an answer came?"): a banner
 // at the top, "↩ @logic in #toolbench-models: …", that opens the message when tapped. Phones show no browser
 // notifications in a Safari tab, and the conversation list is hidden while a conversation is open. A banner stays
-// until tapped or closed with ✕ (Ümit #10168: 12 s was too short to catch); the message itself is in its conversation.
+// until tapped, closed with ✕, or its conversation is opened (Ümit #10168: 12 s was too short to catch). One banner per
+// conversation, with how many answers it holds; no limit on how many conversations (Can #11976: dropping the oldest
+// silently was worse than a timer).
 import type { Conversation, Message } from "@agent-bus/protocol";
 import { dom } from "./dom";
 import { hooks } from "./hooks";
 import { h } from "./html";
 import { conversationTitle, state } from "./state";
 
-/** How many show at once (the oldest goes first). */
-const MAX_SHOWN = 3;
-
 let box: HTMLElement | undefined;
+
+/** How long a pulse of unread messages lasts; banners leave in the same time (styles.css msg-pulse, answer-leave). */
+export const PULSE_MS = 1600;
 
 /** `message` answers me: it quotes me, mentions me, follows my own last message there, or is in a DM with me. */
 export function answersMe(message: Message, conversation: Conversation, previous: Message | undefined): boolean {
@@ -115,8 +117,13 @@ export function showAnswer(message: Message, conversation: Conversation): void {
     document.body.append(box);
   }
   const text = message.text.replace(/\s+/g, " ").trim();
+  // A newer answer in the same conversation takes the old banner's place and counts it.
+  const previous = box.querySelector<HTMLElement>(`.answer-toast[data-conversation="${CSS.escape(conversation.id)}"]:not(.answer-toast-leaving)`);
+  const count = Number(previous?.dataset.count ?? 0) + 1;
+  previous?.remove();
   const toast = h("div", "answer-toast");
   toast.dataset.conversation = conversation.id;
+  toast.dataset.count = String(count);
   const activate = () => {
     toast.remove();
     void hooks.showMessage(message.seq);
@@ -125,7 +132,8 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   // ordinary text), and ✕.
   const head = h("div", "answer-toast-head");
   head.title = "Drag to move these notifications; click to open the message";
-  head.append(h("span", "answer-toast-grip", "⠿"), h("span", "answer-toast-where", `↩ @${message.from} in ${conversationTitle(conversation)}`));
+  const where = `↩ @${message.from} in ${conversationTitle(conversation)}${count > 1 ? ` · ${count} new` : ""}`;
+  head.append(h("span", "answer-toast-grip", "⠿"), h("span", "answer-toast-where", where));
   makeHandle(head, activate);
   const dismiss = h("button", "answer-toast-close", "✕");
   dismiss.type = "button";
@@ -161,7 +169,6 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   });
   toast.append(head, open);
   box.append(toast);
-  while (box.childElementCount > MAX_SHOWN) box.firstElementChild?.remove();
   const row = h("div", "answer-toast-row");
   if (body.scrollHeight > body.clientHeight + 1) {
     const more = h("button", "link-btn answer-toast-more", "More");
@@ -179,9 +186,14 @@ export function showAnswer(message: Message, conversation: Conversation): void {
 }
 
 /**
- * Opening a conversation clears its banners: the answers are in front of me now (Can #11972: only a click or ✕ made
- * them go). Others stay.
+ * Opening a conversation clears its banners: they fade out while its unread messages pulse back (render.ts pulseUnread;
+ * Can #11972, #11976). Others stay.
  */
 export function clearAnswersFor(conversationId: string): void {
-  for (const toast of box?.querySelectorAll<HTMLElement>(".answer-toast") ?? []) if (toast.dataset.conversation === conversationId) toast.remove();
+  for (const toast of box?.querySelectorAll<HTMLElement>(".answer-toast") ?? []) {
+    if (toast.dataset.conversation !== conversationId || toast.classList.contains("answer-toast-leaving")) continue;
+    toast.classList.add("answer-toast-leaving");
+    // A timer, not animationend: with reduced motion there is no animation to end.
+    setTimeout(() => toast.remove(), PULSE_MS);
+  }
 }
