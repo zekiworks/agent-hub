@@ -252,9 +252,12 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
     const at = textBlocks(li).findIndex((block) => block.contains(event.target as Node));
     selectMessage(message.seq, at >= 0 ? at : undefined);
     if (!PHONE.matches) return;
-    const tapped = li.classList.contains("msg-tapped");
+    const open = state.tappedSeq !== message.seq;
     for (const other of dom.messageList.querySelectorAll(".msg-tapped")) other.classList.remove("msg-tapped");
-    if (!tapped) li.classList.add("msg-tapped");
+    state.tappedSeq = open ? message.seq : undefined;
+    if (!open) return;
+    li.classList.add("msg-tapped");
+    requestAnimationFrame(() => revealActions(actions));
   });
 
   if (message.quote) li.append(renderQuote(message.quote));
@@ -282,7 +285,17 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   // Last: on phones it is a row under the message (on wider screens it floats top right).
   li.append(actions);
   if (state.selectedSeq === message.seq) markSelected(li);
+  if (state.tappedSeq === message.seq) li.classList.add("msg-tapped");
   return li;
+}
+
+/**
+ * Phones: a tapped message's buttons open as a row under it; at the lower edge that row was below the visible
+ * messages (Ümit #11869). Scroll the messages just enough to show it, nothing else moves.
+ */
+function revealActions(actions: HTMLElement): void {
+  const below = actions.getBoundingClientRect().bottom - dom.messageScroll.getBoundingClientRect().bottom + 8;
+  if (below > 0) dom.messageScroll.scrollBy({ top: below, behavior: "smooth" });
 }
 
 /**

@@ -81,6 +81,7 @@ function applyView(view: View): void {
     setDetails(false);
     // The message I was in belongs to the conversation I left.
     state.selectedSeq = undefined;
+    state.tappedSeq = undefined;
   }
   setPhoneList(false);
   renderAll();

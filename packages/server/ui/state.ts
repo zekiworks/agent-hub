@@ -77,6 +77,8 @@ export const state = {
   selectedSeq: undefined as number | undefined,
   /** Within it, the paragraph (block of its text) I clicked, if it has several (Ümit #11855); else the whole message. */
   selectedPart: undefined as number | undefined,
+  /** Phones: the message whose buttons are showing (tapped), kept through redraws (Ümit #11869: they vanished). */
+  tappedSeq: undefined as number | undefined,
   sending: false,
   /** A voice recording started with a click is running: Send sends it (voice.ts). */
   voiceLatched: false,
