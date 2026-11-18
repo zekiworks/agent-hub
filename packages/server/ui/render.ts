@@ -19,7 +19,7 @@ import { isPinned, setMessagePinned } from "./pins";
 import { bookmarkButton, isBookmarked } from "./bookmarks";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, projectColor, state } from "./state";
-import { conversationLink, flashMessage, mentionNodes, mentionsMe, selectMessage, shownMessage } from "./text";
+import { conversationLink, flashMessage, markSelected, mentionNodes, mentionsMe, selectMessage, shownMessage, textBlocks } from "./text";
 
 export function renderAll(): void {
   renderSidebar();
@@ -194,7 +194,6 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   if (continued) li.classList.add("msg-continued");
   li.dataset.seq = String(message.seq);
   if (state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq) li.classList.add("msg-replying");
-  if (state.selectedSeq === message.seq) li.classList.add("msg-selected");
 
   const head = h("div", "msg-head");
   const sender = h("button", "msg-sender", senderLabel(message));
@@ -248,8 +247,10 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
     if ((event.target as Element).closest("a, button, audio, img, input, textarea, summary, .msg-edit, .msg-delete-ask")) return;
     // Selecting text inside it is not a click on it.
     if (String(getSelection() ?? "").trim()) return;
-    // A click on a message puts me "in" it: lit until I click another, press Esc or leave (Ümit #11622).
-    selectMessage(message.seq);
+    // A click on a message puts me "in" it, on the paragraph clicked: lit until I click another, press Esc or leave
+    // (Ümit #11622, #11855).
+    const at = textBlocks(li).findIndex((block) => block.contains(event.target as Node));
+    selectMessage(message.seq, at >= 0 ? at : undefined);
     if (!PHONE.matches) return;
     const tapped = li.classList.contains("msg-tapped");
     for (const other of dom.messageList.querySelectorAll(".msg-tapped")) other.classList.remove("msg-tapped");
@@ -280,6 +281,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   if (ask) li.append(ask);
   // Last: on phones it is a row under the message (on wider screens it floats top right).
   li.append(actions);
+  if (state.selectedSeq === message.seq) markSelected(li);
   return li;
 }
 

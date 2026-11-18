@@ -2065,6 +2065,20 @@ button:disabled {
   pointer-events: none;
 }
 
+/* Only the paragraph clicked is lit (Ümit #11855): the message keeps its ▶, the frame goes round that paragraph. */
+.msg.msg-selected.msg-selected-part,
+.msg.msg-selected.msg-selected-part:hover {
+  background: var(--hover);
+  outline: none;
+}
+.msg-text > .md-selected {
+  margin-inline: -6px;
+  padding-inline: 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 18%, var(--panel));
+  outline: 2px solid var(--accent);
+}
+
 .msg-mentions-me:hover {
   background: rgba(240, 178, 50, 0.13);
 }

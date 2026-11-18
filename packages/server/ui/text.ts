@@ -109,11 +109,33 @@ function onScreen(el: HTMLElement): boolean {
   return r.bottom > view.top && r.top < view.bottom;
 }
 
-/** Lights message `seq` as the one I am in (Ümit #11622), or none; it stays lit through redraws (render.ts). */
-export function selectMessage(seq: number | undefined): void {
+/**
+ * Lights message `seq` as the one I am in (Ümit #11622), or none; it stays lit through redraws (render.ts). `part`: the
+ * paragraph clicked in a message of several, lit alone (Ümit #11855: a frame round the whole message was too big).
+ */
+export function selectMessage(seq: number | undefined, part?: number): void {
   state.selectedSeq = seq;
-  for (const li of dom.messageList.querySelectorAll(".msg-selected")) li.classList.remove("msg-selected");
-  if (seq !== undefined) dom.messageList.querySelector(`.msg[data-seq="${seq}"]`)?.classList.add("msg-selected");
+  state.selectedPart = seq === undefined ? undefined : part;
+  for (const li of dom.messageList.querySelectorAll<HTMLElement>(".msg-selected")) {
+    li.classList.remove("msg-selected", "msg-selected-part");
+    for (const block of li.querySelectorAll(".md-selected")) block.classList.remove("md-selected");
+  }
+  const li = seq === undefined ? null : dom.messageList.querySelector<HTMLElement>(`.msg[data-seq="${seq}"]`);
+  if (li) markSelected(li);
+}
+
+/** The blocks of a message's text: its paragraphs, lists, code and quotes. */
+export function textBlocks(li: HTMLElement): HTMLElement[] {
+  return [...(li.querySelector(":scope > .msg-text")?.children ?? [])] as HTMLElement[];
+}
+
+/** Draws the selection on `li`, the selected message: the clicked paragraph, or the whole message. */
+export function markSelected(li: HTMLElement): void {
+  li.classList.add("msg-selected");
+  const blocks = textBlocks(li);
+  const part = state.selectedPart !== undefined && blocks.length > 1 ? blocks[state.selectedPart] : undefined;
+  li.classList.toggle("msg-selected-part", !!part);
+  part?.classList.add("md-selected");
 }
 
 /**
