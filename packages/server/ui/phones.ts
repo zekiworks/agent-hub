@@ -9,6 +9,12 @@ import { isCurrent, state } from "./state";
 // offset from the keyboard's way out that no later event corrected): the offset is used only while the keyboard is up,
 // the document is scrolled back to 0, and the fit is redone when focus leaves a field, after the keyboard has gone.
 const viewport = window.visualViewport;
+/** A text field has the focus: only then can the on-screen keyboard be up. */
+function typing(): boolean {
+  const el = document.activeElement;
+  return el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && !["checkbox", "radio", "button", "submit", "range", "file"].includes(el.type));
+}
+
 function fitViewport(): void {
   if (!viewport || !PHONE.matches) return;
   const stick = nearBottom();
@@ -16,21 +22,36 @@ function fitViewport(): void {
   // The layout viewport keeps its height when the keyboard comes up; the visual one shrinks by the keyboard's height.
   // Zooming in shrinks it too (Ümit #11400 enlarges the page; codex-ui #11401): zoomed, the page keeps its own size
   // and position and the zoomed view moves over it, as on any page; only at scale 1 does a short view mean a keyboard.
+  // And only while a field has the focus (Ümit #11832, iPhone, keyboard gone: the page kept the keyboard-up height,
+  // the message box floating mid-screen; the visual viewport had not grown back when the last event came).
   const zoomed = (viewport.scale ?? 1) > 1.05;
   const layout = document.documentElement.clientHeight;
-  const keyboard = !zoomed && viewport.height < layout - 80;
-  root.setProperty("--vvh", `${Math.round(zoomed ? layout : viewport.height)}px`);
-  root.setProperty("--vvt", `${keyboard ? Math.max(0, Math.round(viewport.offsetTop)) : 0}px`);
-  if (!keyboard && !zoomed && window.scrollY !== 0) window.scrollTo(0, 0);
+  const keyboard = !zoomed && typing() && viewport.height < layout - 80;
+  if (keyboard) {
+    root.setProperty("--vvh", `${Math.round(viewport.height)}px`);
+    root.setProperty("--vvt", `${Math.max(0, Math.round(viewport.offsetTop))}px`);
+  } else {
+    // No keyboard: the whole screen (100dvh in styles.css), from the top.
+    root.removeProperty("--vvh");
+    root.removeProperty("--vvt");
+    if (!zoomed && window.scrollY !== 0) window.scrollTo(0, 0);
+  }
   // A message box dragged tall keeps within the space there is now (codex-ui #11237).
   autosize();
   if (stick) scrollToBottom();
 }
 viewport?.addEventListener("resize", fitViewport);
 viewport?.addEventListener("scroll", fitViewport);
+window.addEventListener("resize", fitViewport);
 window.addEventListener("scroll", fitViewport, { passive: true });
+window.addEventListener("pageshow", fitViewport);
+document.addEventListener("focusin", () => {
+  // The keyboard animates in: fit as it comes.
+  for (const ms of [100, 400, 800]) setTimeout(fitViewport, ms);
+});
 document.addEventListener("focusout", () => {
-  // iOS animates the keyboard away; fit again once it is gone.
+  // Leaving a field takes the keyboard away: the full screen at once, then again once iOS has finished.
+  setTimeout(fitViewport, 0);
   for (const ms of [100, 400, 800]) setTimeout(fitViewport, ms);
 });
 
