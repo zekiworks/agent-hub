@@ -132,7 +132,8 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   toast.dataset.conversation = conversation.id;
   toast.dataset.count = String(count);
   const activate = () => {
-    toast.remove();
+    // A reply being written in it stays: going to the message must not throw it away (codex-ui #12361).
+    if (!holdsReply(toast)) toast.remove();
     void hooks.showMessage(message.seq);
   };
   // The header row: a visible grip, who/where, and ✕ (codex-ui #10866: the grip says it moves).
@@ -206,10 +207,18 @@ export function showAnswer(message: Message, conversation: Conversation): void {
 export function clearAnswersFor(conversationId: string): void {
   for (const toast of box?.querySelectorAll<HTMLElement>(".answer-toast") ?? []) {
     if (toast.dataset.conversation !== conversationId || toast.classList.contains("answer-toast-leaving")) continue;
+    // One with a reply written in it, or on its way, stays until sent or closed (codex-ui #12361).
+    if (holdsReply(toast)) continue;
     toast.classList.add("answer-toast-leaving");
     // A timer, not animationend: with reduced motion there is no animation to end.
     setTimeout(() => toast.remove(), PULSE_MS);
   }
+}
+
+/** A banner whose reply box has text in it, or whose reply is being sent. */
+function holdsReply(toast: HTMLElement): boolean {
+  const input = toast.querySelector<HTMLTextAreaElement>(".answer-toast-input");
+  return !!input && (input.readOnly || input.value.trim() !== "");
 }
 
 /** The reply box inside a banner: Enter sends it as a reply to `message`, Shift+Enter is a new line, Esc closes it. */
@@ -237,6 +246,8 @@ function replyIn(toast: HTMLElement, message: Message, conversation: Conversatio
     if (!text || sending) return;
     sending = true;
     send.disabled = true;
+    // Read-only while on its way: what is in the box is what was sent, nothing typed after it is lost (codex-ui #12361).
+    input.readOnly = true;
     note.textContent = "Sending…";
     try {
       await postJson<PostMessageResponse>("/api/messages", { from: state.me, text, replyToSeq: message.seq });
@@ -246,6 +257,7 @@ function replyIn(toast: HTMLElement, message: Message, conversation: Conversatio
       setTimeout(() => toast.remove(), PULSE_MS);
     } catch (err) {
       note.textContent = `Not sent: ${errorText(err)} Your text is still here.`;
+      input.readOnly = false;
       send.disabled = false;
       sending = false;
     }
