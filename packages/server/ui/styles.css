@@ -1136,11 +1136,6 @@ button:disabled {
   cursor: pointer;
 }
 
-.side-toggle .icon {
-  width: 16px;
-  height: 16px;
-}
-
 /* "hide" / "show" beside a foldable heading's name: a small outlined word, so the heading reads as a button. */
 .side-toggle-hint {
   margin-left: 4px;
@@ -1167,35 +1162,10 @@ button:disabled {
   display: none;
 }
 
-/* A folded section (sidebar.ts; codex-ui #11405): its heading and + button only, and a "Show …" row that says how to
-   open it again (Ümit #11839). */
+/* A folded section (sidebar.ts; codex-ui #11405): its heading, with "show", and + button only. */
 .side-section.folded > :not(.side-heading),
 .side-section.folded .unread-toggle {
   display: none;
-}
-
-.side-show {
-  display: none;
-}
-
-.side-section.folded > .side-show {
-  display: block;
-  width: calc(100% - 16px);
-  margin: 0 8px;
-  padding: 6px 10px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--sidebar-muted);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.side-section.folded > .side-show:hover {
-  color: var(--sidebar-text);
-  border-color: var(--sidebar-muted);
 }
 
 /* A conversation pinned as a tab: a small pin before its name (sidebar.ts). */
@@ -3322,10 +3292,6 @@ ul.md-list ul.md-list { list-style: circle; }
     width: 44px;
     height: 44px;
     font-size: 22px;
-  }
-
-  .side-section.folded > .side-show {
-    min-height: 44px;
   }
 }
 

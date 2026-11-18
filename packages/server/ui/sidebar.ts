@@ -4,7 +4,7 @@ import { dom } from "./dom";
 import { postJson } from "./api";
 import { agentDetail, errorText, nameList, relativeTime } from "./format";
 import { h } from "./html";
-import { icon, setIcon } from "./icons";
+import { icon } from "./icons";
 import { renderLive } from "./live";
 import { applyTitle, renderNotifyButton } from "./notify";
 import { renderBackBadge } from "./phones";
@@ -456,23 +456,15 @@ function renderFilterNote(hidden: Conversation[]): void {
 }
 
 /**
- * A section's fold: ▾/▸ as a drawn chevron beside its name, and while folded a plain "Show …" row under the heading, so
- * a folded section says how to bring it back (Ümit #11839: a tap on "Agents" made them disappear, with nothing to say why).
+ * A section's fold: one control, the heading's name with the action in a word beside it, "Agents [hide]" / "Agents
+ * [show]" (Ümit #11839, #11852: a bare arrow did not say a tap hides the list; Can #11980: an arrow, the word and a
+ * "Show …" row as well were three of the same).
  */
-function renderFold(section: HTMLElement, toggle: HTMLButtonElement, label: string, folded: boolean, unfold: () => void): void {
+function renderFold(section: HTMLElement, toggle: HTMLButtonElement, label: string, folded: boolean): void {
   section.classList.toggle("folded", folded);
-  setIcon(toggle, folded ? "chevronRight" : "chevronDown", label);
-  // The action in words on the heading itself (Ümit #11852: the arrow alone did not say a tap hides the list).
-  toggle.append(h("span", "side-toggle-hint", folded ? "show" : "hide"));
+  toggle.replaceChildren(label, h("span", "side-toggle-hint", folded ? "show" : "hide"));
   toggle.setAttribute("aria-expanded", folded ? "false" : "true");
   toggle.title = folded ? `Show the ${label.toLowerCase()}` : `Hide the ${label.toLowerCase()}`;
-  let show = section.querySelector<HTMLButtonElement>(":scope > .side-show");
-  if (!show) {
-    show = h("button", "side-show", `Show ${label.toLowerCase()}`);
-    show.type = "button";
-    show.addEventListener("click", unfold);
-    section.querySelector(":scope > .side-heading")?.after(show);
-  }
 }
 
 /** The Agents section folded (Can, 15 Nov), per browser. Unread DMs from agents still show under Mentions. */
@@ -488,7 +480,7 @@ function setAgentsFolded(folded: boolean): void {
 dom.agentsToggle.addEventListener("click", () => setAgentsFolded(!agentsFolded));
 
 // Projects and Groups fold too (codex-ui #11405: Rooms first and roomy, the rest out of the way when not in use),
-// remembered per browser like Agents. Folded, a section keeps its heading, its + button and "Show …".
+// remembered per browser like Agents. Folded, a section keeps its heading and its + button.
 for (const [section, toggle, label] of [
   [dom.projectsSection, dom.projectsToggle, "Projects"],
   [dom.groupsSection, dom.groupsToggle, "Groups"],
@@ -496,14 +488,14 @@ for (const [section, toggle, label] of [
   const key = `agent-bus.folded.${label.toLowerCase()}`;
   const apply = (folded: boolean): void => {
     localStorage.setItem(key, folded ? "1" : "0");
-    renderFold(section, toggle, label, folded, () => apply(false));
+    renderFold(section, toggle, label, folded);
   };
-  renderFold(section, toggle, label, localStorage.getItem(key) === "1", () => apply(false));
+  renderFold(section, toggle, label, localStorage.getItem(key) === "1");
   toggle.addEventListener("click", () => apply(!section.classList.contains("folded")));
 }
 
 function renderAgentList(): void {
-  renderFold(agentsSection, dom.agentsToggle, "Agents", agentsFolded, () => setAgentsFolded(false));
+  renderFold(agentsSection, dom.agentsToggle, "Agents", agentsFolded);
   dom.agentList.hidden = agentsFolded;
   dom.offlineBtn.hidden = agentsFolded;
   const all = agents();
