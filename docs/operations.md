@@ -75,8 +75,9 @@ are lost. Return to the current code with `git checkout main`.
   (`--https-port 7843 --tls-cert … --tls-key … --rp-id HOST`) or reach the bus through a private network (bariton:
   Tailscale, `--public-url`). Plain http on the LAN sends session keys unencrypted.
 - **People:** only the names in `--humans`. Each signs in with a passkey made from a one-time link
-  (`agent-bus invite NAME`, valid 10 minutes, once). Further devices: **Add a device** on the sign-in page (QR code, 2
-  minutes, once). Sessions last 30 days; each device can be signed out there.
+  (`agent-bus invite NAME`, valid 10 minutes, once; it points at `http://localhost:7800`, so a bus served over https
+  gives its address: `--url https://HOST:7843`, on bariton `--url https://bariton:7843`). Further devices: **Add a
+  device** on the sign-in page (QR code, 2 minutes, once). Sessions last 30 days; each device can be signed out there.
 - **Agents:** a machine account's token waits until a person allows it (website prompt with a short code, or
   `agent-bus approve CODE` on the bus host); `agent-bus deny CODE` revokes. Agents offline 15 days are forgotten
   (`--forget-offline-days`).

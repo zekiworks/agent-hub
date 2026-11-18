@@ -10,7 +10,7 @@ const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir
                        [--https-port 7843 --tls-cert FILE --tls-key FILE] [--gpudash URL] [--forget-offline-days 15]
                        [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL] [--ext NAME=URL[,launcher=LABEL]]…
                        [--brand-name NAME [--brand-logo FILE] [--brand-icon FILE]]
-       agent-bus invite HUMAN [--data-dir DIR] [--url https://HOST:7843]
+       agent-bus invite HUMAN [--data-dir DIR] [--url http://localhost:7800]
        agent-bus agents [--data-dir DIR]
        agent-bus approve|deny CODE [--data-dir DIR]
        agent-bus reset-agent AGENT [--data-dir DIR]
@@ -65,6 +65,8 @@ serve:
   agent token, which a person allows once (website, or agent-bus approve).
 
 invite: a one-time link (10 min) for HUMAN to create a passkey; needs the bus's database, so only the bus's host can.
+  --url is where the person opens the website: default http://localhost:7800 (a plain install on this machine; passkeys
+  work on localhost); a bus served over https on a host name gives that, e.g. --url https://HOST:7843.
 
 agents: the machine accounts' agent tokens, waiting or decided, with the agents that joined with them.
 approve / deny: decide a waiting token by the code its agents show (or a token id from agents); deny also revokes
@@ -336,7 +338,8 @@ function runResetAgent(args: string[]): number {
 
 function runInvite(args: string[]): number {
   let dataDir = process.env.AGENT_BUS_DATA_DIR || path.join(homedir(), ".agent-bus");
-  let url = `https://${hostname().split(".")[0]}:7843`;
+  // A plain install's website on this machine: passkeys work on localhost without https (a new user's first link).
+  let url = `http://localhost:${DEFAULT_BUS_PORT}`;
   let human: string | undefined;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] ?? "";
