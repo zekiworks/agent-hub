@@ -1,6 +1,6 @@
 // The website's files: built `public/<asset>` when at least as new as its `ui/` source, else the source (scripts
 // bundled on the fly), so an edited `ui/` file shows without `bun run build`.
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { json } from "./http";
 
@@ -46,11 +46,25 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 }
 
+/** `url?v=<first 8 hex of the file's sha256>`, or `url` alone when there is no file. */
+function versioned(url: string, file: string | undefined): string {
+  if (!file || !existsSync(file)) return url;
+  return `${url}?v=${new Bun.CryptoHasher("sha256").update(readFileSync(file)).digest("hex").slice(0, 8)}`;
+}
+
 export class Website {
   /** Scripts bundled from `ui/`, by asset, with the source time they were bundled at. */
   private readonly bundled = new Map<string, { mtime: number; code: string }>();
 
-  constructor(private readonly brand?: Brand) {}
+  /**
+   * The brand pictures' addresses carry the start of their content's hash: they are cached for a day, so a new logo
+   * under the same address kept showing the old one (Can #12780).
+   */
+  private readonly brandUrls: { logo: string; icon: string };
+
+  constructor(private readonly brand?: Brand) {
+    this.brandUrls = { logo: versioned("/brand/logo", brand?.logo), icon: versioned("/brand/icon", brand?.icon) };
+  }
 
   /** The response to GET `pathname` when it is a page or one of its files; undefined otherwise. */
   serve(pathname: string): Promise<Response> | undefined {
@@ -78,14 +92,14 @@ export class Website {
     const [first = name, ...rest] = name.split(" ");
     const wordmark = rest.length > 0 ? `${first}<span class="brand-rest"> ${rest.join(" ")}</span>` : first;
     const icons =
-      (brand.icon ? `<link rel="icon" type="image/png" href="/brand/icon" />\n  <meta name="brand-icon" content="/brand/icon" />\n  ` : "") +
-      (brand.logo ? `<link rel="apple-touch-icon" href="/brand/logo" />\n  ` : "");
+      (brand.icon ? `<link rel="icon" type="image/png" href="${this.brandUrls.icon}" />\n  <meta name="brand-icon" content="${this.brandUrls.icon}" />\n  ` : "") +
+      (brand.logo ? `<link rel="apple-touch-icon" href="${this.brandUrls.logo}" />\n  ` : "");
     let out = html
       .replace(/<meta name="application-name" content="[^"]*" \/>/, `<meta name="application-name" content="${name}" />`)
       .replace(/(<title>(?:[^<]* · )?)Agent Hub(<\/title>)/, `$1${name}$2`)
       .replace('<span class="brand-name">Agent Hub</span>', `<span class="brand-name">${wordmark}</span>`)
       .replace("<link rel=\"stylesheet\"", `${icons}<link rel="stylesheet"`);
-    if (brand.logo) out = out.replace('<span class="brand-mark">⇄</span>', '<img class="brand-logo" src="/brand/logo" alt="" />');
+    if (brand.logo) out = out.replace('<span class="brand-mark">⇄</span>', `<img class="brand-logo" src="${this.brandUrls.logo}" alt="" />`);
     return out;
   }
 
