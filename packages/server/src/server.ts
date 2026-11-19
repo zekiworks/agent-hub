@@ -338,7 +338,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
             return res;
           }
         }
-        const page = req.method === "GET" ? website.serve(pathname) : undefined;
+        const page = req.method === "GET" ? website.serve(pathname, req.headers) : undefined;
         return page ?? new Response("Not found", { status: 404 });
       },
       websocket: sockets.handlers,

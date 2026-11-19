@@ -45,6 +45,9 @@ export interface Brand {
 
 const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".webp": "image/webp" };
 
+/** The word lists the message box completes words from (ui/words.ts, built by scripts/build-words.ts). */
+const WORD_LISTS = new Set(["words-en.txt", "words-tr.txt"]);
+
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 }
@@ -70,12 +73,39 @@ export class Website {
   }
 
   /** The response to GET `pathname` when it is a page or one of its files; undefined otherwise. */
-  serve(pathname: string): Promise<Response> | undefined {
+  serve(pathname: string, headers?: Headers): Promise<Response> | undefined {
     if (pathname === "/" || pathname === "/index.html") return this.asset("index.html");
     if (pathname === "/auth") return this.asset("auth.html");
     if (pathname === "/brand/logo" || pathname === "/brand/icon") return this.brandImage(pathname === "/brand/logo" ? this.brand?.logo : this.brand?.icon);
+    if (WORD_LISTS.has(pathname.slice(1))) return Promise.resolve(this.wordList(pathname.slice(1), headers));
     if (/^\/[a-z0-9-]+\.(js|css|html|svg|png)$/.test(pathname)) return this.asset(pathname.slice(1));
     return undefined;
+  }
+
+  /** Word lists, gzipped once per version: about 1.2 MB each, 0.5 MB on the wire. */
+  private readonly wordLists = new Map<string, { mtime: number; etag: string; plain: Uint8Array<ArrayBuffer>; gzipped: Uint8Array<ArrayBuffer> }>();
+
+  /**
+   * A word list (ui/words.ts): gzipped when the browser takes that, and "not modified" when it has this version
+   * already, so a page load costs nothing after the first.
+   */
+  private wordList(name: string, headers?: Headers): Response {
+    const file = path.join(uiDir, name);
+    const changed = mtime(file);
+    if (changed < 0) return new Response("Not found", { status: 404 });
+    let list = this.wordLists.get(name);
+    if (!list || list.mtime !== changed) {
+      const plain = new Uint8Array(readFileSync(file));
+      const etag = `"${new Bun.CryptoHasher("sha256").update(plain).digest("hex").slice(0, 16)}"`;
+      list = { mtime: changed, etag, plain, gzipped: Bun.gzipSync(plain) };
+      this.wordLists.set(name, list);
+    }
+    const common = { ETag: list.etag, "Cache-Control": "no-cache", Vary: "Accept-Encoding" };
+    if (headers?.get("if-none-match") === list.etag) return new Response(null, { status: 304, headers: common });
+    const gzip = /\bgzip\b/.test(headers?.get("accept-encoding") ?? "");
+    return new Response(gzip ? list.gzipped : list.plain, {
+      headers: { ...common, "Content-Type": "text/plain; charset=utf-8", ...(gzip ? { "Content-Encoding": "gzip" } : {}) },
+    });
   }
 
   private async brandImage(file: string | undefined): Promise<Response> {

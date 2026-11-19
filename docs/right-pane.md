@@ -198,6 +198,15 @@ role), not in `extensions`. "complete" is the one role so far: typing suggestion
   punctuation mark that ends a word, nothing past a speaker label, nothing copied whole from an earlier message; no
   Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 bun run packages/complete-ext/src/server.ts`,
   with `llama-server -m SmolLM2-1.7B.Q8_0.gguf --port 9962 -ngl 0`.
+- **The word being typed** is completed in the page itself, with or without that service (`packages/server/ui/words.ts`;
+  Can #12953, #12955): English and Turkish word lists built from Tatoeba's sentences (CC BY 2.0 FR) by
+  `packages/server/scripts/build-words.ts`, about 0.5 MB each over the wire (gzipped, then "not modified"). A word is
+  ranked by how often it follows the word before it, smoothed by interpolated Kneser-Ney ("into a t" → "tab", "on the
+  t" → "table"), plus the open conversation's own words ("checklist", names). Letters are offered while 70% of the
+  weight goes the same way, so a sure start of several forms counts too ("toplant" → "toplantı"). Turkish typed
+  without ç ğ ı ö ş ü finds its words and goes on without them. Mid-word the word list has the say; the service's
+  words show only when they go on from the same word, and Turkish drafts (by the lists) are not sent to it. On Can's
+  and Ümit's last 364 typed messages, cut at every letter of every longer word, 86% of what showed was right.
 
 Talking to the website (Can, 15 Nov): a page fills the person's message box, never sends. Each ends in the person
 reading, finishing and pressing Send.

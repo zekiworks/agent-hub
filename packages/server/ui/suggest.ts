@@ -1,14 +1,16 @@
-// Typing suggestions (Can #12841–#12871): when the bus has a "complete" box extension and this browser has them on
-// (Settings), every change of the draft asks it for the next words, one request at a time (the newest draft goes
-// next). An answer shows as long as it still fits what is typed: typing the suggested letters keeps showing the rest,
-// typing something else hides it. The words show in grey after the cursor; Tab takes them, Escape drops them. Phones
-// have no Tab: there a chip under the text takes them on a tap. Not Enter: Enter sends, and Safari's grey completion
-// taking Enter is why it was turned off (Ümit #11651).
+// Typing suggestions (Can #12841–#12871): when this browser has them on (Settings), the word being typed is completed
+// from word lists in the page (words.ts; Can #12953, #12955), and when the bus has a "complete" box extension, every
+// change of the draft asks it for the next words, one request at a time (the newest draft goes next). An answer
+// shows as long as it still fits what is typed: typing the suggested letters keeps showing the rest, typing something
+// else hides it. The words show in grey after the cursor; Tab takes them, Escape drops them. Phones have no Tab:
+// there a chip under the text takes them on a tap. Not Enter: Enter sends, and Safari's grey completion taking Enter
+// is why it was turned off (Ümit #11651).
 import type { BoxResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { dom } from "./dom";
 import { h } from "./html";
 import { state } from "./state";
+import { completeWord, loadWords, looksTurkish } from "./words";
 
 const SUGGEST_KEY = "agent-bus.suggestions";
 
@@ -68,11 +70,24 @@ function atEnd(): boolean {
   return selectionStart === value.length && selectionEnd === value.length;
 }
 
-/** Where suggestions are asked for now: a conversation (not a new draft), turned on, nothing in the way. */
+/** Typing is completed now: turned on, not composing, no @name list open. */
+function typingNow(): boolean {
+  return suggestionsOn() && !composing && !state.mention.open;
+}
+
+/** Where the model is asked now: as above, in a conversation (not a new draft), on a bus that has the extension. */
 function conversationNow(): string | undefined {
   const view = state.view;
-  if (!suggestionBox() || !suggestionsOn() || composing || view.kind !== "conversation" || state.mention.open) return undefined;
+  if (!suggestionBox() || !typingNow() || view.kind !== "conversation") return undefined;
   return view.id;
+}
+
+/** The open conversation's loaded messages, whose own words count for completion; keyed so they are counted once. */
+function conversationTexts(): { key: string; texts: string[] } {
+  const view = state.view;
+  if (view.kind !== "conversation") return { key: "draft", texts: [] };
+  const texts = (state.caches.get(view.id)?.messages ?? []).filter((m) => m.deletedAt === undefined).map((m) => m.text);
+  return { key: `${view.id}:${texts.length}`, texts };
 }
 
 function show(text: string): void {
@@ -95,22 +110,33 @@ function show(text: string): void {
   chip.hidden = !window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 }
 
-/** Shows what of the latest answer is still ahead of the typed text, if the text is a start of it; else nothing. */
+/**
+ * Shows what is ahead of the typed text: the rest of the word being typed (word lists), and the model's latest
+ * answer while the text is a start of it. Mid-word the word list has the say (Can #12953): the model's words show
+ * only when they go on from the same word, so the grey word does not change under the cursor.
+ */
 function showFitting(): void {
-  const id = conversationNow();
+  if (!typingNow() || !atEnd() || document.activeElement !== dom.input) return hide();
   const text = dom.input.value;
-  const fits = answer && id === answer.conversationId && atEnd() && text.startsWith(answer.draft) && answer.full.startsWith(text);
-  const rest = fits && answer ? answer.full.slice(text.length) : "";
-  if (rest.trim() && document.activeElement === dom.input) show(rest);
+  const { key, texts } = conversationTexts();
+  const word = completeWord(text, key, texts);
+  const id = conversationNow();
+  const fits = answer && id === answer.conversationId && text.startsWith(answer.draft) && answer.full.startsWith(text);
+  const model = fits && answer ? answer.full.slice(text.length) : "";
+  const rest = word ? (model.startsWith(word) ? model : word) : model;
+  if (rest.trim()) show(rest);
   else hide();
 }
 
-/** Asks about the draft as it is now, unless a request is on its way: then it goes when that one is back. */
+/**
+ * Asks about the draft as it is now, unless a request is on its way: then it goes when that one is back. Not about
+ * Turkish (also typed without its letters): the model writes English only.
+ */
 function askNow(): void {
   const id = conversationNow();
   const name = suggestionBox();
   const draft = dom.input.value;
-  if (!id || !name || !draft.trim() || !atEnd()) return;
+  if (!id || !name || !draft.trim() || !atEnd() || looksTurkish(draft)) return;
   if (asking) {
     changed = asking.draft !== draft;
     return;
@@ -162,8 +188,15 @@ function take(oneWord = false): void {
   }
 }
 
+/** The word lists are fetched once, the first time the box is used with suggestions on. */
+let wordsAsked = false;
+
 dom.input.addEventListener("input", (event) => {
   if ((event as InputEvent).isComposing) return hide();
+  if (!wordsAsked && suggestionsOn()) {
+    wordsAsked = true;
+    void loadWords().then(showFitting);
+  }
   showFitting();
   askNow();
 });
