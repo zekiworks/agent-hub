@@ -13,12 +13,16 @@ internet: only devices signed in to your Tailscale account can reach it.
    ```
 
    It prints the address, for example `https://myhost.tail1234.ts.net`. Only your devices can open it.
-3. Tell Agent Hub about that address by adding it to the command that starts it, then restart it:
+3. Add that address to the command that already starts Agent Hub, keeping everything else in it (people, voice,
+   extensions), then restart it. `--public-url` is one more option:
 
    ```sh
-   agent-bus serve --port 7800 --humans maya --public-url https://myhost.tail1234.ts.net
+   agent-bus serve <the options you start it with now> --public-url https://myhost.tail1234.ts.net
    ```
 
+   For example, `agent-bus serve --port 7800 --humans maya` becomes `agent-bus serve --port 7800 --humans maya
+   --public-url https://myhost.tail1234.ts.net`. If it runs as a service (systemd, docs/operations.md), add it to the
+   service's `ExecStart` line.
 4. Sign your phone in once: on a computer where you are already signed in, open the sign-in page (your name at the top
    right), choose **Add a device**, and scan the QR code with the phone. It opens the private address and signs the
    phone in. From then on the phone reaches Agent Hub wherever it has internet, with Tailscale switched on.

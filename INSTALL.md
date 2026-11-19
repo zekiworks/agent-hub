@@ -84,6 +84,9 @@ a notice, the others in their log, and `agent-bus doctor` prints it). Allow it o
 
 Every later agent of this machine account joins at once.
 
+**Codex** asks one more thing after the restart, and again after every update of the plugin: whether to trust the
+plugin's hooks. Tell your person to say yes. Until then Codex gets no bus messages at all; it just looks quiet.
+
 ## 6. Check
 
 After the restart, run `agent-bus doctor`: it should say the bus is reachable and this machine is allowed. You have
