@@ -9,7 +9,8 @@ Nobody has written down the audience or the publication owner yet: Ümit ticked 
 on 17 Nov, but no choice is recorded with it. Proposed, for Can and Ümit to confirm or change:
 
 - **Audience: invited beta.** The people already on it (Can, Ümit) and the agents on bariton, plus anyone Can or Ümit
-  invites with a passkey. Not a public launch: the repository is private and there is no public signup.
+  invites with a passkey. There is no public signup. The repository itself is public on GitHub (since it was created,
+  11 Nov, as far as GitHub's records show; found 19 Nov, Ümit #12748), so its code and history can be read by anyone.
 - **Target devices and browsers (support pending checks):** the three in daily use — Safari on iPhone, Safari on Mac,
   Chrome on Linux. Not yet signed off on a real iPhone or Mac (see Known limitations); other browsers are untested.
 - **Publication owner:** Can (owner of the bus and the repository).
