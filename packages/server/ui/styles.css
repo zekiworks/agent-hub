@@ -4698,6 +4698,21 @@ ul.md-list ul.md-list { list-style: circle; }
   height: 15px;
 }
 
+/* ▶ read aloud in a banner (Ümit #12766): the messages' button, dressed like the banner's other links. */
+.answer-toast .answer-toast-speak {
+  min-height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+}
+
+.answer-toast .answer-toast-speak .icon {
+  width: 15px;
+  height: 15px;
+}
+
 .answer-toast-form {
   flex: 1 1 100%;
   display: grid;

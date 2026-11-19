@@ -13,7 +13,9 @@ import { h } from "./html";
 import { setIcon } from "./icons";
 import { setOwnTask } from "./inbox";
 import { copyText } from "./render";
+import { speakButton } from "./speak";
 import { conversationTitle, state } from "./state";
+import { startVoiceReply } from "./voice";
 
 let box: HTMLElement | undefined;
 
@@ -232,7 +234,16 @@ export function showAnswer(message: Message, conversation: Conversation): void {
     setIcon(copy, copied ? "check" : "x", copied ? "Copied" : "Not copied: open the message and copy it there");
     setTimeout(() => setIcon(copy, "copy", "Copy"), copied ? 1500 : 4000);
   });
-  row.prepend(reply, take, copy);
+  // Answer it by voice, or hear it (Ümit #12766): the message box's recording panel, sent to this conversation as a
+  // reply to this message; and the same ▶ as on messages, read by the bus's speech server.
+  const voice = h("button", "link-btn answer-toast-reply");
+  voice.type = "button";
+  setIcon(voice, "mic", "Voice");
+  voice.title = `Reply to @${message.from} with a voice message, without leaving this conversation (Send sends it)`;
+  voice.addEventListener("click", () => startVoiceReply({ kind: "conversation", id: conversation.id }, message));
+  const listen = speakButton(message);
+  listen.classList.add("answer-toast-speak");
+  row.prepend(reply, voice, listen, take, copy);
   toast.append(row);
   place(savedPosition());
 }

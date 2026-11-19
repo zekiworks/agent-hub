@@ -149,7 +149,8 @@ function highlight(): void {
 /** The ▶ buttons, the outline on the message, the highlights and the bar, from `current`. */
 function show(): void {
   for (const el of dom.messageList.querySelectorAll(".msg-speaking")) el.classList.remove("msg-speaking");
-  for (const b of dom.messageList.querySelectorAll<HTMLButtonElement>(".msg-speak-btn")) {
+  // Anywhere on the page: a notification's ▶ too (toast.ts; Ümit #12766).
+  for (const b of document.querySelectorAll<HTMLButtonElement>(".msg-speak-btn")) {
     const mine = current?.seq === Number(b.dataset.seq);
     face(b, mine ? (current?.loading ? "loading" : playing() ? "pause" : "play") : "play");
     b.title = mine ? (playing() ? "Pause" : "Go on reading") : "Read it aloud";

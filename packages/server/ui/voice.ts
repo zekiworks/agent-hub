@@ -3,7 +3,7 @@
 // letting go also sends (letting go far from the button deletes). The recording goes up as an audio file; the bus's
 // speech-to-text turns it into the message text, so agents (which cannot listen) read what was said. People see a
 // player (attachments.ts).
-import type { TranscriptResponse } from "@agent-bus/protocol";
+import type { Message, TranscriptResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { hideError, showError, updateComposerState } from "./composer";
 import { dom } from "./dom";
@@ -147,15 +147,15 @@ function tick(rec: Recording): void {
   rec.frame = requestAnimationFrame(() => tick(rec));
 }
 
-async function start(): Promise<void> {
+async function start(target?: { view: View; chosen: Chosen }): Promise<void> {
   if (recording || opening || state.sending || !state.me) return;
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
     showError("This browser cannot record audio here (it needs https and microphone access).");
     return;
   }
   // Where it goes is decided at the tap, not after the permission prompt or the microphone's start-up (codex-ui #10622).
-  const view = state.view;
-  const chosen = chosenNow(view);
+  const view = target?.view ?? state.view;
+  const chosen = target?.chosen ?? chosenNow(view);
   hideError();
   hideStatus();
   opening = true;
@@ -441,6 +441,17 @@ setIcon(dom.voiceBtn, "mic");
 setIcon(dom.voiceDelete, "trash");
 setIcon(dom.voicePause, "pause");
 
+
+/**
+ * 🎤 on a notification (Ümit #12766): a voice message to that notification's conversation, as a reply to its message,
+ * from wherever you are. It records in the message box's panel ("0:04 → #room"), started by a click: Send sends it,
+ * 🗑 or Esc drops it.
+ */
+export function startVoiceReply(view: View, reply: Message): void {
+  if (recording || opening) return;
+  held = false;
+  void start({ view, chosen: { reply, item: undefined } });
+}
 // Send during a click-started recording sends the recording (capture: before send.ts sends the typed text).
 dom.composer.addEventListener(
   "submit",
