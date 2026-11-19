@@ -19,6 +19,7 @@ import { closeMention, handleMentionKey, updateMention } from "./mentions";
 import { navigate, viewHash } from "./routing";
 import { currentDirectAgent, state, type ItemReply, type View } from "./state";
 import { setIcon } from "./icons";
+import { draftReplaced } from "./suggest";
 
 export async function uploadFile(file: File): Promise<FileRef> {
   const params = new URLSearchParams({ from: state.me, name: file.name });
@@ -34,8 +35,9 @@ export async function uploadFile(file: File): Promise<FileRef> {
 export interface Chosen {
   reply: Message | undefined;
   item: ItemReply | undefined;
-  /** Sent as a task (the box's Message/Task switch was on Task). */
+  /** Sent as a task (the box's Message/Task switch was on Task), and which setting of the switch that was. */
   task?: boolean;
+  taskTurn?: number;
 }
 
 /** What the open conversation's message answers now: a message, or a checklist item; and whether it is a task. */
@@ -45,6 +47,7 @@ export function chosenNow(view: View): Chosen {
     reply: state.replyTo && here(state.replyTo.conversationId) ? state.replyTo : undefined,
     item: state.itemReply && here(state.itemReply.conversationId) ? state.itemReply : undefined,
     task: asTask,
+    taskTurn,
   };
 }
 
@@ -54,9 +57,12 @@ export function chosenNow(view: View): Chosen {
  * once that is sent, or when another conversation opens, so a task is never sent by mistake later.
  */
 let asTask = false;
+/** Counts every change of the switch: a send turns back only the setting it was sent with (codex-ui #12869). */
+let taskTurn = 0;
 
 function setAsTask(on: boolean): void {
   asTask = on;
+  taskTurn += 1;
   setIcon(dom.kindBtn, on ? "task" : "message");
   dom.kindBtn.classList.toggle("is-task", on);
   dom.kindBtn.setAttribute("aria-pressed", String(on));
@@ -103,7 +109,8 @@ export async function postToView(view: View, text: string, fileIds: string[], ch
 
   if (chosen.task) request.task = { type: "task" };
   const res = await postJson<PostMessageResponse>("/api/messages", request);
-  if (chosen.task) setAsTask(false);
+  // Back to Message, unless the switch was set again meanwhile (another room opened, Task picked for a new draft).
+  if (chosen.task && chosen.taskTurn === taskTurn) setAsTask(false);
   // Clear the reply this message answered, not a newer one chosen meanwhile (a message or a checklist item).
   const same = (replyTo && state.replyTo?.seq === replyTo.seq) || (item && state.itemReply === item);
   if (same) setReplyTo(undefined);
@@ -149,6 +156,8 @@ async function send(): Promise<void> {
     if (stillThere) {
       dom.input.value = rest;
       autosize();
+      // What was suggested for the sent text is no suggestion for what comes next (codex-ui #12875).
+      draftReplaced();
     }
   } catch (err) {
     showError(errorText(err));

@@ -126,7 +126,11 @@ function openForward(message: Message): void {
     list.children[index]?.scrollIntoView({ block: "nearest" });
   };
 
+  // One forward at a time: Enter in the search or the note while one is on its way must not send it again
+  // (codex-ui #12869: a disabled button did not stop the keys).
+  let forwarding = false;
   const forward = async (): Promise<void> => {
+    if (forwarding) return;
     const picked = current?.shown[current.index];
     if (!current || !picked) {
       error.textContent = "Pick a person, an agent or a conversation.";
@@ -134,6 +138,7 @@ function openForward(message: Message): void {
       search.focus();
       return;
     }
+    forwarding = true;
     send.disabled = true;
     error.hidden = true;
     try {
@@ -148,6 +153,8 @@ function openForward(message: Message): void {
       error.textContent = errorText(err);
       error.hidden = false;
       send.disabled = false;
+    } finally {
+      forwarding = false;
     }
   };
 

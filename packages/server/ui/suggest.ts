@@ -140,6 +140,15 @@ function askNow(): void {
     });
 }
 
+/**
+ * The box's text was replaced without typing (a message was sent; what stays is anything typed after Send): what was
+ * asked or answered for the old text goes, and the new text is asked about afresh (codex-ui #12875).
+ */
+export function draftReplaced(): void {
+  reset();
+  askNow();
+}
+
 function take(): void {
   if (!shown) return;
   const text = shown;
