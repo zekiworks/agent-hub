@@ -5,43 +5,105 @@
 //   COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 bun run packages/complete-ext/src/server.ts
 //
 // The model: SmolLM2 1.7B base (Q8_0) on a CPU (Can #12912), chosen over LFM3 1.7B: on 12 of Can's own lines it was
-// right as often or more, in half the time. Small models' first few words are usually right, after which they copy
-// earlier messages. So it shows at most a few words, up to the first punctuation, and nothing copied whole.
+// right as often or more, in half the time.
+//
+// Two things from "Subword token healing & autocomplete" (Can #12915):
+// - Token healing: a draft that ends mid-word ("Let's configur") is not sent as it is, since the model never saw
+//   " config" + "ur" and goes on with "ate". The half-typed word goes back out of the prompt and a grammar makes the
+//   model's answer begin with it, so it picks the whole token " configure" and the words after it fit.
+// - Confidence stopping: the words are kept only while the model is sure of each one (log-probability per word, and
+//   for the whole), so a doubtful suggestion ends early or is not shown at all.
+// Then the cut-offs for what small models do wrong: the first punctuation ends it, nothing past a speaker label, and
+// nothing copied whole from an earlier message.
 import type { BoxCompleteBody, BoxResponse } from "@agent-bus/protocol";
 
 /** Messages of the conversation in the prompt: the latest, each cut short. */
 const PROMPT_MESSAGES = 12;
 const PROMPT_MESSAGE_CHARS = 300;
-/** Words a suggestion holds at most. */
-const MAX_WORDS = 5;
-/** Tokens asked of the model: a little more than MAX_WORDS, so a sentence end inside it is seen. */
-const PREDICT_TOKENS = 10;
+/** Words a suggestion holds at most (confidence usually ends it sooner). */
+const MAX_WORDS = 8;
+const PREDICT_TOKENS = 12;
+/**
+ * A word less likely than this ends the suggestion before it; so does a whole below the second. The article's -1.8
+ * and -4.0 cut words SmolLM2 had right on Can's lines ("logo" at -2.1); these were tuned on them (Can #12915).
+ */
+const MIN_STEP_LOGPROB = -2.5;
+const MIN_TOTAL_LOGPROB = -5.0;
+/** The forced tokens may be unlikely ("context" after "con" at -5.2), but not absurd: "an" spelled "ne" (-13) is. */
+const MIN_FORCED_LOGPROB = -8;
 
-/** The prompt: the conversation as lines "@who: text", then the person's draft to be continued. */
-export function promptOf(body: BoxCompleteBody): string {
+/** The prompt: the conversation as lines "@who: text", then the person's draft (or the part before a half word). */
+export function promptOf(body: BoxCompleteBody, draft = body.draft.text): string {
   const where = body.conversation.title ?? (body.conversation.name ? `#${body.conversation.name}` : `a conversation of ${body.conversation.members.join(", ")}`);
   const lines = body.messages
     .slice(-PROMPT_MESSAGES)
     .map((m) => `@${m.from}: ${m.text.replace(/\s+/g, " ").slice(0, PROMPT_MESSAGE_CHARS)}`);
-  return `Conversation in ${where}.\n${lines.join("\n")}\n@${body.me}: ${body.draft.text}`;
+  return `Conversation in ${where}.\n${lines.join("\n")}\n@${body.me}: ${draft}`;
 }
 
 /**
- * What of the model's words to show: up to MAX_WORDS, ending at the first punctuation mark (kept); nothing past a
+ * Token healing's split: a draft ending mid-word gives back the half word with the space before it (`stub`, " configur")
+ * and what comes before it (`prefix`, "Let's"). A draft ending in a space or a sign, or of one word only, is not split.
+ */
+export function healSplit(draft: string): { prefix: string; stub: string } {
+  const m = /(\s+)([\p{L}\p{N}_'’-]+)$/u.exec(draft);
+  if (!m || m.index === 0) return { prefix: draft, stub: "" };
+  return { prefix: draft.slice(0, m.index), stub: draft.slice(m.index) };
+}
+
+/** A GBNF grammar whose text begins with `stub`, then anything up to the end of the line. */
+export function grammarFor(stub: string): string {
+  return `root ::= "${stub.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}" [^\\n]*`;
+}
+
+/** One generated token and how likely the model found it (natural log). */
+export interface TokenProb {
+  token: string;
+  logprob: number;
+}
+
+/**
+ * The text after `stub` that the model was sure of: tokens are taken while each one's log-probability is at least
+ * MIN_STEP_LOGPROB and their sum at least MIN_TOTAL_LOGPROB. The tokens that spell the stub are forced by the grammar
+ * (their prior can be low only because the person typed something unusual), so they are judged only against
+ * MIN_FORCED_LOGPROB: below it the model took an odd way to spell the stub ("ta" + "leb's"), and nothing is offered.
+ */
+export function confidentText(tokens: readonly TokenProb[], stub: string): string {
+  let text = "";
+  let total = 0;
+  for (const { token, logprob } of tokens) {
+    const before = text.length;
+    text += token;
+    if (before < stub.length) {
+      if (logprob < MIN_FORCED_LOGPROB) return "";
+      continue;
+    }
+    if (logprob < MIN_STEP_LOGPROB || total + logprob < MIN_TOTAL_LOGPROB) {
+      text = text.slice(0, before);
+      break;
+    }
+    total += logprob;
+  }
+  return text.startsWith(stub) ? text.slice(stub.length) : "";
+}
+
+/**
+ * What of the model's sure words to show: up to MAX_WORDS, ending at the first punctuation mark (kept); nothing past a
  * speaker label ("@codex-ui:", the model starting someone else's line; Can #12883); after a finished sentence only a
  * new sentence of the writer's, never one that opens with a name ("@codex-ui."); nothing when the words are copied
- * whole from an earlier message (the model's habit), or when nothing is left.
+ * whole from an earlier message (the model's habit), or when fewer than 3 letters are left.
  */
 export function suggestionOf(raw: string, body: BoxCompleteBody): string {
   const line = raw.split("\n")[0] ?? "";
   const label = /@[a-z0-9][a-z0-9@._-]*:/i.exec(line);
   const first = label ? line.slice(0, label.index) : line;
   if (/[.!?]\s*$/.test(body.draft.text) && !/^\s*[A-Z]/.test(first)) return "";
-  const stop = /[.,;:!?)]/.exec(first);
+  // A sign that ends a word ("ready?", "it,"), not one inside it ("1.2", "e.g").
+  const stop = /[.,;:!?)](?=\s|$)/.exec(first);
   let text = stop ? first.slice(0, stop.index + 1) : first;
   const words = text.match(/\s*\S+/g) ?? [];
   if (words.length > MAX_WORDS) text = words.slice(0, MAX_WORDS).join("");
-  if (!text.trim()) return "";
+  if (text.trim().length < 3) return "";
   const said = body.messages.map((m) => m.text.toLowerCase());
   const core = text.trim().toLowerCase().replace(/[.,;:!?)]$/, "");
   if (core.split(/\s+/).length >= 3 && said.some((m) => m.includes(core))) return "";
@@ -55,12 +117,15 @@ export function worthAsking(draft: string): boolean {
 
 async function complete(body: BoxCompleteBody, llamaUrl: string, signal: AbortSignal): Promise<BoxResponse> {
   if (body.v !== 1 || body.kind !== "complete" || !worthAsking(body.draft.text)) return { text: "" };
+  const { prefix, stub } = healSplit(body.draft.text);
   const res = await fetch(`${llamaUrl.replace(/\/+$/, "")}/completion`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      prompt: promptOf(body),
+      prompt: promptOf(body, prefix),
+      ...(stub ? { grammar: grammarFor(stub) } : {}),
       n_predict: PREDICT_TOKENS,
+      n_probs: 1,
       temperature: 0,
       stop: ["\n"],
       cache_prompt: true,
@@ -70,8 +135,9 @@ async function complete(body: BoxCompleteBody, llamaUrl: string, signal: AbortSi
     signal,
   });
   if (!res.ok) throw new Error(`llama-server answered HTTP ${res.status}`);
-  const answer = (await res.json()) as { content?: string };
-  return { text: suggestionOf(answer.content ?? "", body) };
+  const answer = (await res.json()) as { completion_probabilities?: Array<{ token: string; logprob?: number; prob?: number }> };
+  const tokens = (answer.completion_probabilities ?? []).map((t) => ({ token: t.token, logprob: t.logprob ?? Math.log(t.prob ?? 0) }));
+  return { text: suggestionOf(confidentText(tokens, stub), body) };
 }
 
 if (import.meta.main) {
