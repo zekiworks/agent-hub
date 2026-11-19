@@ -263,6 +263,10 @@ function pastedName(file: File, index: number): File {
   return new File([file], `pasted-${stamp}${index > 0 ? `-${index + 1}` : ""}.${ext}`, { type: file.type });
 }
 
+// Touch screens (an iPhone) get the keyboard's word suggestions, as in ChatGPT's app (Ümit #12553, #12554); with a mouse
+// they stay off, since Safari's grey inline completion on the Mac took Enter for itself (Ümit #11651).
+if (window.matchMedia("(hover: none) and (pointer: coarse)").matches) dom.input.setAttribute("writingsuggestions", "true");
+
 // Ctrl/⌘+V of an image (a screenshot) or of copied files attaches them; text pastes as usual.
 dom.input.addEventListener("paste", (event) => {
   const files = Array.from(event.clipboardData?.files ?? []);
