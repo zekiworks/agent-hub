@@ -267,10 +267,13 @@ function pastedName(file: File, index: number): File {
 // they stay off, since Safari's grey inline completion on the Mac took Enter for itself (Ümit #11651).
 if (window.matchMedia("(hover: none) and (pointer: coarse)").matches) dom.input.setAttribute("writingsuggestions", "true");
 
-// Ctrl/⌘+V of an image (a screenshot) or of copied files attaches them; text pastes as usual.
+// Ctrl/⌘+V of an image (a screenshot) or of copied files attaches them; text pastes as usual. When the clipboard holds
+// text as well (copied from Notes, Mail or a web page, which also carry a picture of it), the text is what was meant:
+// it pastes and nothing is attached (Ümit #12591: on the iPhone the text vanished and an image was attached instead).
 dom.input.addEventListener("paste", (event) => {
-  const files = Array.from(event.clipboardData?.files ?? []);
-  if (files.length === 0) return;
+  const data = event.clipboardData;
+  const files = Array.from(data?.files ?? []);
+  if (files.length === 0 || (data?.getData("text/plain") ?? "").trim() !== "") return;
   event.preventDefault();
   stageFiles(files.map(pastedName));
 });
