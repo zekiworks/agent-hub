@@ -519,6 +519,12 @@ test("the agent reports its status to the bus without a model turn: busy with it
   await alphaIs((p) => p.status?.state === "idle");
   expect(current()?.status?.activity).toBeUndefined();
 
+  // A run that ends waiting on background work (a job, a watcher) is idle for the bus: a message starts a new turn.
+  alpha.emit("agent_start");
+  await alphaIs((p) => p.status?.state === "busy");
+  alpha.emit("agent_end", { willContinue: true, awaitingAsyncWork: true });
+  await alphaIs((p) => p.status?.state === "idle");
+
   // Status never reaches the model: the only injection is the bus message.
   expect(alpha.injected.map((i) => i.content.includes("status check"))).toEqual([true]);
 });

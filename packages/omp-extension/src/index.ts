@@ -68,7 +68,7 @@ export interface MessageBusApi {
   /** Runs before every model request with the messages the model will get. */
   on(event: "context", handler: (event: { messages: unknown[] }) => void): void;
   on(event: "agent_start", handler: () => void): void;
-  on(event: "agent_end", handler: (event: { willContinue?: boolean }) => void): void;
+  on(event: "agent_end", handler: (event: { willContinue?: boolean; awaitingAsyncWork?: boolean }) => void): void;
   on(
     event: "tool_execution_start",
     handler: (event: { toolCallId: string; toolName: string; args?: unknown; intent?: string }) => void
@@ -198,7 +198,10 @@ export default function messageBus(pi: MessageBusApi): void {
   const status = new StatusTracker(log);
   pi.on("agent_start", () => status.setBusy());
   pi.on("agent_end", (event) => {
-    if (!event.willContinue) status.setIdle();
+    // A turn that ends with background work still running (a job, a watcher) comes as willContinue + awaitingAsyncWork:
+    // the agent waits, it is idle for the bus, and a message starts a new turn. Kept busy, an agent with a long-lived
+    // background job showed "busy" for a day (personal-assistant #12571: @turkce).
+    if (!event.willContinue || event.awaitingAsyncWork) status.setIdle();
   });
   pi.on("tool_execution_start", (event) => {
     status.toolStarted(event.toolCallId, event.toolName, event.intent);
