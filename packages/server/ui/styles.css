@@ -3143,6 +3143,14 @@ ul.md-list ul.md-list { list-style: circle; }
   outline: none;
 }
 
+/* Misspelled words (the browser's spell check, Ümit #12551): its thin dark-red wave hardly showed on the dark box
+   (Can #12838), so a bright, thicker one over a red tint. Chrome and Safari draw it; Firefox keeps its own. */
+.composer textarea::spelling-error {
+  background-color: rgba(255, 107, 107, 0.22);
+  text-decoration: underline wavy #ff6b6b 2px;
+  text-underline-offset: 3px;
+}
+
 .icon-btn {
   flex: none;
   width: 40px;
