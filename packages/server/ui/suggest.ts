@@ -149,9 +149,10 @@ export function draftReplaced(): void {
   askNow();
 }
 
-function take(): void {
+/** Adds the shown words, or only the next one (`oneWord`); the rest stays shown while it still fits (Can #12922). */
+function take(oneWord = false): void {
   if (!shown) return;
-  const text = shown;
+  const text = oneWord ? (shown.match(/^\s*\S+/)?.[0] ?? shown) : shown;
   hide();
   dom.input.focus();
   // As typed, so ⌘Z takes it back and the box's own listeners (size, draft, @names, the next suggestion) see it.
@@ -177,15 +178,18 @@ dom.input.addEventListener("compositionend", () => {
   askNow();
 });
 
-// Tab takes the words; Escape drops them and what was on its way, so nothing shows later (codex-ui #12868). In the
-// capture phase, before the box's own keys.
+// Tab takes the words. The next word only: Shift+Tab (Can #12922), or Ctrl+→ (⌘→ on a Mac), as in VS Code's Copilot;
+// those keys keep their usual meaning while nothing is shown. Escape drops the words and what was on its way, so
+// nothing shows later (codex-ui #12868). In the capture phase, before the box's own keys.
 dom.input.addEventListener(
   "keydown",
   (event) => {
-    if (event.key === "Tab" && shown && !event.shiftKey && !event.isComposing && !composing && !state.mention.open) {
+    const usable = !!shown && !event.isComposing && !composing && !state.mention.open;
+    const nextWord = (event.key === "Tab" && event.shiftKey) || (event.key === "ArrowRight" && (event.ctrlKey || event.metaKey) && !event.altKey);
+    if (usable && (nextWord || (event.key === "Tab" && !event.shiftKey))) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      take();
+      take(nextWord);
     } else if (event.key === "Escape" && (shown || asking || answer)) {
       if (shown) {
         event.preventDefault();
@@ -204,5 +208,5 @@ dom.input.addEventListener("scroll", () => (ghost.scrollTop = dom.input.scrollTo
 dom.input.addEventListener("blur", () => setTimeout(() => document.activeElement !== chip && hide(), 0));
 // A tap on the chip must not take the focus (the keyboard would drop): pointerdown keeps it in the box.
 chip.addEventListener("pointerdown", (event) => event.preventDefault());
-chip.addEventListener("click", take);
+chip.addEventListener("click", () => take());
 window.addEventListener("hashchange", reset);
