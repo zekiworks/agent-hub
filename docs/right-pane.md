@@ -190,10 +190,11 @@ role), not in `extensions`. "complete" is the one role so far: typing suggestion
   field, the model servers the bus already knows (the list `op=servers` gives: model, engine, endpoints, whose,
   shared or private), shared ones only, and call the one it picks itself. The bus would add it only for services
   that ask for it (an option on `--ext`), so today's gets nothing new.
-- The first service is `packages/complete-ext`: LFM3 1.7B (Liquid AI) run by llama-server on a CPU, about 0.3–0.5 s.
-  It shows at most five words, up to the first punctuation mark, and nothing it copied whole from an earlier message
-  (the model's habit); it does not answer Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962
-  bun run packages/complete-ext/src/server.ts`, with `llama-server -m LFM3-1.7B-BF16.gguf --port 9962 -ngl 0`.
+- The first service is `packages/complete-ext`: SmolLM2 1.7B base (Q8_0) run by llama-server on a CPU, about 0.2 s
+  (Can #12912; LFM3 1.7B before it took 0.4 s and was right less often). It shows at most five words, up to the first
+  punctuation mark, and nothing it copied whole from an earlier message (small models' habit); it does not answer
+  Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 bun run packages/complete-ext/src/server.ts`,
+  with `llama-server -m SmolLM2-1.7B.Q8_0.gguf --port 9962 -ngl 0`.
 
 Talking to the website (Can, 15 Nov): a page fills the person's message box, never sends. Each ends in the person
 reading, finishing and pressing Send.
