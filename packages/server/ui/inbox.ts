@@ -23,7 +23,7 @@ let data: TasksResponse | undefined;
 let counts = { open: 0, unread: 0 };
 let visible = false;
 
-const LABEL: Record<Task["type"], string> = { task: "Task", approval: "Approval", chore: "Chore" };
+const LABEL: Record<Task["type"], string> = { task: "Task", approval: "Approval" };
 
 /** Fetches the counts for the button, and the list when the Inbox is open. */
 export async function refreshInbox(): Promise<void> {

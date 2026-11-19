@@ -828,8 +828,8 @@ describe("delivery", () => {
     await beta.client.take("deliver");
     await send({ from: alpha.id, conversationId: group.conversation.id, text: "plan done", wake: [] });
     await beta.client.take("deliver");
-    const t = await send({ from: "carol", conversationId: group.conversation.id, text: "@beta please rerun 7", task: { type: "chore" } });
-    expect(t.message.task).toEqual({ type: "chore", assignees: [{ id: "beta", state: "open" }] });
+    const t = await send({ from: "carol", conversationId: group.conversation.id, text: "@beta please rerun 7", task: { type: "task" } });
+    expect(t.message.task).toEqual({ type: "task", assignees: [{ id: "beta", state: "open" }] });
     expect((await beta.client.take("deliver")).openTasks).toBe(1);
     expect((await alpha.client.take("deliver")).wake).toBe(false); // not its task
     expect(await tasks("beta")).toMatchObject({ open: 1, unread: 1 });

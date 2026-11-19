@@ -133,7 +133,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     type: "string[]",
     description: "reply/write/send: agent ids of the conversation to start a turn for now, besides the one you reply to (always woken); default none: the others read it at their next turn",
   },
-  { name: "task", type: "string", enum: ["task", "approval", "chore"], description: "reply/write/send: make the message a task of this type for `assignees` (approvals: people only)" },
+  { name: "task", type: "string", enum: ["task", "approval"], description: "reply/write/send: make the message a task of this type for `assignees` (approvals: people only)" },
   { name: "assignees", type: "string[]", description: "with `task`: who is to do it, members of the conversation (default: those you @mention, else the other member of a DM)" },
   { name: "reason", type: "string", description: "reject, withdraw, done: why, or what came of it (shown in the conversation)" },
   { name: "box", type: "string", enum: ["mine", "assigned"], description: 'tasks: "mine" (default: assigned to you) or "assigned" (written by you)' },
@@ -255,7 +255,7 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "step only when it is done (`tick`: ids; `untick` undoes yours; a person's tick stays). If the list changed since " +
     "you read it, nothing is changed and you get it as it is now: reread it and apply your own changes again on the " +
     "new version; never retry the same call blindly. " +
-    "Tasks: write/reply with `task` (task, approval, chore) and `assignees` makes the message a task (its #number is the " +
+    "Tasks: write/reply with `task` (task, approval) and `assignees` makes the message a task (its #number is the " +
     "task id); its agents are woken. Approvals go to people, who decide them signed in. Assigned to you: op=accept (on " +
     "it), op=done, op=reject (`reason`) with `message_id`; op=withdraw takes back one you assigned; op=tasks lists yours " +
     "(box=\"assigned\" for those you assigned; scope=\"all\" includes closed ones). Each step is posted in the " +

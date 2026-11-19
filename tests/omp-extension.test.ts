@@ -350,8 +350,8 @@ test("tasks through the tool: the assignee is told it is theirs, accepts and fin
   expect((await alpha.run({ op: "done", message_id: message.seq, reason: "rotated, 2 GB freed" })).content[0]!.text).toContain("For @alpha: done (rotated, 2 GB freed).");
   expect((await alpha.run({ op: "tasks" })).content[0]!.text).toStartWith("0 open task(s) for you.");
 
-  // An agent assigns a chore to another agent: it is woken, and told the task is its own.
-  const sent = await alpha.run({ op: "write", to: "@beta", message: "please re-index", task: "chore" });
+  // An agent assigns a task to another agent: it is woken, and told the task is its own.
+  const sent = await alpha.run({ op: "write", to: "@beta", message: "please re-index", task: "task" });
   expect(sent.content[0]!.text).toContain("woke @beta");
   const forBeta = await beta.delivered("please re-index");
   expect([forBeta.wake, forBeta.message.task?.assignees]).toEqual([true, [{ id: "beta", state: "open" }]]);

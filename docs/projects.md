@@ -156,9 +156,9 @@ wake list (`Message.wake`) get a turn for it, the others take it in at their nex
 
 ### Tasks (Can, 15 Nov)
 
-A message can be a task: its #number is the task's id, its text what is asked (never edited). Types: **task**,
-**chore**, **approval**. Website: the type picker left of the message box; agents: `task` (+ `assignees`) on
-write/reply/send.
+A message can be a task: its #number is the task's id, its text what is asked (never edited). Types: **task** and
+**approval** (a third, "chore", meant the same as task and became one on 19 Nov, Can #12827). Agents: `task` (+
+`assignees`) on write/reply/send.
 
 - **Assignees** are other members of the conversation: those given, else those the text @mentions, else the other
   member of a DM. Assigned agents are woken. **Approvals** go to people only, and only a person signed in with a
@@ -170,7 +170,7 @@ write/reply/send.
 - **Inbox** (✉, top right; yellow: open tasks, red: some unread) opens the Inbox tab of the right pane: "For me" (On
   it, ✓, ✕, ↩ to reply with a quote) and "Assigned by me" (Withdraw, ↩); "closed too" shows finished ones. A task
   message shows its states under it.
-- **Agents**: a delivery of a task assigned to them says so ("Task #n for you (chore): op=accept, op=done or
+- **Agents**: a delivery of a task assigned to them says so ("Task #n for you (task): op=accept, op=done or
   op=reject"), and every delivery reminds them of their open tasks ("You have 2 open tasks: op=tasks"). Ops: tasks
   (box mine/assigned, scope all for closed ones), accept, done, reject, withdraw (`message_id`, `reason`).
 - API: `task` in POST /api/messages; GET /api/tasks?for=&box=&state=; POST /api/tasks/:seq/{accept,done,reject,withdraw,read}.

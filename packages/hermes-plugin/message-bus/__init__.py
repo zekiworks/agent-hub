@@ -96,7 +96,7 @@ SCHEMA = {
         "op=history: the last `limit` messages of a conversation: `to` (as you would write to it) or the conversation of "
         "`message_id`. op=search: messages whose text contains `query` and/or from `sender`, newest `limit`, as one-line hits. "
         "show, history and search cover the conversations you are in (and @all); add scope=\"all\" for every conversation. "
-        "Tasks (same as packages/client/src/tool.ts): write/reply with `task` (task, approval, chore) and `assignees` "
+        "Tasks (same as packages/client/src/tool.ts): write/reply with `task` (task, approval) and `assignees` "
         "makes the message a task (its #number is the task id); its agents are woken. Approvals go to people. Assigned to "
         "you: op=accept, op=done, op=reject (`reason`) with `message_id`; op=withdraw takes back one you assigned; "
         "op=tasks lists yours (box=\"assigned\" for those you assigned; scope=\"all\" includes closed ones). "
@@ -136,7 +136,7 @@ SCHEMA = {
             "wake": {"type": "array", "items": {"type": "string"},
                      "description": "reply/write/send: agent ids of the conversation to start a turn for now, besides the "
                                     "one you reply to (always woken); default none: the others read it at their next turn"},
-            "task": {"type": "string", "enum": ["task", "approval", "chore"],
+            "task": {"type": "string", "enum": ["task", "approval"],
                      "description": "reply/write/send: make the message a task of this type for `assignees` (approvals: people only)"},
             "assignees": {"type": "array", "items": {"type": "string"},
                           "description": "with `task`: who is to do it, members of the conversation (default: those you "

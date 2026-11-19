@@ -17,7 +17,7 @@ import { mayRead } from "./conversations";
 import { recipientsFor } from "./messages";
 import { HttpError, readJsonObject } from "./http";
 
-const TYPES: readonly TaskType[] = ["task", "approval", "chore"];
+const TYPES: readonly TaskType[] = ["task", "approval"];
 const MAX_REASON = 2000;
 /** The outcome messages hold for offline agents as long as ordinary ones. */
 const HOLD_MS = 3600_000;

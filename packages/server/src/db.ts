@@ -472,6 +472,8 @@ export class BusDatabase {
     if (!messageColumns.some((c) => c.name === "wake_json")) this.db.exec("ALTER TABLE messages ADD COLUMN wake_json TEXT");
     // Databases created before tasks lack the column (null: an ordinary message).
     if (!messageColumns.some((c) => c.name === "task_json")) this.db.exec("ALTER TABLE messages ADD COLUMN task_json TEXT");
+    // "chore" meant the same as "task" and is gone (Can #12827): stored ones become tasks.
+    this.db.exec(`UPDATE messages SET task_json = json_set(task_json, '$.type', 'task') WHERE json_extract(task_json, '$.type') = 'chore'`);
     // Databases created before editing and deleting one's messages lack the columns (Ümit #10890; null: never).
     if (!messageColumns.some((c) => c.name === "edited_at")) this.db.exec("ALTER TABLE messages ADD COLUMN edited_at INTEGER");
     if (!messageColumns.some((c) => c.name === "deleted_at")) this.db.exec("ALTER TABLE messages ADD COLUMN deleted_at INTEGER");
