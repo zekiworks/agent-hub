@@ -55,13 +55,13 @@ export function notify(message: Message, conv: Conversation): void {
 
 let titleBase = BRAND;
 
-/** Tab icon: the header's ⇄ mark; a red dot while messages for me are unread. */
+/** Tab icon: the header's ⇄ mark in its colours (lilac, dark arrows); a red dot while messages for me are unread. */
 function faviconHref(attention: boolean): string {
   const dot = attention ? '<circle cx="26" cy="6" r="6" fill="#e5484d" stroke="#fff" stroke-width="2"/>' : "";
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
-    '<rect x="1" y="1" width="30" height="30" rx="7" fill="#3563e9"/>' +
-    '<path d="M8 12h14l-4-4M24 20H10l4 4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<rect x="1" y="1" width="30" height="30" rx="7" fill="#b8a6dc"/>' +
+    '<path d="M8 12h14l-4-4M24 20H10l4 4" fill="none" stroke="#1b1b1b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
     dot +
     "</svg>";
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
