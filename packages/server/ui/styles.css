@@ -3151,6 +3151,53 @@ ul.md-list ul.md-list { list-style: circle; }
   text-underline-offset: 3px;
 }
 
+/* Typing suggestions (suggest.ts; Can #12841–#12853): grey words after the cursor, laid over the box (suggest.ts
+   copies its place, font and padding); the draft under them is invisible, only there to push the words into place. */
+.composer-ghost {
+  position: absolute;
+  z-index: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.composer-ghost .ghost-draft {
+  color: transparent;
+}
+
+.composer-ghost .ghost-words {
+  color: var(--muted);
+}
+
+.composer textarea {
+  position: relative;
+  z-index: 1;
+}
+
+/* On touch screens (no Tab key): the words as a chip under the text, a tap adds them. */
+.suggest-chip {
+  align-self: flex-start;
+  max-width: calc(100% - 24px);
+  min-height: 32px;
+  margin: 0 12px 4px;
+  padding: 4px 10px;
+  overflow: hidden;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.suggest-chip[hidden] {
+  display: none;
+}
+
 .icon-btn {
   flex: none;
   width: 40px;

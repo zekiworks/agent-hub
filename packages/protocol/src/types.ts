@@ -500,6 +500,8 @@ export interface StateResponse {
   /** Global ones among them (#10211): name → the label of their top-bar launcher (`--ext name=url,launcher=GPUs`).
    * The others are entity extensions: a tab of @@name and of agent name's DM. */
   launchers?: Record<string, string>;
+  /** Box extensions (`--ext name=url,box=complete`): name → role. The website's message box asks them, not the Workspace. */
+  boxes?: Record<string, BoxRole>;
   /** The bus books GPUs (`serve --gpudash URL`): the website offers GPU booking under Tools. */
   gpuBooking?: true;
   /** The signed-in person's own bookmarks (Can #11065), newest first; only people have them. */
@@ -856,6 +858,42 @@ export interface TranscriptResponse {
   duration: number;
   /** The model that wrote it: "whisper" or "liquid". */
   engine?: string;
+}
+
+/**
+ * Box extensions (Can #12841–#12853): services the message box asks while a person types, set with
+ * `serve --ext NAME=URL,box=ROLE`. They are not Workspace pages. The one role so far, "complete", suggests the next
+ * words of a draft.
+ */
+export type BoxRole = "complete";
+
+/** POST /api/box/:name, from the website: the draft being typed in a conversation the person reads. */
+export interface BoxRequest {
+  conversationId: string;
+  /** The draft up to the cursor. */
+  text: string;
+}
+
+/** The answer of /api/box/:name and of the extension's own `POST /complete`: the words to add after the draft, or "". */
+export interface BoxResponse {
+  text: string;
+}
+
+/**
+ * What the bus sends a "complete" extension: `POST <its URL>/complete` with this body. Versioned: fields may be added
+ * (an extension ignores what it does not know); a change in meaning raises `v`. The bus sends only what the person may
+ * read. A later field could list the model servers on the bus, so an extension can pick one itself; today's do not
+ * get it (Can #12853).
+ */
+export interface BoxCompleteBody {
+  v: 1;
+  kind: "complete";
+  /** The person typing. */
+  me: string;
+  conversation: { id: string; kind: ConversationKind; name?: string; title?: string; members: string[] };
+  /** Its latest messages, oldest first (deleted ones left out). */
+  messages: Array<{ seq: number; from: string; text: string; createdAt: number }>;
+  draft: { text: string };
 }
 
 export interface HealthResponse {

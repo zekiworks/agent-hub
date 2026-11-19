@@ -1,5 +1,5 @@
 // The page's shared mutable state (one object, read and written by every module) and the queries over it.
-import { ALL_CONVERSATION_ID, type Bookmark, type Conversation, type Message, type OwnTask, type Participant } from "@agent-bus/protocol";
+import { ALL_CONVERSATION_ID, type Bookmark, type BoxRole, type Conversation, type Message, type OwnTask, type Participant } from "@agent-bus/protocol";
 import { nameList, sortedUnique } from "./format";
 
 export const UNREAD_ONLY_KEY = "agent-bus.unreadOnly";
@@ -44,6 +44,8 @@ export const state = {
   ownTasks: [] as OwnTask[],
   /** My tabs (Can #11480): conversations I pinned, in my order; the bus keeps them, only I see them. */
   tabs: [] as string[],
+  /** The bus's box extensions (`--ext name=url,box=complete`): name → role (suggest.ts asks a "complete" one). */
+  boxes: {} as Record<string, BoxRole>,
   caches: new Map<string, MessageCache>(),
   /** Conversations whose first page is being fetched → live messages received meanwhile. */
   loading: new Map<string, Message[]>(),

@@ -26,6 +26,7 @@ import { changeMessage, forwardMessage, getMessageReceipts, getMessages, getShar
 import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
 import { forwardExtension } from "./extensions";
+import { postBox, type BoxExtension } from "./boxes";
 import { getTasks, taskAction } from "./tasks";
 import { postSpeech } from "./speech";
 import { type Brand, Website } from "./website";
@@ -55,6 +56,8 @@ export interface BusServerOptions {
   extensions?: Record<string, string>;
   /** Which of them are global, opened by a top-bar launcher: name → its label (`--ext gpudash=…,launcher=GPUs`). */
   launchers?: Record<string, string>;
+  /** Services the message box asks, not Workspace pages (`--ext complete=URL,box=complete`; Can #12853). */
+  boxes?: Record<string, BoxExtension>;
   /** This bus's name and pictures on the website (`--brand-name "Team Hub" --brand-logo FILE --brand-icon FILE`). */
   brand?: Brand;
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
@@ -211,6 +214,9 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
         humans,
         ...(options.extensions && Object.keys(options.extensions).length > 0 ? { extensions: Object.keys(options.extensions) } : {}),
         ...(options.launchers && Object.keys(options.launchers).length > 0 ? { launchers: options.launchers } : {}),
+        ...(options.boxes && Object.keys(options.boxes).length > 0
+          ? { boxes: Object.fromEntries(Object.entries(options.boxes).map(([name, box]) => [name, box.role])) }
+          : {}),
         ...(options.gpudash ? { gpuBooking: true as const } : {}),
         // A person's own bookmarks (Can #11065), tasks (Can #12197) and tabs (Can #11480): theirs alone, in their own state.
         ...(viewer.kind === "human" ? { bookmarks: db.bookmarksOf(viewer.id), ownTasks: db.ownTasksOf(viewer.id), tabs: db.tabsOf(viewer.id) } : {}),
@@ -270,6 +276,8 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     const transcriptMatch = /^\/api\/files\/([^/]+)\/transcript$/.exec(pathname);
     if (method === "POST" && transcriptMatch?.[1]) return json(await transcribeFile(ctx, decodeURIComponent(transcriptMatch[1]), options.sttUrl, viewer.kind === "human" ? viewer.id : undefined));
     if (method === "POST" && pathname === "/api/speech") return await postSpeech(req, options.ttsUrl);
+    const boxMatch = /^\/api\/box\/([a-z0-9][a-z0-9_-]*)$/.exec(pathname);
+    if (method === "POST" && boxMatch?.[1]) return json(await postBox(ctx, req, boxMatch[1], options.boxes ?? {}, viewer.kind === "human" ? viewer.id : undefined));
     if (method === "POST" && pathname === "/api/settings") return json(await postSetting(ctx, req));
     return (await schedule.handle(req, url)) ?? json({ error: `No route for ${method} ${pathname}` }, 404);
   };

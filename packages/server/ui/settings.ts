@@ -1,5 +1,5 @@
 // The Settings dialog: a person's own settings. On the bus (POST /api/settings): who writes their English voice
-// messages as text. In this browser: whether the routing lines under messages show (#10096).
+// messages as text. In this browser: whether the routing lines under messages show (#10096), and typing suggestions.
 import type { AgentSettings } from "@agent-bus/protocol";
 import { postJson } from "./api";
 import { closeWindowButton } from "./dialogs";
@@ -7,6 +7,7 @@ import { dom } from "./dom";
 import { errorText } from "./format";
 import { h } from "./html";
 import { state } from "./state";
+import { setSuggestionsOn, suggestionBox, suggestionsOn } from "./suggest";
 
 type EnglishSpeech = NonNullable<AgentSettings["englishSpeech"]>;
 
@@ -59,6 +60,7 @@ function render(): void {
     ),
     note,
     routingSetting(),
+    suggestionSetting(),
     closeWindowButton(dom.settingsDialog)
   );
 }
@@ -117,6 +119,30 @@ function routingSetting(): HTMLElement {
       "dialog-hint",
       "Off: those lines appear when you hover or tap a message. Messages still waiting, held or expired always show " +
         "theirs. Only this browser; nothing changes for who gets or is woken by a message."
+    )
+  );
+  return section;
+}
+
+/** Typing suggestions (Can #12841–#12853), when the bus has a "complete" box extension; off until turned on. */
+function suggestionSetting(): HTMLElement | string {
+  if (!suggestionBox()) return "";
+  const box = h("input");
+  box.type = "checkbox";
+  box.checked = suggestionsOn();
+  box.addEventListener("change", () => setSuggestionsOn(box.checked));
+  const label = h("label", "settings-check");
+  label.append(box, " Suggest how to go on while I type");
+  const section = h("div", "");
+  section.append(
+    h("h3", "", "Typing"),
+    label,
+    h(
+      "p",
+      "dialog-hint",
+      "When you pause, a few grey words appear after the cursor: Tab adds them (on a phone, tap them under the text); " +
+        "any other key lets them go. Enter still sends what you typed. Your draft and the conversation's latest " +
+        "messages go to a small model on the bus's own machine, and nothing is kept. English only. Only this browser."
     )
   );
   return section;

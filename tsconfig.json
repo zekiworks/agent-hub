@@ -19,6 +19,7 @@
     "packages/opencode-plugin/scripts/**/*.ts",
     "packages/copilot-plugin/src/**/*.ts",
     "packages/copilot-plugin/scripts/**/*.ts",
+    "packages/complete-ext/src/**/*.ts",
     "tests/**/*.ts"
   ]
 }

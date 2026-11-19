@@ -161,6 +161,33 @@ to `URL/…`:
 - The pane is about 360 to 700 px wide: the page should fit narrow widths; links to its full view use
   `target="_blank"`.
 
+## Services the message box asks (built 19 Nov)
+
+Not every extension is a page. `agent-bus serve --ext NAME=URL,box=complete` (Can #12841–#12853) is a service the
+message box asks while a person types; it gets no Workspace tab. `GET /api/state` lists these in `boxes` (name →
+role), not in `extensions`. "complete" is the one role so far: typing suggestions.
+
+- The website, when that person has turned "Suggest how to go on while I type" on (Settings; off by default, per
+  browser), waits for a 0.3 s pause with the cursor at the end of the draft and posts `POST /api/box/NAME`
+  `{conversationId, text}`. The words that come back show in grey after the cursor; Tab adds them, any other key
+  drops them, Enter still sends what was typed. Touch screens (no Tab) show them as a chip under the text.
+- The bus answers only a signed-in person, only for a conversation they may read (agents get 403). It sends the
+  service `POST URL/complete` with a `BoxCompleteBody` (packages/protocol): `{v: 1, kind: "complete", me,
+  conversation: {id, kind, name?, title?, members}, messages: the latest 20 (deleted ones left out), draft: {text}}`,
+  and passes back `{text}` (`""` when the service has nothing; longer than 200 characters is dropped). One request per
+  person is in flight: a newer one cancels it, as does closing the request, and after 3 s it gives up. Nothing is
+  stored.
+- The body is versioned: the bus may add fields, and a service ignores what it does not know; a change in meaning
+  raises `v`.
+- **Choosing a model** (Can #12853, not built): a service that wants to pick any model on the bus would get one more
+  field, the model servers the bus already knows (the list `op=servers` gives: model, engine, endpoints, whose,
+  shared or private), shared ones only, and call the one it picks itself. The bus would add it only for services
+  that ask for it (an option on `--ext`), so today's gets nothing new.
+- The first service is `packages/complete-ext`: LFM3 1.7B (Liquid AI) run by llama-server on a CPU, about 0.3–0.5 s.
+  It shows at most five words, up to the first punctuation mark, and nothing it copied whole from an earlier message
+  (the model's habit); it does not answer Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962
+  bun run packages/complete-ext/src/server.ts`, with `llama-server -m LFM3-1.7B-BF16.gguf --port 9962 -ngl 0`.
+
 Talking to the website (Can, 15 Nov): a page fills the person's message box, never sends. Each ends in the person
 reading, finishing and pressing Send.
 
