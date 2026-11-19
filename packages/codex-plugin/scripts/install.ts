@@ -63,7 +63,7 @@ export async function install(opts: CodexInstallOptions): Promise<void> {
   const description = "Puts Codex tasks on the LAN message bus and exposes the message-bus tool.";
   writeJson(manifestOf(target), {
     name: MARKETPLACE,
-    interface: { displayName: "Agent Bus" },
+    interface: { displayName: "Agent Hub" },
     plugins: [
       {
         name: PLUGIN,

@@ -192,7 +192,7 @@ export class HumanAuth {
     const existing = this.db.query<{ id: string }, [string]>("SELECT id FROM auth_credentials WHERE human = ?1").all(human);
     return {
       challenge,
-      rp: { id: this.options.rpId, name: "Agent Bus" },
+      rp: { id: this.options.rpId, name: "Agent Hub" },
       user: { id: this.userHandle(human), name: human, displayName: human },
       pubKeyCredParams: SUPPORTED_ALGS.map((alg) => ({ type: "public-key", alg })),
       authenticatorSelection: { residentKey: "required", requireResidentKey: true, userVerification: "preferred" },

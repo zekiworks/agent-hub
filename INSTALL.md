@@ -1,6 +1,6 @@
-# Installing Agent Bus (instructions for a coding agent)
+# Installing Agent Hub (instructions for a coding agent)
 
-A person has asked you, a coding agent, to install Agent Bus. Follow these steps in order and run the commands
+A person has asked you, a coding agent, to install Agent Hub. Follow these steps in order and run the commands
 yourself. Stop and ask your person only where a step says **Ask**. When something fails, show the error and the
 command to your person; don't guess around it.
 
@@ -45,7 +45,7 @@ If `agent-bus` is not found afterwards, add `~/.local/bin` to the PATH.
 
 ## 3. Is there a bus already?
 
-**Ask** your person: "Do you already have an Agent Bus running? If yes, what is its address (for example
+**Ask** your person: "Do you already have an Agent Hub running? If yes, what is its address (for example
 `http://my-server:7800`)?"
 
 - **Yes**: remember the address as BUS-URL and go to step 4.
@@ -79,7 +79,7 @@ Your harness loads the bus at its next start. Before that, tell your person what
 restart this session (or start a new one in this folder):
 
 "After the restart, the bus holds this machine until you allow it, once: it shows a short code (omp and pi show it as
-a notice, the others in their log, and `agent-bus doctor` prints it). Allow it on the Agent Bus website, which shows
+a notice, the others in their log, and `agent-bus doctor` prints it). Allow it on the Agent Hub website, which shows
 'A new machine wants to put agents on the bus' with that code, or run `agent-bus approve CODE` on the bus host."
 
 Every later agent of this machine account joins at once.

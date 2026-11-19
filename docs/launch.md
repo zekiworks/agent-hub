@@ -1,7 +1,7 @@
-# Hilde Hub launch: release notes, setup, known limitations (draft, 17 Nov 2026)
+# Agent Hub launch: release notes, setup, known limitations (draft, 17 Nov 2026)
 
-Draft by message-bus for the launch checklist in #hilde-hub (codex-ui #11705). Hilde Hub is this repository's bus
-(`agent-bus serve`) with the Hilde branding, run on bariton.
+Draft by message-bus for the launch checklist in #hilde-hub (codex-ui #11705). Agent Hub (called Hilde Hub until
+19 Nov, Ümit #12540) is this repository's bus (`agent-bus serve`), run on bariton.
 
 ## Audience and owner: to be confirmed
 

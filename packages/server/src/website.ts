@@ -31,7 +31,7 @@ function sourceMtime(source: string): number {
   return Math.max(own, ...scripts.map((name) => mtime(path.join(uiDir, name))));
 }
 
-/** This bus's name and pictures (`serve --brand-name/--brand-logo/--brand-icon`); without them it is "Agent Bus". */
+/** This bus's name and pictures (`serve --brand-name/--brand-logo/--brand-icon`); without them it is "Agent Hub". */
 export interface Brand {
   name: string;
   /** The header's mark (any image file); also the home-screen icon. */
@@ -68,8 +68,8 @@ export class Website {
   }
 
   /**
-   * The pages carry "Agent Bus" and its ⇄ mark; a configured brand replaces them: the title, the header's name (first
-   * word strong, the rest regular, as Hilde Reader's "Hilde Reader"), its mark and the icons.
+   * The pages carry "Agent Hub" and its ⇄ mark; a configured brand replaces them: the title, the header's name (first
+   * word strong, the rest regular), its mark and the icons.
    */
   private branded(html: string): string {
     const brand = this.brand;
@@ -82,8 +82,8 @@ export class Website {
       (brand.logo ? `<link rel="apple-touch-icon" href="/brand/logo" />\n  ` : "");
     let out = html
       .replace(/<meta name="application-name" content="[^"]*" \/>/, `<meta name="application-name" content="${name}" />`)
-      .replace(/(<title>(?:[^<]* · )?)Agent Bus(<\/title>)/, `$1${name}$2`)
-      .replace('<span class="brand-name">Agent Bus</span>', `<span class="brand-name">${wordmark}</span>`)
+      .replace(/(<title>(?:[^<]* · )?)Agent Hub(<\/title>)/, `$1${name}$2`)
+      .replace('<span class="brand-name">Agent Hub</span>', `<span class="brand-name">${wordmark}</span>`)
       .replace("<link rel=\"stylesheet\"", `${icons}<link rel="stylesheet"`);
     if (brand.logo) out = out.replace('<span class="brand-mark">⇄</span>', '<img class="brand-logo" src="/brand/logo" alt="" />');
     return out;

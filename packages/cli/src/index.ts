@@ -54,7 +54,7 @@ serve:
                 NAME=URL: a tab of the project @@NAME and of agent NAME's DM (e.g. compactor=http://127.0.0.1:8899);
                 NAME=URL,launcher=LABEL: a global item opened from the top bar (e.g. gpudash=http://127.0.0.1:3420,launcher=GPUs)
   --tts-url     Text-to-speech server (llama-server with LFM3-Audio, e.g. http://127.0.0.1:9941): ▶ reads messages aloud
-  --brand-name  The website's name instead of "Agent Bus" (e.g. "Hilde Hub"); --brand-logo: the header's mark and home-screen
+  --brand-name  The website's name instead of "Agent Hub" (e.g. "Team Hub"); --brand-logo: the header's mark and home-screen
                 icon (an image file); --brand-icon: the browser tab's icon (a small PNG)
   --forget-offline-days  Forget agents offline this many days (default 15; 0 keeps them forever)
   --public-url  Another address the website is reachable at (e.g. https://bariton.tailnet.ts.net through tailscale
@@ -138,7 +138,7 @@ function parseServeArgs(args: string[]): BusServerOptions {
       case "--brand-logo":
       case "--brand-icon": {
         if (!existsSync(value)) throw new Error(`${flag}: no file "${value}"`);
-        options.brand = { name: options.brand?.name ?? "Agent Bus", ...options.brand, [flag === "--brand-logo" ? "logo" : "icon"]: path.resolve(value) };
+        options.brand = { name: options.brand?.name ?? "Agent Hub", ...options.brand, [flag === "--brand-logo" ? "logo" : "icon"]: path.resolve(value) };
         break;
       }
       case "--public-url":

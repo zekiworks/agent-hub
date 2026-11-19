@@ -55,7 +55,7 @@ export interface BusServerOptions {
   extensions?: Record<string, string>;
   /** Which of them are global, opened by a top-bar launcher: name → its label (`--ext gpudash=…,launcher=GPUs`). */
   launchers?: Record<string, string>;
-  /** This bus's name and pictures on the website (`--brand-name "Hilde Hub" --brand-logo FILE --brand-icon FILE`). */
+  /** This bus's name and pictures on the website (`--brand-name "Team Hub" --brand-logo FILE --brand-icon FILE`). */
   brand?: Brand;
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
   forgetOfflineDays?: number;

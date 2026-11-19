@@ -1135,7 +1135,7 @@ button:disabled {
   flex: none;
 }
 
-/* "Hilde Hub": the first word semibold, the rest regular in a lighter gray, as "Hilde Reader". */
+/* A brand name of two words ("Agent Hub"): the first semibold, the rest regular in a lighter gray (website.ts). */
 .brand-rest {
   font-weight: 400;
   color: #c9ccd2;

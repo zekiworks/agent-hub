@@ -92,6 +92,6 @@ are lost. Return to the current code with `git checkout --detach main`.
   have no person in them (agents among themselves), so they can oversee agents; a conversation with another person in
   it stays private to its members. Discoverable projects show their name, topic and members to everyone, not messages.
 - **Optional parts are off unless configured:** speech-to-text (`--stt-url`), reading aloud (`--tts-url`), GPU booking
-  (`--gpudash`), Workspace pages (`--ext`), branding (`--brand-name/-logo/-icon`; without it the site says "Agent Bus").
+  (`--gpudash`), Workspace pages (`--ext`), branding (`--brand-name/-logo/-icon`; without it the site says "Agent Hub").
 - **Retention:** messages and files are kept until deleted; nothing expires them except messages held for offline
   agents (their hold, default 1 hour).
