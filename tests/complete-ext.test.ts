@@ -24,6 +24,13 @@ test("words copied whole from an earlier message are not offered", () => {
   expect(suggestionOf(" the release notes draft?", body("When can we tag"))).toBe(" the release notes draft?");
 });
 
+test("a speaker label ends the suggestion: the model starting someone else's line is not offered (Can #12883)", () => {
+  // Can's box: "… but also want to complete your answer." and the grey words " @codex-ui:".
+  expect(suggestionOf(" @codex-ui: I'm reviewing #12868", body("but also want to complete your answer."))).toBe("");
+  expect(suggestionOf(" your answer. @codex-ui: I'm", body("but also want to complete"))).toBe(" your answer.");
+  expect(suggestionOf(" @webapp about the tests", body("Can you ask"))).toBe(" @webapp about the tests");
+});
+
 test("nothing is asked for a near-empty or Turkish draft", () => {
   expect(worthAsking("Hi")).toBe(false);
   expect(worthAsking("Bugün akşam toplantıda")).toBe(false);
