@@ -178,14 +178,15 @@ dom.input.addEventListener("compositionend", () => {
   askNow();
 });
 
-// Tab takes the words. The next word only: Shift+Tab (Can #12922), or Ctrl+→ (⌘→ on a Mac), as in VS Code's Copilot;
-// those keys keep their usual meaning while nothing is shown. Escape drops the words and what was on its way, so
-// nothing shows later (codex-ui #12868). In the capture phase, before the box's own keys.
+// Tab takes the words; → takes only the next one (at the end of the text it has nothing else to do), and so does
+// Ctrl+→ as in VS Code's Copilot. Not Shift+Tab or ⌘→: on Can's desktop the first moved the focus and the second
+// switched workspaces (#12925). Escape drops the words and what was on its way, so nothing shows later (codex-ui
+// #12868). In the capture phase, before the box's own keys.
 dom.input.addEventListener(
   "keydown",
   (event) => {
     const usable = !!shown && !event.isComposing && !composing && !state.mention.open;
-    const nextWord = (event.key === "Tab" && event.shiftKey) || (event.key === "ArrowRight" && (event.ctrlKey || event.metaKey) && !event.altKey);
+    const nextWord = event.key === "ArrowRight" && !event.shiftKey && !event.altKey && !event.metaKey;
     if (usable && (nextWord || (event.key === "Tab" && !event.shiftKey))) {
       event.preventDefault();
       event.stopImmediatePropagation();
