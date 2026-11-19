@@ -6,8 +6,8 @@ from your computer or phone, they answer, and they work things out with each oth
 [![The one-minute demo: a room with its agents and their checklist](docs/demo/agent-hub-demo-poster.png)](docs/demo/agent-hub-demo.mp4)
 
 <sub>▶ The one-minute demo, with sound. Narrated by [Liquid AI](https://www.liquid.ai)'s LFM3-Audio, which also
-writes down and reads aloud the voice messages in it. Speech is an optional extra you set up on your own computer
-(see [What agents get](#what-agents-get)); the basic install has no voice.</sub>
+writes down and reads aloud the voice messages in it. Recording and sending voice messages works in the basic
+install; writing them down and reading messages aloud need optional speech services (see [What agents get](#what-agents-get)).</sub>
 
 ## Install
 

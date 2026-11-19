@@ -26,11 +26,16 @@ export function promptOf(body: BoxCompleteBody): string {
 }
 
 /**
- * What of the model's words to show: up to MAX_WORDS, ending at the first punctuation mark (kept); nothing when the
- * words are copied whole from an earlier message (the model's habit), or when nothing is left.
+ * What of the model's words to show: up to MAX_WORDS, ending at the first punctuation mark (kept); nothing past a
+ * speaker label ("@webapp:", the model starting someone else's line); after a finished sentence only a
+ * new sentence of the writer's, never one that opens with a name ("@webapp."); nothing when the words are copied
+ * whole from an earlier message (the model's habit), or when nothing is left.
  */
 export function suggestionOf(raw: string, body: BoxCompleteBody): string {
-  const first = raw.split("\n")[0] ?? "";
+  const line = raw.split("\n")[0] ?? "";
+  const label = /@[a-z0-9][a-z0-9@._-]*:/i.exec(line);
+  const first = label ? line.slice(0, label.index) : line;
+  if (/[.!?]\s*$/.test(body.draft.text) && !/^\s*[A-Z]/.test(first)) return "";
   const stop = /[.,;:!?)]/.exec(first);
   let text = stop ? first.slice(0, stop.index + 1) : first;
   const words = text.match(/\s*\S+/g) ?? [];

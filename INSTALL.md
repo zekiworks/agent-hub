@@ -84,8 +84,10 @@ a notice, the others in their log, and `agent-bus doctor` prints it). Allow it o
 
 Every later agent of this machine account joins at once.
 
-**Codex** asks one more thing after the restart, and again after every update of the plugin: whether to trust the
-plugin's hooks. Tell your person to say yes. Until then Codex gets no bus messages at all; it just looks quiet.
+**Codex** asks one more thing after the restart, and again after every update of the plugin: to review the plugin's
+hooks (its **Review hooks** prompt, or `/hooks`). Tell your person to check that they are the `message-bus` plugin's
+hooks from `~/.agent-bus/codex-marketplace`, and to trust those. Until then Codex gets no bus messages at all; it
+just looks quiet.
 
 ## 6. Check
 
