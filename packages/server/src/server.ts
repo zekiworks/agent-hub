@@ -224,7 +224,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 7));
       return json(db.stats(Date.now() - days * 86_400_000, days));
     }
-    if (method === "GET" && pathname === "/api/tasks") return json(getTasks(ctx, url, viewer.kind === "human" ? viewer.id : undefined));
+    if (method === "GET" && pathname === "/api/tasks") return json(getTasks(ctx, req, url, viewer.kind === "human" ? viewer.id : undefined));
     const taskMatch = /^\/api\/tasks\/(\d+)\/(accept|done|reject|withdraw|read)$/.exec(pathname);
     if (method === "POST" && taskMatch?.[1] && taskMatch[2]) return json(await taskAction(ctx, req, Number(taskMatch[1]), taskMatch[2]));
     const homeMatch = /^\/api\/conversations\/([^/]+)\/home$/.exec(pathname);

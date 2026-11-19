@@ -160,11 +160,20 @@ function publish(ctx: BusContext, seq: number, conversation: Conversation): void
   if (message) ctx.hub.taskChanged(message, conversation);
 }
 
-/** GET /api/tasks?for=<id>&box=mine|assigned&state=open|all&limit=N */
-export function getTasks(ctx: BusContext, url: URL, viewer: string | undefined): TasksResponse {
+/**
+ * GET /api/tasks?for=<id>&box=mine|assigned&state=open|all&limit=N. A person reads their own tasks (their session
+ * decides, `for` is ignored); an agent token reads only those of its own agents, checked as writing as them is: `for`
+ * picked whose tasks, and they were filtered by that participant's read rights, so any agent token could read the
+ * tasks in a person's private conversations (Ümit #12750).
+ */
+export function getTasks(ctx: BusContext, req: Request, url: URL, viewer: string | undefined): TasksResponse {
   const id = (viewer ?? url.searchParams.get("for") ?? "").trim().toLowerCase();
   const who = ctx.hub.knownParticipant(id);
   if (!who) throw new HttpError(400, `Unknown participant "${id}" in for`);
+  if (viewer === undefined) {
+    if (who.kind === "human") throw new HttpError(403, `An agent token does not read @${who.id}'s tasks`);
+    ctx.checkWriter(req, who);
+  }
   const box = url.searchParams.get("box") ?? "mine";
   if (box !== "mine" && box !== "assigned") throw new HttpError(400, 'box must be "mine" or "assigned"');
   const state = url.searchParams.get("state") ?? "open";

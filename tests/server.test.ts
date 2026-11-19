@@ -867,6 +867,21 @@ describe("delivery", () => {
     expect(await beta.client.take("deliver")).toMatchObject({ wake: true, message: { text: "Withdrawn. not needed" } });
   });
 
+  test("an agent token reads only its own agents' tasks, never a person's (their private conversations leaked)", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    // A task between two people, in their private DM: no agent may read it.
+    const secret = await send({ from: "carol", to: "@uma", text: "@uma please renew the lease", task: {} });
+    expect(secret.message.task?.assignees).toEqual([{ id: "uma", state: "open" }]);
+    const asToken = (who: string) => busFetch(bus, `/api/tasks?for=${who}&box=mine&state=all`);
+    expect((await asToken("uma")).status).toBe(403);
+    expect((await asToken("carol")).status).toBe(403);
+    const own = await asToken(alpha.id);
+    expect(own.status).toBe(200);
+    // A person reads their own, whatever `for` says.
+    const mine = (await (await busFetch(bus, `/api/tasks?for=${alpha.id}&box=mine&state=all`, {}, "uma")).json()) as TasksResponse;
+    expect(mine.messages.map((m) => m.seq)).toEqual([secret.message.seq]);
+  });
+
   test("a person removes an agent from a group, project or room; agents and non-members cannot, and people are not removed", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
