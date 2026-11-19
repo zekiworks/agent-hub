@@ -25,12 +25,12 @@ test("words copied whole from an earlier message are not offered", () => {
 });
 
 test("Can's case (#12883): after a finished sentence, no line of someone else's; @mentions in a draft stay", () => {
-  const draft = "What are we sending with the new prefix-matching behavior? I'm currently using it in #12868, but also want to complete your answer.";
+  const draft = "What are we sending with the new prefix-matching behavior? I'm currently using it in #42, but also want to complete your answer.";
   const cans: BoxCompleteBody = { ...body(draft), conversation: { id: "g_1", kind: "project", name: "hilde-hub", members: ["can", "codex-ui"] },
-    messages: [{ seq: 1, from: "codex-ui", text: "Reviewed 9f5485d: the Escape, composition and microphone findings in #12868 are addressed.", createdAt: 0 }] };
+    messages: [{ seq: 1, from: "codex-ui", text: "Reviewed 9f5485d: the Escape, composition and microphone findings in #42 are addressed.", createdAt: 0 }] };
   expect(suggestionOf(" @codex-ui:", cans)).toBe("");
   expect(suggestionOf(" @codex-ui.", cans)).toBe("");
-  expect(suggestionOf(" @codex-ui: I'm reviewing #12868", cans)).toBe("");
+  expect(suggestionOf(" @codex-ui: I'm reviewing #42", cans)).toBe("");
   expect(suggestionOf(" what do you think", cans)).toBe("");
   expect(suggestionOf(" Thanks!", cans)).toBe(" Thanks!");
   // Mid-sentence: a label still ends it, a mention is part of it.
