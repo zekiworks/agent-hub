@@ -4536,9 +4536,15 @@ ul.md-list ul.md-list { list-style: circle; }
   animation: voice-blink 1s ease-in-out infinite;
 }
 
-.voice-rec.paused .voice-dot {
+.voice-rec.paused .voice-dot,
+.voice-rec.waiting .voice-dot {
   animation: none;
   background: var(--muted);
+}
+
+/* The microphone is still opening (voice.ts waitForSignal): "Wait…" in muted text and a grey dot, then "Speak now". */
+.voice-rec.waiting .voice-time {
+  color: var(--muted);
 }
 
 @keyframes voice-blink {

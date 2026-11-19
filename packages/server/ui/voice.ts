@@ -138,8 +138,9 @@ function tick(rec: Recording): void {
   }
   const elapsed = recordedMs(rec);
   if (elapsed >= MAX_RECORDING_MS) return void stop(false);
-  // Until the microphone sends anything, "starting…" stands where the timer will run.
-  const time = rec.live ? clock(elapsed) : "starting…";
+  // Until the microphone sends anything, "Wait…" stands where the timer will run, and the dot is grey (the panel's
+  // `waiting` class); the first second after, "Speak now" (Ümit #12649: with AirPods she spoke into 1.8 s of silence).
+  const time = !rec.live ? "Wait…" : elapsed < 1200 ? "Speak now" : clock(elapsed);
   // Opened another conversation meanwhile: the bar says where this one goes.
   dom.voiceTime.textContent = viewHash(state.view) === viewHash(rec.view) ? time : `${time} → ${viewLabel(rec.view)}`;
   drawWave(rec);
@@ -211,11 +212,13 @@ async function start(): Promise<void> {
   }
   // The panel (with 🗑 to cancel) shows at once; its timer starts with the first sound.
   setPaused(rec, false);
+  dom.voiceRec.classList.add("waiting");
   showPanel(true);
   // Let go while the microphone was opening: that was a click, so keep recording until Send.
   setLatched(!held);
   tick(rec);
   await waitForSignal(rec);
+  dom.voiceRec.classList.remove("waiting");
   if (recording === rec) {
     rec.startedAt = Date.now();
     rec.pausedMs = 0;
