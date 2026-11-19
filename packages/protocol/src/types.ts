@@ -184,8 +184,8 @@ export interface FileRef {
   sha256: string;
 }
 
-/** What a task asks for (Can, 15 Nov): an approval is decided by people only, signed in with a passkey. ("chore" meant
- * the same as "task" and became one, Can #12827.) */
+/** What a task asks for (Can, 15 Nov): an approval is decided by people only, signed in with a passkey. "chore" meant
+ * the same as "task" and became one (Can #12827). */
 export type TaskType = "task" | "approval";
 
 /** Where one assignee is with a task. "withdrawn": its assigner took it back while it was open or accepted. */

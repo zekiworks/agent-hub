@@ -1,5 +1,5 @@
 // What is pinned in a conversation (#10757, Can and Ümit): its checklist, while pinned (people unpin it; it then stays
-// in the Workspace's Checklist tab only: Ümit #12367), and the messages its members pinned, by reference (the message
+// in the Workspace's Checklist tab only; Ümit #12367), and the messages its members pinned, by reference (the message
 // itself is never copied or changed). The 📌 at the top right of the conversation's header shows how many: none (an
 // outlined pin; a click says so), one (a click opens it), several (a click opens the "Pinned" list in the Workspace,
 // where each item opens its original and members unpin).
