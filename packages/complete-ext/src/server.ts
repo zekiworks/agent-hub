@@ -4,8 +4,9 @@
 //
 //   COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 bun run packages/complete-ext/src/server.ts
 //
-// Tried on LFM3 1.7B at full precision on a CPU: its first few words are usually right, after which it
-// copies earlier messages. So it shows at most a few words, up to the first punctuation, and nothing copied whole.
+// The model: SmolLM2 1.7B base (Q8_0) on a CPU, chosen over LFM3 1.7B: on 12 of Can's own lines it was
+// right as often or more, in half the time. Small models' first few words are usually right, after which they copy
+// earlier messages. So it shows at most a few words, up to the first punctuation, and nothing copied whole.
 import type { BoxCompleteBody, BoxResponse } from "@agent-bus/protocol";
 
 /** Messages of the conversation in the prompt: the latest, each cut short. */

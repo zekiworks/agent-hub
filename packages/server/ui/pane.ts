@@ -1,26 +1,26 @@
 // The Workspace: the right-hand area beside the conversation (docs/right-pane.md).
-// It shows one item at a time:
-// - an entity's extensions (Live, Home, Checklist, Files, an agent's page) as tabs, headed by the entity
-//   ("Agent · @webapp"); they belong to the thing on the left and open from its "Open in Workspace" menu;
-// - or a global extension (your Inbox, GPUs) on its own, opened by its button in the top bar.
-// The Workspace keeps its item while the main panel moves, and keeps a short history walked with ‹ ›
-//. While it shows the entity open on the left, both headers share one tint.
-import { dom, PHONE } from "./dom";
+// It holds tabs, one per thing opened in it, each named by what and whose: "Live · @webapp",
+// "Checklist · #launch", "Your inbox". The tab opened last and not pinned is the passing one: the next thing opened
+// replaces it, and an entity's follows the conversation on the left (Checklist · #launch becomes Checklist · #design;
+// where the new one has none, it says so). Pinned tabs keep what they show, across conversations and reloads, in
+// this browser. ✕ on a tab closes it; ✕ at the top hides the Workspace and keeps the pinned tabs. While the tab shown
+// is about the conversation on the left, both headers share one tint.
+import { dom } from "./dom";
 import { h } from "./html";
-import { conversationTitle, hasProjectColor, projectColor, state, type View } from "./state";
+import { conversationAddress, conversationTitle, hasProjectColor, projectColor, state, type View } from "./state";
 import { setPhoneList } from "./phones";
 import { navigate, viewHash } from "./routing";
 
 export interface PaneExtension {
   id: string;
-  /** Place among the entity's tabs (or menu items), lowest first (modules load in no fixed order). */
+  /** Place among the entity's menu items, lowest first (modules load in no fixed order). */
   order: number;
   /** "global": a Workspace item of its own, opened by a button outside any conversation (Inbox, GPUs); "entity" (the
-   * default): a tab of the thing on the left. */
+   * default): about the thing on the left. */
   scope?: "entity" | "global";
-  /** The tab's label (entity) or the Workspace heading (global). */
+  /** Its name ("Live", "Checklist"), or a global one's heading ("Your inbox · 2 open"). */
   title(): string;
-  /** Entity: whether it has something for this view (its tab and menu item show only then). Global: whether it is
+  /** Entity: whether it has something for this view (its menu item shows only then). Global: whether it is
    * available at all. */
   applies(view: View): boolean;
   /**
@@ -33,55 +33,62 @@ export interface PaneExtension {
   shown?(visible: boolean): void;
 }
 
-/** What the Workspace shows: an entity (its view, and the tab chosen there), or a global extension. */
-type Item = { view: View; tab: string } | { global: string };
+/** A Workspace tab: extension `ext`, about `view` (a pinned entity tab), the conversation on the left (the passing
+ * entity tab: no view), or nothing (a global extension). */
+interface Tab {
+  ext: string;
+  view?: View;
+  pinned: boolean;
+}
 
 const extensions: PaneExtension[] = [];
 
-/** Open or closed, and the last entity tab, kept per browser; the history is kept per browser tab. */
+/** Open or hidden, and the pinned tabs, kept per browser. */
 const OPEN_KEY = "agent-bus.paneOpen";
-const TAB_KEY = "agent-bus.paneTab";
-const HISTORY_KEY = "agent-bus.workspace";
-const HISTORY_MAX = 20;
+const PINNED_KEY = "agent-bus.workspaceTabs";
 
 let open = localStorage.getItem(OPEN_KEY) === "1";
-let history: Item[] = [];
-let at = -1;
+let tabs: Tab[] = [];
+/** The tab shown, and the one shown before it (a global item closed with its button gives the Workspace back). */
+let active: Tab | undefined;
+let before: Tab | undefined;
 try {
-  const saved = JSON.parse(sessionStorage.getItem(HISTORY_KEY) ?? "null") as { history: Item[]; at: number } | null;
-  if (saved && Array.isArray(saved.history) && saved.history.length > 0) {
-    history = saved.history.slice(-HISTORY_MAX);
-    at = Math.min(Math.max(saved.at, 0), history.length - 1);
+  const saved = JSON.parse(localStorage.getItem(PINNED_KEY) ?? "null") as { tabs: Tab[]; active: number } | null;
+  if (saved && Array.isArray(saved.tabs)) {
+    tabs = saved.tabs.filter((t) => typeof t.ext === "string").map((t) => ({ ext: t.ext, view: t.view, pinned: true }));
+    active = tabs[saved.active];
   }
 } catch {
-  // A broken entry: start without history.
+  // A broken entry: start without pinned tabs.
 }
 
 function save(): void {
   localStorage.setItem(OPEN_KEY, open ? "1" : "0");
-  const item = history[at];
-  if (item && "tab" in item) localStorage.setItem(TAB_KEY, item.tab);
-  sessionStorage.setItem(HISTORY_KEY, JSON.stringify({ history, at }));
+  const pinned = tabs.filter((t) => t.pinned);
+  localStorage.setItem(PINNED_KEY, JSON.stringify({ tabs: pinned, active: active ? pinned.indexOf(active) : -1 }));
 }
 
-function keyOf(item: Item): string {
-  return "global" in item ? `g:${item.global}` : `e:${viewHash(item.view)}`;
+function extensionOf(tab: Tab): PaneExtension | undefined {
+  return extensions.find((e) => e.id === tab.ext);
 }
 
-/** The item shown now, if the Workspace is open. After a reload without history: the open view, last tab. */
-function current(): Item | undefined {
-  if (!open) return undefined;
-  if (at < 0) {
-    history = [{ view: state.view, tab: localStorage.getItem(TAB_KEY) ?? "" }];
-    at = 0;
-  }
-  return history[at];
+function isGlobal(tab: Tab): boolean {
+  return extensionOf(tab)?.scope === "global";
 }
 
-/** The entity the open Workspace is about, if it shows one. */
+/** What an entity tab is about: its own view if pinned, else the conversation on the left. */
+function viewOf(tab: Tab): View {
+  return tab.view ?? state.view;
+}
+
+/** Each tab's part of the body is its own, kept while hidden: switching tabs keeps scroll positions and selections. */
+function keyOf(tab: Tab): string {
+  return isGlobal(tab) ? `g:${tab.ext}` : `${tab.ext}:${tab.view ? viewHash(tab.view) : "here"}`;
+}
+
+/** The entity the Workspace's shown tab is about, if it shows one. */
 export function paneView(): View | undefined {
-  const item = current();
-  return item && "view" in item ? item.view : undefined;
+  return open && active && !isGlobal(active) ? viewOf(active) : undefined;
 }
 
 /** The extension visible now, if any (for `shown`). */
@@ -89,22 +96,21 @@ let visibleId: string | undefined;
 
 function setVisible(id: string | undefined): void {
   if (id === visibleId) return;
-  const before = extensions.find((e) => e.id === visibleId);
+  const was = extensions.find((e) => e.id === visibleId);
   visibleId = id;
-  before?.shown?.(false);
+  was?.shown?.(false);
   extensions.find((e) => e.id === id)?.shown?.(true);
 }
 
-/** Each extension's part of the body (kept while hidden: switching keeps scroll positions). */
 const hosts = new Map<string, HTMLElement>();
-/** What each extension last drew for, so an unchanged one is not drawn again. */
+/** What each host last drew, so an unchanged one is not drawn again. */
 const drawnFor = new Map<string, string>();
 
-function hostOf(id: string): HTMLElement {
-  let host = hosts.get(id);
+function hostOf(key: string): HTMLElement {
+  let host = hosts.get(key);
   if (!host) {
     host = h("div", "pane-host");
-    hosts.set(id, host);
+    hosts.set(key, host);
     dom.paneBody.append(host);
   }
   return host;
@@ -115,20 +121,14 @@ export function registerExtension(extension: PaneExtension): void {
   extensions.sort((a, b) => a.order - b.order);
 }
 
-/** The entity extensions `view` has (its tabs, and its "Open in Workspace" menu). */
+/** The entity extensions `view` has (its "Workspace ▾" menu). */
 export function entityExtensions(view: View): PaneExtension[] {
   return extensions.filter((e) => (e.scope ?? "entity") === "entity" && e.applies(view));
 }
 
-/** Shows `item`: the item last shown (open or closed since) only changes its tab; anything else is a new step
- * (forward steps are dropped). */
-function show(item: Item): void {
-  const now = history[at];
-  if (now && keyOf(now) === keyOf(item)) history[at] = item;
-  else {
-    history = [...history.slice(0, at + 1), item].slice(-HISTORY_MAX);
-    at = history.length - 1;
-  }
+function activate(tab: Tab): void {
+  if (active !== tab) before = active;
+  active = tab;
   open = true;
   // Phones: opened from the conversation list (✉ Your inbox, GPUs), the Workspace must come in front of it.
   setPhoneList(false);
@@ -137,69 +137,112 @@ function show(item: Item): void {
 }
 
 /**
- * Opens extension `id`: a global one as its own item, an entity one for the view open on the left, drawn afresh (an
- * extension calls this with something new, e.g. a file opened from a message).
+ * Opens extension `id`: a global one as its own tab, an entity one for the conversation on the left. One already open
+ * for the same thing is shown again; otherwise the passing tab becomes this one (or one is added).
  */
 export function openPane(id: string): void {
   const extension = extensions.find((e) => e.id === id);
   if (!extension) return;
-  drawnFor.delete(id);
-  show(extension.scope === "global" ? { global: id } : { view: state.view, tab: id });
+  const global = extension.scope === "global";
+  const here = viewHash(state.view);
+  // A pinned tab about this conversation first, then the passing one (reopening shows the tab open).
+  const same =
+    tabs.find((t) => t.ext === id && (global || (t.pinned && viewHash(viewOf(t)) === here))) ?? tabs.find((t) => t.ext === id && !t.pinned);
+  if (same) {
+    drawnFor.delete(keyOf(same)); // something new to show (e.g. a file opened from a message): drawn afresh
+    return activate(same);
+  }
+  const tab: Tab = { ext: id, pinned: false };
+  // One passing tab of each kind: an entity's, and a global one (Your inbox, GPUs), so closing a global one with its
+  // button gives back the entity's that was there.
+  const passing = tabs.findIndex((t) => !t.pinned && isGlobal(t) === global);
+  if (passing >= 0) tabs[passing] = tab;
+  else tabs.push(tab);
+  drawnFor.delete(keyOf(tab));
+  activate(tab);
 }
 
-/** A global button (✉, a launcher): opens its item, or leaves it if it is shown (back a step, or closed). */
+/** A global button (✉, a launcher): shows its tab, or, when that is the one shown, gives back what was shown before. */
 export function toggleGlobal(id: string): void {
-  const item = open ? history[at] : undefined;
-  if (item && "global" in item && item.global === id) {
-    if (at > 0) step(-1);
-    else closePane();
+  if (globalShown(id) && active) {
+    const leaving = active;
+    if (!leaving.pinned) tabs = tabs.filter((t) => t !== leaving);
+    active = before && tabs.includes(before) ? before : undefined;
+    before = undefined;
+    if (!active) open = false;
+    save();
+    renderPane();
   } else openPane(id);
 }
 
-/** Whether global extension `id` is the item shown (its button is lit). */
+/** Whether global extension `id` is the tab shown (its button is lit). */
 export function globalShown(id: string): boolean {
-  const item = open ? history[at] : undefined;
-  return !!item && "global" in item && item.global === id;
+  return open && !!active && active.ext === id && isGlobal(active);
 }
 
-function step(by: number): void {
-  const next = at + by;
-  if (next < 0 || next >= history.length) return;
-  at = next;
-  open = true;
-  save();
-  renderPane();
-}
-
+/** Hides the Workspace; its pinned tabs stay for the next time. */
 export function closePane(): void {
   open = false;
   save();
   renderPane();
 }
 
-/** Draws extension `id` again if it is the one shown (its data changed). */
-export function refreshPane(id: string): void {
-  drawnFor.delete(id);
+function closeTab(tab: Tab): void {
+  const at = tabs.indexOf(tab);
+  tabs = tabs.filter((t) => t !== tab);
+  hosts.get(keyOf(tab))?.remove();
+  hosts.delete(keyOf(tab));
+  drawnFor.delete(keyOf(tab));
+  if (active === tab) active = (before && tabs.includes(before) ? before : undefined) ?? tabs[Math.max(0, at - 1)];
+  if (!active) open = false;
+  save();
   renderPane();
 }
 
-/** The heading for an entity: what kind of thing it is and its name. */
-function subjectLabel(view: View): string {
-  const agent = (id: string | undefined) => !!id && state.participants.some((p) => p.id === id && p.kind === "agent");
-  if (view.kind === "draft") {
-    if (view.project) return `Project · @@${view.project}`;
-    return view.to.length === 1 && agent(view.to[0]) ? `Agent · @${view.to[0]}` : `Group · ${view.to.join(", ")}`;
+/** Pins the tab to what it shows now (a passing entity tab keeps this conversation), or unpins it. */
+function togglePin(tab: Tab): void {
+  const oldKey = keyOf(tab);
+  if (tab.pinned) {
+    tab.pinned = false;
+    // One passing tab of each kind: another one gives way.
+    tabs = tabs.filter((t) => t === tab || t.pinned || isGlobal(t) !== isGlobal(tab));
+    if (!isGlobal(tab)) tab.view = undefined;
+  } else {
+    tab.pinned = true;
+    if (!isGlobal(tab)) tab.view = viewOf(tab);
   }
+  // Its drawn part goes with it to its new name.
+  const host = hosts.get(oldKey);
+  if (host) {
+    hosts.delete(oldKey);
+    hosts.set(keyOf(tab), host);
+    const drawn = drawnFor.get(oldKey);
+    drawnFor.delete(oldKey);
+    if (drawn) drawnFor.set(keyOf(tab), drawn);
+  }
+  save();
+  renderPane();
+}
+
+/** Draws extension `id` again in the tab shown, if it is that one (its data changed). */
+export function refreshPane(id: string): void {
+  for (const tab of tabs) if (tab.ext === id) drawnFor.delete(keyOf(tab));
+  renderPane();
+}
+
+/** Whose a tab is, with its sigil: "@webapp", "#launch", "@@docs", "can, umit". */
+function subjectOf(view: View): string {
+  if (view.kind === "draft") return view.project !== undefined ? `@@${view.project}` : view.to.map((id) => `@${id}`).join(", ");
   const conv = state.conversations.get(view.id);
   if (!conv) return "";
-  const name = conversationTitle(conv);
-  if (conv.kind === "all") return `Room · ${name}`;
-  if (conv.kind === "project") return `${conv.room ? "Room" : "Project"} · ${name}`;
-  if (conv.kind === "dm") {
-    const other = conv.members.find((id) => id !== state.me);
-    return agent(other) ? `Agent · @${other}` : `Person · ${name}`;
-  }
-  return `Group · ${name}`;
+  if (conv.kind === "dm") return `@${conv.members.find((id) => id !== state.me) ?? conv.members[0]}`;
+  return conversationAddress(conv) ?? conversationTitle(conv);
+}
+
+function labelOf(tab: Tab): string {
+  const extension = extensionOf(tab);
+  if (!extension) return tab.ext;
+  return isGlobal(tab) ? extension.title() : `${extension.title()} · ${subjectOf(viewOf(tab))}`;
 }
 
 /** The tint both headers share while the Workspace shows the entity on the left: a project's own colour, else accent. */
@@ -208,57 +251,82 @@ function tintOf(view: View): string {
   return conv && hasProjectColor(conv) ? projectColor(conv) : "var(--accent)";
 }
 
-/** Shows the Workspace as its item wants it; called on every redraw of the page. */
+function tabButton(tab: Tab): HTMLElement {
+  const on = tab === active;
+  const el = h("div", `tab${on ? " active" : ""}${tab.pinned ? " pinned" : " passing"}`);
+  const label = labelOf(tab);
+  const openBtn = h("button", "tab-open", label);
+  openBtn.type = "button";
+  openBtn.setAttribute("role", "tab");
+  openBtn.setAttribute("aria-selected", on ? "true" : "false");
+  openBtn.tabIndex = on ? 0 : -1;
+  const elsewhere = tab.pinned && !isGlobal(tab) && viewHash(viewOf(tab)) !== viewHash(state.view);
+  openBtn.title = elsewhere && on ? `${label}: click again to open it on the left` : tab.pinned ? label : `${label} (follows the conversation; pin it to keep it)`;
+  openBtn.addEventListener("click", () => {
+    // The tab shown, about another conversation: a second click opens that one on the left.
+    if (on && elsewhere) navigate(viewOf(tab));
+    else activate(tab);
+  });
+  const pin = h("button", "tab-pin");
+  pin.type = "button";
+  pin.textContent = "📌";
+  pin.title = tab.pinned ? "Unpin: it follows the conversation again, and is replaced by the next thing opened" : "Pin: keep this tab, with what it shows now";
+  pin.setAttribute("aria-label", tab.pinned ? `Unpin ${label}` : `Pin ${label}`);
+  pin.setAttribute("aria-pressed", tab.pinned ? "true" : "false");
+  pin.tabIndex = -1;
+  pin.addEventListener("click", () => togglePin(tab));
+  const close = h("button", "tab-close", "✕");
+  close.type = "button";
+  close.title = `Close ${label}`;
+  close.setAttribute("aria-label", `Close ${label}`);
+  close.tabIndex = -1;
+  close.addEventListener("click", () => closeTab(tab));
+  el.append(openBtn, pin, close);
+  return el;
+}
+
+/** Shows the Workspace as its tabs want it; called on every redraw of the page. */
 export function renderPane(): void {
-  const item = current();
-  let extension: PaneExtension | undefined;
-  let view = state.view;
-  let tabs: PaneExtension[] = [];
-  if (item && "global" in item) {
-    extension = extensions.find((e) => e.id === item.global && e.scope === "global" && e.applies(state.view));
-  } else if (item) {
-    view = item.view;
-    tabs = entityExtensions(view);
-    extension = tabs.find((e) => e.id === item.tab) ?? tabs[0];
-  }
-  const entity = !!extension && !!item && "view" in item;
-  const linked = entity && viewHash(view) === viewHash(state.view);
+  // Tabs of extensions that are gone (not on this bus any more) go too.
+  tabs = tabs.filter((t) => extensionOf(t));
+  if (active && !tabs.includes(active)) active = tabs[0];
+  const tab = open ? active : undefined;
+  const extension = tab ? extensionOf(tab) : undefined;
+  const global = !!tab && isGlobal(tab);
+  const view = tab && !global ? viewOf(tab) : state.view;
+  const linked = !!tab && !global && viewHash(view) === viewHash(state.view);
   dom.pane.hidden = !extension;
   dom.app.classList.toggle("with-pane", !!extension);
   dom.app.classList.toggle("ws-linked", linked);
-  dom.app.classList.toggle("ws-global", !!extension && !entity);
+  dom.app.classList.toggle("ws-global", global);
   if (linked) dom.app.style.setProperty("--ws-tint", tintOf(view));
-  renderOpenMenuButton(entity && linked ? (extension?.id ?? "") : "");
+  renderOpenMenuButton(linked && extension ? extension.id : "");
   for (const listener of globalListeners) listener();
-  if (!extension) {
+  if (!tab || !extension) {
     dom.paneTabs.replaceChildren();
     setVisible(undefined);
     return;
   }
-  dom.wsBack.disabled = at <= 0;
-  dom.wsForward.disabled = at >= history.length - 1;
-  const label = entity ? subjectLabel(view) : extension.title();
-  dom.paneSource.textContent = label;
-  // An entity not open on the left: its heading is a link back to it. The full name shows on hover when it is cut.
-  dom.paneSource.classList.toggle("elsewhere", entity && !linked);
-  dom.paneSource.title = entity && !linked ? `${label}: not the conversation on the left; click to open it` : label;
-  dom.paneTabs.hidden = !entity;
-  dom.paneTabs.replaceChildren(
-    ...tabs.map((e) => {
-      const button = h("button", e === extension ? "pane-tab active" : "pane-tab", e.title());
-      button.type = "button";
-      button.setAttribute("role", "tab");
-      button.setAttribute("aria-selected", e === extension ? "true" : "false");
-      button.addEventListener("click", () => show({ view, tab: e.id }));
-      return button;
-    })
-  );
-  for (const [id, host] of hosts) host.hidden = id !== extension.id;
-  const host = hostOf(extension.id);
+  const focused = dom.paneTabs.contains(document.activeElement);
+  dom.paneTabs.replaceChildren(...tabs.map(tabButton));
+  if (focused) dom.paneTabs.querySelector<HTMLElement>(".tab.active .tab-open")?.focus();
+  const key = keyOf(tab);
+  for (const [k, host] of hosts) host.hidden = k !== key;
+  const host = hostOf(key);
   host.hidden = false;
-  const key = entity ? viewHash(view) : "global";
-  if (drawnFor.get(extension.id) !== key) {
-    drawnFor.set(extension.id, key);
+  // An entity's passing tab where the conversation on the left has none of it: said, not swapped for something else
+  //.
+  if (!global && !extension.applies(view)) {
+    drawnFor.set(key, `none:${viewHash(view)}`);
+    host.replaceChildren(h("p", "doc-note pane-pad", `${subjectOf(view) || "This conversation"} has no ${extension.title()}.`));
+    setVisible(undefined);
+    return;
+  }
+  const drawn = global ? "global" : viewHash(view);
+  // Drawn afresh when its subject changed, or when an extension that moves one element between tabs (Live, a page)
+  // took it away from this one.
+  if (drawnFor.get(key) !== drawn || host.childElementCount === 0) {
+    drawnFor.set(key, drawn);
     extension.render(host, view);
   }
   setVisible(extension.id);
@@ -270,7 +338,7 @@ export function onWorkspaceChange(listener: () => void): void {
   globalListeners.push(listener);
 }
 
-// "Open in Workspace": the entity on the left lists what it has; choosing one opens it on the right.
+// "Workspace ▾": the entity on the left lists what it has; choosing one opens it in a tab.
 function renderOpenMenuButton(shownId: string): void {
   const list = entityExtensions(state.view);
   dom.paneBtn.hidden = list.length === 0;
@@ -297,12 +365,12 @@ dom.paneBtn.addEventListener("click", (event) => {
     item.setAttribute("role", "menuitem");
     item.addEventListener("click", () => {
       closeMenu();
-      show({ view: state.view, tab: e.id });
+      openPane(e.id);
     });
     menu.append(item);
   }
-  if (shown) {
-    const close = h("button", "entry-menu-item ws-menu-close", "Close Workspace");
+  if (open && active) {
+    const close = h("button", "entry-menu-item ws-menu-close", "Hide Workspace");
     close.type = "button";
     close.addEventListener("click", () => {
       closeMenu();
@@ -317,26 +385,40 @@ dom.paneBtn.addEventListener("click", (event) => {
 });
 document.addEventListener("click", closeMenu);
 
-dom.wsBack.addEventListener("click", () => step(-1));
-dom.wsForward.addEventListener("click", () => step(1));
-// The heading: another entity's opens it; otherwise, on a phone, a tap shows a long name whole (like the title).
-dom.paneSource.addEventListener("click", () => {
-  const item = open ? history[at] : undefined;
-  if (item && "view" in item && viewHash(item.view) !== viewHash(state.view)) navigate(item.view);
-  else if (PHONE.matches) dom.paneSource.classList.toggle("expanded");
+// Keyboard: the tabs are one tab stop; ← → move between them, Home and End go to the ends, Delete
+// closes the one shown.
+dom.paneTabs.addEventListener("keydown", (event) => {
+  if (!active) return;
+  const at = tabs.indexOf(active);
+  let next: Tab | undefined;
+  if (event.key === "ArrowRight") next = tabs[(at + 1) % tabs.length];
+  else if (event.key === "ArrowLeft") next = tabs[(at - 1 + tabs.length) % tabs.length];
+  else if (event.key === "Home") next = tabs[0];
+  else if (event.key === "End") next = tabs[tabs.length - 1];
+  else if (event.key === "Delete") {
+    event.preventDefault();
+    closeTab(active);
+    dom.paneTabs.querySelector<HTMLElement>(".tab.active .tab-open")?.focus();
+    return;
+  }
+  if (!next) return;
+  event.preventDefault();
+  activate(next);
+  dom.paneTabs.querySelector<HTMLElement>(".tab.active .tab-open")?.focus();
 });
-// ✕: a global item (your inbox, GPUs) gives the Workspace back to what it showed before; else it closes.
-dom.paneClose.addEventListener("click", () => {
-  const item = history[at];
-  if (item && "global" in item && at > 0) step(-1);
-  else closePane();
-});
-// The shared band runs straight across: the Workspace's head is as tall as the conversation's header.
+// ✕ at the top: hides the Workspace; the pinned tabs stay.
+dom.paneClose.addEventListener("click", () => closePane());
+// The shared band runs straight across: the Workspace's head ends where the conversation's header does, the
+// conversation tabs above that header included (they pushed it 33 px lower than the Workspace's head).
 const convHeader = document.querySelector<HTMLElement>(".conv-header");
+const tabRow = document.getElementById("tab-row");
 if (convHeader) {
-  new ResizeObserver(() => dom.app.style.setProperty("--conv-head-h", `${convHeader.offsetHeight}px`)).observe(convHeader);
+  const sync = () => dom.app.style.setProperty("--conv-head-h", `${convHeader.offsetHeight + (tabRow && !tabRow.hidden ? tabRow.offsetHeight : 0)}px`);
+  const observer = new ResizeObserver(sync);
+  observer.observe(convHeader);
+  if (tabRow) observer.observe(tabRow);
 }
-// Esc closes the menu, else the Workspace, unless something else (mention menu, reply bar, a dialog) used it first.
+// Esc closes the menu, else hides the Workspace, unless something else (mention menu, reply bar, a dialog) used it.
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.defaultPrevented) return;
   if (menu) return closeMenu();

@@ -7,25 +7,30 @@ Progress comes next (build order below).
 ## How an extension plugs in (built)
 
 `packages/server/ui/pane.ts`: an extension registers `{ id, order, scope?, title(), applies(view), render(body, view),
-shown?(visible) }`. The Workspace ("like a desktop") shows one item at a time, under a quiet "Workspace"
-label, a title bar (‹ › history, what it shows, ✕) and, for an entity, its tabs:
+shown?(visible) }`. The Workspace ("like a desktop") holds tabs, one per thing opened in it,
+named by what and whose: "Live · @webapp", "Checklist · #launch", "Your inbox". The sigil says what kind of thing it is.
 
 - **Entity extensions** (`scope` "entity", the default: Live, Home, Checklist, File, Shared, an agent's own page)
-  belong to the thing on the left. They open from its header's "Open in Workspace ▾" menu, which
-  lists only those whose `applies` is true for it. The Workspace is headed by the entity ("Agent · @builder",
-  "Project · @@website") with its tabs.
-- **Global extensions** (`scope` "global": your Inbox, GPUs) open from their top-bar button (✉, a launcher) or, for
-  the Inbox, the "✉ Your inbox" row at the top of the left list. They have no tabs; their button is lit while
-  shown and, pressed again, goes back a step.
+  open from the conversation's "Workspace ▾" menu, which lists only those whose `applies` is true for it, or
+  from their own buttons (the 📌 opens Pinned or the Checklist). Choosing one opens only that one.
+- **Global extensions** (`scope` "global": your Inbox, GPUs) open from their top-bar button (✉, a launcher) or the
+  rows at the top of the left list. Their button is lit while their tab is shown and, pressed again, gives back
+  the tab shown before.
 
-The Workspace keeps its item while the main panel moves; a click on an entity's heading then opens it.
-While it shows the entity open on the left, both headers share a tint in the project's own colour (desktop
-only). ‹ › walk the last 20 items, kept per browser tab; tab switches inside one entity are not steps. `render`
-fills an extension's part when its view changes or it calls `refreshPane(id)`, never on tab switches, so scroll
-positions stay; `shown` tells it when it appears or goes (Live streams only then). Open or closed, the last tab and the
-width are kept per browser: 420 px by default, the left edge drags (the conversation keeps at least 420 px),
-double-click resets. Esc closes it. At 1100 px and less it covers the conversation; on phones it is full
-screen.
+The tab opened last and not pinned is the passing one (in italics), one for entities and one for global items: the
+next thing opened replaces it. An entity's passing tab follows the conversation on the left (Checklist · #launch
+becomes Checklist · #design); where that conversation has none of it, the tab says so rather than showing something
+else. 📌 on a tab pins it to what it shows: it then stays, through conversation changes and reloads
+(per browser), and a second click on it while shown opens its conversation on the left. Opening something already in
+a tab shows that tab. ✕ on a tab closes it; ✕ at the top (or Esc) hides the Workspace and keeps the pinned tabs. The
+tabs are one keyboard stop: ← → move between them, Home and End go to the ends, Delete closes one.
+
+While the tab shown is about the conversation on the left, both headers share a tint in the project's own colour
+(desktop only). Every tab has its own part of the body, so switching keeps its scroll position and what was
+selected in it; `render` fills it when its subject changes or the extension calls `refreshPane(id)`, never on tab
+switches; `shown` tells an extension when it appears or goes (Live streams only then). The width is kept per browser:
+420 px by default, the left edge drags (the conversation keeps at least 420 px), double-click resets. At
+1100 px and less it covers the conversation; on phones it is full screen, and the tabs scroll sideways.
 
 ## One pane, tabs by context
 
@@ -183,10 +188,11 @@ role), not in `extensions`. "complete" is the one role so far: typing suggestion
   field, the model servers the bus already knows (the list `op=servers` gives: model, engine, endpoints, whose,
   shared or private), shared ones only, and call the one it picks itself. The bus would add it only for services
   that ask for it (an option on `--ext`), so today's gets nothing new.
-- The first service is `packages/complete-ext`: LFM3 1.7B (Liquid AI) run by llama-server on a CPU, about 0.3–0.5 s.
-  It shows at most five words, up to the first punctuation mark, and nothing it copied whole from an earlier message
-  (the model's habit); it does not answer Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962
-  bun run packages/complete-ext/src/server.ts`, with `llama-server -m LFM3-1.7B-BF16.gguf --port 9962 -ngl 0`.
+- The first service is `packages/complete-ext`: SmolLM2 1.7B base (Q8_0) run by llama-server on a CPU, about 0.2 s
+  (LFM3 1.7B before it took 0.4 s and was right less often). It shows at most five words, up to the first
+  punctuation mark, and nothing it copied whole from an earlier message (small models' habit); it does not answer
+  Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 bun run packages/complete-ext/src/server.ts`,
+  with `llama-server -m SmolLM2-1.7B.Q8_0.gguf --port 9962 -ngl 0`.
 
 Talking to the website: a page fills the person's message box, never sends. Each ends in the person
 reading, finishing and pressing Send.
