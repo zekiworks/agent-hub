@@ -168,9 +168,11 @@ message box asks while a person types; it gets no Workspace tab. `GET /api/state
 role), not in `extensions`. "complete" is the one role so far: typing suggestions.
 
 - The website, when that person has turned "Suggest how to go on while I type" on (Settings; off by default, per
-  browser), waits for a 0.3 s pause with the cursor at the end of the draft and posts `POST /api/box/NAME`
-  `{conversationId, text}`. The words that come back show in grey after the cursor; Tab adds them, any other key
-  drops them, Enter still sends what was typed. Touch screens (no Tab) show them as a chip under the text.
+  browser), asks on every change of the draft with the cursor at its end: `POST /api/box/NAME` `{conversationId,
+  text}`, one at a time (the newest draft goes when the answer is back; Can #12871). An answer shows in grey after the
+  cursor while it still fits: typing its letters keeps showing the rest, other letters hide it. Tab adds it, Escape
+  drops it and what is on its way, Enter still sends what was typed. Nothing is asked or shown while an input method
+  composes (codex-ui #12868). Touch screens (no Tab) show the words as a chip under the text.
 - The bus answers only a signed-in person, only for a conversation they may read (agents get 403). It sends the
   service `POST URL/complete` with a `BoxCompleteBody` (packages/protocol): `{v: 1, kind: "complete", me,
   conversation: {id, kind, name?, title?, members}, messages: the latest 20 (deleted ones left out), draft: {text}}`,

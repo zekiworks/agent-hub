@@ -1,7 +1,9 @@
-// Typing suggestions (Can #12841–#12853): when the bus has a "complete" box extension and this browser has them on
-// (Settings), a pause in typing asks it for the next words. They show in grey after the cursor; Tab takes them, any
-// other key lets them go. Phones have no Tab: there a chip under the text takes them on a tap. Not Enter: Enter
-// sends, and Safari's grey completion taking Enter is why it was turned off (Ümit #11651).
+// Typing suggestions (Can #12841–#12871): when the bus has a "complete" box extension and this browser has them on
+// (Settings), every change of the draft asks it for the next words, one request at a time (the newest draft goes
+// next). An answer shows as long as it still fits what is typed: typing the suggested letters keeps showing the rest,
+// typing something else hides it. The words show in grey after the cursor; Tab takes them, Escape drops them. Phones
+// have no Tab: there a chip under the text takes them on a tap. Not Enter: Enter sends, and Safari's grey completion
+// taking Enter is why it was turned off (Ümit #11651).
 import type { BoxResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { dom } from "./dom";
@@ -9,8 +11,6 @@ import { h } from "./html";
 import { state } from "./state";
 
 const SUGGEST_KEY = "agent-bus.suggestions";
-/** How long typing must pause before asking. */
-const PAUSE_MS = 300;
 
 /** The bus's "complete" extension, if it has one. */
 export function suggestionBox(): string | undefined {
@@ -23,7 +23,7 @@ export function suggestionsOn(): boolean {
 
 export function setSuggestionsOn(on: boolean): void {
   localStorage.setItem(SUGGEST_KEY, on ? "1" : "0");
-  if (!on) clear();
+  if (!on) reset();
 }
 
 /** The grey words, laid over the box: the draft in transparent text (to take its place), then the words. */
@@ -36,17 +36,30 @@ chip.type = "button";
 chip.hidden = true;
 dom.input.after(chip);
 
-let shown: { text: string; draft: string } | undefined;
-let timer: ReturnType<typeof setTimeout> | undefined;
-let asking: AbortController | undefined;
+/** The latest answer: the draft it was for, and that draft followed by its words. Shown while the box's text runs
+ * from the draft into the words (so an answer for an earlier, shorter text never shows after a send or a deletion). */
+let answer: { conversationId: string; draft: string; full: string } | undefined;
+/** The words on screen now. */
+let shown: string | undefined;
+/** The request on its way, and whether the draft changed since (then the newest draft is asked next). */
+let asking: { controller: AbortController; draft: string } | undefined;
+let changed = false;
+/** An input method (Japanese, Chinese, accents held on a Mac) is composing: nothing is asked, shown or taken. */
+let composing = false;
 
-function clear(): void {
-  clearTimeout(timer);
-  asking?.abort();
-  asking = undefined;
+function hide(): void {
   shown = undefined;
   ghost.replaceChildren();
   chip.hidden = true;
+}
+
+/** Forgets everything: what is shown, the answer kept, the request on its way. */
+function reset(): void {
+  asking?.controller.abort();
+  asking = undefined;
+  changed = false;
+  answer = undefined;
+  hide();
 }
 
 /** The cursor is at the end of the draft, with nothing selected: the only place a suggestion goes. */
@@ -55,8 +68,15 @@ function atEnd(): boolean {
   return selectionStart === value.length && selectionEnd === value.length;
 }
 
-function show(text: string, draft: string): void {
-  shown = { text, draft };
+/** Where suggestions are asked for now: a conversation (not a new draft), turned on, nothing in the way. */
+function conversationNow(): string | undefined {
+  const view = state.view;
+  if (!suggestionBox() || !suggestionsOn() || composing || view.kind !== "conversation" || state.mention.open) return undefined;
+  return view.id;
+}
+
+function show(text: string): void {
+  shown = text;
   // Laid exactly over the box's text: its place, size, font and padding (they change with the screen and the grip).
   const box = getComputedStyle(dom.input);
   Object.assign(ghost.style, {
@@ -68,77 +88,112 @@ function show(text: string, draft: string): void {
     letterSpacing: box.letterSpacing,
     padding: box.padding,
   });
-  ghost.replaceChildren(h("span", "ghost-draft", draft), h("span", "ghost-words", text));
+  ghost.replaceChildren(h("span", "ghost-draft", dom.input.value), h("span", "ghost-words", text));
   ghost.scrollTop = dom.input.scrollTop;
   chip.textContent = `+${text}`;
   chip.title = "Add these words (Tab)";
   chip.hidden = !window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 }
 
-function take(): void {
-  if (!shown) return;
-  const { text } = shown;
-  clear();
-  dom.input.focus();
-  // As typed, so ⌘Z takes it back and the box's own listeners (size, draft, @names) see it.
-  if (!document.execCommand("insertText", false, text)) dom.input.setRangeText(text, dom.input.value.length, dom.input.value.length, "end");
-  dom.input.dispatchEvent(new Event("input", { bubbles: true }));
+/** Shows what of the latest answer is still ahead of the typed text, if the text is a start of it; else nothing. */
+function showFitting(): void {
+  const id = conversationNow();
+  const text = dom.input.value;
+  const fits = answer && id === answer.conversationId && atEnd() && text.startsWith(answer.draft) && answer.full.startsWith(text);
+  const rest = fits && answer ? answer.full.slice(text.length) : "";
+  if (rest.trim() && document.activeElement === dom.input) show(rest);
+  else hide();
 }
 
-async function ask(name: string, conversationId: string, draft: string): Promise<void> {
-  asking?.abort();
+/** Asks about the draft as it is now, unless a request is on its way: then it goes when that one is back. */
+function askNow(): void {
+  const id = conversationNow();
+  const name = suggestionBox();
+  const draft = dom.input.value;
+  if (!id || !name || !draft.trim() || !atEnd()) return;
+  if (asking) {
+    changed = asking.draft !== draft;
+    return;
+  }
+  changed = false;
   const controller = new AbortController();
-  asking = controller;
-  try {
-    const res = await api<BoxResponse>(`/api/box/${encodeURIComponent(name)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversationId, text: draft }),
-      signal: controller.signal,
+  asking = { controller, draft };
+  void api<BoxResponse>(`/api/box/${encodeURIComponent(name)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conversationId: id, text: draft }),
+    signal: controller.signal,
+  })
+    .then((res) => {
+      if (asking?.controller !== controller) return;
+      // An answer with nothing to add replaces nothing: the earlier one may still fit.
+      if (res.text) answer = { conversationId: id, draft, full: draft + res.text };
+      showFitting();
+    })
+    .catch(() => {
+      // A suggestion that does not come is no loss: the box works as before.
+    })
+    .finally(() => {
+      if (asking?.controller !== controller) return;
+      asking = undefined;
+      if (changed) askNow();
     });
-    // Only if nothing changed meanwhile: the same draft, the cursor still at its end.
-    if (asking !== controller || !res.text || dom.input.value !== draft || !atEnd() || document.activeElement !== dom.input) return;
-    show(res.text, draft);
-  } catch {
-    // A suggestion that does not come is no loss: the box works as before.
-  } finally {
-    if (asking === controller) asking = undefined;
+}
+
+function take(): void {
+  if (!shown) return;
+  const text = shown;
+  hide();
+  dom.input.focus();
+  // As typed, so ⌘Z takes it back and the box's own listeners (size, draft, @names, the next suggestion) see it.
+  if (!document.execCommand("insertText", false, text)) {
+    dom.input.setRangeText(text, dom.input.value.length, dom.input.value.length, "end");
+    dom.input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 }
 
-dom.input.addEventListener("input", () => {
-  clear();
-  const name = suggestionBox();
-  const view = state.view;
-  if (!name || !suggestionsOn() || view.kind !== "conversation" || state.mention.open) return;
-  const draft = dom.input.value;
-  if (!draft.trim() || !atEnd()) return;
-  timer = setTimeout(() => void ask(name, view.id, draft), PAUSE_MS);
+dom.input.addEventListener("input", (event) => {
+  if ((event as InputEvent).isComposing) return hide();
+  showFitting();
+  askNow();
+});
+// Unfinished input from an input method is not asked about; the committed text is (codex-ui #12868).
+dom.input.addEventListener("compositionstart", () => {
+  composing = true;
+  hide();
+});
+dom.input.addEventListener("compositionend", () => {
+  composing = false;
+  showFitting();
+  askNow();
 });
 
-// Tab takes the words; any other key (Escape included) lets them go. In the capture phase, before the box's own keys.
+// Tab takes the words; Escape drops them and what was on its way, so nothing shows later (codex-ui #12868). In the
+// capture phase, before the box's own keys.
 dom.input.addEventListener(
   "keydown",
   (event) => {
-    if (!shown) return;
-    if (event.key === "Tab" && !event.shiftKey && !state.mention.open) {
+    if (event.key === "Tab" && shown && !event.shiftKey && !event.isComposing && !composing && !state.mention.open) {
       event.preventDefault();
       event.stopImmediatePropagation();
       take();
-      return;
+    } else if (event.key === "Escape" && (shown || asking || answer)) {
+      if (shown) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+      reset();
     }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
-    clear();
   },
   { capture: true }
 );
+// The cursor moved away from the end (arrows, a click), or the box lost the focus: nothing shows.
+document.addEventListener("selectionchange", () => {
+  if (document.activeElement === dom.input && shown && !atEnd()) hide();
+});
 dom.input.addEventListener("scroll", () => (ghost.scrollTop = dom.input.scrollTop));
-dom.input.addEventListener("blur", () => setTimeout(() => document.activeElement !== chip && clear(), 0));
-dom.input.addEventListener("click", () => clear());
+dom.input.addEventListener("blur", () => setTimeout(() => document.activeElement !== chip && hide(), 0));
 // A tap on the chip must not take the focus (the keyboard would drop): pointerdown keeps it in the box.
 chip.addEventListener("pointerdown", (event) => event.preventDefault());
 chip.addEventListener("click", take);
-window.addEventListener("hashchange", clear);
+window.addEventListener("hashchange", reset);

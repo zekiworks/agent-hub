@@ -50,8 +50,10 @@ interface Recording {
   chosen: Chosen;
   /** The level meter has seen anything but exact silence (a shortcut: then the recording is not checked for silence). */
   heard: boolean;
-  /** The microphone has sent something (or SIGNAL_WAIT_MS passed): the timer runs from here. */
+  /** The microphone has sent something, or SIGNAL_WAIT_MS passed without it (or no meter): the timer runs from here. */
   live: boolean;
+  /** It went live because the microphone sent something, not because the wait ran out (codex-ui #12868). */
+  confirmed: boolean;
 }
 
 /** "#room-a", "@@website", "logic, umit": where a recording started elsewhere will go. */
@@ -140,7 +142,10 @@ function tick(rec: Recording): void {
   if (elapsed >= MAX_RECORDING_MS) return void stop(false);
   // Until the microphone sends anything, "Wait…" stands where the timer will run, and the dot is grey (the panel's
   // `waiting` class); the first second after, "Speak now" (Ümit #12649: with AirPods she spoke into 1.8 s of silence).
-  const time = !rec.live ? "Wait…" : elapsed < 1200 ? "Speak now" : clock(elapsed);
+  // Only when sound came: after a wait that ran out it says so instead of promising (codex-ui #12868); without a level
+  // meter (audio not running) nothing can be known, and the timer just runs.
+  const silent = !rec.heard && rec.audio.state === "running";
+  const time = !rec.live ? "Wait…" : silent ? `${clock(elapsed)} · no sound from the microphone yet` : rec.confirmed && elapsed < 1200 ? "Speak now" : clock(elapsed);
   // Opened another conversation meanwhile: the bar says where this one goes.
   dom.voiceTime.textContent = viewHash(state.view) === viewHash(rec.view) ? time : `${time} → ${viewLabel(rec.view)}`;
   drawWave(rec);
@@ -199,6 +204,7 @@ async function start(target?: { view: View; chosen: Chosen }): Promise<void> {
       chosen,
       heard: false,
       live: false,
+      confirmed: false,
     };
     const r = rec;
     recorder.addEventListener("dataavailable", (event) => {
@@ -217,13 +223,14 @@ async function start(target?: { view: View; chosen: Chosen }): Promise<void> {
   // Let go while the microphone was opening: that was a click, so keep recording until Send.
   setLatched(!held);
   tick(rec);
-  await waitForSignal(rec);
+  const confirmed = await waitForSignal(rec);
+  // A cancel (or a new recording) meanwhile: this one's panel state is no longer its to change (codex-ui #12868).
+  if (recording !== rec) return;
   dom.voiceRec.classList.remove("waiting");
-  if (recording === rec) {
-    rec.startedAt = Date.now();
-    rec.pausedMs = 0;
-    rec.live = true;
-  }
+  rec.startedAt = Date.now();
+  rec.pausedMs = 0;
+  rec.live = true;
+  rec.confirmed = confirmed;
 }
 
 /** Bluetooth headsets (AirPods) deliver exact silence for a moment after a page opens their microphone (Ümit's clips,
@@ -232,15 +239,17 @@ async function start(target?: { view: View; chosen: Chosen }): Promise<void> {
  * SIGNAL_WAIT_MS regardless. */
 const SIGNAL_WAIT_MS = 3000;
 
-async function waitForSignal(rec: Recording): Promise<void> {
-  if (rec.audio.state !== "running") return;
+/** Whether the microphone sent anything within SIGNAL_WAIT_MS; false when the wait ran out or there is no meter. */
+async function waitForSignal(rec: Recording): Promise<boolean> {
+  if (rec.audio.state !== "running") return false;
   const data = new Uint8Array(rec.analyser.fftSize);
   const until = Date.now() + SIGNAL_WAIT_MS;
   while (Date.now() < until && recording === rec) {
     rec.analyser.getByteTimeDomainData(data);
-    if (data.some((v) => v !== 128)) return;
+    if (data.some((v) => v !== 128)) return true;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  return false;
 }
 
 function setPaused(rec: Recording, paused: boolean): void {
