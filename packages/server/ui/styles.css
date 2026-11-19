@@ -163,52 +163,12 @@ button:disabled {
   text-transform: none;
 }
 
+/* The tabs and ✕, on the line the Workspace's head ends with. */
 .ws-titlebar {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 2px;
-  padding: 2px 6px 6px;
-}
-
-.ws-nav {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  font-size: 18px;
-}
-
-.ws-nav:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-
-/* What the Workspace shows ("Agent · @codex-ui", "Your inbox"); a link while it is not the conversation on the left. */
-.link-btn.pane-source {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 6px;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  font-size: 15px;
-  font-weight: 650;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.link-btn.pane-source:not(.elsewhere) {
-  color: var(--text);
-  cursor: default;
-  text-decoration: none;
-}
-
-/* A global item (your inbox, GPUs) has no entity tabs. */
-.app.ws-global .pane-head {
-  display: none;
-}
-
-.app.ws-global .ws-titlebar {
+  padding: 4px 6px 0 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -598,40 +558,45 @@ button:disabled {
   color: var(--error);
 }
 
-.pane-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 8px 0 10px;
-  border-bottom: 1px solid var(--border);
-}
-
+/* The Workspace's tabs (pane.ts; Can #12898): the same flat tabs as the conversations' row (.tab), each with a 📌 and
+   a ✕; the passing one (it follows the conversation, the next thing opened replaces it) in italics, as in editors.
+   They scroll sideways when they do not fit. */
 .pane-tabs {
   flex: 1;
   display: flex;
-  gap: 2px;
   min-width: 0;
   overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.pane-tab {
-  padding: 6px 12px;
+.pane-tabs .tab {
+  max-width: 260px;
+}
+
+.pane-tabs .tab.passing .tab-open {
+  font-style: italic;
+}
+
+.pane-tabs .tab-pin {
+  flex: none;
+  align-self: stretch;
+  padding: 0 2px 0 4px;
   border: 0;
-  border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
+  opacity: 0.25;
+  filter: grayscale(1);
   cursor: pointer;
 }
 
-.pane-tab:hover {
-  color: var(--text);
+.pane-tabs .tab:hover .tab-pin,
+.pane-tabs .tab-pin:focus-visible {
+  opacity: 0.7;
 }
 
-.pane-tab.active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
+.pane-tabs .tab.pinned .tab-pin {
+  opacity: 1;
+  filter: none;
 }
 
 .pane-body {
@@ -4180,12 +4145,13 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 16px;
   }
 
-  /* Tabs: a thumb's height, and no ✕ (codex-ui #11492: swiping the row must not unpin one); the name's menu unpins. */
+  /* Conversation tabs: a thumb's height, and no ✕ (codex-ui #11492: swiping the row must not unpin one); the name's
+     menu unpins. The Workspace's tabs keep theirs: a tab closed by mistake opens again from Workspace ▾. */
   .tab-open {
     min-height: 44px;
     padding: 0 14px;
   }
-  .tab-close {
+  .tab-row .tab-close {
     display: none;
   }
 
@@ -4241,18 +4207,18 @@ ul.md-list ul.md-list { list-style: circle; }
     min-width: 44px;
   }
 
-  /* Every other control a thumb hits is at least 44×44 (Ümit #10047): Back, ⓘ, ⋯, Workspace ▾, the Workspace's ‹ › ✕,
-     tabs and heading link, 🗑 ⏸ while recording. Icons stay their size; the box grows. */
+  /* Every other control a thumb hits is at least 44×44 (Ümit #10047): Back, ⓘ, ⋯, Workspace ▾, the Workspace's ✕ and
+     its tabs, 🗑 ⏸ while recording. Icons stay their size; the box grows. */
   .back-btn,
   .conv-header .icon-btn,
   .pane-close,
-  .ws-nav {
+  .pane-tabs .tab-pin,
+  .pane-tabs .tab-close {
     min-width: 44px;
     min-height: 44px;
   }
 
-  .pane-tab,
-  .link-btn.pane-source.elsewhere,
+  .pane-tabs .tab-open,
   .ws-open-btn,
   .checklist-btn,
   .side-inbox {
@@ -4277,20 +4243,6 @@ ul.md-list ul.md-list { list-style: circle; }
 
   .check-item {
     padding-right: 48px;
-  }
-
-  /* A long Workspace heading ("Project · @@answer-check-private-review…") gets two lines on a phone, no tooltip there. */
-  .link-btn.pane-source {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    line-height: 1.25;
-  }
-
-  .link-btn.pane-source.expanded {
-    -webkit-line-clamp: unset;
   }
 
   .composer .voice-rec {
