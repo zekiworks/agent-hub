@@ -55,22 +55,9 @@ export function notify(message: Message, conv: Conversation): void {
 
 let titleBase = BRAND;
 
-/** Tab icon: the header's ⇄ mark in its colours (lilac, dark arrows); a red dot while messages for me are unread. */
-function faviconHref(attention: boolean): string {
-  const dot = attention ? '<circle cx="26" cy="6" r="6" fill="#e5484d" stroke="#fff" stroke-width="2"/>' : "";
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
-    '<rect x="1" y="1" width="30" height="30" rx="7" fill="#b8a6dc"/>' +
-    '<path d="M8 12h14l-4-4M24 20H10l4 4" fill="none" stroke="#1b1b1b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
-    dot +
-    "</svg>";
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
-
-/** With this bus's own tab icon (`--brand-icon`): the icon, the red dot drawn over it while messages are unread. */
-let brandIcon: HTMLImageElement | undefined;
-function setBrandFavicon(link: HTMLLinkElement, attention: boolean): void {
-  if (!BRAND_ICON) return;
+/** The tab icon (Agent Hub's logo, or `--brand-icon`), with a red dot drawn over it while messages are unread. */
+let iconImage: HTMLImageElement | undefined;
+function setFavicon(link: HTMLLinkElement, attention: boolean): void {
   if (!attention) {
     link.href = BRAND_ICON;
     return;
@@ -79,8 +66,8 @@ function setBrandFavicon(link: HTMLLinkElement, attention: boolean): void {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 32;
     const g = canvas.getContext("2d");
-    if (!g || !brandIcon) return;
-    g.drawImage(brandIcon, 0, 0, 32, 32);
+    if (!g || !iconImage) return;
+    g.drawImage(iconImage, 0, 0, 32, 32);
     g.beginPath();
     g.arc(26, 6, 6, 0, Math.PI * 2);
     g.fillStyle = "#e5484d";
@@ -90,10 +77,10 @@ function setBrandFavicon(link: HTMLLinkElement, attention: boolean): void {
     g.stroke();
     if (faviconState) link.href = canvas.toDataURL("image/png");
   };
-  if (brandIcon?.complete) return draw();
-  brandIcon = new Image();
-  brandIcon.addEventListener("load", draw, { once: true });
-  brandIcon.src = BRAND_ICON;
+  if (iconImage?.complete) return draw();
+  iconImage = new Image(32, 32);
+  iconImage.addEventListener("load", draw, { once: true });
+  iconImage.src = BRAND_ICON;
 }
 
 let faviconState: boolean | undefined;
@@ -106,9 +93,7 @@ export function applyTitle(): void {
   document.title = n > 0 ? `${urgent > 0 ? "●●" : "●"} (${n}) ${titleBase}` : titleBase;
   if (faviconState !== n > 0) {
     faviconState = n > 0;
-    const link = el<HTMLLinkElement>("favicon");
-    if (BRAND_ICON) setBrandFavicon(link, faviconState);
-    else link.href = faviconHref(faviconState);
+    setFavicon(el<HTMLLinkElement>("favicon"), faviconState);
   }
 }
 

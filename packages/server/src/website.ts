@@ -14,6 +14,9 @@ const UI_ASSETS: Record<string, { source: string; type: string }> = {
   "app.js": { source: "app.ts", type: "application/javascript; charset=utf-8" },
   "auth.html": { source: "auth.html", type: "text/html; charset=utf-8" },
   "auth.js": { source: "auth.ts", type: "application/javascript; charset=utf-8" },
+  // Agent Hub's logo: the header's mark and tab icon, and the phone's home-screen icon.
+  "logo.svg": { source: "logo.svg", type: "image/svg+xml" },
+  "logo-180.png": { source: "logo-180.png", type: "image/png" },
 };
 
 function mtime(file: string): number {
@@ -71,7 +74,7 @@ export class Website {
     if (pathname === "/" || pathname === "/index.html") return this.asset("index.html");
     if (pathname === "/auth") return this.asset("auth.html");
     if (pathname === "/brand/logo" || pathname === "/brand/icon") return this.brandImage(pathname === "/brand/logo" ? this.brand?.logo : this.brand?.icon);
-    if (/^\/[a-z]+\.(js|css|html)$/.test(pathname)) return this.asset(pathname.slice(1));
+    if (/^\/[a-z0-9-]+\.(js|css|html|svg|png)$/.test(pathname)) return this.asset(pathname.slice(1));
     return undefined;
   }
 
@@ -82,8 +85,8 @@ export class Website {
   }
 
   /**
-   * The pages carry "Agent Hub" and its ⇄ mark; a configured brand replaces them: the title, the header's name (first
-   * word strong, the rest regular), its mark and the icons.
+   * The pages carry "Agent Hub" and its logo (the two copper leaves, logo.svg); a configured brand replaces
+   * them: the title, the header's name (first word strong, the rest regular), its mark and the icons.
    */
   private branded(html: string): string {
     const brand = this.brand;
@@ -91,15 +94,21 @@ export class Website {
     const name = escapeHtml(brand.name);
     const [first = name, ...rest] = name.split(" ");
     const wordmark = rest.length > 0 ? `${first}<span class="brand-rest"> ${rest.join(" ")}</span>` : first;
-    const icons =
-      (brand.icon ? `<link rel="icon" type="image/png" href="${this.brandUrls.icon}" />\n  <meta name="brand-icon" content="${this.brandUrls.icon}" />\n  ` : "") +
-      (brand.logo ? `<link rel="apple-touch-icon" href="${this.brandUrls.logo}" />\n  ` : "");
     let out = html
       .replace(/<meta name="application-name" content="[^"]*" \/>/, `<meta name="application-name" content="${name}" />`)
       .replace(/(<title>(?:[^<]* · )?)Agent Hub(<\/title>)/, `$1${name}$2`)
-      .replace('<span class="brand-name">Agent Hub</span>', `<span class="brand-name">${wordmark}</span>`)
-      .replace("<link rel=\"stylesheet\"", `${icons}<link rel="stylesheet"`);
-    if (brand.logo) out = out.replace('<span class="brand-mark">⇄</span>', `<img class="brand-logo" src="${this.brandUrls.logo}" alt="" />`);
+      .replace('<span class="brand-name">Agent<span class="brand-rest"> Hub</span></span>', `<span class="brand-name">${wordmark}</span>`);
+    if (brand.icon) {
+      out = out.replace(
+        '<link id="favicon" rel="icon" type="image/svg+xml" href="/logo.svg" />',
+        `<link id="favicon" rel="icon" type="image/png" href="${this.brandUrls.icon}" />\n  <meta name="brand-icon" content="${this.brandUrls.icon}" />`
+      );
+    }
+    if (brand.logo) {
+      out = out
+        .replace('<link rel="apple-touch-icon" href="/logo-180.png" />', `<link rel="apple-touch-icon" href="${this.brandUrls.logo}" />`)
+        .replace('<img class="brand-mark" src="/logo.svg" alt="" />', `<img class="brand-logo" src="${this.brandUrls.logo}" alt="" />`);
+    }
     return out;
   }
 
