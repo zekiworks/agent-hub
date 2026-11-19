@@ -189,8 +189,11 @@ role), not in `extensions`. "complete" is the one role so far: typing suggestion
   shared or private), shared ones only, and call the one it picks itself. The bus would add it only for services
   that ask for it (an option on `--ext`), so today's gets nothing new.
 - The first service is `packages/complete-ext`: SmolLM2 1.7B base (Q8_0) run by llama-server on a CPU, about 0.2 s
-  (LFM3 1.7B before it took 0.4 s and was right less often). It shows at most five words, up to the first
-  punctuation mark, and nothing it copied whole from an earlier message (small models' habit); it does not answer
+  (LFM3 1.7B before it took 0.4 s and was right less often). A draft ending mid-word is token-healed
+ : the half word leaves the prompt and a grammar makes the answer begin with it, so "Let's configur" goes
+  on as "configure the…" rather than "configurate". Words are kept while the model is sure of them (log-probability
+  at least -2.5 each and -5.0 together; the forced half word only above -8). Then at most eight words, up to the first
+  punctuation mark that ends a word, nothing past a speaker label, nothing copied whole from an earlier message; no
   Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 bun run packages/complete-ext/src/server.ts`,
   with `llama-server -m SmolLM2-1.7B.Q8_0.gguf --port 9962 -ngl 0`.
 

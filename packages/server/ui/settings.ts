@@ -140,8 +140,9 @@ function suggestionSetting(): HTMLElement | string {
     h(
       "p",
       "dialog-hint",
-      "As you type, a few grey words appear after the cursor: Tab adds them (on a phone, tap them under the text), " +
-        "Escape drops them, and typing other letters makes them go. Enter still sends what you typed. Your draft and the conversation's latest " +
+      "As you type, a few grey words appear after the cursor: Tab adds them, → (or Ctrl+→) only the next word (on a " +
+        "phone, tap them under the text). Escape drops them, and typing other letters makes them go. Enter " +
+        "still sends what you typed. Your draft and the conversation's latest " +
         "messages go to a small model on the bus's own machine, and nothing is kept. English only. Only this browser."
     )
   );
