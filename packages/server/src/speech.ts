@@ -10,12 +10,16 @@ function language(text: string): "tr" | "en" {
   return /[çğışöüÇĞİŞÖÜ]/.test(text) ? "tr" : "en";
 }
 
-/** What a listener should hear: no markdown signs, code or link addresses. */
-function plain(text: string): string {
+/**
+ * What a listener should hear: no markdown signs, code, link addresses or emoji. The 🎤 in front of every voice
+ * message's text was read as "Tom" (Can #12932: "Tom, please check…").
+ */
+export function plain(text: string): string {
   return text
     .replace(/```[\s\S]*?```/g, " (code) ")
     .replace(/https?:\/\/\S+/g, " (link) ")
     .replace(/@\{([^}]*)\}/g, "$1")
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0F}\u{200D}]/gu, " ")
     .replace(/[*_`#>|@]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
