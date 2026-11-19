@@ -1116,15 +1116,11 @@ button:disabled {
   font-size: 17px;
 }
 
+/* Agent Hub's logo (logo.svg; Can #12890): two copper leaves, drawn to fill their square. */
 .brand-mark {
-  display: inline-grid;
-  place-items: center;
   width: 26px;
   height: 26px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--primary-ink);
-  font-size: 14px;
+  flex: none;
 }
 
 /* A configured mark (`--brand-logo`, e.g. Hilde's copper leaf), contained as in Hilde Reader's header: never cropped. */
