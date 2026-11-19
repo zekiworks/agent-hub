@@ -408,10 +408,15 @@ dom.paneTabs.addEventListener("keydown", (event) => {
 });
 // ✕ at the top: hides the Workspace; the pinned tabs stay.
 dom.paneClose.addEventListener("click", () => closePane());
-// The shared band (#10122) runs straight across: the Workspace's head is as tall as the conversation's header.
+// The shared band (#10122) runs straight across: the Workspace's head ends where the conversation's header does, the
+// conversation tabs above that header included (they pushed it 33 px lower than the Workspace's head).
 const convHeader = document.querySelector<HTMLElement>(".conv-header");
+const tabRow = document.getElementById("tab-row");
 if (convHeader) {
-  new ResizeObserver(() => dom.app.style.setProperty("--conv-head-h", `${convHeader.offsetHeight}px`)).observe(convHeader);
+  const sync = () => dom.app.style.setProperty("--conv-head-h", `${convHeader.offsetHeight + (tabRow && !tabRow.hidden ? tabRow.offsetHeight : 0)}px`);
+  const observer = new ResizeObserver(sync);
+  observer.observe(convHeader);
+  if (tabRow) observer.observe(tabRow);
 }
 // Esc closes the menu, else hides the Workspace, unless something else (mention menu, reply bar, a dialog) used it.
 document.addEventListener("keydown", (event) => {
