@@ -29,7 +29,12 @@ function current(): Conversation | undefined {
   return state.view.kind === "conversation" ? state.conversations.get(state.view.id) : undefined;
 }
 
-async function act(conv: Conversation, action: string, body: Record<string, unknown>): Promise<void> {
+/**
+ * Does `action`; the dialog is drawn again after it. `consumed` names the fields this action used up (they start
+ * empty or from the new state); every other field keeps what was typed in it (Can #12939: removing a member wiped
+ * the room name being typed).
+ */
+async function act(conv: Conversation, action: string, body: Record<string, unknown>, consumed: string[] = []): Promise<void> {
   const error = dom.convDialog.querySelector<HTMLElement>(".composer-error");
   try {
     if (error) error.hidden = true;
@@ -42,13 +47,19 @@ async function act(conv: Conversation, action: string, body: Record<string, unkn
       return;
     }
     renderAll();
-    render();
+    render(consumed);
   } catch (err) {
     if (error) {
       error.textContent = errorText(err);
       error.hidden = false;
     }
   }
+}
+
+/** A field whose text survives the dialog being drawn again (`act`), under `key`. */
+function kept<T extends HTMLInputElement | HTMLSelectElement>(el: T, key: string): T {
+  el.dataset.keep = key;
+  return el;
 }
 
 function button(label: string, onClick: () => void, primary = false): HTMLButtonElement {
@@ -167,18 +178,28 @@ window.addEventListener("hashchange", () => closeNameMenu());
  * keyboard down.
  */
 dom.convSettingsBtn.addEventListener("click", () => {
+  // Opened afresh: nothing typed the last time comes back.
+  delete dom.convDialog.dataset.conv;
   render();
   if (!dom.convDialog.open) dom.convDialog.showModal();
   if (!PHONE.matches) dom.convDialog.querySelector<HTMLInputElement>(".member-add")?.focus();
 });
 
-/** The full settings form of a group DM or project (⚙ beside its name). */
-function render(): void {
+/** The full settings form of a group DM or project (⚙ beside its name). Fields keep what was typed in them, except
+ * those `consumed` by the action just done. */
+function render(consumed: string[] = []): void {
   const conv = current();
   if (!conv || (conv.kind !== "group" && conv.kind !== "project")) {
     dom.convDialog.close();
     return;
   }
+  const before = new Map<string, string>();
+  if (dom.convDialog.dataset.conv === conv.id) {
+    for (const el of dom.convDialog.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-keep]")) {
+      if (el.dataset.keep && !consumed.includes(el.dataset.keep)) before.set(el.dataset.keep, el.value);
+    }
+  }
+  dom.convDialog.dataset.conv = conv.id;
   const member = conv.members.includes(state.me);
   const head = h("div", "gpu-head");
   const close = button("✕", () => dom.convDialog.close());
@@ -206,7 +227,7 @@ function render(): void {
   }
   body.push(list);
   if (member) {
-    const add = h("input", "member-add");
+    const add = kept(h("input", "member-add"), "add");
     add.type = "text";
     add.placeholder = "names to add, e.g. can, logic";
     add.setAttribute("aria-label", "Names to add, separated by commas");
@@ -221,7 +242,7 @@ function render(): void {
       suggestions,
       button("Add", () => {
         const ids = add.value.split(/[\s,]+/).map((s) => s.trim().replace(/^@/, "").toLowerCase()).filter(Boolean);
-        if (ids.length > 0) void act(conv, "members", { ids });
+        if (ids.length > 0) void act(conv, "members", { ids }, ["add"]);
       })
     );
     // Enter adds, as the button does.
@@ -240,18 +261,18 @@ function render(): void {
 
     if (conv.kind === "group") {
       body.push(h("h3", "", "Turn into a project"), h("p", "dialog-hint", "A name others can find and join; members and history stay."));
-      const name = h("input");
+      const name = kept(h("input"), "project-name");
       name.type = "text";
       name.placeholder = "project-name";
       const row2 = h("div", "conv-row");
-      row2.append(name, button("Turn into project", () => void act(conv, "project", { name: name.value.trim().toLowerCase() }), true));
+      row2.append(name, button("Turn into project", () => void act(conv, "project", { name: name.value.trim().toLowerCase() }, ["project-name"]), true));
       body.push(row2);
       // A room (Can, 15 Nov): a named conversation, addressed only as #name, optionally under a project; stays private.
       body.push(h("h3", "", "Turn into a room"), h("p", "dialog-hint", "A name (#name), optionally under a project; it stays private to its members."));
-      const roomName = h("input");
+      const roomName = kept(h("input"), "room-name");
       roomName.type = "text";
       roomName.placeholder = "room-name (#room-name)";
-      const roomParent = h("select");
+      const roomParent = kept(h("select"), "room-parent");
       roomParent.append(new Option("No parent project", ""));
       for (const p of Array.from(state.conversations.values())
         .filter((c) => c.kind === "project" && !c.room && !c.preview && !c.parentId)
@@ -264,28 +285,28 @@ function render(): void {
       const row6 = h("div", "conv-row");
       row6.append(
         roomParent,
-        button("Turn into room", () => void act(conv, "room", { name: roomName.value.trim().toLowerCase().replace(/^#/, ""), ...(roomParent.value ? { parent: roomParent.value } : {}) }), true)
+        button("Turn into room", () => void act(conv, "room", { name: roomName.value.trim().toLowerCase().replace(/^#/, ""), ...(roomParent.value ? { parent: roomParent.value } : {}) }, ["room-name", "room-parent"]), true)
       );
       body.push(row5, row6);
     } else {
       body.push(h("h3", "", conv.room ? "Room" : "Project"));
-      const topic = h("input");
+      const topic = kept(h("input"), "topic");
       topic.type = "text";
       topic.placeholder = "one line: what it is about";
       topic.value = conv.topic ?? "";
       const row3 = h("div", "conv-row");
-      row3.append(topic, button("Set topic", () => void act(conv, "project", { topic: topic.value })));
+      row3.append(topic, button("Set topic", () => void act(conv, "project", { topic: topic.value }, ["topic"])));
       body.push(row3, select(VISIBILITY, conv.visibility ?? "open", (visibility) => void act(conv, "project", { visibility })));
       // The name people read, and the address links and agents use (#10623): renaming changes the name only.
-      const title = h("input");
+      const title = kept(h("input"), "title");
       title.type = "text";
       title.maxLength = 80;
       title.value = conv.title ?? "";
       title.placeholder = conv.name ?? "";
       title.setAttribute("aria-label", "Name");
       const row4 = h("div", "conv-row");
-      row4.append(title, button("Rename", () => void act(conv, "project", { title: title.value })));
-      const address = h("input");
+      row4.append(title, button("Rename", () => void act(conv, "project", { title: title.value }, ["title"])));
+      const address = kept(h("input"), "address");
       address.type = "text";
       address.value = conv.name ?? "";
       address.setAttribute("aria-label", "Address");
@@ -296,7 +317,7 @@ function render(): void {
           const next = address.value.trim().replace(/^[#@]+/, "").toLowerCase();
           const now = conv.room ? "#" : "@@";
           if (next && next !== conv.name && confirm(`Change the address ${now}${conv.name} to ${now}${next}? Old ${now}${conv.name} links and agents' notes stop working.`)) {
-            void act(conv, "project", { name: next });
+            void act(conv, "project", { name: next }, ["address"]);
           }
         })
       );
@@ -366,6 +387,10 @@ function render(): void {
   error.hidden = true;
   body.push(error, closeWindowButton(dom.convDialog));
   dom.convDialog.replaceChildren(...body);
+  for (const el of dom.convDialog.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-keep]")) {
+    const value = el.dataset.keep ? before.get(el.dataset.keep) : undefined;
+    if (value !== undefined) el.value = value;
+  }
 }
 
 // The name opens its short menu (Can #11463, #11480), on every conversation (render.ts setNameMenu).
