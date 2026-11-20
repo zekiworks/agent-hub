@@ -168,9 +168,9 @@ to `URL/…`:
 
 ## Services the message box asks (built 19 Nov)
 
-Not every extension is a page. `agent-bus serve --ext NAME=URL,box=complete` (Can #12841–#12853) is a service the
+Not every extension is a page. `agent-bus serve --ext NAME=URL,box=ROLE` (Can #12841–#12853) is a service the
 message box asks while a person types; it gets no Workspace tab. `GET /api/state` lists these in `boxes` (name →
-role), not in `extensions`. "complete" is the one role so far: typing suggestions.
+role), not in `extensions`. Two roles: "complete" (typing suggestions, below) and "recipient" ("Ask @agent", after).
 
 - The website, when that person has turned "Suggest how to go on while I type" on (Settings; off by default, per
   browser), asks on every change of the draft with the cursor at its end: `POST /api/box/NAME` `{conversationId,
@@ -191,14 +191,16 @@ role), not in `extensions`. "complete" is the one role so far: typing suggestion
   field, the model servers the bus already knows (the list `op=servers` gives: model, engine, endpoints, whose,
   shared or private), shared ones only, and call the one it picks itself. The bus would add it only for services
   that ask for it (an option on `--ext`), so today's gets nothing new.
-- The first service is `packages/complete-ext`: SmolLM2 1.7B base (Q8_0) run by llama-server on a CPU, about 0.2 s
-  (Can #12912; LFM3 1.7B before it took 0.4 s and was right less often). A draft ending mid-word is token-healed
-  (Can #12915): the half word leaves the prompt and a grammar makes the answer begin with it, so "Let's configur" goes
-  on as "configure the…" rather than "configurate". Words are kept while the model is sure of them (log-probability
-  at least -2.5 each and -5.0 together; the forced half word only above -8). Then at most eight words, up to the first
-  punctuation mark that ends a word, nothing past a speaker label, nothing copied whole from an earlier message; no
-  Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 bun run packages/complete-ext/src/server.ts`,
-  with `llama-server -m SmolLM2-1.7B.Q8_0.gguf --port 9962 -ngl 0`.
+- The first service is `packages/complete-ext`, run by llama-server on a CPU. Its model on bariton: LFM3 1.7B (BF16,
+  about 0.15–0.4 s), on trial again from 20 Nov (Ümit #13060); SmolLM2 1.7B base (Q8_0, about 0.2 s) ran 19–20 Nov
+  (Can #12912). With SmolLM2 a draft ending mid-word is token-healed (Can #12915): the half word leaves the prompt and
+  a grammar makes the answer begin with it, so "Let's configur" goes on as "configure the…" rather than
+  "configurate". LFM3's tokenizer spells a forced half word in odd pieces, so with LFM3 healing is off
+  (`COMPLETE_HEAL=0`) and the word lists below finish the word. Words are kept while the model is sure of them
+  (log-probability at least -2.5 each and -5.0 together; a forced half word only above -8). Then at most eight words,
+  up to the first punctuation mark that ends a word, nothing past a speaker label, nothing copied whole from an
+  earlier message; no Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 COMPLETE_HEAL=0 bun
+  run packages/complete-ext/src/server.ts`, with `llama-server -m LFM3-1.7B-BF16.gguf --port 9962 -ngl 0`.
 - **The word being typed** is completed in the page itself, with or without that service (`packages/server/ui/words.ts`;
   Can #12953, #12955): English and Turkish word lists built from Tatoeba's sentences (CC BY 2.0 FR) by
   `packages/server/scripts/build-words.ts`, about 0.5 MB each over the wire (gzipped, then "not modified"). A word is
@@ -208,6 +210,23 @@ role), not in `extensions`. "complete" is the one role so far: typing suggestion
   without ç ğ ı ö ş ü finds its words and goes on without them. Mid-word the word list has the say; the service's
   words show only when they go on from the same word, and Turkish drafts (by the lists) are not sent to it. On Can's
   and Ümit's last 364 typed messages, cut at every letter of every longer word, 86% of what showed was right.
+
+### "Ask @agent": the recipient role (prototype, Ümit #13030)
+
+While a person writes in a room without naming anyone, the box may offer one agent to ask ("Ask @webapp"); a tap puts
+`@webapp ` at the front of the draft, which is then edited and sent as usual (`packages/server/ui/ask.ts`).
+
+- Asked only for a person's draft in a room (`room: true`) with at least two agents besides them, of at least 8
+  characters, after a 0.7 s pause in typing, and never when the person chose: a member named, `@all`, Reply or a
+  checklist item answered. One request at a time; an answer counts only for the exact draft and room it was asked
+  about, so an edit, another room or Send drops it. Sending never waits for it.
+- The bus sends `POST URL/recipient` a `BoxRecipientBody` (packages/protocol): the draft, the room's latest 20
+  messages with their authors (`fromKind`) and what they answer, its checklist steps with owners and status, and the
+  eligible `agents`. It passes back `{recipient, confidence}` only when `recipient` is one of those agents, else
+  `{recipient: null}`; it gives up after 8 s.
+- The service (`packages/ask-ext`) asks a decision model one choice question, "Which agent has the best evidence to
+  answer this person?", over the agent ids plus `none`, and applies a confidence cut-off. Default model LiquidAI
+  d1-2B on the hub's processor (llama.cpp); fastino/GLiDE-2B is compared on a GPU.
 
 Talking to the website (Can, 15 Nov): a page fills the person's message box, never sends. Each ends in the person
 reading, finishing and pressing Send.

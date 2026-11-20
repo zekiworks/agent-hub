@@ -20,6 +20,9 @@
     "packages/copilot-plugin/src/**/*.ts",
     "packages/copilot-plugin/scripts/**/*.ts",
     "packages/complete-ext/src/**/*.ts",
+    "packages/ask-ext/src/**/*.ts",
+    "packages/ask-ext/scripts/**/*.ts",
+    "packages/ask-ext/eval/**/*.ts",
     "tests/**/*.ts"
   ]
 }

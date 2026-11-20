@@ -862,10 +862,10 @@ export interface TranscriptResponse {
 
 /**
  * Box extensions (Can #12841–#12853): services the message box asks while a person types, set with
- * `serve --ext NAME=URL,box=ROLE`. They are not Workspace pages. The one role so far, "complete", suggests the next
- * words of a draft.
+ * `serve --ext NAME=URL,box=ROLE`. They are not Workspace pages. "complete" suggests the next words of a draft;
+ * "recipient" (Ümit #13030) suggests the one agent of a room to ask ("Ask @webapp"), or none.
  */
-export type BoxRole = "complete";
+export type BoxRole = "complete" | "recipient";
 
 /** POST /api/box/:name, from the website: the draft being typed in a conversation the person reads. */
 export interface BoxRequest {
@@ -893,6 +893,36 @@ export interface BoxCompleteBody {
   conversation: { id: string; kind: ConversationKind; name?: string; title?: string; members: string[] };
   /** Its latest messages, oldest first (deleted ones left out). */
   messages: Array<{ seq: number; from: string; text: string; createdAt: number }>;
+  draft: { text: string };
+}
+
+/**
+ * The answer of /api/box/:name for a "recipient" box (Ümit #13030). The extension's own `POST /recipient` answers the
+ * same shape; the bus passes on only an agent of `agents` (anything else becomes null).
+ */
+export interface BoxRecipientResponse {
+  /** The agent to offer ("Ask @webapp"), or null: the box stays quiet. */
+  recipient: string | null;
+  /** The model's probability for that choice, 0–1 (the extension's cut-off is already applied). */
+  confidence?: number;
+}
+
+/**
+ * What the bus sends a "recipient" extension: `POST <its URL>/recipient`. Versioned like BoxCompleteBody; only what the
+ * person may read. Sent only for a person's draft in a room with at least two `agents`, naming none of its members.
+ */
+export interface BoxRecipientBody {
+  v: 1;
+  kind: "recipient";
+  /** The person typing. */
+  me: string;
+  conversation: { id: string; kind: ConversationKind; name?: string; title?: string; topic?: string; members: string[] };
+  /** Its latest messages, oldest first (deleted ones left out), with their authors and what they answer. */
+  messages: Array<{ seq: number; from: string; fromKind: ParticipantKind; text: string; createdAt: number; replyTo?: number }>;
+  /** The room's checklist steps with their owners (who added them), open ones first; [] when it has none. */
+  checklist: Array<{ id: string; heading?: string; text: string; owner?: string; done: boolean; blocked?: string }>;
+  /** The agents it may name: the room's agent members, besides the person. At least two. */
+  agents: string[];
   draft: { text: string };
 }
 

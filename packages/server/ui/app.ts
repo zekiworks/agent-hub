@@ -27,6 +27,7 @@ import { ownTasksChanged, refreshInbox } from "./inbox";
 import "./files";
 import "./settings";
 import "./suggest";
+import "./ask";
 import "./stats";
 import "./tools";
 import "./search";
