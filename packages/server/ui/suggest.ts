@@ -3,7 +3,7 @@
 // change of the draft asks it for the next words, one request at a time (the newest draft goes next). An answer
 // shows as long as it still fits what is typed: typing the suggested letters keeps showing the rest, typing something
 // else hides it. The words show in grey after the cursor; Tab takes them, Escape drops them. Phones have no Tab:
-// there a chip under the text takes them on a tap. Not Enter: Enter sends, and Safari's grey completion taking Enter
+// there a chip with the whole word, in the row of buttons, takes them on a tap. Not Enter: Enter sends, and Safari's grey completion taking Enter
 // is why it was turned off (Ümit #11651).
 import type { BoxResponse } from "@agent-bus/protocol";
 import { api } from "./api";
@@ -32,11 +32,14 @@ export function setSuggestionsOn(on: boolean): void {
 const ghost = h("div", "composer-ghost");
 ghost.setAttribute("aria-hidden", "true");
 dom.input.before(ghost);
-/** The phones' way to take them. */
+/**
+ * The phones' way to take them: a chip in the row of buttons under the text, in the room that row has anyway, so
+ * the box keeps its size and place when it comes and goes (Ümit #13025: under the text it moved the box).
+ */
 const chip = h("button", "suggest-chip");
 chip.type = "button";
 chip.hidden = true;
-dom.input.after(chip);
+(dom.composer.querySelector(".composer-tools .tools-spacer") ?? dom.input).before(chip);
 
 /** The latest answer: the draft it was for, and that draft followed by its words. Shown while the box's text runs
  * from the draft into the words (so an answer for an earlier, shorter text never shows after a send or a deletion). */
@@ -105,8 +108,12 @@ function show(text: string): void {
   });
   ghost.replaceChildren(h("span", "ghost-draft", dom.input.value), h("span", "ghost-words", text));
   ghost.scrollTop = dom.input.scrollTop;
-  chip.textContent = `+${text}`;
-  chip.title = "Add these words (Tab)";
+  // The whole word, as on the iPhone's own bar ("checklist", not "+cklist", which did not read as something to tap;
+  // Ümit #13024): the part of it already typed, then the rest.
+  const typedPart = /\s/.test(text[0] ?? " ") ? "" : (/\S*$/.exec(dom.input.value)?.[0] ?? "");
+  chip.textContent = (typedPart + text).trim();
+  chip.title = "Tap to add";
+  chip.setAttribute("aria-label", `Add: ${chip.textContent}`);
   chip.hidden = !window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 }
 

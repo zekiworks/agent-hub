@@ -16,6 +16,8 @@ import { conversationTitle, state, type View } from "./state";
 
 /** A press shorter than this is a click: recording goes on until Send. Longer: hold to talk, let go to send. */
 const MIN_RECORDING_MS = 600;
+/** A level (RMS) this loud is someone speaking (speech sits around 0.02–0.2); a silent microphone stays far below. */
+const SPEECH_RMS = 0.015;
 /** Recordings stop (and send) by themselves after this much recorded time. */
 const MAX_RECORDING_MS = 5 * 60_000;
 /** Letting go farther than this outside the button deletes a held recording. */
@@ -50,6 +52,8 @@ interface Recording {
   chosen: Chosen;
   /** The level meter has seen anything but exact silence (a shortcut: then the recording is not checked for silence). */
   heard: boolean;
+  /** The level meter has seen speech-loud sound (SPEECH_RMS), not only a silent microphone's faint noise. */
+  spoke: boolean;
   /** The microphone has sent something, or SIGNAL_WAIT_MS passed without it (or no meter): the timer runs from here. */
   live: boolean;
   /** It went live because the microphone sent something, not because the wait ran out (codex-ui #12868). */
@@ -134,8 +138,10 @@ function tick(rec: Recording): void {
     let sum = 0;
     for (const v of data) sum += ((v - 128) / 128) ** 2;
     // Speech sits around 0.02–0.2 RMS; scale so normal speaking fills most of the height.
-    rec.levels.push(Math.min(1, Math.sqrt(sum / data.length) * 5));
+    const rms = Math.sqrt(sum / data.length);
+    rec.levels.push(Math.min(1, rms * 5));
     if (sum > 0) rec.heard = true;
+    if (rms >= SPEECH_RMS) rec.spoke = true;
     rec.lastLevelAt = now;
   }
   const elapsed = recordedMs(rec);
@@ -203,6 +209,7 @@ async function start(target?: { view: View; chosen: Chosen }): Promise<void> {
       view,
       chosen,
       heard: false,
+      spoke: false,
       live: false,
       confirmed: false,
     };
@@ -420,8 +427,13 @@ dom.voiceBtn.addEventListener("pointerdown", (event) => {
 dom.voiceBtn.addEventListener("pointerup", (event) => {
   held = false;
   if (!recording || state.voiceLatched) return;
-  // A short press was a click: keep recording until Send.
+  // A short press was a click: keep recording until Send. So is a hold let go before anyone spoke: sending it sent
+  // silence ("no speech recognized"; Ümit #13017, #13023, with a headset that starts slowly).
   if (recordedMs(recording) < MIN_RECORDING_MS) return setLatched(true);
+  if (!recording.spoke) {
+    setLatched(true);
+    return showStatus("Still recording: nothing was heard yet. Speak, then press ➤ (🗑 drops it).");
+  }
   const box = dom.voiceBtn.getBoundingClientRect();
   const away =
     event.clientX < box.left - CANCEL_DISTANCE_PX ||
