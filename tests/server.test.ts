@@ -376,6 +376,22 @@ describe("delivery", () => {
     expect((await beta.client.take("deliver")).wake).toBe(true);
   });
 
+  test("when another person wrote last, a person's message naming nobody wakes the last agent who wrote (Can #13604)", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const group = await send({ from: "carol", to: "@{alpha,beta,uma}", text: "plan" });
+    const id = group.conversation.id;
+    await alpha.client.take("deliver");
+    await beta.client.take("deliver");
+    await send({ from: beta.id, conversationId: id, text: "earlier step done", wake: [] });
+    await alpha.client.take("deliver");
+    await send({ from: alpha.id, conversationId: id, text: "tests are green", wake: [] });
+    await beta.client.take("deliver");
+    await send({ from: "uma", conversationId: id, text: "nice" });
+    const next = await send({ from: "carol", conversationId: id, text: "then tag it" });
+    expect(next.message.wake).toEqual(["alpha"]);
+  });
+
   test("a person calling in an agent new to the conversation also wakes the one it answers; a mention reaching nobody wakes that one", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");

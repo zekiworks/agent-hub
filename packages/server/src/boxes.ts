@@ -24,6 +24,7 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import hubPackage from "../../../package.json";
 import type { BusContext } from "./context";
 import { mayRead } from "./conversations";
+import { answeredBy } from "./messages";
 import { HttpError, readJsonObject } from "./http";
 
 /** A box extension: where it answers and what it does. */
@@ -110,9 +111,9 @@ export async function postBox(
     const answer = (await res.json()) as Record<string, unknown>;
     if (payload.kind === "recipient") {
       const offer = checkedRecipient(answer, payload.agents);
-      // The agent a message naming nobody wakes anyway (the last one who wrote, wakeList in messages.ts) is no
-      // suggestion: "Ask @message-bus" right after its own message only repeated what Send does (Can #13587).
-      return offer.recipient && offer.recipient === ctx.db.lastAuthorBesides(conversation.id, person) ? NONE : offer;
+      // The agent a message naming nobody wakes anyway (answeredBy in messages.ts) is no suggestion: "Ask
+      // @message-bus" right after its own message only repeated what Send does (Can #13587).
+      return offer.recipient && offer.recipient === answeredBy(ctx, conversation.id, person) ? NONE : offer;
     }
     const text = typeof answer.text === "string" && answer.text.length <= MAX_ANSWER_CHARS ? answer.text : "";
     return { text };

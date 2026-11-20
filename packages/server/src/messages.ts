@@ -307,10 +307,10 @@ function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknow
 
 /**
  * The agents a message wakes (Can, 15 Nov): one agent, the best placed, decides who acts next. A person's: in a DM, its
- * agent. Elsewhere the agents it @mentions, plus the agent it answers (the author of the message replied to, else of the
- * previous message by someone else) when it mentions none or calls in an agent new to the conversation (who lacks the
- * context the answered one has); where nobody else has written yet, all its agents. An agent's: the agent it replies
- * to (replyToSeq) and its list, members only; list left out (an older tool): undefined, the old rule.
+ * agent. Elsewhere the agents it @mentions, plus the agent it answers (the author of the message replied to, else
+ * `answeredBy`) when it mentions none or calls in an agent new to the conversation (who lacks the context the answered
+ * one has); where nobody else has written yet, all its agents. An agent's: the agent it replies to (replyToSeq) and its
+ * list, members only; list left out (an older tool): undefined, the old rule.
  */
 function wakeList(
   ctx: BusContext,
@@ -324,7 +324,7 @@ function wakeList(
 ): string[] | undefined {
   if (writer.kind === "human") {
     if (conversation.kind === "dm") return recipients;
-    const answered = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq)?.from : ctx.db.lastAuthorBesides(conversation.id, writer.id);
+    const answered = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq)?.from : answeredBy(ctx, conversation.id, writer.id);
     if (answered === undefined) return recipients; // a conversation started with them: they are meant
     // "@all" in a person's text wakes every agent of the conversation (Can, 15 Nov).
     if (mentionedIds(text).includes(ALL_CONVERSATION_ID)) return recipients;
@@ -344,6 +344,18 @@ function wakeList(
   }
   const repliedTo = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq)?.from : undefined;
   return repliedTo && recipients.includes(repliedTo) && !wake.includes(repliedTo) ? [repliedTo, ...wake] : wake;
+}
+
+/**
+ * Whom a person's message naming nobody answers: the last one who wrote besides them, and when that was a person, the
+ * last agent who wrote before (Can #13603: "the last agent who wrote is the best"; it was right 73% of the time on
+ * Can's and Ümit's messages since 15 Nov, a person writing last woke nobody, and the last agent before them was right
+ * 14 of 21 times). Undefined when nobody else has written yet.
+ */
+export function answeredBy(ctx: BusContext, conversationId: string, person: string): string | undefined {
+  const last = ctx.db.lastAuthorBesides(conversationId, person);
+  if (last === undefined || !ctx.hub.isHuman(last)) return last;
+  return ctx.db.lastAgentAuthorBesides(conversationId, person) ?? last;
 }
 
 /** An agent @mentions an agent its wake list leaves out: said, since the mention alone wakes nobody. */

@@ -137,11 +137,13 @@ wake list (`Message.wake`) get a turn for it, the others take it in at their nex
 
 - **A person writes:** one agent, the best placed, decides who acts next. In a DM, its agent is woken. Elsewhere (group
   DM, project, @all): the agents it @mentions who are in the conversation, plus the agent it answers (the author of the
-  message replied to with ↩, else of the previous message by someone else) when it mentions none or calls in an agent
-  new to the conversation ("Add and send"), who lacks the context the answered one has. A mention that reaches nobody
-  ("Send only") counts as none. Where nobody else has written yet, all its agents: it was started with them. `@all`
-  in the text wakes every agent of the conversation. A
-  message that answers a person and mentions no agent wakes nobody.
+  message replied to with ↩, else of the previous message by someone else, and when that was a person, the last agent
+  who wrote: Can #13604) when it mentions none or calls in an agent new to the conversation ("Add and send"), who lacks
+  the context the answered one has. A mention that reaches nobody ("Send only") counts as none. Where nobody else has
+  written yet, all its agents: it was started with them. `@all` in the text wakes every agent of the conversation. A
+  reply (↩) to a person's message that mentions no agent wakes nobody.
+  On Can's and Ümit's messages since 15 Nov, the last agent who wrote was the one who acted (not passing it on) 73% of
+  the time; "the most active agent" (38–65%) and LiquidAI d1-2B (30–59%) did worse (#13592–#13602).
 - **A person writes in a DM between others** (people may read agents' DMs; a DM's members are fixed): the message goes
   to the group DM of its two members and them, made if new, keeping its quote when it is a reply; the website follows.
 - **An agent writes:** the agent it replies to (op=reply) is always woken, plus those it lists in `wake` (agents of the

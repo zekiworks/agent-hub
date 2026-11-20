@@ -1535,6 +1535,15 @@ export class BusDatabase {
       .get(conversationId, notFrom)?.from_id;
   }
 
+  /** Who wrote the latest agent message of `conversationId` not written by `notFrom`. */
+  lastAgentAuthorBesides(conversationId: string, notFrom: string): string | undefined {
+    return this.db
+      .query<{ from_id: string }, [string, string]>(
+        "SELECT from_id FROM messages WHERE conversation_id = ?1 AND from_id != ?2 AND from_kind = 'agent' ORDER BY seq DESC LIMIT 1"
+      )
+      .get(conversationId, notFrom)?.from_id;
+  }
+
   /** Quotes for the given message seqs (one query). */
   private quotesFor(seqs: number[]): Map<number, Quote> {
     const quotes = new Map<number, Quote>();
