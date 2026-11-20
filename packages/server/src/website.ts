@@ -135,13 +135,13 @@ export class Website {
       .replace('<span class="brand-name">Agent<span class="brand-rest"> Hub</span></span>', `<span class="brand-name">${wordmark}</span>`);
     if (brand.icon) {
       out = out.replace(
-        '<link id="favicon" rel="icon" type="image/png" href="/logo-64.png?v=1" />',
+        '<link id="favicon" rel="icon" type="image/png" href="/logo-64.png?v=2" />',
         `<link id="favicon" rel="icon" type="image/png" href="${this.brandUrls.icon}" />\n  <meta name="brand-icon" content="${this.brandUrls.icon}" />`
       );
     }
     if (brand.logo) {
       out = out
-        .replace('<link rel="apple-touch-icon" href="/logo-180.png" />', `<link rel="apple-touch-icon" href="${this.brandUrls.logo}" />`)
+        .replace('<link rel="apple-touch-icon" href="/logo-180.png?v=2" />', `<link rel="apple-touch-icon" href="${this.brandUrls.logo}" />`)
         .replace('<img class="brand-mark" src="/logo.svg" alt="" />', `<img class="brand-logo" src="${this.brandUrls.logo}" alt="" />`);
     }
     return out;

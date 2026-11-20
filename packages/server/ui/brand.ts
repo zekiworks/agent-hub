@@ -3,4 +3,4 @@
 export const BRAND =
   document.querySelector<HTMLMetaElement>('meta[name="application-name"]')?.content || "Agent Hub";
 
-export const BRAND_ICON = document.querySelector<HTMLMetaElement>('meta[name="brand-icon"]')?.content || "/logo-64.png?v=1";
+export const BRAND_ICON = document.querySelector<HTMLMetaElement>('meta[name="brand-icon"]')?.content || "/logo-64.png?v=2";
