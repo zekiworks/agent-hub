@@ -56,22 +56,20 @@ export function notify(message: Message, conv: Conversation): void {
 let titleBase = BRAND;
 
 /**
- * The tab icon (Agent Hub's logo, or `--brand-icon`), with a red dot while messages are unread. Safari on the Mac
- * showed no logo while anything was unread (Ümit #13435): it takes a tab icon only from a new <link> with a real
- * address, not from a changed href or a data: URL. So the link is replaced, and Agent Hub's own icon with the dot is
- * a file (logo-64-unread.png); a brand's icon still gets its dot drawn here.
+ * The tab icon (Agent Hub's logo, or `--brand-icon`), with a red dot while messages are unread. Safari shows the icon
+ * the page came with and drops any it is given later: with messages unread (always, for a busy person) its tab showed
+ * a letter instead of the logo (Ümit #13435, #13459). So Safari keeps the page's own icon; the title's "(62)" says
+ * what is unread. Other browsers get the dot: Agent Hub's own icon with it is a file (logo-64-unread.png), a brand's
+ * icon gets it drawn here.
  */
 let iconImage: HTMLImageElement | undefined;
 const OWN_ICON = "/logo-64.png?v=2";
 const OWN_UNREAD_ICON = "/logo-64-unread.png?v=1";
+const SAFARI = /^((?!chrome|chromium|crios|android|edg|firefox|fxios).)*safari/i.test(navigator.userAgent);
 function setFavicon(link: HTMLLinkElement, attention: boolean): void {
+  if (SAFARI) return;
   const put = (href: string) => {
-    const fresh = document.createElement("link");
-    fresh.id = link.id;
-    fresh.rel = "icon";
-    fresh.type = "image/png";
-    fresh.href = href;
-    link.replaceWith(fresh);
+    link.href = href;
   };
   if (!attention) return put(BRAND_ICON);
   if (BRAND_ICON === OWN_ICON) return put(OWN_UNREAD_ICON);
