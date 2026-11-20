@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { BoxRecipientBody } from "@agent-bus/protocol";
-import type { Item, ResultLine } from "../packages/ask-ext/eval/common";
+import type { Item, LabelLine, ResultLine } from "../packages/ask-ext/eval/common";
 
 const dir = mkdtempSync(path.join(tmpdir(), "ask-eval-"));
 process.env.ASK_EVAL_DIR = dir;
@@ -38,7 +38,7 @@ function result(id: string, recipient: string | null, confidence: number): Resul
   return { item: id, model: "m", recipient, confidence, probabilities: {}, ms: 10 };
 }
 
-const label = (labels: string[]) => ({ labels, at: 0 });
+const label = (labels: string[], cannotJudge?: true): Omit<LabelLine, "item"> => ({ labels, at: 0, ...(cannotJudge ? { cannotJudge } : {}) });
 
 test("report: counts, corrected and disrupted against the rule, cut-off from DEV", () => {
   const items = [
@@ -47,20 +47,23 @@ test("report: counts, corrected and disrupted against the rule, cut-off from DEV
     item("m3", "test", "webapp"), // rule right; model wrong → disrupted (wrong agent)
     item("m4", "test", "webapp"), // rule right; model low confidence → silent → disrupted (silent)
     item("m5", "test", "webapp", "tr"), // none; rule wrong; model quiet
+    item("m8", "test", "webapp"), // can't judge: left out of every number
     item("m6", "dev", "webapp"),
     item("m7", "dev", "docs"),
   ];
+  items[0]?.body.checklist.push({ id: "i1", text: "Fix the Safari tests", owner: "webapp", done: false });
   const labels = new Map([
     ["m1", label(["webapp"])],
     ["m2", label(["docs"])],
     ["m3", label(["webapp"])],
     ["m4", label(["webapp", "docs"])],
     ["m5", label([])],
+    ["m8", label([], true)],
     ["m6", label(["webapp"])],
     ["m7", label([])],
-  ].map(([id, l]) => [id as string, { item: id as string, ...(l as { labels: string[]; at: number }) }]));
+  ].map(([id, l]) => [id as string, { item: id as string, ...(l as Omit<LabelLine, "item">) }]));
   const results = new Map(
-    [result("m1", "webapp", 0.9), result("m2", "docs", 0.8), result("m3", "docs", 0.7), result("m4", "webapp", 0.3), result("m5", null, 0.9), result("m6", "webapp", 0.9), result("m7", "docs", 0.4)].map((r) => [r.item, r])
+    [result("m1", "webapp", 0.9), result("m2", "docs", 0.8), result("m3", "docs", 0.7), result("m4", "webapp", 0.3), result("m5", null, 0.9), result("m8", "docs", 0.9), result("m6", "webapp", 0.9), result("m7", "docs", 0.4)].map((r) => [r.item, r])
   );
   const run = { model: "m", hardware: "test box", results };
   // DEV: at cut-off 0 the model offers m6 (right) and m7 (wrong): 50%; above 0.4 only m6: 100%.
@@ -74,7 +77,12 @@ test("report: counts, corrected and disrupted against the rule, cut-off from DEV
   expect(ruleRow?.slice(3, 7)).toEqual(["5", "5 (100%)", "3 (60%)", "2"]);
   // model at 0.4: m1 right, m2 right, m3 wrong, m4 silent (missed), m5 quiet; corrected 1, disrupted 1 + 1
   expect(modelRow?.slice(3, 16)).toEqual(["5", "3 (60%)", "2 (40%)", "1", "67%", "1", "1", "1", "1", "1", "10 ms", "10 ms", "test box"]);
-  expect(report).toContain("| m | tr | 1 | 0 | 0 (0%) | 0 | 0 | 1 |");
+  expect(report).toContain("can't judge: 1 TEST, 0 DEV");
+  expect(report).toContain("effectively messages-only");
+  expect(report).toContain("1 of the 6 TEST items carry any checklist");
+  expect(report).toContain("| m | tr | 1 | 0 (0%) | 0 (0%) | 0 | – | 0 | 1 | 0 | 0 | 0 |");
+  expect(report).toContain("| m | with | 1 | 1 (100%) | 1 (100%) | 0 | 100% | 0 | 0 | 0 | 0 | 0 |");
+  expect(report).toContain("| m | without | 4 | 2 (50%) | 1 (25%) | 1 | 50% | 1 | 1 | 1 | 1 | 1 |");
 });
 
 test("label page: renders, saves by GET, refuses non-agents, exports", async () => {
@@ -92,8 +100,13 @@ test("label page: renders, saves by GET, refuses non-agents, exports", async () 
   expect((await get("/save?item=m2&labels=none,docs")).status).toBe(400);
   await get("/save?item=m2&labels=none");
   await get("/save?item=m1&labels=docs"); // the latest wins
+  expect((await get("/save?item=m2&cannotJudge=1&labels=docs")).status).toBe(400);
+  const cannot = await get("/save?item=m2&cannotJudge=1&sender=umit");
+  expect(await cannot.text()).toContain("Saved m2: can’t judge.");
+  expect(await (await get("/?item=m2")).text()).toContain('data-cannot="1" aria-pressed="true"');
   const exported = (await (await get("/labels.json")).json()) as { labels: Record<string, { labels: string[] }> };
-  expect(exported.labels).toEqual({ m1: expect.objectContaining({ labels: ["docs"] }), m2: expect.objectContaining({ labels: [] }) });
+  expect(exported.labels).toEqual({ m1: expect.objectContaining({ labels: ["docs"] }), m2: expect.objectContaining({ labels: [], cannotJudge: true }) });
+  expect(common.latestLabels().get("m2")).toMatchObject({ labels: [], cannotJudge: true, by: "umit" });
   expect(JSON.parse(readFileSync(common.LABELS_EXPORT, "utf8")).count).toBe(2);
   expect((await get("/?item=nope")).status).toBe(404);
 });

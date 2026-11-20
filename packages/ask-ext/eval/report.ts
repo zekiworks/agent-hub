@@ -3,7 +3,8 @@
 //   bun packages/ask-ext/eval/report.ts --results ~/.agent-bus/ask-eval/results-d1-cpu.jsonl,~/.agent-bus/ask-eval/results-glide-gpu.jsonl
 //     [--labels ~/.agent-bus/ask-eval/labels.jsonl] [--min-precision 0.8] [--out ~/.agent-bus/ask-eval/report.md]
 //
-// Only labelled items count. Definitions (per item; `labels` = the agents the sender accepts, [] = none):
+// Only labelled items count; items labelled "can't judge" are left out of every number and counted on their own line.
+// Definitions (per item; `labels` = the agents the sender accepts, [] = none):
 // - shown: the box offers an agent (model: its top choice is an agent with probability ≥ the cut-off; rule: below);
 // - correct: the shown agent is among the labels (on a none-labelled item any shown agent is wrong);
 // - wrong: shown and not correct; missed: silent where an agent was acceptable; quiet-right: silent on a none item;
@@ -45,10 +46,16 @@ function offer(result: ResultLine | undefined, cutoff: number): string | null {
   return result.confidence >= cutoff ? result.recipient : null;
 }
 
+/** The acceptable agents of a labelled item ([] = none); undefined when unlabelled or labelled "can't judge". */
+function judged(labels: ReadonlyMap<string, LabelLine>, id: string): string[] | undefined {
+  const line = labels.get(id);
+  return line && !line.cannotJudge ? line.labels : undefined;
+}
+
 function count(items: readonly Item[], labels: ReadonlyMap<string, LabelLine>, shownFor: (item: Item) => string | null): Counts {
   const c: Counts = { n: 0, shown: 0, correct: 0, wrong: 0, missed: 0, quietRight: 0 };
   for (const item of items) {
-    const ok = labels.get(item.id)?.labels;
+    const ok = judged(labels, item.id);
     if (!ok) continue;
     c.n++;
     const shown = shownFor(item);
@@ -130,66 +137,95 @@ function quantile(sorted: readonly number[], q: number): number | undefined {
 
 const ms = (v: number | undefined) => (v === undefined ? "–" : v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`);
 
+type System = { name: string; cut?: number; shownFor: (item: Item) => string | null; run?: Run };
+
+/** Cells of a system on `items`: labelled, shown, correct, wrong, precision, missed, quiet on none, then (models only) corrected and both disruptions. */
+function metricCells(items: readonly Item[], labels: ReadonlyMap<string, LabelLine>, s: System): string[] {
+  const c = count(items, labels, s.shownFor);
+  let corrected = 0;
+  let disruptedWrong = 0;
+  let disruptedSilent = 0;
+  for (const item of items) {
+    const ok = judged(labels, item.id);
+    if (!ok || !s.run) continue;
+    const ruleRight = item.rule !== null && ok.includes(item.rule);
+    const shown = s.shownFor(item);
+    if (ok.length > 0 && !ruleRight && shown !== null && ok.includes(shown)) corrected++;
+    if (ruleRight && shown !== null && !ok.includes(shown)) disruptedWrong++;
+    if (ruleRight && shown === null) disruptedSilent++;
+  }
+  const versusRule = s.run ? [String(corrected), String(disruptedWrong), String(disruptedSilent)] : ["–", "–", "–"];
+  return [
+    String(c.n),
+    `${c.shown} (${pct(c.shown, c.n)})`,
+    `${c.correct} (${pct(c.correct, c.n)})`,
+    String(c.wrong),
+    pct(c.correct, c.shown),
+    String(c.missed),
+    String(c.quietRight),
+    ...versusRule,
+  ];
+}
+
+const METRIC_HEADS = "labelled | shown | correct | wrong | precision | missed | quiet on none | corrected vs rule | disrupted: wrong agent | disrupted: silent";
+
 /** The report as markdown. */
 export function buildReport(items: readonly Item[], labels: ReadonlyMap<string, LabelLine>, runs: readonly Run[], minPrecision: number): string {
   const test = items.filter((i) => i.split === "test");
   const dev = items.filter((i) => i.split === "dev");
-  const labelled = (list: readonly Item[]) => list.filter((i) => labels.has(i.id)).length;
+  const labelled = (list: readonly Item[]) => list.filter((i) => judged(labels, i.id)).length;
+  const cannotJudge = (list: readonly Item[]) => list.filter((i) => labels.get(i.id)?.cannotJudge === true).length;
   const choice = chooseCutoffs(runs, dev, labels, minPrecision);
-  const rule = (item: Item) => item.rule;
-  const systems: Array<{ name: string; cut?: number; shownFor: (item: Item) => string | null; run?: Run }> = [
-    { name: "current rule (last other author)", shownFor: rule },
+  const systems: System[] = [
+    { name: "current rule (last other author)", shownFor: (item: Item) => item.rule },
     ...runs.map((run) => {
       const cut = choice.cutoffs.get(run.model) ?? 0;
       return { name: run.model, cut, run, shownFor: (item: Item) => offer(run.results.get(item.id), cut) };
     }),
   ];
+  const withChecklist = test.filter((i) => i.body.checklist.length > 0);
   const out: string[] = [];
   out.push(`# Ask @agent: models against the current rule`, "");
   out.push(`Items: TEST ${test.length} (${labelled(test)} labelled), DEV ${dev.length} (${labelled(dev)} labelled). Only labelled items count.`, "");
+  out.push(`can't judge: ${cannotJudge(test)} TEST, ${cannotJudge(dev)} DEV (the sender could not tell from what the room showed; left out of every number below).`, "");
+  out.push(
+    `This historical comparison is effectively messages-only: the checklist as it stood before each message can only partly be reconstructed (dated items only), and ${withChecklist.length} of the ${test.length} TEST items carry any checklist. Checklist evidence is tested separately, on the made-up rooms of packages/ask-ext/src/fixtures.ts.`,
+    ""
+  );
   out.push(`Cut-offs (on DEV): ${choice.how}. ${runs.map((r) => `${r.model} ${(choice.cutoffs.get(r.model) ?? 0).toFixed(3)}`).join(", ") || "no models"}.`, "");
 
   if (choice.sweep) out.push(`DEV sweep (each model's lowest cut-off at most at that suggestion rate):`, "", choice.sweep, "");
   out.push(`## TEST`, "");
-  out.push(`| system | cut-off | labelled | shown | correct | wrong | precision | missed | quiet on none | corrected vs rule | disrupted: wrong agent | disrupted: silent | latency median | latency p90 | hardware |`);
+  out.push(`| system | cut-off | ${METRIC_HEADS} | latency median | latency p90 | hardware |`);
   out.push(`|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`);
   for (const s of systems) {
-    const c = count(test, labels, s.shownFor);
-    let corrected = 0;
-    let disruptedWrong = 0;
-    let disruptedSilent = 0;
-    if (s.run) {
-      for (const item of test) {
-        const ok = labels.get(item.id)?.labels;
-        if (!ok) continue;
-        const ruleRight = item.rule !== null && ok.includes(item.rule);
-        const shown = s.shownFor(item);
-        if (ok.length > 0 && !ruleRight && shown !== null && ok.includes(shown)) corrected++;
-        if (ruleRight && shown !== null && !ok.includes(shown)) disruptedWrong++;
-        if (ruleRight && shown === null) disruptedSilent++;
-      }
-    }
     const times = s.run ? [...s.run.results.values()].filter((r) => r.error === undefined).map((r) => r.ms).sort((a, b) => a - b) : [];
-    const cells = s.run
-      ? [String(corrected), String(disruptedWrong), String(disruptedSilent), ms(quantile(times, 0.5)), ms(quantile(times, 0.9)), s.run.hardware]
-      : ["–", "–", "–", "0 (no call)", "–", "the bus"];
-    out.push(`| ${s.name} | ${s.cut === undefined ? "–" : s.cut.toFixed(3)} | ${c.n} | ${c.shown} (${pct(c.shown, c.n)}) | ${c.correct} (${pct(c.correct, c.n)}) | ${c.wrong} | ${pct(c.correct, c.shown)} | ${c.missed} | ${c.quietRight} | ${cells.join(" | ")} |`);
+    const latency = s.run ? [ms(quantile(times, 0.5)), ms(quantile(times, 0.9)), s.run.hardware] : ["0 (no call)", "–", "the bus"];
+    out.push(`| ${s.name} | ${s.cut === undefined ? "–" : s.cut.toFixed(3)} | ${[...metricCells(test, labels, s), ...latency].join(" | ")} |`);
   }
   out.push("");
   out.push(`Latency: client wall time per call (one call at a time, after warm-up), over all items the model answered (TEST and DEV).`, "");
 
-  out.push(`## TEST by language`, "");
-  out.push(`| system | language | labelled | shown | correct | wrong | missed | quiet on none |`);
-  out.push(`|---|---|---|---|---|---|---|---|`);
-  for (const s of systems) {
-    for (const lang of ["en", "tr"] as Lang[]) {
-      const c = count(test.filter((i) => i.lang === lang), labels, s.shownFor);
-      out.push(`| ${s.name} | ${lang} | ${c.n} | ${c.shown} | ${c.correct} (${pct(c.correct, c.n)}) | ${c.wrong} | ${c.missed} | ${c.quietRight} |`);
-    }
+  const splits: Array<[title: string, column: string, parts: Array<[string, Item[]]>]> = [
+    ["TEST by language", "language", (["en", "tr"] as Lang[]).map((lang) => [lang, test.filter((i) => i.lang === lang)])],
+    [
+      "TEST with and without checklist context",
+      "checklist",
+      [
+        ["with", withChecklist],
+        ["without", test.filter((i) => i.body.checklist.length === 0)],
+      ],
+    ],
+  ];
+  for (const [title, column, parts] of splits) {
+    out.push(`## ${title}`, "");
+    out.push(`| system | ${column} | ${METRIC_HEADS} |`);
+    out.push(`|---|---|---|---|---|---|---|---|---|---|---|---|`);
+    for (const s of systems) for (const [part, list] of parts) out.push(`| ${s.name} | ${part} | ${metricCells(list, labels, s).join(" | ")} |`);
+    out.push("");
   }
-  out.push("");
-  const noneItems = test.filter((i) => labels.get(i.id)?.labels.length === 0).length;
-  out.push(`Labels on TEST: ${noneItems} none, ${labelled(test) - noneItems} with an acceptable agent. Failed calls count as silent: ${runs.map((r) => `${r.model} ${[...r.results.values()].filter((x) => x.error !== undefined).length}`).join(", ") || "–"}.`, "");
+  const noneItems = test.filter((i) => judged(labels, i.id)?.length === 0).length;
+  out.push(`Labels on TEST: ${noneItems} none, ${labelled(test) - noneItems} with an acceptable agent, ${cannotJudge(test)} can't judge. Failed calls count as silent: ${runs.map((r) => `${r.model} ${[...r.results.values()].filter((x) => x.error !== undefined).length}`).join(", ") || "–"}.`, "");
   out.push(`Definitions: shown = an agent offered; correct = offered agent among the sender's labels (any offer on a none-labelled item is wrong); missed = silent where an agent was acceptable; quiet on none = silent on a none-labelled item; corrected = an agent was acceptable, the rule was wrong or silent and the model offered an acceptable agent; disrupted: wrong agent = the rule was right and the model offered an unacceptable agent; disrupted: silent = the rule was right and the model stayed silent.`);
   return out.join("\n") + "\n";
 }

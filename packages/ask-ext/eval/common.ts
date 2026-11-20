@@ -31,10 +31,14 @@ export interface Item {
   rule: string | null;
 }
 
-/** A label line: the agents the sender would have accepted for this message; [] = none of them. */
+/**
+ * A label line: the agents the sender would have accepted for this message; [] = none of them. `cannotJudge`: the
+ * sender could not tell from what the room showed (labels then []); left out of the metrics. Older lines lack it.
+ */
 export interface LabelLine {
   item: string;
   labels: string[];
+  cannotJudge?: true;
   by?: string;
   at: number;
 }
