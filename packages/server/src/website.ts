@@ -78,6 +78,9 @@ export class Website {
   serve(pathname: string, headers?: Headers): Promise<Response> | undefined {
     if (pathname === "/" || pathname === "/index.html") return this.asset("index.html");
     if (pathname === "/auth") return this.asset("auth.html");
+    // Browsers also ask /favicon.ico on their own (Safari for its tab and favourites icons): the same leaves, or the
+    // brand's icon (Ümit #13273).
+    if (pathname === "/favicon.ico") return this.brand?.icon ? this.brandImage(this.brand.icon) : this.asset("logo-64.png");
     if (pathname === "/brand/logo" || pathname === "/brand/icon") return this.brandImage(pathname === "/brand/logo" ? this.brand?.logo : this.brand?.icon);
     if (WORD_LISTS.has(pathname.slice(1))) return Promise.resolve(this.wordList(pathname.slice(1), headers));
     if (/^\/[a-z0-9-]+\.(js|css|html|svg|png)$/.test(pathname)) return this.asset(pathname.slice(1));
