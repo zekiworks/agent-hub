@@ -4,7 +4,7 @@
 // shows as long as it still fits what is typed: typing the suggested letters keeps showing the rest, typing something
 // else hides it. The words show in grey after the cursor; Tab takes them, Escape drops them. Phones have no Tab:
 // there a chip with the whole word, in the row of buttons, takes them on a tap. Not Enter: Enter sends, and Safari's grey completion taking Enter
-// is why it was turned off (Ümit #11651).
+// is why it was turned off (Ümit #11651). Phones too, once ticked in Settings (Ümit #13228).
 import type { BoxResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { dom } from "./dom";
@@ -277,14 +277,27 @@ dom.input.addEventListener("scroll", () => (ghost.scrollTop = dom.input.scrollTo
 // must not drop the words the tap is about to take (Ümit #13174: tapping the chip did nothing).
 let chipPressed = false;
 dom.input.addEventListener("blur", () => setTimeout(() => !chipPressed && document.activeElement !== chip && hide(), 0));
-// A tap on the chip must not take the focus (the keyboard would drop): pointerdown keeps it in the box.
+// A tap on the chip must not take the focus (the keyboard would drop): pointerdown keeps it in the box. Safari then
+// sends no click at all, so the words are taken on pointerup (Ümit #13338, #13343: tapping did nothing); a click
+// that does come after it (Chrome) is not a second take, and a click without one (keyboard) takes.
+let tookOnPointerUp = false;
 chip.addEventListener("pointerdown", (event) => {
   event.preventDefault();
   chipPressed = true;
+  tookOnPointerUp = false;
 });
 chip.addEventListener("pointercancel", () => (chipPressed = false));
-chip.addEventListener("click", () => {
+chip.addEventListener("pointerup", () => {
+  if (!chipPressed) return;
   chipPressed = false;
+  tookOnPointerUp = true;
+  take();
+});
+chip.addEventListener("click", () => {
+  if (tookOnPointerUp) {
+    tookOnPointerUp = false;
+    return;
+  }
   take();
 });
 window.addEventListener("hashchange", reset);

@@ -182,9 +182,27 @@ function take(): void {
 }
 
 dom.input.addEventListener("input", schedule);
-// A tap on the chip must not take the focus from the box (on a phone the keyboard would drop).
-chip.addEventListener("pointerdown", (event) => event.preventDefault());
-chip.addEventListener("click", take);
+// A tap on the chip must not take the focus from the box (on a phone the keyboard would drop). Safari sends no click
+// after a pointerdown kept from the focus, so a tap takes on pointerup; a click after it is not a second take
+// (Ümit #13338: tapping the word chip did nothing).
+let pressed = false;
+let tookOnPointerUp = false;
+chip.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  pressed = true;
+  tookOnPointerUp = false;
+});
+chip.addEventListener("pointercancel", () => (pressed = false));
+chip.addEventListener("pointerup", () => {
+  if (!pressed) return;
+  pressed = false;
+  tookOnPointerUp = true;
+  take();
+});
+chip.addEventListener("click", () => {
+  if (tookOnPointerUp) tookOnPointerUp = false;
+  else take();
+});
 // Another room, a reply or a checklist item chosen, a message sent: what was asked about no longer applies.
 window.addEventListener("hashchange", () => {
   reset();
