@@ -397,11 +397,13 @@ function closeMenu(): void {
 dom.paneBtn.addEventListener("click", (event) => {
   event.stopPropagation();
   if (menu) return closeMenu();
-  const shown = dom.paneBtn.dataset.shown ?? "";
   menu = h("div", "entry-menu ws-menu");
   menu.setAttribute("role", "menu");
   for (const e of entityExtensions(state.view)) {
-    const item = h("button", "entry-menu-item", `${e.id === shown ? "✓ " : ""}${e.title()}`);
+    // ✓ on every item that has a tab for the entity on the left (pinned to it, or the passing tab), shown or not (Can #13116).
+    const here = subjectKey({ ext: e.id, pinned: false });
+    const tabbed = tabs.some((t) => t.ext === e.id && (!t.pinned || subjectKey(t) === here));
+    const item = h("button", "entry-menu-item", `${tabbed ? "✓ " : ""}${e.title()}`);
     item.type = "button";
     item.setAttribute("role", "menuitem");
     item.addEventListener("click", () => {
