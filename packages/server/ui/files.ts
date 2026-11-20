@@ -1,5 +1,6 @@
 // Two right-pane extensions: File, the viewer for an opened attachment (markdown, plain text, images), and Shared,
-// every file shared in the open conversation (GET /api/conversations/:id/files), newest first.
+// every file shared in the open conversation (GET /api/conversations/:id/files), newest first, with the selected
+// one shown under the list.
 import { formatBytes, type FileRef, type Message, type SharedFile, type SharedFilesResponse } from "@agent-bus/protocol";
 import { api, fileUrl } from "./api";
 import { errorText, relativeTime } from "./format";
@@ -28,44 +29,38 @@ export function viewKind(file: FileRef): ViewKind | undefined {
 
 /** The file open in the viewer, and its content element (kept, so switching tabs keeps its scroll position). */
 let opened: { file: FileRef; element: HTMLElement } | undefined;
-let request = 0;
 
-/** Opens `file` in the pane's File tab. */
-export function openFile(file: FileRef): void {
+/**
+ * A view of `file`: a head (name, size, Download and the `extra` buttons) over its content, loaded now. Each view loads
+ * into its own element, so one replaced before its file arrives is simply left behind.
+ */
+function fileView(file: FileRef, ...extra: HTMLElement[]): HTMLElement {
   const url = fileUrl(file.id);
-  const mine = ++request;
   const download = h("a", "link-btn doc-download", "Download");
   download.href = url;
   download.download = file.name;
   download.title = "Download the file";
-  const close = h("button", "link-btn", "Close file");
-  close.type = "button";
-  close.addEventListener("click", () => {
-    request++;
-    opened = undefined;
-    refreshPane("file");
-  });
   const title = h("span", "doc-title", `${file.name} · ${formatBytes(file.size)}`);
   title.title = file.name;
   const content = h("div", "doc-body msg-text");
+  // Reachable from the keyboard (Enter in the Shared list), so arrows then scroll the file.
+  content.tabIndex = -1;
   const head = h("div", "doc-head");
-  head.append(title, download, close);
+  head.append(title, download, ...extra);
   const element = h("div", "doc-view");
   element.append(head, content);
-  opened = { file, element };
-  openPane("file");
 
   const kind = viewKind(file);
   if (!kind || file.size > MAX_VIEW_BYTES) {
     content.append(h("p", "doc-note", `Not shown here (${formatBytes(file.size)}${kind ? ", too large" : ""}); use Download.`));
-    return;
+    return element;
   }
   if (kind === "image") {
     const img = h("img", "doc-image");
     img.src = url;
     img.alt = file.name;
     content.append(img);
-    return;
+    return element;
   }
   content.append(h("p", "doc-note", "Loading…"));
   void (async () => {
@@ -73,14 +68,25 @@ export function openFile(file: FileRef): void {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
-      if (mine !== request) return;
       content.replaceChildren(...(kind === "markdown" ? renderMarkdown(text, mentionNodes) : [h("pre", "doc-text", text)]));
       content.scrollTop = 0;
     } catch (error) {
-      if (mine !== request) return;
       content.replaceChildren(h("p", "doc-note", `Could not load ${file.name}: ${errorText(error)}`));
     }
   })();
+  return element;
+}
+
+/** Opens `file` in the pane's File tab. */
+export function openFile(file: FileRef): void {
+  const close = h("button", "link-btn", "Close file");
+  close.type = "button";
+  close.addEventListener("click", () => {
+    opened = undefined;
+    refreshPane("file");
+  });
+  opened = { file, element: fileView(file, close) };
+  openPane("file");
 }
 
 registerExtension({
@@ -132,25 +138,36 @@ async function load(conversationId: string): Promise<void> {
   refreshPane("shared");
 }
 
-function sharedRow(item: SharedFile): HTMLLIElement {
+/** The file selected in each conversation's Shared list (its id), and the preview last built (kept: no reload on redraw). */
+const chosen = new Map<string, string>();
+let preview: { id: string; element: HTMLElement } | undefined;
+
+function sharedRow(item: SharedFile, select: () => void): HTMLLIElement {
   const { file } = item;
   const kind = viewKind(file);
   const li = h("li", "shared-file");
+  li.setAttribute("role", "option");
   const name = h("a", "shared-name", `${kind === "image" ? "🖼" : kind ? "📄" : "⬇"} ${file.name}`);
   name.href = fileUrl(file.id);
   name.download = file.name;
-  name.title = kind ? `Open ${file.name} here (Ctrl/⌘+click downloads)` : `Download ${file.name}`;
-  if (kind) {
-    name.addEventListener("click", (event) => {
-      if (event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
-      event.preventDefault();
-      openFile(file);
-    });
-  }
+  name.tabIndex = -1;
+  name.title = `Show ${file.name} below (Ctrl/⌘+click downloads)`;
+  name.addEventListener("click", (event) => {
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+  });
   const at = h("button", "link-btn shared-at", `#${item.seq}`);
   at.type = "button";
+  at.tabIndex = -1;
   at.title = "Show the message that shared it";
-  at.addEventListener("click", () => void hooks.showMessage(item.seq));
+  at.addEventListener("click", (event) => {
+    event.stopPropagation();
+    void hooks.showMessage(item.seq);
+  });
+  li.addEventListener("click", (event) => {
+    if ((event.ctrlKey || event.metaKey || event.shiftKey) && (event.target as Element).closest("a")) return;
+    select();
+  });
   li.append(name, h("span", "shared-meta", `${formatBytes(file.size)} · @${item.from} · ${relativeTime(item.createdAt)} · `), at);
   return li;
 }
@@ -177,8 +194,44 @@ registerExtension({
       body.replaceChildren(h("p", "doc-note pane-pad", "No files shared here yet."));
       return;
     }
+    // A list with one selected file, shown below it; the list holds the keyboard: ↑ ↓ move, Home End go to the first and
+    // last, Enter goes into the file (Can #13619, codex-ui #13620). Other keys and the file's own scrolling are untouched.
     const list = h("ul", "shared-list");
-    list.append(...files.map(sharedRow));
-    body.replaceChildren(list);
+    list.tabIndex = 0;
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Shared files: ↑ ↓ to move, Enter to read the file");
+    const shown = h("div", "shared-preview");
+    const conversationId = view.id;
+    const rows = files.map((item, i) => sharedRow(item, () => select(i)));
+    const select = (i: number) => {
+      const item = files[i];
+      if (!item) return;
+      chosen.set(conversationId, item.file.id);
+      rows.forEach((row, j) => {
+        row.classList.toggle("selected", j === i);
+        row.setAttribute("aria-selected", String(j === i));
+      });
+      list.setAttribute("aria-activedescendant", (rows[i]!.id = `shared-${item.file.id}`));
+      if (preview?.id !== item.file.id) preview = { id: item.file.id, element: fileView(item.file) };
+      shown.replaceChildren(preview.element);
+      rows[i]!.scrollIntoView({ block: "nearest" });
+    };
+    list.addEventListener("keydown", (event) => {
+      const at = Math.max(0, files.findIndex((f) => f.file.id === chosen.get(conversationId)));
+      const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: files.length - 1 }[event.key];
+      if (to !== undefined) {
+        event.preventDefault();
+        select(Math.min(files.length - 1, Math.max(0, to)));
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        shown.querySelector<HTMLElement>(".doc-body")?.focus();
+      }
+    });
+    list.append(...rows);
+    const root = h("div", "shared-pane");
+    root.append(list, shown);
+    body.replaceChildren(root);
+    const at = files.findIndex((f) => f.file.id === chosen.get(conversationId));
+    select(at >= 0 ? at : 0);
   },
 });

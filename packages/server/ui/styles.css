@@ -719,11 +719,46 @@ button:disabled {
   font-size: 13px;
 }
 
-/* Shared: the files of the open conversation, newest first (files.ts). */
+/* Shared: the files of the open conversation, newest first, the selected one shown below (files.ts; Can #13619). */
+.shared-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .shared-list {
+  flex: none;
+  max-height: 40%;
+  overflow-y: auto;
   margin: 0;
-  padding: 8px 0;
+  padding: 4px 0;
   list-style: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.shared-list:focus {
+  outline: none;
+}
+
+.shared-list:focus-visible .shared-file.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.shared-file.selected {
+  background: var(--hover);
+}
+
+.shared-file {
+  cursor: pointer;
+}
+
+.shared-preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .shared-file {

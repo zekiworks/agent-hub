@@ -46,7 +46,9 @@ The website's right pane holds extensions. Which tabs show depends on what the m
 Every file attached in the conversation, newest first: name, size, who shared it, when, and a link to its message.
 Built from the conversation's messages (`GET /api/conversations/:id/files`, read-checked like its messages), so it
 shows exactly what the reader may read; no new storage. Voice messages are left out (they are messages, not shared
-files). It updates when a file arrives.
+files). It updates when a file arrives. The selected file shows under the list (Can #13619): a click selects one, and
+while the list has the focus ↑ ↓ move to the previous or next file, Home and End to the first and last, and Enter goes
+into the file so the arrows scroll it. The open conversation's selection is kept while the pane is redrawn.
 
 ## Progress
 
