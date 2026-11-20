@@ -283,13 +283,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
     const again = state.selectedSeq === message.seq && state.selectedPart === part;
     selectMessage(again ? undefined : message.seq, part);
     if (!PHONE.matches) return;
-    // The message's buttons show while I am in it, and go when I step out.
-    const open = !again;
-    for (const other of dom.messageList.querySelectorAll(".msg-tapped")) other.classList.remove("msg-tapped");
-    state.tappedSeq = open ? message.seq : undefined;
-    if (!open) return;
-    li.classList.add("msg-tapped");
-    requestAnimationFrame(() => revealActions(actions));
+    tapOpen(li, message.seq, !again, actions);
   });
 
   if (message.quote) li.append(renderQuote(message.quote));
@@ -308,6 +302,22 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   if (message.files.length > 0) {
     const files = h("ul", "msg-files");
     for (const file of message.files) files.append(renderFile(file));
+    // Phones: a voice message is mostly its player, which keeps every tap for itself, so its buttons (🗑 among them)
+    // were out of reach (Ümit #13297). ⋯ next to it opens them, as a tap on a written message does.
+    if (!deleted && message.files.some((f) => f.mimeType.startsWith("audio/"))) {
+      const more = h("button", "msg-action-btn msg-more-btn", "⋯");
+      more.type = "button";
+      more.title = "This message's buttons";
+      more.setAttribute("aria-label", `Buttons for message #${message.seq}`);
+      more.addEventListener("click", () => {
+        const open = state.tappedSeq !== message.seq;
+        selectMessage(open ? message.seq : undefined);
+        tapOpen(li, message.seq, open, actions);
+      });
+      const item = h("li", "msg-more");
+      item.append(more);
+      files.append(item);
+    }
     li.append(files);
   }
   // Where it was forwarded, for its readers (only they get the message).
@@ -362,6 +372,15 @@ function pulseAt(message: Message): number | undefined {
 function revealActions(actions: HTMLElement): void {
   const below = actions.getBoundingClientRect().bottom - dom.messageScroll.getBoundingClientRect().bottom + 8;
   if (below > 0) dom.messageScroll.scrollBy({ top: below, behavior: "smooth" });
+}
+
+/** Phones: opens (or closes) message `seq`'s row of buttons; only one message has it open. */
+function tapOpen(li: HTMLElement, seq: number, open: boolean, actions: HTMLElement): void {
+  for (const other of dom.messageList.querySelectorAll(".msg-tapped")) other.classList.remove("msg-tapped");
+  state.tappedSeq = open ? seq : undefined;
+  if (!open) return;
+  li.classList.add("msg-tapped");
+  requestAnimationFrame(() => revealActions(actions));
 }
 
 /**

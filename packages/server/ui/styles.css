@@ -4640,6 +4640,35 @@ ul.md-list ul.md-list { list-style: circle; }
   height: 40px;
 }
 
+/* ⋯ next to a voice message's player: phones only (render.ts; Ümit #13297); a computer has hover. */
+.msg-files .msg-more {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .msg-files:has(.msg-more) {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .msg-files:has(.msg-more) .msg-audio {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+
+  .msg-files .msg-more {
+    display: block;
+    flex: none;
+  }
+
+  .msg-more-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 /* "Add a device": the one-time QR code on the sign-in page */
 .auth-link {
   margin: 10px 0 14px;
