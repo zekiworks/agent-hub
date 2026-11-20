@@ -268,6 +268,10 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
     setReplyTo(state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq ? undefined : message)
   );
   if (!deleted) actions.append(replyBtn);
+  li.addEventListener("mouseenter", () => {
+    pointedMessage = li;
+    keepActionsInView(li);
+  });
   li.addEventListener("click", (event) => {
     if ((event.target as Element).closest("a, button, audio, img, input, textarea, summary, .msg-edit, .msg-delete-ask")) return;
     // Selecting text inside it is not a click on it.
@@ -359,6 +363,21 @@ function revealActions(actions: HTMLElement): void {
   const below = actions.getBoundingClientRect().bottom - dom.messageScroll.getBoundingClientRect().bottom + 8;
   if (below > 0) dom.messageScroll.scrollBy({ top: below, behavior: "smooth" });
 }
+
+/**
+ * Computers: a message's buttons sit at its top right. On a long message read further down that top was out of view,
+ * so clicking a paragraph seemed to give no buttons until scrolling back up (Ümit #13234). The buttons of the
+ * message under the pointer follow the top of the visible messages, down to the message's end.
+ */
+function keepActionsInView(li: HTMLElement): void {
+  const actions = li.querySelector<HTMLElement>(":scope > .msg-actions");
+  if (!actions || PHONE.matches) return;
+  const above = dom.messageScroll.getBoundingClientRect().top - li.getBoundingClientRect().top;
+  actions.style.top = above > 0 ? `${Math.max(4, Math.min(above + 4, li.offsetHeight - actions.offsetHeight - 4))}px` : "";
+}
+
+let pointedMessage: HTMLElement | undefined;
+dom.messageScroll.addEventListener("scroll", () => pointedMessage?.isConnected && keepActionsInView(pointedMessage), { passive: true });
 
 /**
  * "✓" once every agent recipient has it (seen or not: seen is not shown, it took too much room in groups). Otherwise

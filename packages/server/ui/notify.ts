@@ -64,21 +64,22 @@ function setFavicon(link: HTMLLinkElement, attention: boolean): void {
   }
   const draw = () => {
     const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 32;
+    // 64 px, as the icon itself: drawn at 32 it came out blurred on sharp screens.
+    canvas.width = canvas.height = 64;
     const g = canvas.getContext("2d");
     if (!g || !iconImage) return;
-    g.drawImage(iconImage, 0, 0, 32, 32);
+    g.drawImage(iconImage, 0, 0, 64, 64);
     g.beginPath();
-    g.arc(26, 6, 6, 0, Math.PI * 2);
+    g.arc(52, 12, 12, 0, Math.PI * 2);
     g.fillStyle = "#e5484d";
     g.fill();
-    g.lineWidth = 2;
+    g.lineWidth = 4;
     g.strokeStyle = "#fff";
     g.stroke();
     if (faviconState) link.href = canvas.toDataURL("image/png");
   };
   if (iconImage?.complete) return draw();
-  iconImage = new Image(32, 32);
+  iconImage = new Image(64, 64);
   iconImage.addEventListener("load", draw, { once: true });
   iconImage.src = BRAND_ICON;
 }
