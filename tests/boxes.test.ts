@@ -131,7 +131,8 @@ test("an extension that fails or answers too much gives an error or nothing, nev
   expect(await (await ask("carol", dm.conversation.id, "a")).json()).toEqual({ text: "" });
 });
 
-/** A room with carol, uma, and the agents `agents`, after `webapp` reported failing tests and owns the fix. */
+/** A room with carol, uma, and the agents `agents`, after `webapp` reported failing tests and owns the fix; `docs`, when
+ * there, writes last (so the rule would wake docs, and offering webapp is a real suggestion). */
 async function launchRoom(agents: string[]): Promise<string> {
   for (const id of agents) await joinAgent(id);
   const room = await send({ from: "carol", to: "#launch", text: "Launch room." });
@@ -146,6 +147,7 @@ async function launchRoom(agents: string[]): Promise<string> {
     });
     expect(edit.status).toBe(200);
   }
+  if (agents.includes("docs")) await send({ from: "docs", conversationId: id, text: "Release notes are up.", wake: [] });
   return id;
 }
 
@@ -159,11 +161,20 @@ test("recipient: the room's agents, messages with their authors and checklist ow
   const body = asked[0]!;
   expect(body).toMatchObject({ v: 1, kind: "recipient", me: "carol", draft: { text: "Did both Safari tests pass after the fix?" } });
   expect([...body.agents].sort()).toEqual(["docs", "webapp"]);
-  expect(body.messages.at(-1)).toMatchObject({ from: "webapp", fromKind: "agent", text: "Two Safari tests fail, both in the date picker." });
+  expect(body.messages.at(-2)).toMatchObject({ from: "webapp", fromKind: "agent", text: "Two Safari tests fail, both in the date picker." });
+  expect(body.messages.at(-1)).toMatchObject({ from: "docs", fromKind: "agent" });
   expect(body.messages[0]).toMatchObject({ from: "carol", fromKind: "human" });
   expect(body.checklist).toEqual([
     expect.objectContaining({ text: "Fix the two Safari date-picker tests", owner: "webapp", done: false, heading: "#1 Release" }),
   ]);
+});
+
+test("recipient: the agent the message would wake anyway (the last one who wrote) is not offered (Can #13587)", async () => {
+  const room = await launchRoom(["webapp", "docs"]);
+  recipientAnswer = () => Response.json({ recipient: "docs", confidence: 0.9 });
+  expect(await (await askWho("carol", room, "Are the notes final?")).json()).toEqual({ recipient: null });
+  recipientAnswer = () => Response.json({ recipient: "webapp", confidence: 0.9 });
+  expect(await (await askWho("carol", room, "Are the notes final?")).json()).toEqual({ recipient: "webapp", confidence: 0.9 });
 });
 
 test("recipient: an answer naming anyone but the room's agents is no suggestion", async () => {

@@ -108,7 +108,12 @@ export async function postBox(
     });
     if (!res.ok) throw new HttpError(502, `${name} answered HTTP ${res.status}`);
     const answer = (await res.json()) as Record<string, unknown>;
-    if (payload.kind === "recipient") return checkedRecipient(answer, payload.agents);
+    if (payload.kind === "recipient") {
+      const offer = checkedRecipient(answer, payload.agents);
+      // The agent a message naming nobody wakes anyway (the last one who wrote, wakeList in messages.ts) is no
+      // suggestion: "Ask @message-bus" right after its own message only repeated what Send does (Can #13587).
+      return offer.recipient && offer.recipient === ctx.db.lastAuthorBesides(conversation.id, person) ? NONE : offer;
+    }
     const text = typeof answer.text === "string" && answer.text.length <= MAX_ANSWER_CHARS ? answer.text : "";
     return { text };
   } catch (error) {

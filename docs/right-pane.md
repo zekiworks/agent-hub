@@ -230,7 +230,8 @@ While a person writes in a room without naming anyone, the box may offer one age
 - The bus sends `POST URL/recipient` a `BoxRecipientBody` (packages/protocol): the draft, the room's latest 20
   messages with their authors (`fromKind`) and what they answer, its checklist steps with owners and status, and the
   eligible `agents`. It passes back `{recipient, confidence}` only when `recipient` is one of those agents, else
-  `{recipient: null}`; it gives up after 8 s.
+  `{recipient: null}`; it gives up after 8 s. An offer of the agent the message wakes anyway (the last one who wrote)
+  is passed on as `{recipient: null}` too: it would only repeat what Send does (Can #13587).
 - The service (`packages/ask-ext`) asks a decision model one choice question, "Which agent has the best evidence to
   answer this person?", over the agent ids plus `none`, and applies a confidence cut-off. Default model LiquidAI
   d1-2B on the hub's processor (llama.cpp); fastino/GLiDE-2B is compared on a GPU.
