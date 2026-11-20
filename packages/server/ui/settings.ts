@@ -8,6 +8,7 @@ import { errorText } from "./format";
 import { h } from "./html";
 import { state } from "./state";
 import { setSuggestionsOn, suggestionBox, suggestionsOn } from "./suggest";
+import { askAgentOn, recipientBox, setAskAgentOn } from "./ask";
 
 type EnglishSpeech = NonNullable<AgentSettings["englishSpeech"]>;
 
@@ -61,6 +62,7 @@ function render(): void {
     note,
     routingSetting(),
     suggestionSetting(),
+    askAgentSetting(),
     closeWindowButton(dom.settingsDialog)
   );
 }
@@ -150,6 +152,31 @@ function suggestionSetting(): HTMLElement {
         "time. Escape drops it, and typing other letters makes it go. Enter still sends what you typed. Words come " +
         "from English and Turkish word lists (Turkish also typed without ç ğ ı ö ş ü) and from the conversation itself, " +
         `inside this page.${model} Computers only: on a phone the keyboard's own bar suggests words. Only this browser.`
+    )
+  );
+  return section;
+}
+
+/** "Ask @agent" (Ümit #13030, #13222): an add-on, shown when the bus has a "recipient" box extension; off until turned on. */
+function askAgentSetting(): HTMLElement | string {
+  if (!recipientBox()) return "";
+  const box = h("input");
+  box.type = "checkbox";
+  box.checked = askAgentOn();
+  box.addEventListener("change", () => setAskAgentOn(box.checked));
+  const label = h("label", "settings-check");
+  label.append(box, " Suggest which agent to ask (Ask @agent)");
+  const section = h("div", "");
+  section.append(
+    h("h3", "", "Ask @agent"),
+    label,
+    h(
+      "p",
+      "dialog-hint",
+      "In a room, when you write without naming anyone, a button like \"Ask @webapp\" may appear next to 📎: the agent " +
+        "that, by what the room shows (who reported what, who owns which checklist step), can best answer you. A tap puts " +
+        "the @name in front of your message; you still send it. Liquid AI's d1-2B decides, on the bus's own machine; " +
+        "your draft and the room's latest messages go to it, and nothing is kept. Only this browser."
     )
   );
   return section;

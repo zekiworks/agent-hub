@@ -3,7 +3,8 @@
 // A tap puts the mention at the front of the draft, to edit and send as usual. Asked after a short pause in typing,
 // one request at a time; an answer counts only for the exact draft it was asked about, in the same conversation, so
 // an edit or another room drops it. Never in the way: no answer, a slow model or one that is down only means no
-// button, and sending never waits for it. Quiet when the person chose: a member named, @all, or Reply.
+// button, and sending never waits for it. Quiet when the person chose: a member named, @all, or Reply. An add-on: off
+// until turned on in Settings, per browser (Ümit #13222).
 import { ALL_CONVERSATION_ID, mentionedIds, type BoxRecipientResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { dom } from "./dom";
@@ -26,15 +27,26 @@ let asking: { controller: AbortController; conversationId: string; draft: string
 /** The suggestion shown: who, for which conversation and draft. */
 let shown: { recipient: string; conversationId: string; draft: string } | undefined;
 
+const ASK_KEY = "agent-bus.askAgent";
+
 /** The bus's "recipient" box extension, if it has one. */
-function recipientBox(): string | undefined {
+export function recipientBox(): string | undefined {
   return Object.entries(state.boxes).find(([, role]) => role === "recipient")?.[0];
+}
+
+export function askAgentOn(): boolean {
+  return localStorage.getItem(ASK_KEY) === "1";
+}
+
+export function setAskAgentOn(on: boolean): void {
+  localStorage.setItem(ASK_KEY, on ? "1" : "0");
+  if (!on) reset();
 }
 
 /** The room the draft is in, when it is one where an agent could be suggested: else undefined. */
 function askableRoom(): string | undefined {
   const view = state.view;
-  if (view.kind !== "conversation" || !recipientBox()) return undefined;
+  if (view.kind !== "conversation" || !recipientBox() || !askAgentOn()) return undefined;
   const conversation = state.conversations.get(view.id);
   if (!conversation?.room) return undefined;
   const agents = conversation.members.filter((id) => id !== state.me && state.participants.find((p) => p.id === id)?.kind === "agent");
