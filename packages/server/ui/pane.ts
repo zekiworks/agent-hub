@@ -51,6 +51,8 @@ let open = localStorage.getItem(OPEN_KEY) === "1";
 let tabs: Tab[] = [];
 /** The tab shown, and the one shown before it (a global item closed with its button gives the Workspace back). */
 let active: Tab | undefined;
+/** The tab drawn as the active one: `active`, or the pinned tab standing for it (renderPane; Can #13093). */
+let shownActive: Tab | undefined;
 let before: Tab | undefined;
 try {
   const saved = JSON.parse(localStorage.getItem(PINNED_KEY) ?? "null") as { tabs: Tab[]; active: number } | null;
@@ -199,6 +201,13 @@ function closeTab(tab: Tab): void {
   renderPane();
 }
 
+/** Another pinned tab showing exactly what `tab` shows (same kind, same conversation), if there is one. */
+function pinnedTwin(tab: Tab): Tab | undefined {
+  if (isGlobal(tab)) return undefined;
+  const shows = viewHash(viewOf(tab));
+  return tabs.find((t) => t !== tab && t.pinned && t.ext === tab.ext && viewHash(viewOf(t)) === shows);
+}
+
 /** Pins the tab to what it shows now (a passing entity tab keeps this conversation), or unpins it. */
 function togglePin(tab: Tab): void {
   const oldKey = keyOf(tab);
@@ -208,6 +217,13 @@ function togglePin(tab: Tab): void {
     tabs = tabs.filter((t) => t === tab || t.pinned || isGlobal(t) !== isGlobal(tab));
     if (!isGlobal(tab)) tab.view = undefined;
   } else {
+    // Already pinned once (a passing tab that followed the conversation onto a pinned one's): that one is shown
+    // instead of a second copy (Can #13093: two "Live · @bariton-os").
+    const twin = pinnedTwin(tab);
+    if (twin) {
+      tabs = tabs.filter((t) => t !== tab);
+      return activate(twin);
+    }
     tab.pinned = true;
     if (!isGlobal(tab)) tab.view = viewOf(tab);
   }
@@ -252,7 +268,7 @@ function tintOf(view: View): string {
 }
 
 function tabButton(tab: Tab): HTMLElement {
-  const on = tab === active;
+  const on = tab === shownActive;
   const el = h("div", `tab${on ? " active" : ""}${tab.pinned ? " pinned" : " passing"}`);
   const label = labelOf(tab);
   const openBtn = h("button", "tab-open", label);
@@ -289,7 +305,19 @@ function tabButton(tab: Tab): HTMLElement {
 export function renderPane(): void {
   // Tabs of extensions that are gone (not on this bus any more) go too.
   tabs = tabs.filter((t) => extensionOf(t));
+  // Two pinned tabs of the same thing (pinned before #13093 was fixed, kept in the browser): the first one stays.
+  const pinnedKeys = new Map<string, Tab>();
+  for (const t of tabs.filter((t) => t.pinned)) {
+    const first = pinnedKeys.get(keyOf(t));
+    if (!first) pinnedKeys.set(keyOf(t), t);
+    else if (active === t) active = first;
+  }
+  tabs = tabs.filter((t) => !t.pinned || pinnedKeys.get(keyOf(t)) === t);
   if (active && !tabs.includes(active)) active = tabs[0];
+  // A passing tab that has followed the conversation onto a pinned tab's subject would show the same thing twice
+  // (Can #13093): it stays, to go on following, but only the pinned one shows and stands for it.
+  const hidden = new Set(tabs.filter((t) => !t.pinned && !isGlobal(t) && pinnedTwin(t)));
+  shownActive = active && hidden.has(active) ? pinnedTwin(active) : active;
   const tab = open ? active : undefined;
   const extension = tab ? extensionOf(tab) : undefined;
   const global = !!tab && isGlobal(tab);
@@ -308,7 +336,7 @@ export function renderPane(): void {
     return;
   }
   const focused = dom.paneTabs.contains(document.activeElement);
-  dom.paneTabs.replaceChildren(...tabs.map(tabButton));
+  dom.paneTabs.replaceChildren(...tabs.filter((t) => !hidden.has(t)).map(tabButton));
   if (focused) dom.paneTabs.querySelector<HTMLElement>(".tab.active .tab-open")?.focus();
   const key = keyOf(tab);
   for (const [k, host] of hosts) host.hidden = k !== key;
