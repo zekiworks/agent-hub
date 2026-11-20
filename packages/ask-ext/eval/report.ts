@@ -183,13 +183,12 @@ export function buildReport(items: readonly Item[], labels: ReadonlyMap<string, 
       return { name: run.model, cut, run, shownFor: (item: Item) => offer(run.results.get(item.id), cut) };
     }),
   ];
-  const withChecklist = test.filter((i) => i.body.checklist.length > 0);
   const out: string[] = [];
   out.push(`# Ask @agent: models against the current rule`, "");
   out.push(`Items: TEST ${test.length} (${labelled(test)} labelled), DEV ${dev.length} (${labelled(dev)} labelled). Only labelled items count.`, "");
   out.push(`can't judge: ${cannotJudge(test)} TEST, ${cannotJudge(dev)} DEV (the sender could not tell from what the room showed; left out of every number below).`, "");
   out.push(
-    `This historical comparison is effectively messages-only: the checklist as it stood before each message can only partly be reconstructed (dated items only), and ${withChecklist.length} of the ${test.length} TEST items carry any checklist. Checklist evidence is tested separately, on the made-up rooms of packages/ask-ext/src/fixtures.ts.`,
+    `This historical comparison is messages-only: the database keeps only today's checklist, so no checklist context goes into these items (it would show later evidence; codex-ui #13109). Checklist evidence is tested separately, on the made-up rooms of packages/ask-ext/src/fixtures.ts.`,
     ""
   );
   out.push(`Cut-offs (on DEV): ${choice.how}. ${runs.map((r) => `${r.model} ${(choice.cutoffs.get(r.model) ?? 0).toFixed(3)}`).join(", ") || "no models"}.`, "");
@@ -208,14 +207,6 @@ export function buildReport(items: readonly Item[], labels: ReadonlyMap<string, 
 
   const splits: Array<[title: string, column: string, parts: Array<[string, Item[]]>]> = [
     ["TEST by language", "language", (["en", "tr"] as Lang[]).map((lang) => [lang, test.filter((i) => i.lang === lang)])],
-    [
-      "TEST with and without checklist context",
-      "checklist",
-      [
-        ["with", withChecklist],
-        ["without", test.filter((i) => i.body.checklist.length === 0)],
-      ],
-    ],
   ];
   for (const [title, column, parts] of splits) {
     out.push(`## ${title}`, "");

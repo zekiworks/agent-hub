@@ -51,7 +51,6 @@ test("report: counts, corrected and disrupted against the rule, cut-off from DEV
     item("m6", "dev", "webapp"),
     item("m7", "dev", "docs"),
   ];
-  items[0]?.body.checklist.push({ id: "i1", text: "Fix the Safari tests", owner: "webapp", done: false });
   const labels = new Map([
     ["m1", label(["webapp"])],
     ["m2", label(["docs"])],
@@ -78,11 +77,8 @@ test("report: counts, corrected and disrupted against the rule, cut-off from DEV
   // model at 0.4: m1 right, m2 right, m3 wrong, m4 silent (missed), m5 quiet; corrected 1, disrupted 1 + 1
   expect(modelRow?.slice(3, 16)).toEqual(["5", "3 (60%)", "2 (40%)", "1", "67%", "1", "1", "1", "1", "1", "10 ms", "10 ms", "test box"]);
   expect(report).toContain("can't judge: 1 TEST, 0 DEV");
-  expect(report).toContain("effectively messages-only");
-  expect(report).toContain("1 of the 6 TEST items carry any checklist");
+  expect(report).toContain("This historical comparison is messages-only");
   expect(report).toContain("| m | tr | 1 | 0 (0%) | 0 (0%) | 0 | – | 0 | 1 | 0 | 0 | 0 |");
-  expect(report).toContain("| m | with | 1 | 1 (100%) | 1 (100%) | 0 | 100% | 0 | 0 | 0 | 0 | 0 |");
-  expect(report).toContain("| m | without | 4 | 2 (50%) | 1 (25%) | 1 | 50% | 1 | 1 | 1 | 1 | 1 |");
 });
 
 test("label page: renders, saves by GET, refuses non-agents, exports", async () => {

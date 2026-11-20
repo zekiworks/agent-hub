@@ -8,15 +8,15 @@
 // What cannot be reconstructed (the database keeps only the present):
 // - membership: the room's current members stand for its members then (an agent added later can be among `agents`);
 // - edited messages: their current text (edited_at set) stands for the text then;
-// - checklist: only items whose addition is dated are kept: an item from message #s (`source` < the message) or ticked
-//   before the message; undated items (no `source`, not ticked before) are left out, as are items removed since, and
-//   an item's text, heading and `blocked` are today's. `done` is true only when ticked before the message.
+// - checklist: none. The database keeps only today's checklist (text, heading, owner, blocked as they are now, and no
+//   date for when a step was added), so any reconstruction would show later evidence (codex-ui #13109). Historical
+//   items are messages-only; checklist evidence is tested on the made-up rooms of packages/ask-ext/src/fixtures.ts.
 // Messages deleted after the message are put back (they were on screen then); earlier deletions stay out.
 import { Database } from "bun:sqlite";
 import { writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mentionedIds, type BoxRecipientBody, type ChecklistItem, type ParticipantKind } from "@agent-bus/protocol";
+import { mentionedIds, type BoxRecipientBody, type ParticipantKind } from "@agent-bus/protocol";
 import { EVAL_DIR, ITEMS_FILE, ensureEvalDir, flag, writeJsonl, type Item, type Lang, type Split } from "./common";
 
 const DB_PATH = flag("db", join(homedir(), ".agent-bus", "message-bus.sqlite")) as string;
@@ -99,20 +99,6 @@ function namesSomeone(text: string, known: ReadonlySet<string>): boolean {
   return mentionedIds(text).some((id) => id === "all" || known.has(id) || known.has(id.replace(/-\d+$/, "")));
 }
 
-/** The checklist as shown just before `at` (message #seq): dated items only, open ones first. */
-function checklistAt(items: readonly ChecklistItem[], seq: number, at: number): BoxRecipientBody["checklist"] {
-  const shown = items.filter((item) => (item.source !== undefined && item.source < seq) || (item.done !== undefined && item.done.at < at));
-  const out = shown.map((item) => ({
-    id: item.id,
-    ...(item.heading ? { heading: item.heading } : {}),
-    text: item.text,
-    ...(item.owner ? { owner: item.owner } : {}),
-    done: item.done !== undefined && item.done.at < at,
-    ...(item.blocked ? { blocked: item.blocked } : {}),
-  }));
-  return [...out.filter((item) => !item.done), ...out.filter((item) => item.done)];
-}
-
 function main(): void {
   const db = new Database(DB_PATH, { readonly: true });
   const kinds = new Map(db.query<{ id: string; kind: ParticipantKind }, []>("SELECT id, kind FROM participants").all().map((p) => [p.id, p.kind]));
@@ -127,12 +113,6 @@ function main(): void {
         .all(room.id)
         .map((r) => r.p),
     }));
-  const checklists = new Map(
-    db
-      .query<{ conversation_id: string; items_json: string | null }, []>("SELECT conversation_id, items_json FROM checklists")
-      .all()
-      .map((c) => [c.conversation_id, JSON.parse(c.items_json ?? "[]") as ChecklistItem[]])
-  );
   const since = Date.now() - DAYS * 86_400_000;
   const roomMessages = db.query<Row, [string]>(
     "SELECT seq, conversation_id, from_id, from_kind, text, created_at, reply_to_seq, deleted_at FROM messages WHERE conversation_id = ?1 ORDER BY seq"
@@ -186,7 +166,7 @@ function main(): void {
           createdAt: b.created_at,
           ...(b.reply_to_seq !== null ? { replyTo: b.reply_to_seq } : {}),
         })),
-        checklist: checklistAt(checklists.get(room.id) ?? [], m.seq, m.created_at),
+        checklist: [],
         agents,
         draft: { text: m.text },
       };
