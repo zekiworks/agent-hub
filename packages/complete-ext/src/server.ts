@@ -115,9 +115,13 @@ export function worthAsking(draft: string): boolean {
   return draft.trim().length >= 3 && !/[çğışöüÇĞİŞÖÜ]/.test(draft);
 }
 
-async function complete(body: BoxCompleteBody, llamaUrl: string, signal: AbortSignal): Promise<BoxResponse> {
+/**
+ * `heal`: token healing of a half-typed word (SmolLM2). Off for LFM3 1.7B (Ümit #13060): its tokenizer spells the
+ * forced half word in odd pieces ("tests" as " " + "te" + "st", log-probability -17), so nothing was ever offered.
+ */
+async function complete(body: BoxCompleteBody, llamaUrl: string, signal: AbortSignal, heal: boolean): Promise<BoxResponse> {
   if (body.v !== 1 || body.kind !== "complete" || !worthAsking(body.draft.text)) return { text: "" };
-  const { prefix, stub } = healSplit(body.draft.text);
+  const { prefix, stub } = heal ? healSplit(body.draft.text) : { prefix: body.draft.text, stub: "" };
   const res = await fetch(`${llamaUrl.replace(/\/+$/, "")}/completion`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -143,13 +147,14 @@ async function complete(body: BoxCompleteBody, llamaUrl: string, signal: AbortSi
 if (import.meta.main) {
   const port = Number(process.env.COMPLETE_PORT ?? 7830);
   const llamaUrl = process.env.COMPLETE_LLAMA_URL ?? "http://127.0.0.1:9962";
+  const heal = process.env.COMPLETE_HEAL !== "0";
   Bun.serve({
     hostname: "127.0.0.1",
     port,
     async fetch(req) {
       if (req.method !== "POST" || new URL(req.url).pathname !== "/complete") return new Response("POST /complete", { status: 404 });
       try {
-        return Response.json(await complete((await req.json()) as BoxCompleteBody, llamaUrl, req.signal));
+        return Response.json(await complete((await req.json()) as BoxCompleteBody, llamaUrl, req.signal, heal));
       } catch (error) {
         if (req.signal.aborted) return Response.json({ text: "" });
         console.error(`complete: ${error instanceof Error ? error.message : String(error)}`);
