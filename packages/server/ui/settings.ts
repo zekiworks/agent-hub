@@ -149,9 +149,9 @@ function suggestionSetting(): HTMLElement {
       "p",
       "dialog-hint",
       "As you type, the rest of the word appears in grey after the cursor: Tab adds it, → (or Ctrl+→) one word at a " +
-        "time. Escape drops it, and typing other letters makes it go. Enter still sends what you typed. Words come " +
-        "from English and Turkish word lists (Turkish also typed without ç ğ ı ö ş ü) and from the conversation itself, " +
-        `inside this page.${model} Computers only: on a phone the keyboard's own bar suggests words. Only this browser.`
+        "time (on a phone, tap the word in the row of buttons). Escape drops it, and typing other letters makes it go. Enter still " +
+        "sends what you typed. Words come from English and Turkish word lists (Turkish also typed without ç ğ ı ö ş ü) " +
+        `and from the conversation itself, inside this page.${model} Only this browser.`
     )
   );
   return section;

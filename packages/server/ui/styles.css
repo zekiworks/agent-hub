@@ -3136,6 +3136,30 @@ ul.md-list ul.md-list { list-style: circle; }
   z-index: 1;
 }
 
+/* On touch screens (no Tab key): the whole word as a chip in the row of buttons, a tap adds it. It never wraps the row
+   (the row wraps by its items' starting size, so a chip starts at 0) and grows up to its text before the spacer takes
+   any room (grow 1000 against the spacer's 1), cut with … only when the row is full: the box never moves (Ümit #13025). */
+.suggest-chip {
+  flex: 1000 1 0;
+  max-width: max-content;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 12px;
+  overflow: hidden;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.suggest-chip[hidden] {
+  display: none;
+}
+
 /* "Ask @webapp" (ask.ts; Ümit #13030): the one agent the room's evidence points to, offered in the row of buttons on
    every screen; filled, so it reads as a button, and it shrinks rather than moving the box. */
 .ask-chip {

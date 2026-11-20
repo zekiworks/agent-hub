@@ -178,8 +178,8 @@ role), not in `extensions`. Two roles: "complete" (typing suggestions, below) an
   cursor while it still fits: typing its letters keeps showing the rest, other letters hide it. Tab adds it (→ one
   word) and a space after it; a punctuation mark typed next goes back next to the word, a space typed next is not
   doubled (Can #13089). Escape drops it and what is on its way, Enter still sends what was typed. Nothing is asked or shown while an input method
-  composes (codex-ui #12868). Computers only: phones have their keyboard's own suggestion bar, and a second one in
-  the box was only in the way (Ümit #13175; a chip under the text was tried 19–20 Nov).
+  composes (codex-ui #12868). Touch screens (no Tab) show the whole word as a chip in the row of buttons under the
+  text, where it never moves the box (Ümit #13024, #13025).
 - The bus answers only a signed-in person, only for a conversation they may read (agents get 403). It sends the
   service `POST URL/complete` with a `BoxCompleteBody` (packages/protocol): `{v: 1, kind: "complete", me,
   conversation: {id, kind, name?, title?, members}, messages: the latest 20 (deleted ones left out), draft: {text}}`,
