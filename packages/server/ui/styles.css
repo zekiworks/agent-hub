@@ -3031,12 +3031,6 @@ ul.md-list ul.md-list { list-style: circle; }
   background: var(--hover);
 }
 
-/* The Message/Task switch while on Task (send.ts; Can #12832): the checkbox in the accent colour. */
-.composer-tools .kind-btn.is-task {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-}
-
 /* Every control inside the box, icons only (Can #11807): attach at the left, the microphone and Send at the right. */
 .composer-tools .tools-spacer {
   flex: 1;

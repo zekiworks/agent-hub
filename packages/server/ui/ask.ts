@@ -18,7 +18,7 @@ const MIN_DRAFT_CHARS = 8;
 const chip = h("button", "ask-chip");
 chip.type = "button";
 chip.hidden = true;
-(dom.composer.querySelector(".composer-tools .kind-btn") ?? dom.input).after(chip);
+(dom.composer.querySelector(".composer-tools .tools-spacer") ?? dom.input).before(chip);
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 /** The request on its way, for which conversation and draft. */

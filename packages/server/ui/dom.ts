@@ -46,7 +46,6 @@ export const dom = {
   composerError: el<HTMLDivElement>("composer-error"),
   stagedFiles: el<HTMLUListElement>("staged-files"),
   attachBtn: el<HTMLButtonElement>("attach-btn"),
-  kindBtn: el<HTMLButtonElement>("kind-btn"),
   backBtn: el<HTMLButtonElement>("back-btn"),
   backBadge: el<HTMLSpanElement>("back-badge"),
   detailsBtn: el<HTMLButtonElement>("details-btn"),

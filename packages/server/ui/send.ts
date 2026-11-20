@@ -18,7 +18,6 @@ import { loadMessages, receive } from "./loading";
 import { closeMention, handleMentionKey, updateMention } from "./mentions";
 import { navigate, viewHash } from "./routing";
 import { currentDirectAgent, state, type ItemReply, type View } from "./state";
-import { setIcon } from "./icons";
 import { draftReplaced } from "./suggest";
 
 export async function uploadFile(file: File): Promise<FileRef> {
@@ -35,44 +34,16 @@ export async function uploadFile(file: File): Promise<FileRef> {
 export interface Chosen {
   reply: Message | undefined;
   item: ItemReply | undefined;
-  /** Sent as a task (the box's Message/Task switch was on Task), and which setting of the switch that was. */
-  task?: boolean;
-  taskTurn?: number;
 }
 
-/** What the open conversation's message answers now: a message, or a checklist item; and whether it is a task. */
+/** What the open conversation's message answers now: a message, or a checklist item. */
 export function chosenNow(view: View): Chosen {
   const here = (id: string) => view.kind === "conversation" && id === view.id;
   return {
     reply: state.replyTo && here(state.replyTo.conversationId) ? state.replyTo : undefined,
     item: state.itemReply && here(state.itemReply.conversationId) ? state.itemReply : undefined,
-    task: asTask,
-    taskTurn,
   };
 }
-
-/**
- * The box's Message/Task switch (Can #12832): a speech bubble ("Message"); a click turns it into a checkbox ("Task"),
- * and the next message goes as a task for those it @mentions (else the other one in a DM). It turns back to Message
- * once that is sent, or when another conversation opens, so a task is never sent by mistake later.
- */
-let asTask = false;
-/** Counts every change of the switch: a send turns back only the setting it was sent with (codex-ui #12869). */
-let taskTurn = 0;
-
-function setAsTask(on: boolean): void {
-  asTask = on;
-  taskTurn += 1;
-  setIcon(dom.kindBtn, on ? "task" : "message");
-  dom.kindBtn.classList.toggle("is-task", on);
-  dom.kindBtn.setAttribute("aria-pressed", String(on));
-  dom.kindBtn.title = on ? "Task: this message goes as a task for the people or agents it @mentions. Click for a plain message" : "Message. Click to send it as a task instead";
-  dom.kindBtn.setAttribute("aria-label", on ? "Task (click for a plain message)" : "Message (click to make it a task)");
-}
-
-setAsTask(false);
-dom.kindBtn.addEventListener("click", () => setAsTask(!asTask));
-window.addEventListener("hashchange", () => setAsTask(false));
 
 /**
  * Posts `text` and `fileIds` to `view` (as a reply to `chosen`, taken when sending or recording started; a checklist
@@ -107,10 +78,7 @@ export async function postToView(view: View, text: string, fileIds: string[], ch
   const hold = holdHours();
   if (hold !== undefined) request.holdHours = hold;
 
-  if (chosen.task) request.task = { type: "task" };
   const res = await postJson<PostMessageResponse>("/api/messages", request);
-  // Back to Message, unless the switch was set again meanwhile (another room opened, Task picked for a new draft).
-  if (chosen.task && chosen.taskTurn === taskTurn) setAsTask(false);
   // Clear the reply this message answered, not a newer one chosen meanwhile (a message or a checklist item).
   const same = (replyTo && state.replyTo?.seq === replyTo.seq) || (item && state.itemReply === item);
   if (same) setReplyTo(undefined);
