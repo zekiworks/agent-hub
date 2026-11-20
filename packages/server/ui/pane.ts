@@ -333,7 +333,9 @@ export function renderPane(): void {
   const extension = tab ? extensionOf(tab) : undefined;
   const global = !!tab && isGlobal(tab);
   const view = tab && !global ? viewOf(tab) : state.view;
-  const linked = !!tab && !global && viewHash(view) === viewHash(state.view);
+  // The Workspace shows the entity on the left: the same conversation, or the same subject (Live of the agent of the
+  // open DM, pinned elsewhere): then the headers share a tint and Workspace ▾ ticks it (Can #13114).
+  const linked = !!tab && !global && subjectKey(tab) === subjectKey({ ext: tab.ext, pinned: false });
   dom.pane.hidden = !extension;
   dom.app.classList.toggle("with-pane", !!extension);
   dom.app.classList.toggle("ws-linked", linked);
