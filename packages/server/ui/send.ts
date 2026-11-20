@@ -181,8 +181,11 @@ dom.sendBtn.addEventListener("pointerdown", (event) => {
 
 /**
  * Enter sends; Shift+Enter is a new line. While an input method or the system holds unfinished text, Enter belongs to
- * it (choosing a candidate must never send, codex-ui #11646): the next Enter sends.
+ * it (choosing a candidate must never send, codex-ui #11646): the next Enter sends. On a touch screen the keyboard's
+ * return key makes a new line and only ➤ sends, as in the phone's own messaging apps: return sent half-written
+ * messages, and a running voice recording, without Ümit touching ➤ (#13021, #13045, #13046, #13047).
  */
+const TOUCH = window.matchMedia("(hover: none) and (pointer: coarse)");
 dom.input.addEventListener("keydown", (event) => {
   if (state.mention.open && handleMentionKey(event)) return;
   if (event.key === "Escape" && (state.replyTo || state.itemReply)) {
@@ -190,7 +193,7 @@ dom.input.addEventListener("keydown", (event) => {
     setReplyTo(undefined);
     return;
   }
-  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !TOUCH.matches) {
     event.preventDefault();
     void send();
   }
