@@ -179,7 +179,7 @@ role), not in `extensions`. Two roles: "complete" (typing suggestions, below) an
   word) and a space after it; a punctuation mark typed next goes back next to the word, a space typed next is not
   doubled (Can #13089). Escape drops it and what is on its way, Enter still sends what was typed. Nothing is asked or shown while an input method
   composes (codex-ui #12868). Touch screens (no Tab) show the whole word as a chip in the row of buttons under the
-  text, where it never moves the box (Ümit #13024, #13025).
+  text, where it never moves the box (Ümit #13024, #13025); off on phones too until ticked (Ümit #13175, #13228).
 - The bus answers only a signed-in person, only for a conversation they may read (agents get 403). It sends the
   service `POST URL/complete` with a `BoxCompleteBody` (packages/protocol): `{v: 1, kind: "complete", me,
   conversation: {id, kind, name?, title?, members}, messages: the latest 20 (deleted ones left out), draft: {text}}`,
@@ -228,6 +228,13 @@ While a person writes in a room without naming anyone, the box may offer one age
 - The service (`packages/ask-ext`) asks a decision model one choice question, "Which agent has the best evidence to
   answer this person?", over the agent ids plus `none`, and applies a confidence cut-off. Default model LiquidAI
   d1-2B on the hub's processor (llama.cpp); fastino/GLiDE-2B is compared on a GPU.
+- An add-on (Ümit #13222): off until the person ticks "Suggest which agent to ask" in Settings (per browser; shown
+  only when the bus has a recipient box).
+- Its use is recorded (Ümit #13224): after each message sent in such a room with the add-on on, the page posts
+  `POST /api/box/NAME/report {conversationId, outcome, recipient?, confidence?, ms?, failed?}` and the bus appends a
+  line to `box-reports.jsonl` in its data folder: taken, ignored, named-other (offered, someone else named), named,
+  quiet, reply. Never the text. `bun packages/ask-ext/eval/usage.ts [--since DATE]` counts it. The record stays on
+  the bus's own machine; no hub reports anywhere else.
 
 Talking to the website (Can, 15 Nov): a page fills the person's message box, never sends. Each ends in the person
 reading, finishing and pressing Send.

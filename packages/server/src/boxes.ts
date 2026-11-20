@@ -17,6 +17,7 @@ import {
   type BoxRole,
   type Conversation,
 } from "@agent-bus/protocol";
+import { appendFileSync } from "node:fs";
 import type { BusContext } from "./context";
 import { mayRead } from "./conversations";
 import { HttpError, readJsonObject } from "./http";
@@ -169,4 +170,45 @@ function checkedRecipient(answer: Record<string, unknown>, agents: string[]): Bo
   if (!agents.includes(recipient)) return NONE;
   const confidence = typeof answer.confidence === "number" && answer.confidence >= 0 && answer.confidence <= 1 ? answer.confidence : undefined;
   return { recipient, ...(confidence !== undefined ? { confidence } : {}) };
+}
+
+/** What a person did with a recipient box's offer, as the website saw it when the message went (Ümit #13224). */
+const OUTCOMES = new Set(["taken", "ignored", "named-other", "named", "quiet", "reply"]);
+
+/**
+ * POST /api/box/:name/report {conversationId, outcome, recipient?, confidence?, ms?, failed?}: one line per message a
+ * person sent in a room with the recipient box on, appended to `file` (box-reports.jsonl in the data folder) so the
+ * add-on's use can be counted (Ümit #13224). Never the text: who was offered, what happened, how long the model took.
+ */
+export async function postBoxReport(
+  ctx: BusContext,
+  req: Request,
+  name: string,
+  boxes: Record<string, BoxExtension>,
+  person: string | undefined,
+  file: string
+): Promise<{ ok: true }> {
+  if (boxes[name]?.role !== "recipient") throw new HttpError(404, `No recipient box extension "${name}" on this bus`);
+  if (!person) throw new HttpError(403, "Only a signed-in person reports on the message box");
+  const body = await readJsonObject(req);
+  if (typeof body.conversationId !== "string" || typeof body.outcome !== "string" || !OUTCOMES.has(body.outcome)) {
+    throw new HttpError(400, `Give conversationId and outcome (${[...OUTCOMES].join(", ")})`);
+  }
+  const conversation = ctx.db.getConversation(body.conversationId);
+  if (!conversation || !mayRead(ctx, conversation, { id: person, kind: "human" })) {
+    throw new HttpError(404, `Unknown conversation "${body.conversationId}"`);
+  }
+  const line = {
+    at: new Date().toISOString(),
+    box: name,
+    person,
+    conversationId: conversation.id,
+    outcome: body.outcome,
+    ...(typeof body.recipient === "string" && conversation.members.includes(body.recipient) ? { recipient: body.recipient } : {}),
+    ...(typeof body.confidence === "number" ? { confidence: body.confidence } : {}),
+    ...(typeof body.ms === "number" ? { ms: Math.round(body.ms) } : {}),
+    ...(body.failed === true ? { failed: true } : {}),
+  };
+  appendFileSync(file, `${JSON.stringify(line)}\n`, { mode: 0o600 });
+  return { ok: true };
 }

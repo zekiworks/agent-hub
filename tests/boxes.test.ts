@@ -1,7 +1,7 @@
 // Box extensions (Can #12841–#12853): POST /api/box/:name asks a `--ext NAME=URL,box=ROLE` service, with only what the
 // person may read: "complete" for the next words of a draft, "recipient" for the one agent of a room to ask (Ümit #13030).
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { BoxCompleteBody, BoxRecipientBody, PostMessageResponse, StateResponse } from "@agent-bus/protocol";
@@ -187,6 +187,22 @@ test("recipient: not asked when the person chose (a member named, @all), in a ro
   const dm = await send({ from: "carol", to: "@uma", text: "x" });
   expect(await (await askWho("carol", dm.conversation.id, "Is it done?")).json()).toEqual({ recipient: null });
   expect(asked).toHaveLength(0);
+});
+
+test("recipient report: what was done with an offer is kept in box-reports.jsonl, without the text, only from a reader", async () => {
+  const room = await launchRoom(["webapp", "docs"]);
+  const report = (from: string, body: Record<string, unknown>) => postJson(bus, "/api/box/ask/report", { from, conversationId: room, ...body });
+  expect((await report("carol", { outcome: "taken", recipient: "webapp", confidence: 0.82, ms: 512.4, text: "secret" })).status).toBe(200);
+  expect((await report("carol", { outcome: "quiet", recipient: "nobody-here" })).status).toBe(200);
+  expect((await report("carol", { outcome: "great" })).status).toBe(400);
+  expect((await postJson(bus, "/api/box/complete/report", { from: "carol", conversationId: room, outcome: "quiet" })).status).toBe(404);
+  const dm = await send({ from: "carol", to: "@webapp", text: "x" });
+  expect((await postJson(bus, "/api/box/ask/report", { from: "uma", conversationId: dm.conversation.id, outcome: "quiet" })).status).toBe(404);
+  const lines = readFileSync(path.join(dataDir, "box-reports.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  expect(lines.map(({ at: _, ...rest }) => rest)).toEqual([
+    { box: "ask", person: "carol", conversationId: room, outcome: "taken", recipient: "webapp", confidence: 0.82, ms: 512 },
+    { box: "ask", person: "carol", conversationId: room, outcome: "quiet" },
+  ]);
 });
 
 /** A second bus without the extension, to check one without boxes says nothing about them. */

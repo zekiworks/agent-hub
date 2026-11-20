@@ -43,19 +43,70 @@ export function setAskAgentOn(on: boolean): void {
   if (!on) reset();
 }
 
+/** A room of at least two agents besides me, with the add-on on: where an agent could be suggested. */
+function askingRoom(conversationId: string): boolean {
+  if (!recipientBox() || !askAgentOn()) return false;
+  const conversation = state.conversations.get(conversationId);
+  if (!conversation?.room) return false;
+  const agents = conversation.members.filter((id) => id !== state.me && state.participants.find((p) => p.id === id)?.kind === "agent");
+  return agents.length >= 2;
+}
+
 /** The room the draft is in, when it is one where an agent could be suggested: else undefined. */
 function askableRoom(): string | undefined {
   const view = state.view;
-  if (view.kind !== "conversation" || !recipientBox() || !askAgentOn()) return undefined;
-  const conversation = state.conversations.get(view.id);
-  if (!conversation?.room) return undefined;
-  const agents = conversation.members.filter((id) => id !== state.me && state.participants.find((p) => p.id === id)?.kind === "agent");
-  if (agents.length < 2) return undefined;
+  if (view.kind !== "conversation" || !askingRoom(view.id)) return undefined;
+  const conversation = state.conversations.get(view.id)!;
   // The person chose: a reply, a checklist item answered, a member named, @all.
   if (state.replyTo || state.itemReply || state.voiceLatched) return undefined;
   const named = mentionedIds(dom.input.value);
   if (named.includes(ALL_CONVERSATION_ID) || conversation.members.some((id) => named.includes(id))) return undefined;
   return view.id;
+}
+
+/**
+ * What the model said while this draft was written (Ümit #13224), reported when it is sent: the last offer stands
+ * (an empty answer after it does not take it back), the time of the last answer, whether asking failed.
+ */
+let seen: { conversationId: string; recipient?: string; confidence?: number; ms?: number; failed?: boolean; taken: boolean } | undefined;
+
+function note(conversationId: string, what: { recipient?: string; confidence?: number; ms?: number; failed?: boolean }): void {
+  if (seen?.conversationId !== conversationId) seen = { conversationId, taken: false };
+  if (what.recipient) Object.assign(seen, { recipient: what.recipient, confidence: what.confidence, taken: false });
+  if (what.ms !== undefined) seen.ms = what.ms;
+  seen.failed = what.failed === true ? true : undefined;
+}
+
+/**
+ * After a message went in `conversationId` (send.ts): one line for the bus's record of the add-on's use (Ümit #13224):
+ * taken (sent with the offered agent), named-other (someone else or @all named), ignored (offered, nobody named),
+ * named (named someone, nothing was offered), quiet (nothing offered, nobody named), reply. Never the text.
+ */
+export function askSent(conversationId: string, text: string, replied: boolean): void {
+  const name = recipientBox();
+  const was = seen?.conversationId === conversationId ? seen : undefined;
+  seen = undefined;
+  if (!name || !askingRoom(conversationId)) return;
+  const members = state.conversations.get(conversationId)?.members ?? [];
+  const named = mentionedIds(text).filter((id) => id === ALL_CONVERSATION_ID || members.includes(id));
+  const outcome = replied
+    ? "reply"
+    : was?.recipient
+      ? named.includes(was.recipient) && was.taken
+        ? "taken"
+        : named.length > 0
+          ? "named-other"
+          : "ignored"
+      : named.length > 0
+        ? "named"
+        : "quiet";
+  void api(`/api/box/${encodeURIComponent(name)}/report`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conversationId, outcome, recipient: was?.recipient, confidence: was?.confidence, ms: was?.ms, failed: was?.failed }),
+  }).catch(() => {
+    // A report that does not arrive costs nothing but a line.
+  });
 }
 
 function hide(): void {
@@ -77,6 +128,7 @@ function ask(conversationId: string, draft: string): void {
   asking?.controller.abort();
   const controller = new AbortController();
   asking = { controller, conversationId, draft };
+  const started = performance.now();
   void api<BoxRecipientResponse>(`/api/box/${encodeURIComponent(name)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -86,7 +138,9 @@ function ask(conversationId: string, draft: string): void {
     .then((res) => {
       if (asking?.controller !== controller) return;
       // Only for the draft and room it was asked about, and only while nothing was chosen meanwhile.
-      if (!res.recipient || askableRoom() !== conversationId || dom.input.value.trim() !== draft) return;
+      if (askableRoom() !== conversationId || dom.input.value.trim() !== draft) return;
+      note(conversationId, { recipient: res.recipient ?? undefined, confidence: res.confidence, ms: performance.now() - started });
+      if (!res.recipient) return;
       shown = { recipient: res.recipient, conversationId, draft };
       chip.textContent = `Ask @${res.recipient}`;
       chip.title = `Ask @${res.recipient}: puts @${res.recipient} at the front of your message (you still send it)`;
@@ -94,6 +148,7 @@ function ask(conversationId: string, draft: string): void {
     })
     .catch(() => {
       // No suggestion is no loss: the box works as always.
+      if (asking?.controller === controller && !controller.signal.aborted) note(conversationId, { failed: true });
     })
     .finally(() => {
       if (asking?.controller === controller) asking = undefined;
@@ -114,6 +169,7 @@ function schedule(): void {
 function take(): void {
   if (!shown) return;
   const mention = `@${shown.recipient} `;
+  if (seen?.conversationId === shown.conversationId) seen.taken = true;
   reset();
   dom.input.focus();
   // At the front, as typed (so ⌘Z takes it back and the box's own listeners see it); the cursor goes back to the end.
@@ -130,6 +186,9 @@ dom.input.addEventListener("input", schedule);
 chip.addEventListener("pointerdown", (event) => event.preventDefault());
 chip.addEventListener("click", take);
 // Another room, a reply or a checklist item chosen, a message sent: what was asked about no longer applies.
-window.addEventListener("hashchange", reset);
+window.addEventListener("hashchange", () => {
+  reset();
+  seen = undefined;
+});
 new MutationObserver(() => (dom.replyBar.hidden ? schedule() : reset())).observe(dom.replyBar, { attributes: true, attributeFilter: ["hidden"] });
 dom.composer.addEventListener("submit", reset, { capture: true });
