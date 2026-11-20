@@ -202,7 +202,13 @@ registerExtension({
     list.setAttribute("aria-label", "Shared files: ↑ ↓ to move, Enter to read the file");
     const shown = h("div", "shared-preview");
     const conversationId = view.id;
-    const rows = files.map((item, i) => sharedRow(item, () => select(i)));
+    const rows = files.map((item, i) =>
+      sharedRow(item, () => {
+        select(i);
+        // A click on a row's empty part gives the list the keyboard too (not every browser does that by itself).
+        list.focus({ preventScroll: true });
+      })
+    );
     const select = (i: number) => {
       const item = files[i];
       if (!item) return;
@@ -212,7 +218,15 @@ registerExtension({
         row.setAttribute("aria-selected", String(j === i));
       });
       list.setAttribute("aria-activedescendant", (rows[i]!.id = `shared-${item.file.id}`));
-      if (preview?.id !== item.file.id) preview = { id: item.file.id, element: fileView(item.file) };
+      if (preview?.id !== item.file.id) {
+        // The message that shared it, reachable from the keyboard here (the rows' #n are not: the list holds the arrows;
+        // codex-ui #13626).
+        const source = h("button", "link-btn doc-download", `#${item.seq}`);
+        source.type = "button";
+        source.title = "Show the message that shared it";
+        source.addEventListener("click", () => void hooks.showMessage(item.seq));
+        preview = { id: item.file.id, element: fileView(item.file, source) };
+      }
       shown.replaceChildren(preview.element);
       rows[i]!.scrollIntoView({ block: "nearest" });
     };

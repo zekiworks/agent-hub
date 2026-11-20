@@ -48,7 +48,7 @@ Built from the conversation's messages (`GET /api/conversations/:id/files`, read
 shows exactly what the reader may read; no new storage. Voice messages are left out (they are messages, not shared
 files). It updates when a file arrives. The selected file shows under the list (Can #13619): a click selects one, and
 while the list has the focus ↑ ↓ move to the previous or next file, Home and End to the first and last, and Enter goes
-into the file so the arrows scroll it. The open conversation's selection is kept while the pane is redrawn.
+into the file so the arrows scroll it; Tab reaches the file's Download and #n (its message). The open conversation's selection is kept while the pane is redrawn.
 
 ## Progress
 
