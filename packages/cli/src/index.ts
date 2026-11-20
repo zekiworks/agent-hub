@@ -4,6 +4,7 @@ import os, { homedir, hostname } from "node:os";
 import path from "node:path";
 import { AgentTokens, createBusServer, createInvite, type BusServerOptions } from "@agent-bus/server";
 import { DEFAULT_BUS_PORT } from "@agent-bus/protocol";
+import type { TrainSuggestionsOptions } from "../../complete-ext/finetune/train-suggestions";
 import { runTicketed } from "./run";
 
 const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR] --humans carol,uma
@@ -19,6 +20,8 @@ const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir
        agent-bus uninstall HARNESS [--dir DIR]
        agent-bus doctor [--url http://BUS:7800]
        agent-bus up [--url http://BUS:7800] [--session 0] [--since-days 7] [--dry-run]
+       agent-bus train-suggestions [--data-dir DIR] [--people carol,uma] [--gpu N | --cpu] [--test-days 4] [--model-out FILE]
+                               [--llama-cpp DIR] [--python FILE] [--max-gib N] [--install-weekly] [--smoke]
 
 install / uninstall: put this machine's HARNESS on the bus, or take it off. HARNESS is one of
   omp, pi           an extension file in ~/.omp/agent/extensions or ~/.pi/agent/extensions that loads this checkout
@@ -39,6 +42,18 @@ up: after a reboot, asks the bus which agents ran on this machine (omp and pi, s
 
 doctor: what is installed here, which bus each install joins, whether it is reachable, which agents of this machine
   are on it, and the agent token.
+
+train-suggestions: fine-tunes the typing-suggestion model (LFM3 1.7B) on this hub's own messages, on this machine;
+  nothing leaves it. Only conversations all the hub's people (its humans, or --people) are in, and #all; never DMs.
+  Trains on messages up to --test-days ago, then tests the candidate against the model at --model-out (default
+  DATA-DIR/models/LFM3-1.7B-suggestions-BF16.gguf; the base model while there is none) on the people's messages of
+  those days, through the production prompt, and puts it there only if it is better (the file before stays as
+  *.previous.gguf). Prints the table and what to restart; it never stops or restarts a service itself.
+  Needs uv (its Python env goes to DATA-DIR/suggest-training/venv, or --python FILE), llama.cpp (--llama-cpp DIR or
+  $LLAMA_CPP) and a GPU with about 10 GB (--gpu N picks one; --cpu takes hours). Outputs: DATA-DIR/suggest-training/.
+  --max-gib caps training's GPU memory on a shared GPU. --install-weekly: instead of a run, a weekly rerun with the
+  same options (systemd user timer, launchd agent, or a cron line to add). --smoke: the export and 5 training steps on
+  a sample, then stops.
 
 serve:
   --host        Interface to bind (default 0.0.0.0)
@@ -205,6 +220,48 @@ async function runUpCommand(args: string[]): Promise<number> {
   return (await import("./up")).runUp(opts);
 }
 
+async function runTrainSuggestions(args: string[]): Promise<number> {
+  const opts: TrainSuggestionsOptions = {
+    dataDir: process.env.AGENT_BUS_DATA_DIR || path.join(homedir(), ".agent-bus"),
+    cpu: false,
+    testDays: 4,
+    installWeekly: false,
+    smoke: false,
+  };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const value = (): string => {
+      const v = args[++i];
+      if (v === undefined) throw new Error(`${arg} needs a value`);
+      return v;
+    };
+    if (arg === "--data-dir") opts.dataDir = value();
+    else if (arg === "--people") {
+      opts.people = value()
+        .split(",")
+        .map((p) => p.trim().replace(/^@/, "").toLowerCase())
+        .filter(Boolean);
+    } else if (arg === "--gpu") opts.gpu = value();
+    else if (arg === "--cpu") opts.cpu = true;
+    else if (arg === "--test-days") {
+      opts.testDays = Number(value());
+      if (!Number.isFinite(opts.testDays) || opts.testDays <= 0) throw new Error("--test-days must be a number of days above 0");
+    } else if (arg === "--model-out") opts.modelOut = value();
+    else if (arg === "--llama-cpp") opts.llamaCpp = value();
+    else if (arg === "--python") opts.python = value();
+    else if (arg === "--max-gib") {
+      opts.maxGib = Number(value());
+      if (!Number.isFinite(opts.maxGib) || opts.maxGib <= 0) throw new Error("--max-gib must be a number above 0");
+    } else if (arg === "--install-weekly") opts.installWeekly = true;
+    else if (arg === "--smoke") opts.smoke = true;
+    else throw new Error(`Unknown option ${arg}\n\n${USAGE}`);
+  }
+  if (opts.cpu && opts.gpu !== undefined) throw new Error("--gpu or --cpu, not both");
+  if (opts.people?.length === 0) throw new Error("--people needs at least one id");
+  // Loaded here, not at the top: only this command needs it.
+  return (await import("../../complete-ext/finetune/train-suggestions")).trainSuggestions(opts);
+}
+
 /** Runs the CLI; resolves with the exit code, or never resolves while `serve` runs. */
 export async function runCli(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -257,6 +314,14 @@ export async function runCli(argv: string[]): Promise<number> {
       return await runUpCommand(rest);
     } catch (error) {
       console.error(`agent-bus up: ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+  }
+  if (command === "train-suggestions") {
+    try {
+      return await runTrainSuggestions(rest);
+    } catch (error) {
+      console.error(`agent-bus train-suggestions: ${error instanceof Error ? error.message : String(error)}`);
       return 1;
     }
   }

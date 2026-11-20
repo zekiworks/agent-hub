@@ -202,6 +202,12 @@ role), not in `extensions`. Two roles: "complete" (typing suggestions, below) an
   up to the first punctuation mark that ends a word, nothing past a speaker label, nothing copied whole from an
   earlier message; no Turkish drafts. `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 COMPLETE_HEAL=0 bun
   run packages/complete-ext/src/server.ts`, with `llama-server -m LFM3-1.7B-BF16.gguf --port 9962 -ngl 0`.
+- **Its model trained on the hub's own messages** (Ümit #13513): `agent-bus train-suggestions` fine-tunes LFM3 1.7B
+  (a LoRA) on this machine, on the conversations all the hub's people are in and #all, never DMs; tests it against the
+  current model through the code above (promptOf, the cut-offs) on the last 4 days, and replaces the model file only
+  when it is better (it restarts nothing). How, and its privacy: [INSTALL.md](../INSTALL.md) step 7; the code:
+  `packages/complete-ext/finetune/`. bariton's weekly run (`finetune/weekly.sh`, Ümit #13481) is that command on the
+  live servers' GPU booking.
 - **The word being typed** is completed in the page itself, with or without that service (`packages/server/ui/words.ts`;
   Can #12953, #12955): English and Turkish word lists built from Tatoeba's sentences (CC BY 2.0 FR) by
   `packages/server/scripts/build-words.ts`, about 0.5 MB each over the wire (gzipped, then "not modified"). A word is

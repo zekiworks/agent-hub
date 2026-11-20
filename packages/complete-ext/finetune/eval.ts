@@ -1,21 +1,21 @@
-// Next-word test of the fine-tuned LFM3 1.7B against the base (Ümit #13289), through the production code: promptOf,
-// confidentText (stub "", as with COMPLETE_HEAL=0), suggestionOf and worthAsking from ../src/server.ts.
+// Next-word test of a fine-tuned LFM3 1.7B against another model (Ümit #13289, #13513), through the production code:
+// promptOf, confidentText (stub "", as with COMPLETE_HEAL=0), suggestionOf and worthAsking from ../src/server.ts.
 //
-// TEST: can's and umit's messages from the cutoff (--cutoff, default 2026-11-18 00:00 Europe/Berlin) on, not deleted, that worthAsking
-// accepts (no Turkish letters). Each is cut after a word (the draft holds at least its first word; the real next word
-// is what the model should say), up to SAMPLES cut points spread over the messages (fixed seed). The context is the
-// conversation's messages before it as the bus sends them (latest 20, deleted ones left out, oldest first; promptOf
-// keeps the last 12), with a leading "🎤 " dropped as in the training data.
+// TEST: the people's (--people) messages from the cutoff on, not deleted, that worthAsking accepts (no Turkish
+// letters), in any conversation: a test only reads them, nothing is trained on them. Each is cut after a word (the
+// draft holds at least its first word; the real next word is what the model should say), up to SAMPLES cut points
+// spread over the messages (fixed seed). The context is the conversation's messages before it as the bus sends them
+// (latest 20, deleted ones left out, oldest first; promptOf keeps the last 12), with a leading "🎤 " dropped as in the
+// training data.
 //
-//   bun run eval.ts http://127.0.0.1:9971 http://127.0.0.1:9972 [--cutoff ISO] [--out DIR] [--samples N] [--labels base,tuned]
+//   bun run eval.ts http://127.0.0.1:9971 http://127.0.0.1:9972 --db FILE --people carol,uma --cutoff ISO --out DIR
+//     [--samples N] [--labels base,tuned]
 //
-// --cutoff: the TEST's start, an ISO time with its offset (default 2026-11-18T00:00+01:00); --out: the results
-// directory (default ~/.agent-bus/finetune/results/); --samples: cut points (default 3000); --labels: the two models'
-// names in the table. Reads the bus database read-only; writes table.md, results.jsonl and summary.json (what weekly.sh
-// decides on) to the results directory.
+// --db: the hub's message-bus.sqlite (read-only); --cutoff: the TEST's start, an ISO time with its offset; --out: the
+// results directory; --samples: cut points (default 3000); --labels: the two models' names in the table. Writes
+// table.md, results.jsonl and summary.json (what train-suggestions.ts decides on) to the results directory.
 import { Database } from "bun:sqlite";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { parseArgs } from "node:util";
 import type { BoxCompleteBody } from "@agent-bus/protocol";
 import { confidentText, promptOf, suggestionOf, worthAsking } from "../src/server.ts";
@@ -24,13 +24,17 @@ const { values: opts, positionals } = parseArgs({
   args: process.argv.slice(2),
   allowPositionals: true,
   options: {
-    cutoff: { type: "string", default: "2026-11-18T00:00+01:00" },
-    out: { type: "string", default: `${homedir()}/.agent-bus/finetune/results` },
+    db: { type: "string" },
+    people: { type: "string" },
+    cutoff: { type: "string" },
+    out: { type: "string" },
     samples: { type: "string", default: "3000" },
     labels: { type: "string", default: "base,tuned" },
   },
 });
-const DB = `${homedir()}/.agent-bus/message-bus.sqlite`;
+if (!opts.db || !opts.people || !opts.cutoff || !opts.out) throw new Error("--db, --people, --cutoff and --out are needed");
+const DB = opts.db;
+const PEOPLE = opts.people.split(",").filter(Boolean);
 const CUTOFF_MS = Date.parse(opts.cutoff);
 if (!Number.isFinite(CUTOFF_MS)) throw new Error(`--cutoff ${opts.cutoff} is not an ISO time`);
 const OUT = opts.out;
@@ -107,10 +111,10 @@ for (const c of db.query<{ id: string; kind: string; name: string | null; title:
   });
 }
 const tests = db
-  .query<Row, [number]>(
-    "SELECT seq, conversation_id, from_id, text, created_at, deleted_at FROM messages WHERE from_id IN ('can','umit') AND deleted_at IS NULL AND created_at >= ?1 AND trim(text) <> '' ORDER BY seq",
+  .query<Row, [number, string]>(
+    "SELECT seq, conversation_id, from_id, text, created_at, deleted_at FROM messages WHERE from_id IN (SELECT value FROM json_each(?2)) AND deleted_at IS NULL AND created_at >= ?1 AND trim(text) <> '' ORDER BY seq",
   )
-  .all(CUTOFF_MS)
+  .all(CUTOFF_MS, JSON.stringify(PEOPLE))
   .map((m) => ({ ...m, text: clean(m.text) }))
   .filter((m) => worthAsking(m.text));
 const before = db.query<Row, [string, number, number]>(
@@ -244,12 +248,10 @@ function rowOf(label: string, rs: Result[], model: ModelName): string {
 }
 const groups: Array<[string, Result[]]> = [
   ["all", results],
-  ["can", results.filter((r) => r.cut.message.from_id === "can")],
-  ["umit", results.filter((r) => r.cut.message.from_id === "umit")],
+  ...PEOPLE.map((p): [string, Result[]] => [p, results.filter((r) => r.cut.message.from_id === p)]),
   ["English", results.filter((r) => r.cut.lang === "en")],
   ["Turkish w/o letters", results.filter((r) => r.cut.lang === "tr")],
-  ["can, English", results.filter((r) => r.cut.message.from_id === "can" && r.cut.lang === "en")],
-  ["umit, English", results.filter((r) => r.cut.message.from_id === "umit" && r.cut.lang === "en")],
+  ...PEOPLE.map((p): [string, Result[]] => [`${p}, English`, results.filter((r) => r.cut.message.from_id === p && r.cut.lang === "en")]),
 ];
 const header = [
   "| Cut points | Model | n | next-word top-1 | shown | right of shown | shown & right (of all) | words saved per shown | words saved per cut | median ms |",
@@ -258,7 +260,7 @@ const header = [
 const rowsOf = (gs: Array<[string, Result[]]>) => gs.flatMap(([label, rs]) => (rs.length ? (["base", "tuned"] as const).map((m) => rowOf(label, rs, m)) : []));
 const table = [...header, ...rowsOf(groups)].join("\n");
 const messagesBy = (who: string) => new Set(results.filter((r) => r.cut.message.from_id === who).map((r) => r.cut.message.seq)).size;
-const summary = `${tests.length} test messages pass worthAsking; ${totalCuts} cut points, ${sample.length} sampled from ${new Set(sample.map((c) => c.message.seq)).size} messages (can ${messagesBy("can")}, umit ${messagesBy("umit")}); ${seconds.toFixed(0)} s for both models, ${CONCURRENCY} at a time.`;
+const summary = `${tests.length} test messages pass worthAsking; ${totalCuts} cut points, ${sample.length} sampled from ${new Set(sample.map((c) => c.message.seq)).size} messages (${PEOPLE.map((p) => `${p} ${messagesBy(p)}`).join(", ")}); ${seconds.toFixed(0)} s for both models, ${CONCURRENCY} at a time.`;
 console.log(`\n${summary}\n\n${table}`);
 
 mkdirSync(OUT, { recursive: true, mode: 0o700 });
@@ -287,7 +289,7 @@ writeFileSync(
       top1Wins: only("tuned", "base", "top1"),
       top1Losses: only("base", "tuned", "top1"),
       seconds: Math.round(seconds),
-      table: [...header, ...rowsOf(groups.slice(0, 3))].join("\n"),
+      table: [...header, ...rowsOf(groups.slice(0, 1 + PEOPLE.length))].join("\n"),
     },
     null,
     2,
