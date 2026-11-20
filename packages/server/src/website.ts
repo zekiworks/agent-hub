@@ -17,6 +17,8 @@ const UI_ASSETS: Record<string, { source: string; type: string }> = {
   // Agent Hub's logo (Can #12890): the header's mark and tab icon, and the phone's home-screen icon.
   "logo.svg": { source: "logo.svg", type: "image/svg+xml" },
   "logo-180.png": { source: "logo-180.png", type: "image/png" },
+  // The tab icon, a PNG: Safari shows no SVG tab icons (Ümit #13219).
+  "logo-64.png": { source: "logo-64.png", type: "image/png" },
 };
 
 function mtime(file: string): number {
@@ -130,7 +132,7 @@ export class Website {
       .replace('<span class="brand-name">Agent<span class="brand-rest"> Hub</span></span>', `<span class="brand-name">${wordmark}</span>`);
     if (brand.icon) {
       out = out.replace(
-        '<link id="favicon" rel="icon" type="image/svg+xml" href="/logo.svg" />',
+        '<link id="favicon" rel="icon" type="image/png" href="/logo-64.png?v=1" />',
         `<link id="favicon" rel="icon" type="image/png" href="${this.brandUrls.icon}" />\n  <meta name="brand-icon" content="${this.brandUrls.icon}" />`
       );
     }
