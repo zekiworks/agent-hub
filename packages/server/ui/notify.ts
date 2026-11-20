@@ -55,22 +55,33 @@ export function notify(message: Message, conv: Conversation): void {
 
 let titleBase = BRAND;
 
-/** The tab icon (Agent Hub's logo, or `--brand-icon`), with a red dot drawn over it while messages are unread. */
+/**
+ * The tab icon (Agent Hub's logo, or `--brand-icon`), with a red dot while messages are unread. Safari on the Mac
+ * showed no logo while anything was unread (Ümit #13435): it takes a tab icon only from a new <link> with a real
+ * address, not from a changed href or a data: URL. So the link is replaced, and Agent Hub's own icon with the dot is
+ * a file (logo-64-unread.png); a brand's icon still gets its dot drawn here.
+ */
 let iconImage: HTMLImageElement | undefined;
+const OWN_ICON = "/logo-64.png?v=2";
+const OWN_UNREAD_ICON = "/logo-64-unread.png?v=1";
 function setFavicon(link: HTMLLinkElement, attention: boolean): void {
-  if (!attention) {
-    link.href = BRAND_ICON;
-    return;
-  }
+  const put = (href: string) => {
+    const fresh = document.createElement("link");
+    fresh.id = link.id;
+    fresh.rel = "icon";
+    fresh.type = "image/png";
+    fresh.href = href;
+    link.replaceWith(fresh);
+  };
+  if (!attention) return put(BRAND_ICON);
+  if (BRAND_ICON === OWN_ICON) return put(OWN_UNREAD_ICON);
   const draw = () => {
     const canvas = document.createElement("canvas");
-    // 64 px, as the icon itself: drawn at 32 it came out blurred on sharp screens.
     canvas.width = canvas.height = 64;
     const g = canvas.getContext("2d");
     if (!g || !iconImage) return;
     g.drawImage(iconImage, 0, 0, 64, 64);
-    // The dot sits in the empty corner below the right leaf: at the top right it covered that leaf, and Ümit's tab
-    // showed one leaf where the logo has two (#13425).
+    // In the corner below the right leaf, as in logo-64-unread.png (at the top right it covered a leaf, #13425).
     g.beginPath();
     g.arc(53, 53, 10, 0, Math.PI * 2);
     g.fillStyle = "#e5484d";
@@ -78,7 +89,7 @@ function setFavicon(link: HTMLLinkElement, attention: boolean): void {
     g.lineWidth = 4;
     g.strokeStyle = "#fff";
     g.stroke();
-    if (faviconState) link.href = canvas.toDataURL("image/png");
+    if (faviconState) put(canvas.toDataURL("image/png"));
   };
   if (iconImage?.complete) return draw();
   iconImage = new Image(64, 64);

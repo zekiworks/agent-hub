@@ -19,6 +19,8 @@ const UI_ASSETS: Record<string, { source: string; type: string }> = {
   "logo-180.png": { source: "logo-180.png", type: "image/png" },
   // The tab icon, a PNG: Safari shows no SVG tab icons (Ümit #13219).
   "logo-64.png": { source: "logo-64.png", type: "image/png" },
+  // The same with the unread dot, a file because Safari ignores a data: URL tab icon (Ümit #13435).
+  "logo-64-unread.png": { source: "logo-64-unread.png", type: "image/png" },
 };
 
 function mtime(file: string): number {
