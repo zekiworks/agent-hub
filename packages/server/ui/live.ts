@@ -233,6 +233,8 @@ registerExtension({
   order: 0,
   title: () => "Live",
   applies: (view) => agentOf(view) !== undefined,
+  // One agent's Live, whether opened in its DM, a group with it or a draft to it: one tab (Can #13103).
+  subject: (view) => agentOf(view)?.id,
   render: (body) => {
     if (root.parentElement !== body) body.replaceChildren(root);
     renderLive();

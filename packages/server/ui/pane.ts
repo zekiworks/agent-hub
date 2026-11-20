@@ -31,6 +31,11 @@ export interface PaneExtension {
   render(body: HTMLElement, view: View): void;
   /** It became visible (true) or stopped being visible (false): e.g. Live streams only while seen. */
   shown?(visible: boolean): void;
+  /**
+   * What a tab of it is about, when that is not simply the conversation: Live is about one agent, the same in its DM,
+   * a group with it, or a draft to it. Two tabs about the same subject are the same tab (Can #13093, #13103).
+   */
+  subject?(view: View): string | undefined;
 }
 
 /** A Workspace tab: extension `ext`, about `view` (a pinned entity tab), the conversation on the left (the passing
@@ -146,10 +151,10 @@ export function openPane(id: string): void {
   const extension = extensions.find((e) => e.id === id);
   if (!extension) return;
   const global = extension.scope === "global";
-  const here = viewHash(state.view);
-  // A pinned tab about this conversation first, then the passing one (codex-ui #12902: reopening shows the tab open).
+  // A pinned tab about the same thing first, then the passing one (codex-ui #12902: reopening shows the tab open).
   const same =
-    tabs.find((t) => t.ext === id && (global || (t.pinned && viewHash(viewOf(t)) === here))) ?? tabs.find((t) => t.ext === id && !t.pinned);
+    tabs.find((t) => t.ext === id && (global || (t.pinned && subjectKey(t) === subjectKey({ ext: id, pinned: false })))) ??
+    tabs.find((t) => t.ext === id && !t.pinned);
   if (same) {
     drawnFor.delete(keyOf(same)); // something new to show (e.g. a file opened from a message): drawn afresh
     return activate(same);
@@ -201,11 +206,17 @@ function closeTab(tab: Tab): void {
   renderPane();
 }
 
-/** Another pinned tab showing exactly what `tab` shows (same kind, same conversation), if there is one. */
+/** What a tab shows, for telling two tabs of the same thing apart: its extension's subject, else its conversation. */
+function subjectKey(tab: Tab): string {
+  const view = viewOf(tab);
+  return `${tab.ext}:${extensionOf(tab)?.subject?.(view) ?? viewHash(view)}`;
+}
+
+/** Another pinned tab showing exactly what `tab` shows (same kind, same subject), if there is one. */
 function pinnedTwin(tab: Tab): Tab | undefined {
   if (isGlobal(tab)) return undefined;
-  const shows = viewHash(viewOf(tab));
-  return tabs.find((t) => t !== tab && t.pinned && t.ext === tab.ext && viewHash(viewOf(t)) === shows);
+  const shows = subjectKey(tab);
+  return tabs.find((t) => t !== tab && t.pinned && subjectKey(t) === shows);
 }
 
 /** Pins the tab to what it shows now (a passing entity tab keeps this conversation), or unpins it. */
@@ -307,12 +318,12 @@ export function renderPane(): void {
   tabs = tabs.filter((t) => extensionOf(t));
   // Two pinned tabs of the same thing (pinned before #13093 was fixed, kept in the browser): the first one stays.
   const pinnedKeys = new Map<string, Tab>();
-  for (const t of tabs.filter((t) => t.pinned)) {
-    const first = pinnedKeys.get(keyOf(t));
-    if (!first) pinnedKeys.set(keyOf(t), t);
+  for (const t of tabs.filter((t) => t.pinned && !isGlobal(t))) {
+    const first = pinnedKeys.get(subjectKey(t));
+    if (!first) pinnedKeys.set(subjectKey(t), t);
     else if (active === t) active = first;
   }
-  tabs = tabs.filter((t) => !t.pinned || pinnedKeys.get(keyOf(t)) === t);
+  tabs = tabs.filter((t) => !t.pinned || isGlobal(t) || pinnedKeys.get(subjectKey(t)) === t);
   if (active && !tabs.includes(active)) active = tabs[0];
   // A passing tab that has followed the conversation onto a pinned tab's subject would show the same thing twice
   // (Can #13093): it stays, to go on following, but only the pinned one shows and stands for it.
