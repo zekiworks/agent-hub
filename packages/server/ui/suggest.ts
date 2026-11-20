@@ -2,9 +2,9 @@
 // from word lists in the page (words.ts; Can #12953, #12955), and when the bus has a "complete" box extension, every
 // change of the draft asks it for the next words, one request at a time (the newest draft goes next). An answer
 // shows as long as it still fits what is typed: typing the suggested letters keeps showing the rest, typing something
-// else hides it. The words show in grey after the cursor; Tab takes them, Escape drops them. Phones have no Tab:
-// there a chip with the whole word, in the row of buttons, takes them on a tap. Not Enter: Enter sends, and Safari's grey completion taking Enter
-// is why it was turned off (Ümit #11651).
+// else hides it. The words show in grey after the cursor; Tab takes them, Escape drops them. Not Enter: Enter sends,
+// and Safari's grey completion taking Enter is why it was turned off (Ümit #11651). Computers only: a phone's
+// keyboard has its own suggestion bar, and a second one in the box was only in the way (Ümit #13175).
 import type { BoxResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { dom } from "./dom";
@@ -32,14 +32,8 @@ export function setSuggestionsOn(on: boolean): void {
 const ghost = h("div", "composer-ghost");
 ghost.setAttribute("aria-hidden", "true");
 dom.input.before(ghost);
-/**
- * The phones' way to take them: a chip in the row of buttons under the text, in the room that row has anyway, so
- * the box keeps its size and place when it comes and goes (Ümit #13025: under the text it moved the box).
- */
-const chip = h("button", "suggest-chip");
-chip.type = "button";
-chip.hidden = true;
-(dom.composer.querySelector(".composer-tools .tools-spacer") ?? dom.input).before(chip);
+/** Touch screens (phones): no suggestions of ours, the keyboard's bar has them (Ümit #13175). */
+const TOUCH = window.matchMedia("(hover: none) and (pointer: coarse)");
 
 /** The latest answer: the draft it was for, and that draft followed by its words. Shown while the box's text runs
  * from the draft into the words (so an answer for an earlier, shorter text never shows after a send or a deletion). */
@@ -55,7 +49,6 @@ let composing = false;
 function hide(): void {
   shown = undefined;
   ghost.replaceChildren();
-  chip.hidden = true;
 }
 
 /** Forgets everything: what is shown, the answer kept, the request on its way. */
@@ -73,9 +66,9 @@ function atEnd(): boolean {
   return selectionStart === value.length && selectionEnd === value.length;
 }
 
-/** Typing is completed now: turned on, not composing, no @name list open. */
+/** Typing is completed now: turned on, on a computer, not composing, no @name list open. */
 function typingNow(): boolean {
-  return suggestionsOn() && !composing && !state.mention.open;
+  return suggestionsOn() && !TOUCH.matches && !composing && !state.mention.open;
 }
 
 /** Where the model is asked now: as above, in a conversation (not a new draft), on a bus that has the extension. */
@@ -108,13 +101,6 @@ function show(text: string): void {
   });
   ghost.replaceChildren(h("span", "ghost-draft", dom.input.value), h("span", "ghost-words", text));
   ghost.scrollTop = dom.input.scrollTop;
-  // The whole word, as on the iPhone's own bar ("checklist", not "+cklist", which did not read as something to tap;
-  // Ümit #13024): the part of it already typed, then the rest.
-  const typedPart = /\s/.test(text[0] ?? " ") ? "" : (/\S*$/.exec(dom.input.value)?.[0] ?? "");
-  chip.textContent = (typedPart + text).trim();
-  chip.title = "Tap to add";
-  chip.setAttribute("aria-label", `Add: ${chip.textContent}`);
-  chip.hidden = !window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 }
 
 /**
@@ -227,7 +213,7 @@ let wordsAsked = false;
 
 dom.input.addEventListener("input", (event) => {
   if ((event as InputEvent).isComposing) return hide();
-  if (!wordsAsked && suggestionsOn()) {
+  if (!wordsAsked && suggestionsOn() && !TOUCH.matches) {
     wordsAsked = true;
     void loadWords().then(showFitting);
   }
@@ -273,18 +259,5 @@ document.addEventListener("selectionchange", () => {
   if (document.activeElement === dom.input && shown && !atEnd()) hide();
 });
 dom.input.addEventListener("scroll", () => (ghost.scrollTop = dom.input.scrollTop));
-// A finger on the chip: the box may lose the focus before the tap's click arrives (Safari on the iPhone), and the blur
-// must not drop the words the tap is about to take (Ümit #13174: tapping the chip did nothing).
-let chipPressed = false;
-dom.input.addEventListener("blur", () => setTimeout(() => !chipPressed && document.activeElement !== chip && hide(), 0));
-// A tap on the chip must not take the focus (the keyboard would drop): pointerdown keeps it in the box.
-chip.addEventListener("pointerdown", (event) => {
-  event.preventDefault();
-  chipPressed = true;
-});
-chip.addEventListener("pointercancel", () => (chipPressed = false));
-chip.addEventListener("click", () => {
-  chipPressed = false;
-  take();
-});
+dom.input.addEventListener("blur", hide);
 window.addEventListener("hashchange", reset);
