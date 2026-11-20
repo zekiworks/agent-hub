@@ -1,29 +1,47 @@
 // Next-word test of the fine-tuned LFM3 1.7B against the base (Ümit #13289), through the production code: promptOf,
 // confidentText (stub "", as with COMPLETE_HEAL=0), suggestionOf and worthAsking from ../src/server.ts.
 //
-// TEST: can's and umit's messages from the cutoff (2026-11-18 00:00 Europe/Berlin) on, not deleted, that worthAsking
+// TEST: can's and umit's messages from the cutoff (--cutoff, default 2026-11-18 00:00 Europe/Berlin) on, not deleted, that worthAsking
 // accepts (no Turkish letters). Each is cut after a word (the draft holds at least its first word; the real next word
 // is what the model should say), up to SAMPLES cut points spread over the messages (fixed seed). The context is the
 // conversation's messages before it as the bus sends them (latest 20, deleted ones left out, oldest first; promptOf
 // keeps the last 12), with a leading "🎤 " dropped as in the training data.
 //
-//   bun run eval.ts http://127.0.0.1:9971 http://127.0.0.1:9972 [~/.agent-bus/finetune/live/results]
+//   bun run eval.ts http://127.0.0.1:9971 http://127.0.0.1:9972 [--cutoff ISO] [--out DIR] [--samples N] [--labels base,tuned]
 //
-// Reads the bus database read-only; writes the results directory (default ~/.agent-bus/finetune/results/).
+// --cutoff: the TEST's start, an ISO time with its offset (default 2026-11-18T00:00+01:00); --out: the results
+// directory (default ~/.agent-bus/finetune/results/); --samples: cut points (default 3000); --labels: the two models'
+// names in the table. Reads the bus database read-only; writes table.md, results.jsonl and summary.json (what weekly.sh
+// decides on) to the results directory.
 import { Database } from "bun:sqlite";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { parseArgs } from "node:util";
 import type { BoxCompleteBody } from "@agent-bus/protocol";
 import { confidentText, promptOf, suggestionOf, worthAsking } from "../src/server.ts";
 
+const { values: opts, positionals } = parseArgs({
+  args: process.argv.slice(2),
+  allowPositionals: true,
+  options: {
+    cutoff: { type: "string", default: "2026-11-18T00:00+01:00" },
+    out: { type: "string", default: `${homedir()}/.agent-bus/finetune/results` },
+    samples: { type: "string", default: "3000" },
+    labels: { type: "string", default: "base,tuned" },
+  },
+});
 const DB = `${homedir()}/.agent-bus/message-bus.sqlite`;
-const CUTOFF_MS = Date.parse("2026-11-17T23:00:00Z"); // 2026-11-18 00:00 Europe/Berlin (CET)
+const CUTOFF_MS = Date.parse(opts.cutoff);
+if (!Number.isFinite(CUTOFF_MS)) throw new Error(`--cutoff ${opts.cutoff} is not an ISO time`);
+const OUT = opts.out;
 const CONTEXT_MESSAGES = 20; // what the bus reads before dropping deleted ones (boxes.ts)
-const SAMPLES = 3000;
+const SAMPLES = Number(opts.samples);
 const CONCURRENCY = 8;
-const [baseUrl = "http://127.0.0.1:9971", tunedUrl = "http://127.0.0.1:9972", OUT = `${homedir()}/.agent-bus/finetune/results`] = process.argv.slice(2);
+const [baseUrl = "http://127.0.0.1:9971", tunedUrl = "http://127.0.0.1:9972"] = positionals;
 const MODELS = { base: baseUrl, tuned: tunedUrl } as const;
 type ModelName = keyof typeof MODELS;
+const [baseLabel = "base", tunedLabel = "tuned"] = opts.labels.split(",");
+const LABELS: Record<ModelName, string> = { base: baseLabel, tuned: tunedLabel };
 
 const TR = new Set(
   "ve bir bu da de ne mi mu ama icin gibi var yok cok simdi tamam evet hayir olsun ben sen biz siz onu bunu sey iyi daha kadar sonra once nasil neden niye hep hic bence galiba artik zaten bak yani olur olmaz misin musun lazim abi hocam burada orada degil oldu mesela ile hem bile bunlar sunu boyle oyle hemen biraz bana sana bizim senin benim istiyorum yapalim yap bakalim olarak diye".split(" "),
@@ -222,7 +240,7 @@ function rowOf(label: string, rs: Result[], model: ModelName): string {
   const right = shown.filter((x) => x.right);
   const saved = shown.reduce((n, x) => n + x.saved, 0);
   const ms = a.map((x) => x.ms).sort((p, q) => p - q);
-  return `| ${label} | ${model} | ${rs.length} | ${pct(a.filter((x) => x.top1).length, a.length)} | ${pct(shown.length, a.length)} | ${pct(right.length, shown.length)} | ${pct(right.length, a.length)} | ${shown.length ? (saved / shown.length).toFixed(2) : "–"} | ${(saved / Math.max(1, a.length)).toFixed(3)} | ${ms[Math.floor(ms.length / 2)]?.toFixed(0) ?? "–"} |`;
+  return `| ${label} | ${LABELS[model]} | ${rs.length} | ${pct(a.filter((x) => x.top1).length, a.length)} | ${pct(shown.length, a.length)} | ${pct(right.length, shown.length)} | ${pct(right.length, a.length)} | ${shown.length ? (saved / shown.length).toFixed(2) : "–"} | ${(saved / Math.max(1, a.length)).toFixed(3)} | ${ms[Math.floor(ms.length / 2)]?.toFixed(0) ?? "–"} |`;
 }
 const groups: Array<[string, Result[]]> = [
   ["all", results],
@@ -233,11 +251,12 @@ const groups: Array<[string, Result[]]> = [
   ["can, English", results.filter((r) => r.cut.message.from_id === "can" && r.cut.lang === "en")],
   ["umit, English", results.filter((r) => r.cut.message.from_id === "umit" && r.cut.lang === "en")],
 ];
-const table = [
+const header = [
   "| Cut points | Model | n | next-word top-1 | shown | right of shown | shown & right (of all) | words saved per shown | words saved per cut | median ms |",
   "|---|---|---|---|---|---|---|---|---|---|",
-  ...groups.flatMap(([label, rs]) => (rs.length ? (["base", "tuned"] as const).map((m) => rowOf(label, rs, m)) : [])),
-].join("\n");
+];
+const rowsOf = (gs: Array<[string, Result[]]>) => gs.flatMap(([label, rs]) => (rs.length ? (["base", "tuned"] as const).map((m) => rowOf(label, rs, m)) : []));
+const table = [...header, ...rowsOf(groups)].join("\n");
 const messagesBy = (who: string) => new Set(results.filter((r) => r.cut.message.from_id === who).map((r) => r.cut.message.seq)).size;
 const summary = `${tests.length} test messages pass worthAsking; ${totalCuts} cut points, ${sample.length} sampled from ${new Set(sample.map((c) => c.message.seq)).size} messages (can ${messagesBy("can")}, umit ${messagesBy("umit")}); ${seconds.toFixed(0)} s for both models, ${CONCURRENCY} at a time.`;
 console.log(`\n${summary}\n\n${table}`);
@@ -249,5 +268,29 @@ writeFileSync(
   results
     .map((r) => JSON.stringify({ seq: r.cut.message.seq, from: r.cut.message.from_id, lang: r.cut.lang, draft: r.cut.draft, next: r.cut.next.slice(0, 8), ...r.answers }))
     .join("\n") + "\n",
+  { mode: 0o600 },
+);
+// What weekly.sh decides on: shown & right per model, and the paired cut points one has right and the other not.
+const count = (model: ModelName, key: "top1" | "right") => results.filter((r) => r.answers[model][key]).length;
+const only = (a: ModelName, b: ModelName, key: "top1" | "right") => results.filter((r) => r.answers[a][key] && !r.answers[b][key]).length;
+writeFileSync(
+  `${OUT}/summary.json`,
+  JSON.stringify(
+    {
+      cuts: results.length,
+      cutoff: new Date(CUTOFF_MS).toISOString(),
+      labels: LABELS,
+      shownRight: { base: count("base", "right"), tuned: count("tuned", "right") },
+      top1: { base: count("base", "top1"), tuned: count("tuned", "top1") },
+      rightWins: only("tuned", "base", "right"),
+      rightLosses: only("base", "tuned", "right"),
+      top1Wins: only("tuned", "base", "top1"),
+      top1Losses: only("base", "tuned", "top1"),
+      seconds: Math.round(seconds),
+      table: [...header, ...rowsOf(groups.slice(0, 3))].join("\n"),
+    },
+    null,
+    2,
+  ) + "\n",
   { mode: 0o600 },
 );

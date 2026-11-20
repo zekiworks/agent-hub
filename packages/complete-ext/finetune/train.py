@@ -3,8 +3,9 @@
 Loss on all tokens of a window (the conversation as the model sees it in production). Held-out loss is measured before
 and after, on all tokens and on the people's (can, umit) words only. Writes to ~/.agent-bus/finetune/ (with --shared:
 ~/.agent-bus/finetune/live/, from export.py --shared): lora/ (adapter), merged/ (HF model with the adapter merged),
-train-log.json. Batches of 8 windows either way: --micro-batch 1 (8 accumulated) with --checkpointing when the GPU is
-short of memory, and --max-gib caps this process's CUDA memory (an out-of-memory error rather than crowding others).
+train-log.json; --root DIR reads DIR/data and writes there instead (weekly.sh). Batches of 8 windows either way:
+--micro-batch 1 (8 accumulated) with --checkpointing when the GPU is short of memory, and --max-gib caps this process's
+CUDA memory (an out-of-memory error rather than crowding others). --max-steps ends training early (weekly.sh's smoke run).
 
   agent-bus run r_b063e905efb7 -- ~/.agent-bus/ask-eval/glide-venv/bin/python train.py
   agent-bus run r_9e07e06d2fab -- ~/.agent-bus/ask-eval/glide-venv/bin/python train.py --shared --micro-batch 1 --checkpointing --max-gib 7.5
@@ -29,9 +30,11 @@ args.add_argument("--shared", action="store_true")
 args.add_argument("--micro-batch", type=int, default=4)
 args.add_argument("--checkpointing", action="store_true")
 args.add_argument("--max-gib", type=float)
+args.add_argument("--root")
+args.add_argument("--max-steps", type=int)
 ARGS = args.parse_args()
 
-ROOT = os.path.expanduser("~/.agent-bus/finetune/live" if ARGS.shared else "~/.agent-bus/finetune")
+ROOT = os.path.expanduser(ARGS.root or ("~/.agent-bus/finetune/live" if ARGS.shared else "~/.agent-bus/finetune"))
 DATA = f"{ROOT}/data"
 MAX_TOKENS = 2048
 EPOCHS = 2
@@ -119,7 +122,7 @@ def main() -> None:
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=LR, weight_decay=0.0, betas=(0.9, 0.999))
     steps_per_epoch = math.ceil(len(train) / (MICRO_BATCH * ACCUM))
-    total_steps = steps_per_epoch * EPOCHS
+    total_steps = log["total_steps"] = min(steps_per_epoch * EPOCHS, ARGS.max_steps or steps_per_epoch * EPOCHS)
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt, lambda s: min(1.0, (s + 1) / WARMUP) * 0.5 * (1 + math.cos(math.pi * min(1.0, s / total_steps))))
     rng = random.Random(13289)
@@ -127,7 +130,7 @@ def main() -> None:
     t_train = time.time()
     step = 0
     log["steps"] = []
-    for epoch in range(EPOCHS):
+    for epoch in range(math.ceil(total_steps / steps_per_epoch)):
         # Batches of similar length (less padding), in random order.
         order = sorted(range(len(train)), key=lambda i: len(train[i]["ids"]) + rng.random() * 200)
         batches = [order[i:i + MICRO_BATCH] for i in range(0, len(order), MICRO_BATCH)]
@@ -153,8 +156,10 @@ def main() -> None:
                          "elapsed_s": round(time.time() - t_train, 1)}
                 log["steps"].append(entry)
                 print(entry, flush=True)
-        log[f"heldout_after_epoch{epoch + 1}"] = heldout_loss(model, held, pad, device)
-        print(f"held-out after epoch {epoch + 1}", log[f"heldout_after_epoch{epoch + 1}"], flush=True)
+            if step == total_steps:
+                break
+        log[f"heldout_after_epoch{epoch + 1}"] = log["heldout_after"] = heldout_loss(model, held, pad, device)
+        print(f"held-out after epoch {epoch + 1}", log["heldout_after"], flush=True)
     log["train_seconds"] = round(time.time() - t_train, 1)
     log["peak_memory_gib"] = round(torch.cuda.max_memory_allocated() / 2**30, 2)
     log["peak_reserved_gib"] = round(torch.cuda.max_memory_reserved() / 2**30, 2)

@@ -10,25 +10,34 @@ line; the people's (can, umit) lines stay whole, since their drafts are what the
 --shared (the model for live use, which both people see): only conversations both can and umit are members of, and
 #all; no DMs (Main, after #13289). A model trained on a DM could put one person's private words in the other's
 suggestions. Writes to ~/.agent-bus/finetune/live/data/ instead.
+--cutoff ISO (a time without an offset is Europe/Berlin) and --out DIR (the data directory) for the weekly retraining
+(weekly.sh).
 
-  ~/.agent-bus/ask-eval/glide-venv/bin/python export.py [--shared]
+  ~/.agent-bus/ask-eval/glide-venv/bin/python export.py [--shared] [--cutoff 2026-11-18T00:00] [--out DIR]
 """
 
+import argparse
 import json
 import os
 import random
 import re
 import sqlite3
-import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import lfm3
 
+args = argparse.ArgumentParser()
+args.add_argument("--shared", action="store_true")
+args.add_argument("--cutoff", default="2026-11-18T00:00")
+args.add_argument("--out")
+ARGS = args.parse_args()
+
 DB = os.path.expanduser("~/.agent-bus/message-bus.sqlite")
-SHARED = "--shared" in sys.argv[1:]
-OUT = os.path.expanduser("~/.agent-bus/finetune/live/data" if SHARED else "~/.agent-bus/finetune/data")
-CUTOFF_MS = int(datetime(2026, 11, 18, tzinfo=ZoneInfo("Europe/Berlin")).timestamp() * 1000)
+SHARED = ARGS.shared
+OUT = os.path.expanduser(ARGS.out or ("~/.agent-bus/finetune/live/data" if SHARED else "~/.agent-bus/finetune/data"))
+_cutoff = datetime.fromisoformat(ARGS.cutoff)
+CUTOFF_MS = int((_cutoff if _cutoff.tzinfo else _cutoff.replace(tzinfo=ZoneInfo("Europe/Berlin"))).timestamp() * 1000)
 PEOPLE = {"can", "umit"}
 PROMPT_MESSAGE_CHARS = 300
 WINDOW_TOKENS = 1536
