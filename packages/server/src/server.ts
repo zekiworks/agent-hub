@@ -26,7 +26,7 @@ import { changeMessage, forwardMessage, getMessageReceipts, getMessages, getShar
 import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
 import { forwardExtension } from "./extensions";
-import { postBox, postBoxReport, type BoxExtension } from "./boxes";
+import { getBoxUsage, postBox, postBoxReport, type BoxExtension } from "./boxes";
 import { getTasks, taskAction } from "./tasks";
 import { postSpeech } from "./speech";
 import { type Brand, Website } from "./website";
@@ -278,10 +278,12 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     if (method === "POST" && pathname === "/api/speech") return await postSpeech(req, options.ttsUrl);
     const boxMatch = /^\/api\/box\/([a-z0-9][a-z0-9_-]*)$/.exec(pathname);
     if (method === "POST" && boxMatch?.[1]) return json(await postBox(ctx, req, boxMatch[1], options.boxes ?? {}, viewer.kind === "human" ? viewer.id : undefined));
-    const boxReportMatch = /^\/api\/box\/([a-z0-9][a-z0-9_-]*)\/report$/.exec(pathname);
-    if (method === "POST" && boxReportMatch?.[1]) {
+    const boxReportMatch = /^\/api\/box\/([a-z0-9][a-z0-9_-]*)\/(report|usage)$/.exec(pathname);
+    if (boxReportMatch?.[1]) {
       const person = viewer.kind === "human" ? viewer.id : undefined;
-      return json(await postBoxReport(ctx, req, boxReportMatch[1], options.boxes ?? {}, person, path.join(dataDir, "box-reports.jsonl")));
+      const file = path.join(dataDir, "box-reports.jsonl");
+      if (method === "POST" && boxReportMatch[2] === "report") return json(await postBoxReport(ctx, req, boxReportMatch[1], options.boxes ?? {}, person, file));
+      if (method === "GET" && boxReportMatch[2] === "usage") return json(getBoxUsage(boxReportMatch[1], options.boxes ?? {}, person, file));
     }
     if (method === "POST" && pathname === "/api/settings") return json(await postSetting(ctx, req));
     return (await schedule.handle(req, url)) ?? json({ error: `No route for ${method} ${pathname}` }, 404);

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { BoxCompleteBody, BoxRecipientBody, PostMessageResponse, StateResponse } from "@agent-bus/protocol";
 import type { BusServerHandle } from "@agent-bus/server";
-import { agentSocketUrl, getJson, postJson, startBus } from "./helpers";
+import { agentSocketUrl, busFetch, getJson, postJson, startBus } from "./helpers";
 
 let dataDir = "";
 let bus: BusServerHandle;
@@ -203,6 +203,37 @@ test("recipient report: what was done with an offer is kept in box-reports.jsonl
     { box: "ask", person: "carol", conversationId: room, outcome: "taken", recipient: "webapp", confidence: 0.82, ms: 512 },
     { box: "ask", person: "carol", conversationId: room, outcome: "quiet" },
   ]);
+});
+
+test("recipient usage: a person's own counts, nobody else's, without conversation ids; not for agents or other boxes", async () => {
+  const room = await launchRoom(["webapp", "docs"]);
+  const report = (from: string, body: Record<string, unknown>) => postJson(bus, "/api/box/ask/report", { from, conversationId: room, ...body });
+  for (const [outcome, ms] of [["taken", 400], ["taken", 600], ["ignored", 900], ["quiet", undefined], ["reply", 300]] as const) {
+    expect((await report("carol", { outcome, recipient: "webapp", ...(ms ? { ms } : {}) })).status).toBe(200);
+  }
+  expect((await report("carol", { outcome: "named", failed: true })).status).toBe(200);
+  // uma's lines are hers: they change none of carol's counts.
+  for (const outcome of ["taken", "named-other", "named"]) expect((await report("uma", { outcome, ms: 5000, failed: true })).status).toBe(200);
+  const res = await busFetch(bus, "/api/box/ask/usage", {}, "carol");
+  expect(res.status).toBe(200);
+  const text = await res.text();
+  const today = new Date().toISOString().slice(0, 10);
+  expect(JSON.parse(text)).toEqual({
+    messages: 6,
+    outcomes: { taken: 2, ignored: 1, "named-other": 0, named: 1, quiet: 1, reply: 1 },
+    offered: 3,
+    takenShare: 2 / 3,
+    answerMs: { answers: 4, median: 600, p90: 900 },
+    failed: 1,
+    firstDay: today,
+    lastDay: today,
+    version: expect.any(String),
+  });
+  for (const secret of [room, "webapp", "carol", "uma"]) expect(text).not.toContain(secret);
+  // An agent token is refused; a box that is not a recipient, or none, is unknown.
+  expect((await busFetch(bus, "/api/box/ask/usage")).status).toBe(403);
+  expect((await busFetch(bus, "/api/box/complete/usage", {}, "carol")).status).toBe(404);
+  expect((await busFetch(bus, "/api/box/nothing/usage", {}, "carol")).status).toBe(404);
 });
 
 /** A second bus without the extension, to check one without boxes says nothing about them. */

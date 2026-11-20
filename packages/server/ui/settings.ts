@@ -1,7 +1,7 @@
 // The Settings dialog: a person's own settings. On the bus (POST /api/settings): who writes their English voice
 // messages as text. In this browser: whether the routing lines under messages show (#10096), and typing suggestions.
-import type { AgentSettings } from "@agent-bus/protocol";
-import { postJson } from "./api";
+import { BOX_REPORT_OUTCOMES, type AgentSettings, type BoxReportOutcome, type BoxUsage } from "@agent-bus/protocol";
+import { api, postJson } from "./api";
 import { closeWindowButton } from "./dialogs";
 import { dom } from "./dom";
 import { errorText } from "./format";
@@ -159,7 +159,8 @@ function suggestionSetting(): HTMLElement {
 
 /** "Ask @agent" (Ümit #13030, #13222): an add-on, shown when the bus has a "recipient" box extension; off until turned on. */
 function askAgentSetting(): HTMLElement | string {
-  if (!recipientBox()) return "";
+  const name = recipientBox();
+  if (!name) return "";
   const box = h("input");
   box.type = "checkbox";
   box.checked = askAgentOn();
@@ -176,9 +177,88 @@ function askAgentSetting(): HTMLElement | string {
       "In a room, when you write without naming anyone, a button like \"Ask @webapp\" may appear next to 📎: the agent " +
         "that, by what the room shows (who reported what, who owns which checklist step), can best answer you. A tap puts " +
         "the @name in front of your message; you still send it. Liquid AI's d1-2B decides, on the bus's own machine; " +
-        "your draft and the room's latest messages go to it, and nothing is kept. Only this browser."
-    )
+        "your draft and the room's latest messages go to it and are not kept. The hub counts, per message you send, " +
+        "whom it offered and whether you took it (never the text); you can share those counts below. Only this browser."
+    ),
+    shareUsage(name)
   );
+  return section;
+}
+
+/**
+ * Where "Share my Ask @agent counts" opens a new issue (Ümit #13513): the public repository people install Agent Hub
+ * from. Change it here if the repository moves or becomes private.
+ */
+const SHARE_REPO_URL = "https://github.com/zekiworks/agent-hub";
+
+const OUTCOME_LABELS: Record<BoxReportOutcome, string> = {
+  taken: "taken: sent to the offered agent",
+  ignored: "ignored: offered, sent naming nobody",
+  "named-other": "named-other: offered, someone else named",
+  named: "named: nothing offered, someone named",
+  quiet: "quiet: nothing offered, nobody named",
+  reply: "reply: a Reply or checklist answer",
+};
+
+const SHARE_INTRO = "My Ask @agent counts, shared from Agent Hub's Settings. Counts only: no conversation ids, names or message text.";
+
+/** The summary as rows: the table the person reads and the issue's Markdown come from these, so they cannot differ. */
+function usageRows(usage: BoxUsage): Array<[string, string]> {
+  const { answerMs, takenShare } = usage;
+  return [
+    ["Agent Hub version", usage.version],
+    ["Days (UTC)", `${usage.firstDay} – ${usage.lastDay}`],
+    ["Messages sent with Ask @agent on", String(usage.messages)],
+    ...BOX_REPORT_OUTCOMES.map((o): [string, string] => [OUTCOME_LABELS[o], String(usage.outcomes[o])]),
+    ["Offered, then taken", takenShare === null ? "nothing offered" : `${usage.outcomes.taken} of ${usage.offered} (${Math.round(100 * takenShare)}%)`],
+    ["Answer time in the page", answerMs ? `median ${answerMs.median} ms, p90 ${answerMs.p90} ms (${answerMs.answers} answers)` : "none timed"],
+    ["Asking failed before", `${usage.failed} of ${usage.messages} messages`],
+  ];
+}
+
+/**
+ * Sharing my Ask @agent counts with the Agent Hub team (Ümit #13513): the first button shows exactly what would go;
+ * the second opens a new GitHub issue with it filled in, where the person can still edit it and decides to submit.
+ * Nothing leaves the hub otherwise. Two clicks also keep `window.open` in a click of its own (Safari blocks it after
+ * waiting for the counts).
+ */
+function shareUsage(name: string): HTMLElement {
+  const section = h("div");
+  const show = h("button", "btn", "Share my Ask @agent counts with the Agent Hub team");
+  show.type = "button";
+  const preview = h("div");
+  show.addEventListener("click", async () => {
+    let usage: BoxUsage;
+    try {
+      usage = await api<BoxUsage>(`/api/box/${encodeURIComponent(name)}/usage`);
+    } catch (err) {
+      preview.replaceChildren(h("p", "dialog-hint", errorText(err)));
+      return;
+    }
+    if (usage.messages === 0) {
+      preview.replaceChildren(h("p", "dialog-hint", "No messages sent with Ask @agent on yet: nothing to share."));
+      return;
+    }
+    const rows = usageRows(usage);
+    const table = h("table", "stats-table");
+    for (const [what, value] of rows) {
+      const tr = h("tr");
+      tr.append(h("td", "", what), h("td", "num", value));
+      table.append(tr);
+    }
+    const body = [SHARE_INTRO, "", "| | |", "|---|---|", ...rows.map(([what, value]) => `| ${what} | ${value} |`)].join("\n");
+    const url = `${SHARE_REPO_URL}/issues/new?${new URLSearchParams({ title: "Ask @agent counts", body })}`;
+    const open = h("button", "btn btn-primary", "Open a GitHub issue with this");
+    open.type = "button";
+    open.addEventListener("click", () => window.open(url, "_blank", "noopener"));
+    preview.replaceChildren(
+      h("p", "dialog-hint", SHARE_INTRO),
+      table,
+      open,
+      h("p", "dialog-hint", "GitHub shows the issue before it is posted: you can change or remove anything, or not submit it.")
+    );
+  });
+  section.append(show, preview);
   return section;
 }
 

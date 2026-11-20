@@ -234,7 +234,11 @@ While a person writes in a room without naming anyone, the box may offer one age
   `POST /api/box/NAME/report {conversationId, outcome, recipient?, confidence?, ms?, failed?}` and the bus appends a
   line to `box-reports.jsonl` in its data folder: taken, ignored, named-other (offered, someone else named), named,
   quiet, reply. Never the text. `bun packages/ask-ext/eval/usage.ts [--since DATE]` counts it. The record stays on
-  the bus's own machine; no hub reports anywhere else.
+  the bus's own machine; no hub reports anywhere by itself.
+- Sharing them is the person's choice (Ümit #13510, #13513): Settings → Ask @agent → "Share my Ask @agent counts"
+  shows that person's own counts (`GET /api/box/NAME/usage`: per outcome, offered and taken, answer time, failures,
+  first and last day, version; no conversation ids, names or text), and a second button opens a prefilled issue on
+  the Agent Hub repo (`SHARE_REPO_URL` in ui/settings.ts). Nothing goes until they submit it there.
 
 Talking to the website (Can, 15 Nov): a page fills the person's message box, never sends. Each ends in the person
 reading, finishing and pressing Send.

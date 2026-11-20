@@ -908,6 +908,38 @@ export interface BoxRecipientResponse {
 }
 
 /**
+ * What a person did with a recipient box's offer when a message went (Ümit #13224), as POST /api/box/:name/report
+ * records it: taken (sent with the offered agent), ignored (offered, sent naming nobody), named-other (offered, someone
+ * else named), named (nothing offered, someone named), quiet (nothing offered, nobody named), reply (a Reply or
+ * checklist answer).
+ */
+export const BOX_REPORT_OUTCOMES = ["taken", "ignored", "named-other", "named", "quiet", "reply"] as const;
+export type BoxReportOutcome = (typeof BOX_REPORT_OUTCOMES)[number];
+
+/**
+ * GET /api/box/:name/usage (Ümit #13513): one person's own counts from a recipient box's reports, for them to share
+ * with the Agent Hub team if they choose. Counts and days only: no conversation ids, names or text.
+ */
+export interface BoxUsage {
+  /** Messages the person sent with the add-on on. */
+  messages: number;
+  outcomes: Record<BoxReportOutcome, number>;
+  /** Messages where an agent was offered: taken + ignored + named-other. */
+  offered: number;
+  /** taken / offered, 0–1; null when nothing was offered. */
+  takenShare: number | null;
+  /** How long the page waited for the box's answer (ms), over the messages that have a time; null when none has. */
+  answerMs: { answers: number; median: number; p90: number } | null;
+  /** Messages before which asking the box failed. */
+  failed: number;
+  /** The first and last day (UTC, YYYY-MM-DD) with a message; null when there is none. */
+  firstDay: string | null;
+  lastDay: string | null;
+  /** This Agent Hub's version (its package.json). */
+  version: string;
+}
+
+/**
  * What the bus sends a "recipient" extension: `POST <its URL>/recipient`. Versioned like BoxCompleteBody; only what the
  * person may read. Sent only for a person's draft in a room with at least two `agents`, naming none of its members.
  */

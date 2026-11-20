@@ -9,15 +9,19 @@
 //   the bus passes on only one of those agents.
 import {
   ALL_CONVERSATION_ID,
+  BOX_REPORT_OUTCOMES,
   mentionedIds,
   type BoxCompleteBody,
   type BoxRecipientBody,
   type BoxRecipientResponse,
+  type BoxReportOutcome,
   type BoxResponse,
   type BoxRole,
+  type BoxUsage,
   type Conversation,
 } from "@agent-bus/protocol";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import hubPackage from "../../../package.json";
 import type { BusContext } from "./context";
 import { mayRead } from "./conversations";
 import { HttpError, readJsonObject } from "./http";
@@ -172,8 +176,7 @@ function checkedRecipient(answer: Record<string, unknown>, agents: string[]): Bo
   return { recipient, ...(confidence !== undefined ? { confidence } : {}) };
 }
 
-/** What a person did with a recipient box's offer, as the website saw it when the message went (Ümit #13224). */
-const OUTCOMES = new Set(["taken", "ignored", "named-other", "named", "quiet", "reply"]);
+const OUTCOMES = new Set<string>(BOX_REPORT_OUTCOMES);
 
 /**
  * POST /api/box/:name/report {conversationId, outcome, recipient?, confidence?, ms?, failed?}: one line per message a
@@ -211,4 +214,44 @@ export async function postBoxReport(
   };
   appendFileSync(file, `${JSON.stringify(line)}\n`, { mode: 0o600 });
   return { ok: true };
+}
+
+/**
+ * GET /api/box/:name/usage (Ümit #13513): the signed-in person's own lines of `file` for this recipient box, counted,
+ * so they can see them and, if they choose, send them to the Agent Hub team from Settings. Only counts, answer times
+ * and the first and last day: no conversation ids, no agent or person names, no text. The model's name is not known to
+ * the bus (the extension picks it), so it is not given.
+ */
+export function getBoxUsage(name: string, boxes: Record<string, BoxExtension>, person: string | undefined, file: string): BoxUsage {
+  if (boxes[name]?.role !== "recipient") throw new HttpError(404, `No recipient box extension "${name}" on this bus`);
+  if (!person) throw new HttpError(403, "Only a signed-in person reads their Ask @agent counts");
+  const mine: Array<{ at: string; outcome: BoxReportOutcome; ms?: number; failed?: true }> = [];
+  for (const text of existsSync(file) ? readFileSync(file, "utf8").split("\n") : []) {
+    if (!text) continue;
+    try {
+      const line = JSON.parse(text) as Record<string, unknown>;
+      if (line.box === name && line.person === person && typeof line.at === "string" && OUTCOMES.has(line.outcome as string)) {
+        mine.push(line as (typeof mine)[number]);
+      }
+    } catch {
+      // A line cut short (the bus stopped mid-write) is skipped.
+    }
+  }
+  const outcomes = Object.fromEntries(BOX_REPORT_OUTCOMES.map((o) => [o, mine.filter((l) => l.outcome === o).length])) as Record<BoxReportOutcome, number>;
+  const offered = outcomes.taken + outcomes.ignored + outcomes["named-other"];
+  const ms = mine.map((l) => l.ms).filter((x): x is number => typeof x === "number").sort((a, b) => a - b);
+  // The same percentiles as packages/ask-ext/eval/usage.ts, so a shared count matches the hub's own report.
+  const at = (q: number) => ms[Math.min(ms.length - 1, Math.floor(q * ms.length))]!;
+  const days = mine.map((l) => l.at.slice(0, 10)).sort();
+  return {
+    messages: mine.length,
+    outcomes,
+    offered,
+    takenShare: offered ? outcomes.taken / offered : null,
+    answerMs: ms.length ? { answers: ms.length, median: at(0.5), p90: at(0.9) } : null,
+    failed: mine.filter((l) => l.failed === true).length,
+    firstDay: days[0] ?? null,
+    lastDay: days.at(-1) ?? null,
+    version: hubPackage.version,
+  };
 }
