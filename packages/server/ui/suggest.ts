@@ -273,8 +273,18 @@ document.addEventListener("selectionchange", () => {
   if (document.activeElement === dom.input && shown && !atEnd()) hide();
 });
 dom.input.addEventListener("scroll", () => (ghost.scrollTop = dom.input.scrollTop));
-dom.input.addEventListener("blur", () => setTimeout(() => document.activeElement !== chip && hide(), 0));
+// A finger on the chip: the box may lose the focus before the tap's click arrives (Safari on the iPhone), and the blur
+// must not drop the words the tap is about to take (Ümit #13174: tapping the chip did nothing).
+let chipPressed = false;
+dom.input.addEventListener("blur", () => setTimeout(() => !chipPressed && document.activeElement !== chip && hide(), 0));
 // A tap on the chip must not take the focus (the keyboard would drop): pointerdown keeps it in the box.
-chip.addEventListener("pointerdown", (event) => event.preventDefault());
-chip.addEventListener("click", () => take());
+chip.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  chipPressed = true;
+});
+chip.addEventListener("pointercancel", () => (chipPressed = false));
+chip.addEventListener("click", () => {
+  chipPressed = false;
+  take();
+});
 window.addEventListener("hashchange", reset);
