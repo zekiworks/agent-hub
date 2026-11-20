@@ -13,11 +13,11 @@
 //   items are messages-only; checklist evidence is tested on the made-up rooms of packages/ask-ext/src/fixtures.ts.
 // Messages deleted after the message are put back (they were on screen then); earlier deletions stay out.
 import { Database } from "bun:sqlite";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mentionedIds, type BoxRecipientBody, type ParticipantKind } from "@agent-bus/protocol";
-import { EVAL_DIR, ITEMS_FILE, ensureEvalDir, flag, writeJsonl, type Item, type Lang, type Split } from "./common";
+import { EVAL_DIR, ITEMS_FILE, MANIFEST_FILE, ensureEvalDir, flag, itemsSha256, writeJsonl, type Item, type Lang, type Manifest, type Split } from "./common";
 
 const DB_PATH = flag("db", join(homedir(), ".agent-bus", "message-bus.sqlite")) as string;
 const DAYS = Number(flag("days", "21"));
@@ -100,6 +100,9 @@ function namesSomeone(text: string, known: ReadonlySet<string>): boolean {
 }
 
 function main(): void {
+  if (existsSync(MANIFEST_FILE) && !process.argv.includes("--force")) {
+    throw new Error(`The dataset is frozen (${MANIFEST_FILE}): its labels and runs belong to it. --force builds a new one.`);
+  }
   const db = new Database(DB_PATH, { readonly: true });
   const kinds = new Map(db.query<{ id: string; kind: ParticipantKind }, []>("SELECT id, kind FROM participants").all().map((p) => [p.id, p.kind]));
   const known = new Set(kinds.keys());
@@ -187,8 +190,9 @@ function main(): void {
   const picked = sample(candidates);
   ensureEvalDir();
   writeJsonl(ITEMS_FILE, picked);
+  const builtAt = new Date();
   const summary = {
-    builtAt: new Date().toISOString(),
+    builtAt: builtAt.toISOString(),
     db: DB_PATH,
     params: { days: DAYS, test: N_TEST, dev: N_DEV, seed: SEED, context: CONTEXT },
     candidates: tally(candidates),
@@ -197,6 +201,16 @@ function main(): void {
     dev: tally(picked.filter((i) => i.split === "dev")),
   };
   writeFileSync(join(EVAL_DIR, "items-summary.json"), JSON.stringify(summary, null, 2) + "\n");
+  // Frozen at once (codex-ui #13111): what is labelled and compared is exactly this.
+  const commit = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: import.meta.dir }).stdout.toString().trim();
+  const manifest: Manifest = {
+    frozenAt: builtAt.toISOString(),
+    itemsSha256: itemsSha256(),
+    sampling: { seed: SEED, days: DAYS, windowFrom: new Date(since).toISOString(), windowTo: builtAt.toISOString(), test: N_TEST, dev: N_DEV, commit },
+    dev: picked.filter((i) => i.split === "dev").map((i) => i.id),
+    test: picked.filter((i) => i.split === "test").map((i) => i.id),
+  };
+  writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2) + "\n");
   printSummary(summary);
 }
 

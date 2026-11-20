@@ -9,6 +9,36 @@ export const EVAL_DIR = process.env.ASK_EVAL_DIR ?? join(homedir(), ".agent-bus"
 export const ITEMS_FILE = join(EVAL_DIR, "items.jsonl");
 export const LABELS_FILE = join(EVAL_DIR, "labels.jsonl");
 export const LABELS_EXPORT = join(EVAL_DIR, "labels.json");
+/**
+ * The frozen dataset (codex-ui #13111): the exact items, their split, how they were sampled and the hash of
+ * items.jsonl. Labels and every model run are tied to it; dataset.ts will not overwrite a frozen set.
+ */
+export const MANIFEST_FILE = join(EVAL_DIR, "manifest.json");
+
+export interface Manifest {
+  frozenAt: string;
+  itemsSha256: string;
+  /** How the items were sampled: the dataset's parameters, the message window, the code it was built with. */
+  sampling: { seed: number; days: number; windowFrom: string; windowTo: string; test: number; dev: number; commit: string };
+  /** Item ids by split: DEV chooses the cut-offs, TEST is only scored. */
+  dev: string[];
+  test: string[];
+}
+
+export function itemsSha256(path = ITEMS_FILE): string {
+  return new Bun.CryptoHasher("sha256").update(readFileSync(path)).digest("hex");
+}
+
+/** The manifest, after checking items.jsonl is still the frozen one; undefined while nothing is frozen. */
+export function frozen(path = ITEMS_FILE): Manifest | undefined {
+  if (!existsSync(MANIFEST_FILE)) return undefined;
+  const manifest = JSON.parse(readFileSync(MANIFEST_FILE, "utf8")) as Manifest;
+  const hash = itemsSha256(path);
+  if (hash !== manifest.itemsSha256) {
+    throw new Error(`${path} is not the frozen dataset (sha256 ${hash.slice(0, 12)}…, frozen ${manifest.itemsSha256.slice(0, 12)}…)`);
+  }
+  return manifest;
+}
 
 export type Split = "test" | "dev";
 export type Lang = "en" | "tr";

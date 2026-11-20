@@ -22,7 +22,7 @@
 // the most correct − wrong on DEV instead (said in the report). The report shows the DEV sweep it chose from.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { EVAL_DIR, ITEMS_FILE, LABELS_FILE, flag, latestLabels, readJsonl, type Item, type Lang, type LabelLine, type ResultLine } from "./common";
+import { EVAL_DIR, ITEMS_FILE, LABELS_FILE, flag, frozen, latestLabels, readJsonl, type Item, type Lang, type LabelLine, type ResultLine } from "./common";
 
 /** One model's results with how and where it ran. */
 export interface Run {
@@ -221,10 +221,12 @@ export function buildReport(items: readonly Item[], labels: ReadonlyMap<string, 
   return out.join("\n") + "\n";
 }
 
-function loadRun(path: string): Run {
+function loadRun(path: string, dataset: string | undefined): Run {
   const results = new Map(readJsonl<ResultLine>(path).map((r) => [r.item, r]));
   const metaPath = `${path}.meta.json`;
-  const meta = existsSync(metaPath) ? (JSON.parse(readFileSync(metaPath, "utf8")) as { model?: string; hardware?: string }) : {};
+  const meta = existsSync(metaPath) ? (JSON.parse(readFileSync(metaPath, "utf8")) as { model?: string; hardware?: string; itemsSha256?: string }) : {};
+  // A run of another dataset (one built before this one was frozen) is not compared with it (codex-ui #13111).
+  if (dataset && meta.itemsSha256 !== dataset) throw new Error(`${path} answered another dataset (${meta.itemsSha256 ?? "no hash"}), not the frozen one`);
   const model = meta.model ?? [...results.values()][0]?.model ?? path;
   return { model, hardware: meta.hardware ?? "unknown", results };
 }
@@ -237,12 +239,17 @@ if (import.meta.main) {
     console.error(`No labels in ${labelsPath}: no accuracy to report yet.`);
     process.exit(1);
   }
-  const items = readJsonl<Item>(flag("items", ITEMS_FILE) as string);
-  const runs = paths.map(loadRun);
+  const itemsPath = flag("items", ITEMS_FILE) as string;
+  const manifest = frozen(itemsPath);
+  const items = readJsonl<Item>(itemsPath);
+  const runs = paths.map((p) => loadRun(p, manifest?.itemsSha256));
   const names = runs.map((r) => r.model);
   // Two runs of one model (CPU and GPU): told apart by their hardware.
   for (const run of runs) if (names.filter((n) => n === run.model).length > 1) run.model = `${run.model} (${run.hardware})`;
-  const report = buildReport(items, labels, runs, Number(flag("min-precision", "0.8")));
+  const report =
+    (manifest
+      ? `Dataset: frozen ${manifest.frozenAt}, items.jsonl sha256 ${manifest.itemsSha256.slice(0, 16)}…, seed ${manifest.sampling.seed}, messages ${manifest.sampling.windowFrom.slice(0, 10)} … ${manifest.sampling.windowTo.slice(0, 10)}, built with ${manifest.sampling.commit}; cut-offs chosen on the ${manifest.dev.length} DEV items only, TEST (${manifest.test.length}) only scored.\n\n`
+      : "") + buildReport(items, labels, runs, Number(flag("min-precision", "0.8")));
   const out = flag("out", join(EVAL_DIR, "report.md")) as string;
   writeFileSync(out, report);
   console.log(report);

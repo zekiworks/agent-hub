@@ -9,7 +9,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { decisionRequest, isRecord, readDecision } from "../src/decide";
-import { EVAL_DIR, ITEMS_FILE, appendJsonl, ensureEvalDir, flag, readJsonl, writeJsonl, type Item, type ResultLine } from "./common";
+import { EVAL_DIR, ITEMS_FILE, appendJsonl, ensureEvalDir, flag, frozen, itemsSha256, readJsonl, writeJsonl, type Item, type ResultLine } from "./common";
 
 const URL_BASE = (flag("url") ?? "").replace(/\/+$/, "");
 const MODEL = flag("model") ?? "";
@@ -44,6 +44,9 @@ async function ask(item: Item): Promise<{ answer: unknown; ms: number; tokens?: 
 
 async function main(): Promise<void> {
   ensureEvalDir();
+  // Only against the frozen dataset (codex-ui #13111); its hash goes into the run's meta, so a result says what it answered.
+  frozen();
+  const dataset = itemsSha256();
   let items = readJsonl<Item>(ITEMS_FILE).filter((i) => SPLIT === "all" || i.split === SPLIT);
   if (LIMIT > 0) items = items.slice(0, LIMIT);
   const fresh = process.argv.includes("--fresh");
@@ -51,7 +54,7 @@ async function main(): Promise<void> {
   const done = new Set(kept.map((r) => r.item));
   writeJsonl(OUT, kept); // drop the failed lines: they are tried again
   const todo = items.filter((i) => !done.has(i.id));
-  const meta = { url: URL_BASE, model: MODEL, hardware: HARDWARE, split: SPLIT, startedAt: new Date().toISOString(), items: items.length, warmup: WARMUP };
+  const meta = { url: URL_BASE, model: MODEL, hardware: HARDWARE, split: SPLIT, itemsSha256: dataset, startedAt: new Date().toISOString(), items: items.length, warmup: WARMUP };
   const metaFile = `${OUT}.meta.json`;
   const before = existsSync(metaFile) && !fresh ? (JSON.parse(await Bun.file(metaFile).text()) as { runs?: unknown[] }) : {};
   writeFileSync(metaFile, JSON.stringify({ ...meta, runs: [...(before.runs ?? []), meta] }, null, 2) + "\n");
