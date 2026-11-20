@@ -1998,8 +1998,16 @@ button:disabled {
   border-radius: 0 6px 6px 0;
 }
 
-/* The hovered message gets a frame, so it is clear which one Reply applies to (grouped messages included). */
-.msg:hover,
+/* The hovered message gets a frame, so it is clear which one Reply applies to (grouped messages included). Only
+   where there is a pointer that hovers: a phone keeps ":hover" on the last message tapped, so its frame stayed after
+   a second tap stepped out of it (Ümit #12975); there the tapped message is framed instead. */
+@media (hover: hover) {
+  .msg:hover {
+    background: var(--hover);
+    outline: 1px solid var(--muted);
+    outline-offset: -1px;
+  }
+}
 .msg.msg-tapped {
   background: var(--hover);
   outline: 1px solid var(--muted);

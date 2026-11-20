@@ -273,11 +273,14 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
     // Selecting text inside it is not a click on it.
     if (String(getSelection() ?? "").trim()) return;
     // A click on a message puts me "in" it, on the paragraph clicked: lit until I click another, press Esc or leave
-    // (Ümit #11622, #11855).
+    // (Ümit #11622, #11855). A second click on the same paragraph steps out again: a phone has no Esc (Ümit #12975).
     const at = textBlocks(li).findIndex((block) => block.contains(event.target as Node));
-    selectMessage(message.seq, at >= 0 ? at : undefined);
+    const part = at >= 0 ? at : undefined;
+    const again = state.selectedSeq === message.seq && state.selectedPart === part;
+    selectMessage(again ? undefined : message.seq, part);
     if (!PHONE.matches) return;
-    const open = state.tappedSeq !== message.seq;
+    // The message's buttons show while I am in it, and go when I step out.
+    const open = !again;
     for (const other of dom.messageList.querySelectorAll(".msg-tapped")) other.classList.remove("msg-tapped");
     state.tappedSeq = open ? message.seq : undefined;
     if (!open) return;
