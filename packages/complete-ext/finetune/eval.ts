@@ -7,9 +7,9 @@
 // conversation's messages before it as the bus sends them (latest 20, deleted ones left out, oldest first; promptOf
 // keeps the last 12), with a leading "🎤 " dropped as in the training data.
 //
-//   bun run eval.ts http://127.0.0.1:9971 http://127.0.0.1:9972
+//   bun run eval.ts http://127.0.0.1:9971 http://127.0.0.1:9972 [~/.agent-bus/finetune/live/results]
 //
-// Reads the bus database read-only; writes ~/.agent-bus/finetune/results/.
+// Reads the bus database read-only; writes the results directory (default ~/.agent-bus/finetune/results/).
 import { Database } from "bun:sqlite";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -17,12 +17,11 @@ import type { BoxCompleteBody } from "@agent-bus/protocol";
 import { confidentText, promptOf, suggestionOf, worthAsking } from "../src/server.ts";
 
 const DB = `${homedir()}/.agent-bus/message-bus.sqlite`;
-const OUT = `${homedir()}/.agent-bus/finetune/results`;
 const CUTOFF_MS = Date.parse("2026-11-17T23:00:00Z"); // 2026-11-18 00:00 Europe/Berlin (CET)
 const CONTEXT_MESSAGES = 20; // what the bus reads before dropping deleted ones (boxes.ts)
 const SAMPLES = 3000;
 const CONCURRENCY = 8;
-const [baseUrl = "http://127.0.0.1:9971", tunedUrl = "http://127.0.0.1:9972"] = process.argv.slice(2);
+const [baseUrl = "http://127.0.0.1:9971", tunedUrl = "http://127.0.0.1:9972", OUT = `${homedir()}/.agent-bus/finetune/results`] = process.argv.slice(2);
 const MODELS = { base: baseUrl, tuned: tunedUrl } as const;
 type ModelName = keyof typeof MODELS;
 

@@ -7,7 +7,11 @@ Reads the live database read-only. TRAIN: every conversation's non-deleted messa
 line; the people's (can, umit) lines stay whole, since their drafts are what the model continues.
 2% of the windows (fixed seed) are held out for eval loss. The TEST messages are picked by eval.ts from the database.
 
-  ~/.agent-bus/ask-eval/glide-venv/bin/python export.py
+--shared (the model for live use, which both people see): only conversations both can and umit are members of, and
+#all; no DMs (Main, after #13289). A model trained on a DM could put one person's private words in the other's
+suggestions. Writes to ~/.agent-bus/finetune/live/data/ instead.
+
+  ~/.agent-bus/ask-eval/glide-venv/bin/python export.py [--shared]
 """
 
 import json
@@ -15,13 +19,15 @@ import os
 import random
 import re
 import sqlite3
+import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import lfm3
 
 DB = os.path.expanduser("~/.agent-bus/message-bus.sqlite")
-OUT = os.path.expanduser("~/.agent-bus/finetune/data")
+SHARED = "--shared" in sys.argv[1:]
+OUT = os.path.expanduser("~/.agent-bus/finetune/live/data" if SHARED else "~/.agent-bus/finetune/data")
 CUTOFF_MS = int(datetime(2026, 11, 18, tzinfo=ZoneInfo("Europe/Berlin")).timestamp() * 1000)
 PEOPLE = {"can", "umit"}
 PROMPT_MESSAGE_CHARS = 300
@@ -50,10 +56,12 @@ def main() -> None:
         members = [r[0] for r in db.execute(
             "SELECT participant_id FROM conversation_members WHERE conversation_id = ? ORDER BY participant_id", (cid,))]
         where = title or (f"#{name}" if name else f"a conversation of {', '.join(members)}")
-        convs[cid] = f"Conversation in {where}."
+        if not SHARED or kind == "all" or (kind != "dm" and PEOPLE <= set(members)):
+            convs[cid] = f"Conversation in {where}."
     rows = db.execute(
         "SELECT conversation_id, seq, from_id, text FROM messages WHERE deleted_at IS NULL AND created_at < ? "
         "AND trim(text) <> '' ORDER BY conversation_id, seq", (CUTOFF_MS,)).fetchall()
+    rows = [r for r in rows if r[0] in convs]
     by_conv: dict[str, list[tuple[str, str]]] = {}
     for cid, _seq, from_id, text in rows:
         by_conv.setdefault(cid, []).append((from_id, line_of(from_id, text)))

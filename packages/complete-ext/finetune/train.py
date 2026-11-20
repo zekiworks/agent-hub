@@ -1,12 +1,16 @@
 """LoRA fine-tuning of LFM3 1.7B on the bus's messages (export.py's windows), then the merged model for GGUF conversion.
 
 Loss on all tokens of a window (the conversation as the model sees it in production). Held-out loss is measured before
-and after, on all tokens and on the people's (can, umit) words only. Writes to ~/.agent-bus/finetune/:
-lora/ (adapter), merged/ (HF model with the adapter merged), train-log.json.
+and after, on all tokens and on the people's (can, umit) words only. Writes to ~/.agent-bus/finetune/ (with --shared:
+~/.agent-bus/finetune/live/, from export.py --shared): lora/ (adapter), merged/ (HF model with the adapter merged),
+train-log.json. Batches of 8 windows either way: --micro-batch 1 (8 accumulated) with --checkpointing when the GPU is
+short of memory, and --max-gib caps this process's CUDA memory (an out-of-memory error rather than crowding others).
 
   agent-bus run r_b063e905efb7 -- ~/.agent-bus/ask-eval/glide-venv/bin/python train.py
+  agent-bus run r_9e07e06d2fab -- ~/.agent-bus/ask-eval/glide-venv/bin/python train.py --shared --micro-batch 1 --checkpointing --max-gib 7.5
 """
 
+import argparse
 import json
 import math
 import os
@@ -20,12 +24,20 @@ from peft import LoraConfig, get_peft_model
 
 import lfm3
 
-ROOT = os.path.expanduser("~/.agent-bus/finetune")
+args = argparse.ArgumentParser()
+args.add_argument("--shared", action="store_true")
+args.add_argument("--micro-batch", type=int, default=4)
+args.add_argument("--checkpointing", action="store_true")
+args.add_argument("--max-gib", type=float)
+ARGS = args.parse_args()
+
+ROOT = os.path.expanduser("~/.agent-bus/finetune/live" if ARGS.shared else "~/.agent-bus/finetune")
 DATA = f"{ROOT}/data"
 MAX_TOKENS = 2048
 EPOCHS = 2
-MICRO_BATCH = 4
-ACCUM = 2
+BATCH = 8
+MICRO_BATCH = ARGS.micro_batch
+ACCUM = BATCH // MICRO_BATCH
 LR = 2e-4
 WARMUP = 20
 RANK = 32
@@ -87,14 +99,20 @@ def heldout_loss(model, items: list[dict], pad: int, device) -> dict:
 def main() -> None:
     t0 = time.time()
     device = torch.device("cuda")
+    if ARGS.max_gib:
+        torch.cuda.set_per_process_memory_fraction(ARGS.max_gib * 2**30 / torch.cuda.get_device_properties(device).total_memory)
     tok = lfm3.tokenizer()
     pad = 124893
     train, held = load("train", tok), load("heldout", tok)
     base = lfm3.model().to(device)
+    if ARGS.checkpointing:
+        base.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        base.enable_input_require_grads()
     model = get_peft_model(base, LoraConfig(r=RANK, lora_alpha=ALPHA, lora_dropout=0.05, target_modules=TARGETS, task_type="CAUSAL_LM"))
     model.print_trainable_parameters()
     log = {"settings": {"epochs": EPOCHS, "micro_batch": MICRO_BATCH, "accum": ACCUM, "lr": LR, "warmup": WARMUP, "rank": RANK,
-                        "alpha": ALPHA, "dropout": 0.05, "targets": TARGETS, "max_tokens": MAX_TOKENS, "loss": "all tokens"}}
+                        "alpha": ALPHA, "dropout": 0.05, "targets": TARGETS, "max_tokens": MAX_TOKENS, "loss": "all tokens",
+                        "checkpointing": ARGS.checkpointing, "data": DATA}}
     log["heldout_before"] = heldout_loss(model, held, pad, device)
     print("held-out before", log["heldout_before"], flush=True)
 
