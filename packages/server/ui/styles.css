@@ -4148,9 +4148,10 @@ ul.md-list ul.md-list { list-style: circle; }
     padding: 0;
   }
 
+  /* A thumb's height to catch (Ümit #13147: 26 px was easy to miss); the bar drawn in it stays thin. */
   .composer-grip {
-    height: 26px;
-    margin: 0;
+    height: 44px;
+    margin: -10px 0 -10px;
   }
 
   /* iOS zooms into inputs with text under 16px. */

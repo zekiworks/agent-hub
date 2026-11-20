@@ -175,6 +175,11 @@ dom.composerSize.addEventListener("pointerdown", (event) => {
   };
   grip.addEventListener("pointerup", end);
   grip.addEventListener("pointercancel", end);
+  // Safari on the iPhone scrolls the page with a finger on the grip despite touch-action: pulling down took the page
+  // along, and the scroll took the pointer (pointercancel), so pulling up did nothing (Ümit #13147). The grip's touches
+  // are its own.
+  grip.addEventListener("touchstart", (event) => event.preventDefault(), { passive: false });
+  grip.addEventListener("touchmove", (event) => event.preventDefault(), { passive: false });
   grip.addEventListener("dblclick", () => setComposerHeight(undefined));
   grip.addEventListener("keydown", (event) => {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
