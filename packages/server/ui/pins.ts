@@ -13,6 +13,7 @@ import { h } from "./html";
 import { closePane, onWorkspaceChange, openPane, refreshPane, registerExtension } from "./pane";
 import { state, type View } from "./state";
 import { fetchMessage } from "./text";
+import { copyText } from "./render";
 
 function conversationOf(view: View): Conversation | undefined {
   return view.kind === "conversation" ? state.conversations.get(view.id) : undefined;
@@ -154,24 +155,49 @@ registerExtension({
         "Unpin the checklist: hides it from the pin; it stays in the Checklist tab"));
     }
     for (const pin of conv.pinnedMessages ?? []) {
-      // On a phone the Workspace covers the conversation: it gives way to the message (as the inbox does).
-      const open = () => {
+      // A click opens the message right here, whole, to read and copy (Ümit #13245, #13317: jumping to it on the left
+      // was taken for nothing happening, and there was no way to copy it); "Show in the conversation" still jumps.
+      const full = h("div", "pinned-full");
+      full.hidden = true;
+      const text = h("div", "pinned-text", "…");
+      const copy = h("button", "link-btn", "Copy");
+      copy.type = "button";
+      const show = h("button", "link-btn", "Show in the conversation");
+      show.type = "button";
+      show.addEventListener("click", () => {
+        // On a phone the Workspace covers the conversation: it gives way to the message (as the inbox does).
         if (PHONE.matches) closePane();
         void hooks.showMessage(pin.seq);
+      });
+      const buttons = h("div", "pinned-buttons");
+      buttons.append(copy, show);
+      full.append(text, buttons);
+      const open = () => {
+        full.hidden = !full.hidden;
+        li.querySelector(".pinned-open")?.setAttribute("aria-expanded", String(!full.hidden));
       };
       const li = item(`#${pin.seq}`, `pinned by ${pin.by} ${relativeTime(pin.at)}`, open,
         member ? () => postJson(`/api/conversations/${encodeURIComponent(conv.id)}/pinned`, { from: state.me, seq: pin.seq, pinned: false }).then(() => undefined) : undefined);
+      li.append(full);
       listEl.append(li);
       // The message's own sender and text, from the bus (it may not be loaded on the left).
       void fetchMessage(pin.seq).then(
         ({ message }) => {
-          const text = message.text.replace(/\s+/g, " ").trim() || (message.files.length > 0 ? `(${message.files.map((f) => f.name).join(", ")})` : "");
+          const files = message.files.length > 0 ? `(${message.files.map((f) => f.name).join(", ")})` : "";
           const title = li.querySelector(".pinned-title");
-          if (title) title.textContent = `@${message.from}: ${text}`;
+          if (title) title.textContent = `@${message.from}: ${message.text.replace(/\s+/g, " ").trim() || files}`;
+          text.textContent = message.text || files;
+          copy.addEventListener("click", () => {
+            void copyText(message.text).then((ok) => {
+              copy.textContent = ok ? "Copied ✓" : "Not copied: select the text instead";
+              setTimeout(() => (copy.textContent = "Copy"), 2000);
+            });
+          });
         },
         (error) => {
           const title = li.querySelector(".pinned-title");
           if (title) title.textContent = `#${pin.seq} (${errorText(error)})`;
+          text.textContent = errorText(error);
         }
       );
     }

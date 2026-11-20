@@ -308,10 +308,40 @@ button:disabled {
 
 .pinned-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 8px;
   padding: 6px 0;
   border-bottom: 1px solid var(--border);
+}
+
+/* A pinned message opened in the list: whole, to read and copy (pins.ts; Ümit #13317). */
+.pinned-full {
+  flex: 1 0 100%;
+  padding: 0 8px 6px;
+}
+
+.pinned-full[hidden] {
+  display: none;
+}
+
+.pinned-text {
+  max-height: 50vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.pinned-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 6px;
+}
+
+.pinned-buttons .link-btn {
+  min-height: 36px;
 }
 
 .pinned-open {
