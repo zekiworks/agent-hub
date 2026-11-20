@@ -174,8 +174,8 @@
         <div class="composer-row">
           <input id="file-input" type="file" multiple hidden />
           <!-- The box: the draft, and under it inside the same frame every control, icons only (Can #11404, #11807):
-               attach and the Message/Task switch (one icon; Can #12832),
-               then at the right Expand, the microphone and Send. Recording puts its panel in the draft's place; the
+               attach and the Message/Task switch (one icon; Can #12832), then at the right the microphone and Send. Its
+               size: the grip above it (no Expand button: Ümit #13153). Recording puts its panel in the draft's place; the
                microphone and Send stay. -->
           <div id="composer-input-wrap" class="composer-input-wrap">
             <ul id="mention-menu" class="mention-menu" role="listbox" hidden></ul>
@@ -198,8 +198,6 @@
               <!-- Message or Task: a click switches what the next message is (send.ts; Can #12832). -->
               <button id="kind-btn" type="button" class="icon-btn kind-btn" aria-pressed="false"></button>
               <span class="tools-spacer"></span>
-              <!-- The message box tall, or back to its text's size (composer.ts; Ümit #11400). -->
-              <button id="composer-size" type="button" class="icon-btn composer-size" aria-expanded="false"></button>
               <button id="voice-btn" type="button" class="icon-btn voice-btn" title="Voice message: click to record, then Send; or hold and let go to send" aria-label="Voice message"></button>
               <button id="send-btn" type="submit" class="send-btn" aria-label="Send"></button>
             </div>

@@ -266,8 +266,7 @@ button:disabled {
   display: none;
 }
 .msg-action-btn,
-.send-btn,
-.icon-btn.composer-size {
+.send-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2995,7 +2994,7 @@ ul.md-list ul.md-list { list-style: circle; }
   gap: 8px;
 }
 
-/* The box (Can #11404): one frame around the draft and, under it, its tools (attach, Expand). */
+/* The box (Can #11404): one frame around the draft and, under it, its tools. */
 .composer-input-wrap {
   position: relative;
   flex: 1;
@@ -3038,8 +3037,7 @@ ul.md-list ul.md-list { list-style: circle; }
   background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
-/* Every control inside the box, icons only (Can #11807): attach at the left, then Expand, the microphone and Send at
-   the right. */
+/* Every control inside the box, icons only (Can #11807): attach at the left, the microphone and Send at the right. */
 .composer-tools .tools-spacer {
   flex: 1;
 }
@@ -3053,8 +3051,7 @@ ul.md-list ul.md-list { list-style: circle; }
 
 /* Recording: its panel in the draft's place; the tools at the left go, the microphone and Send stay. */
 .composer-input-wrap.recording #composer-input,
-.composer-input-wrap.recording #attach-btn,
-.composer-input-wrap.recording #composer-size {
+.composer-input-wrap.recording #attach-btn {
   display: none;
 }
 
@@ -3191,14 +3188,6 @@ ul.md-list ul.md-list { list-style: circle; }
 
 .ask-chip[hidden] {
   display: none;
-}
-
-/* A phone's row of thumb-sized buttons leaves a chip about 100 px, too little for "Ask @release-bot": while a chip
-   shows, Expand (rarely wanted mid-sentence) gives up its place. */
-@media (max-width: 640px) {
-  .composer-tools:has(.ask-chip:not([hidden]), .suggest-chip:not([hidden])) .composer-size {
-    display: none;
-  }
 }
 
 .icon-btn {
