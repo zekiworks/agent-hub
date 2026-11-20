@@ -120,7 +120,9 @@ function show(text: string): void {
 /**
  * Shows what is ahead of the typed text: the rest of the word being typed (word lists), and the model's latest
  * answer while the text is a start of it. Mid-word the word list has the say (Can #12953): the model's words show
- * only when they go on from the same word, so the grey word does not change under the cursor.
+ * only when they go on from the same word, so the grey word does not change under the cursor. Except when the model,
+ * which reads the room, takes the typed word as finished (its words start with a space): "Can you check" goes on
+ * "whether the tests…", not "checklist" because the room said "checklist" often.
  */
 function showFitting(): void {
   if (!typingNow() || !atEnd() || document.activeElement !== dom.input) return hide();
@@ -130,7 +132,7 @@ function showFitting(): void {
   const id = conversationNow();
   const fits = answer && id === answer.conversationId && text.startsWith(answer.draft) && answer.full.startsWith(text);
   const model = fits && answer ? answer.full.slice(text.length) : "";
-  const rest = word ? (model.startsWith(word) ? model : word) : model;
+  const rest = word && !/^\s/.test(model) ? (model.startsWith(word) ? model : word) : model || word;
   if (rest.trim()) show(rest);
   else hide();
 }
@@ -182,18 +184,43 @@ export function draftReplaced(): void {
   askNow();
 }
 
-/** Adds the shown words, or only the next one (`oneWord`); the rest stays shown while it still fits (Can #12922). */
+/**
+ * Where take() put a space after the words it added (Can #13089), so the next word can simply be typed: a punctuation
+ * mark typed next goes back before that space, next to the word ("checklist." not "checklist ."), and a space typed
+ * next is not doubled. Any other input forgets it.
+ */
+let autoSpace: number | undefined;
+
+/** Puts `text` at the end of the box as if typed, so ⌘Z takes it back and the box's own listeners see it. */
+function insertAtEnd(text: string, from = dom.input.value.length): void {
+  dom.input.setSelectionRange(from, dom.input.value.length);
+  if (!document.execCommand("insertText", false, text)) {
+    dom.input.setRangeText(text, from, dom.input.value.length, "end");
+    dom.input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
+/** Adds the shown words, or only the next one (`oneWord`), and a space; the rest stays shown while it still fits (Can #12922). */
 function take(oneWord = false): void {
   if (!shown) return;
   const text = oneWord ? (shown.match(/^\s*\S+/)?.[0] ?? shown) : shown;
   hide();
   dom.input.focus();
-  // As typed, so ⌘Z takes it back and the box's own listeners (size, draft, @names, the next suggestion) see it.
-  if (!document.execCommand("insertText", false, text)) {
-    dom.input.setRangeText(text, dom.input.value.length, dom.input.value.length, "end");
-    dom.input.dispatchEvent(new Event("input", { bubbles: true }));
-  }
+  insertAtEnd(/\s$/.test(text) ? text : `${text} `);
+  autoSpace = dom.input.value.length;
 }
+
+dom.input.addEventListener("beforeinput", (event) => {
+  const at = autoSpace;
+  autoSpace = undefined;
+  if (at === undefined || event.inputType !== "insertText" || !event.data) return;
+  const { selectionStart, selectionEnd, value } = dom.input;
+  if (selectionStart !== at || selectionEnd !== at || value[at - 1] !== " ") return;
+  if (event.data === " ") return event.preventDefault();
+  if (!/^[.,;:!?…)\]}»"'’”]/.test(event.data)) return;
+  event.preventDefault();
+  insertAtEnd(event.data, at - 1);
+});
 
 /** The word lists are fetched once, the first time the box is used with suggestions on. */
 let wordsAsked = false;

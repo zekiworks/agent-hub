@@ -175,8 +175,9 @@ role), not in `extensions`. Two roles: "complete" (typing suggestions, below) an
 - The website, when that person has turned "Suggest how to go on while I type" on (Settings; off by default, per
   browser), asks on every change of the draft with the cursor at its end: `POST /api/box/NAME` `{conversationId,
   text}`, one at a time (the newest draft goes when the answer is back; Can #12871). An answer shows in grey after the
-  cursor while it still fits: typing its letters keeps showing the rest, other letters hide it. Tab adds it, Escape
-  drops it and what is on its way, Enter still sends what was typed. Nothing is asked or shown while an input method
+  cursor while it still fits: typing its letters keeps showing the rest, other letters hide it. Tab adds it (→ one
+  word) and a space after it; a punctuation mark typed next goes back next to the word, a space typed next is not
+  doubled (Can #13089). Escape drops it and what is on its way, Enter still sends what was typed. Nothing is asked or shown while an input method
   composes (codex-ui #12868). Touch screens (no Tab) show the whole word as a chip in the row of buttons under the
   text, where it never moves the box (Ümit #13024, #13025).
 - The bus answers only a signed-in person, only for a conversation they may read (agents get 403). It sends the
