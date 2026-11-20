@@ -69,8 +69,10 @@ function setFavicon(link: HTMLLinkElement, attention: boolean): void {
     const g = canvas.getContext("2d");
     if (!g || !iconImage) return;
     g.drawImage(iconImage, 0, 0, 64, 64);
+    // The dot sits in the empty corner below the right leaf: at the top right it covered that leaf, and Ümit's tab
+    // showed one leaf where the logo has two (#13425).
     g.beginPath();
-    g.arc(52, 12, 12, 0, Math.PI * 2);
+    g.arc(53, 53, 10, 0, Math.PI * 2);
     g.fillStyle = "#e5484d";
     g.fill();
     g.lineWidth = 4;
