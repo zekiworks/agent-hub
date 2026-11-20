@@ -103,6 +103,11 @@ export function suggestionOf(raw: string, body: BoxCompleteBody): string {
   let text = stop ? first.slice(0, stop.index + 1) : first;
   const words = text.match(/\s*\S+/g) ?? [];
   if (words.length > MAX_WORDS) text = words.slice(0, MAX_WORDS).join("");
+  // Codes are copied from earlier messages, never what the writer goes on with: a commit ("2fab192"), a message number
+  // ("#13108"), a version ("1.2"), a path or address. The suggestion ends before the first one (Ümit #13329).
+  const parts = text.match(/\s*\S+/g) ?? [];
+  const code = parts.findIndex((w) => /\d|#|\/|_|\.\w/.test(w.trim().replace(/[.,;:!?)]$/, "")));
+  if (code >= 0) text = parts.slice(0, code).join("");
   if (text.trim().length < 3) return "";
   const said = body.messages.map((m) => m.text.toLowerCase());
   const core = text.trim().toLowerCase().replace(/[.,;:!?)]$/, "");

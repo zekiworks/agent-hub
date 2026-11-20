@@ -2031,6 +2031,16 @@ describe("forwarding (Can #12470)", () => {
     expect((await forward(original.message.seq, { from: "carol", to: "carol" })).status).toBe(400);
   });
 
+  test("to a person who is in the conversation too: a copy in the DM with them, not a mention in the room", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const group = await send({ from: "carol", to: "@{alpha,uma}", text: "start" });
+    const original = await send({ from: alpha.id, conversationId: group.conversation.id, text: "results are in", wake: [] });
+    const sent = await forwarded(original.message.seq, { from: "carol", to: "@uma" });
+    expect(sent.to).toBe("@uma");
+    expect(sent.conversation).toMatchObject({ kind: "dm", members: ["carol", "uma"] });
+    expect(sent.message.forwarded).toMatchObject({ seq: original.message.seq, from: "alpha", text: "results are in" });
+  });
+
   test("to someone who cannot read it: a copy in the DM with them; they open it and its files, never the original", async () => {
     await joinPath("/tmp/x/alpha");
     const file = await upload("plan.md", "carol");

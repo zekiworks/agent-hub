@@ -35,8 +35,16 @@ const body = (draft: string): BoxCompleteBody => ({
 
 test("the model's words are cut at the first punctuation that ends a word, and to a few words", () => {
   expect(suggestionOf(" are still passing? The upgrade needs Bun", body("Can you check whether the tests"))).toBe(" are still passing?");
-  expect(suggestionOf(" notes draft and upgrade to Bun 1.2 or newer", body("Thanks, I'll review the release"))).toBe(" notes draft and upgrade to Bun 1.2 or");
+  expect(suggestionOf(" notes draft and upgrade to Bun now or later", body("Thanks, I'll review the release"))).toBe(" notes draft and upgrade to Bun now or");
   expect(suggestionOf("   ", body("abc"))).toBe("");
+});
+
+test("codes copied from earlier messages end the suggestion: commits, #numbers, versions, paths (Ümit #13329)", () => {
+  expect(suggestionOf(" 2fab192, the fix", body("now "))).toBe("");
+  expect(suggestionOf(" the fix in #13108 works", body("I tried"))).toBe(" the fix in");
+  expect(suggestionOf(" upgrade to Bun 1.2 or newer", body("We need to"))).toBe(" upgrade to Bun");
+  expect(suggestionOf(" the file in packages/server", body("Look at"))).toBe(" the file in");
+  expect(suggestionOf(" @webapp about the tests", body("Can you ask"))).toBe(" @webapp about the tests");
 });
 
 test("words copied whole from an earlier message are not offered", () => {

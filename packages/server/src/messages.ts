@@ -553,7 +553,9 @@ export async function forwardMessage(ctx: BusContext, req: Request, seq: number)
     label = `@${target.id}`;
     // An agent's wake list names the agent it forwards to; people's lists follow the mention (or the DM).
     const wake = agentWriter ? { wake: target.kind === "agent" ? [target.id] : [] } : {};
-    if (source.kind === "all" || source.members.includes(target.id)) {
+    // An agent who can read it already gets a reply there that names it. A person always gets a copy in the DM: in a
+    // busy room a mention was missed, and "forward to Can" was taken for not arriving (Ümit #13324).
+    if (target.kind === "agent" && (source.kind === "all" || source.members.includes(target.id))) {
       sent = writeMessage(ctx, req, { from: writer.id, replyToSeq: seq, text: `${label} ${note || "(forwarded to you)"}`, ...wake });
     } else {
       sent = writeMessage(ctx, req, { from: writer.id, to: label, text: note, ...wake }, copy);
