@@ -4,8 +4,8 @@
 //
 //   COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 bun run packages/complete-ext/src/server.ts
 //
-// The model: SmolLM2 1.7B base (Q8_0) on a CPU (Can #12912), chosen over LFM3 1.7B: on 12 of Can's own lines it was
-// right as often or more, in half the time.
+// The model: any llama-server model. On bariton LFM3 1.7B (BF16) again, on trial (Ümit #13060), with COMPLETE_HEAL=0;
+// SmolLM2 1.7B base (Q8_0) ran before it (Can #12912): on 12 of Can's lines it was right as often, in half the time.
 //
 // Two things from "Subword token healing & autocomplete" (Can #12915):
 // - Token healing: a draft that ends mid-word ("Let's configur") is not sent as it is, since the model never saw
