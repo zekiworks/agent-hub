@@ -174,7 +174,8 @@ function take(): void {
   dom.input.focus();
   // At the front, as typed (so ⌘Z takes it back and the box's own listeners see it); the cursor goes back to the end.
   dom.input.setSelectionRange(0, 0);
-  if (!document.execCommand("insertText", false, mention)) {
+  const before = dom.input.value;
+  if (!document.execCommand("insertText", false, mention) || dom.input.value === before) {
     dom.input.setRangeText(mention, 0, 0, "start");
     dom.input.dispatchEvent(new Event("input", { bubbles: true }));
   }
@@ -202,6 +203,15 @@ chip.addEventListener("pointerup", () => {
 chip.addEventListener("click", () => {
   if (tookOnPointerUp) tookOnPointerUp = false;
   else take();
+});
+// The iPhone's touches decide there (Ümit #13641): touchstart kept from the page so the focus and keyboard stay,
+// touchend takes; take() after reset() does nothing a second time.
+chip.addEventListener("touchstart", (event) => event.preventDefault(), { passive: false });
+chip.addEventListener("touchend", (event) => {
+  event.preventDefault();
+  pressed = false;
+  tookOnPointerUp = true;
+  take();
 });
 // Another room, a reply or a checklist item chosen, a message sent: what was asked about no longer applies.
 window.addEventListener("hashchange", () => {

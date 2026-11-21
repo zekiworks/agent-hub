@@ -194,7 +194,10 @@ let autoSpace: number | undefined;
 /** Puts `text` at the end of the box as if typed, so ⌘Z takes it back and the box's own listeners see it. */
 function insertAtEnd(text: string, from = dom.input.value.length): void {
   dom.input.setSelectionRange(from, dom.input.value.length);
-  if (!document.execCommand("insertText", false, text)) {
+  const before = dom.input.value;
+  // insertText keeps ⌘Z working; where it says it inserted but the box did not change (the focus was elsewhere, as on
+  // the iPhone after a tap: Ümit #13641), the text is put in directly.
+  if (!document.execCommand("insertText", false, text) || dom.input.value === before) {
     dom.input.setRangeText(text, from, dom.input.value.length, "end");
     dom.input.dispatchEvent(new Event("input", { bubbles: true }));
   }
@@ -298,6 +301,16 @@ chip.addEventListener("click", () => {
     tookOnPointerUp = false;
     return;
   }
+  take();
+});
+// The iPhone (Ümit #13641, still nothing on a tap): its touches decide. touchstart is kept from the page so the box
+// keeps the focus and the keyboard, and touchend takes the words; take() does nothing a second time, so the pointer
+// and click paths above cannot take twice.
+chip.addEventListener("touchstart", (event) => event.preventDefault(), { passive: false });
+chip.addEventListener("touchend", (event) => {
+  event.preventDefault();
+  chipPressed = false;
+  tookOnPointerUp = true;
   take();
 });
 window.addEventListener("hashchange", reset);
