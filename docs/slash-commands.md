@@ -161,6 +161,98 @@ Agents get each command as a tool call with typed arguments, not as text to type
   with a description in the schema. The bus checks it on every call and returns a clear error ("@xyz is not in this
   room"), as it does for wake lists.
 
+## A task's life, through every part (Can #13862)
+
+Ümit gives @webapp a task in #launch; @webapp does it; Ümit sees it done. Every hop, in order:
+
+**0. Startup**
+- **task-ext:** starts. It opens `task.sqlite`, with three tables:
+  - `tasks(seq, conversation_id, by, text, created_at, cancelled_at)`;
+  - `assignees(seq, who, state, reason, at)`;
+  - `history(seq, who, action, at)`.
+  It serves `GET /bus-extension.json`, `POST /commands/task`, `POST /actions/:action`, `POST /events` and `GET /panel`.
+  Every POST checks the bus's HMAC header with the shared secret from its env.
+- **Bus:** reads the manifest (at start, then every 10 min) and adds `task` to `/api/state` (`commands`, `panels`,
+  `annotationActions`).
+- **omp plugin on @webapp's machine:** at session start, `GET /api/state` (agent token). It registers the tools
+  `task`, `task_accept`, `task_done`, `task_reject` from the manifest's schemas, next to `message-bus`.
+
+**1. Ümit types** `/task @webapp fix the two Safari tests` in #launch.
+- **Website (`ui/commands.ts`, new):** at `/` it shows the command menu from `state.commands`. Once `task` is picked,
+  it parses the args against `[member+, rest]`:
+  - `@webapp` is checked against #launch's members (green);
+  - the rest becomes `text`.
+  A wrong member is marked at once, and Enter stays disabled until the args are valid.
+
+**2. Enter**
+- **Website → bus:** `POST /api/ext/task/command {conversationId, command:"task", args:{to:["webapp"], text}}`.
+- **Bus:** checks Ümit's session, that she may read #launch, `for` (person ✓) and `where` (project ✓). It re-checks
+  `to` against the members, then calls the extension with header `X-Bus-Signature`:
+  `POST <task-ext>/commands/task {v:1, caller:{id:"umit", kind:"person", verified:true},
+  conversation:{id, kind, members}, args, messages:[latest 20]}`.
+- **task-ext:** writes nothing yet. It answers with a proposal:
+  `{post:{text:"@webapp fix the two Safari tests", annotation:{type:"task", by:"umit",
+  assignees:[{id:"webapp", state:"open"}]}, wake:["webapp"]}}`.
+- **Bus:** keeps the proposal under an id (10 min, Ümit only, #launch only) and returns `{proposal:{id, text,
+  annotation}}`.
+- **Website:** shows the text in the box with a card above it ("Task for @webapp · Send gives it"). Ümit may still
+  edit the text, or press Esc to drop it.
+
+**3. Send**
+- **Website → bus:** `POST /api/messages {conversationId, text, proposal:id}`.
+- **Bus:**
+  - checks the proposal (its owner, its conversation, still valid, unused) and uses it up;
+  - stores the message with `ext_json = {"task": annotation}` and `wake = ["webapp"]`;
+  - publishes it: every reader's page draws the line "Task · open · @webapp", and Ümit's page also shows Cancel;
+  - then calls `POST <task-ext>/events {type:"posted", seq:13900, conversationId, by:"umit", annotation, text}`.
+- **task-ext:** inserts the task row and the assignee row (`open`), plus a history row `created`. This is the moment
+  the task exists.
+
+**4. @webapp is woken**
+- **Bus → @webapp's plugin:** the delivery of #13900 carries the annotation, along with the action list the bus
+  computed from the manifest's `for` (webapp is an assignee: accept, done, reject).
+- **Plugin:** shows the model "Task #13900 for you from @umit: fix the two Safari tests. Tools: task_accept,
+  task_done, task_reject (message_id 13900)." The tools were registered at step 0, so no reload is needed.
+
+**5. @webapp accepts**
+- **Model → plugin:** `task_accept {message_id:13900}`.
+- **Plugin → bus:** `POST /api/ext/task/actions/accept {seq:13900}` (agent token).
+- **Bus:** checks that webapp is in the action's `for` (it is in `annotation.assignees`), then calls `POST <task-ext>/actions/accept {seq, caller:{id:"webapp", kind:"agent"}}`, signed.
+- **task-ext:** sets the assignee to `accepted` and logs history. It answers `{annotation:{…, assignees:[{id:"webapp",
+  state:"accepted"}]}}`, with no notice and no wake (accepting wakes nobody, as today).
+- **Bus:** stores the new `ext_json` and publishes `messageChanged`. Ümit's page redraws: "Task · @webapp is on it".
+
+**6. @webapp finishes**
+- **Model → plugin → bus → task-ext:** `task_done {message_id:13900}`, by the same path.
+- **task-ext:** sets `done` and answers `{annotation (done), notice:{text:"Done by @webapp.", wake:[]}}`.
+- **Bus:** stores the annotation, publishes the change, and posts the notice as `@task`, a reply to #13900. It wakes
+  nobody (Ümit is a person; her page marks it unread, as any reply).
+- **Ümit's page:** the line under #13900 says "Task · done ✓ · @webapp", and the Tasks panel moves it to "done".
+
+**Other endings**
+- **Rejected:** `task_reject {message_id, reason}`. The notice is "Rejected by @webapp: not today", and it wakes the
+  assigner if the assigner is an agent.
+- **Cancelled:** Ümit's Cancel button → `POST /api/ext/task/actions/cancel` (`for` = the message's author) → a confirm
+  dialog drawn from the manifest's `confirm` → the extension sets `cancelled_at` → the notice "Cancelled by @umit."
+  wakes @webapp (the assignee must stop).
+- **Message deleted:** the bus sends `events {type:"deleted", seq}`. task-ext cancels the task, and the line goes with
+  the message.
+- **The extension is down when Ümit presses Enter:** the bus answers the command with "Tasks is not answering", and
+  nothing is sent.
+- **The extension is down at a later step:** events are queued and retried, so the task row appears once it is back.
+  Actions return an error to the caller and change nothing.
+
+**Reminders (if kept)**
+- **task-ext:** answers each `events` call with `{open:{webapp:1}}`.
+- **Bus:** keeps that small map and adds "(1 open task: task_done …)" to webapp's deliveries until the count drops.
+
+**The panel**
+- **Website:** Ümit opens Tasks in the Workspace. The website frames `<task-ext>/panel?who=umit&sig=…`, a link
+  signed by the bus, valid for a day.
+- **Panel page:** reads `GET /api/mine?who=umit&sig=…` from task-ext itself and lists For me / Assigned by me.
+  - A click on a task asks the website to open #13900 (`agent-bus:open`).
+  - Its Cancel asks the website for the confirm dialog (`agent-bus:action`). The page never calls the action itself.
+
 ## Order and size
 
 | Step | What | Size |
