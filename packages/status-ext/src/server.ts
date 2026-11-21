@@ -33,6 +33,10 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS updates (seq INTEGER PRIMARY KEY, agent TEXT NOT NULL, at INTEGER NOT NULL, text TEXT NOT NULL, files TEXT NOT NULL);
   CREATE INDEX IF NOT EXISTS updates_agent ON updates(agent, seq);
 `);
+// A NO_UPDATES bar (Can #14270): the time of the agent's update before it (or of the bar itself when there was none).
+if (!db.query("SELECT 1 FROM pragma_table_info('updates') WHERE name = 'no_updates_since'").get()) {
+  db.exec("ALTER TABLE updates ADD COLUMN no_updates_since INTEGER");
+}
 
 const headers = { "Content-Type": "application/json", "X-Agent-Token": TOKEN };
 
@@ -49,7 +53,9 @@ async function agents(online: boolean): Promise<string[]> {
 }
 
 function lastUpdate(agent: string): number | undefined {
-  return db.query<{ at: number }, [string]>("SELECT at FROM updates WHERE agent = ?1 ORDER BY seq DESC LIMIT 1").get(agent)?.at;
+  return db
+    .query<{ at: number }, [string]>("SELECT at FROM updates WHERE agent = ?1 AND no_updates_since IS NULL ORDER BY seq DESC LIMIT 1")
+    .get(agent)?.at;
 }
 
 const when = (at: number) => new Date(at).toLocaleString("en-GB", { timeZone: "Europe/Berlin", dateStyle: "medium", timeStyle: "short" });
@@ -61,7 +67,7 @@ async function ask(agent: string, wake: boolean): Promise<number> {
     `Status update, please: what changed since ${last ? `your last update (${when(last)})` : "you started"}? ` +
     "Reply to this message (op=reply) with it, newest first. It shows on your Home tab in Agent Hub, as a pane people " +
     "read rather than a chat message: present numbers in a table, include links, and put a graph in by attaching the " +
-    "image and writing /inline{#1} where it goes. Nothing changed? Reply \"No change.\"" +
+    "image and writing /inline{#1} where it goes. Nothing changed since then? Reply with just NO_UPDATES." +
     (wake ? "" : " (This wakes nobody: answer at your next turn.)");
   const res = await bus<PostMessageResponse>("/api/messages", {
     method: "POST",
@@ -97,20 +103,32 @@ function schedule(): void {
   }, wait);
 }
 
-/** "No change." and the like: answered, but nothing for the tab. */
-const NO_CHANGE = /^\W*no (change|changes|update|news)\W*$/i;
+/** NO_UPDATES, and "No change." and the like (Can #14270). */
+const NO_UPDATES = /^\W*(no_updates|no (change|changes|update|updates|news))\W*$/i;
 
-/** An agent's message to @status (a reply to an ask, or one it wrote itself): an update for its tab. */
+/**
+ * An agent's message to @status (a reply to an ask, or one it wrote itself): an update for its tab. NO_UPDATES
+ * becomes one small "No updates since <its last update>" bar, written once: further NO_UPDATES after it add nothing and
+ * change nothing, until a real update comes (Can #14270).
+ */
 function keep(message: Message): void {
   if (message.fromKind !== "agent" || message.from === ID || message.deletedAt) return;
   db.query("UPDATE asks SET answered = 1 WHERE agent = ?1").run(message.from);
-  if (NO_CHANGE.test(message.text) && message.files.length === 0) return;
-  db.query("INSERT OR IGNORE INTO updates (seq, agent, at, text, files) VALUES (?1, ?2, ?3, ?4, ?5)").run(
+  let since: number | null = null;
+  if (NO_UPDATES.test(message.text) && message.files.length === 0) {
+    const latest = db
+      .query<{ at: number; no_updates_since: number | null }, [string]>("SELECT at, no_updates_since FROM updates WHERE agent = ?1 ORDER BY seq DESC LIMIT 1")
+      .get(message.from);
+    if (latest && latest.no_updates_since !== null) return;
+    since = latest?.at ?? message.createdAt;
+  }
+  db.query("INSERT OR IGNORE INTO updates (seq, agent, at, text, files, no_updates_since) VALUES (?1, ?2, ?3, ?4, ?5, ?6)").run(
     message.seq,
     message.from,
     message.createdAt,
-    message.text,
-    JSON.stringify(message.files.map((f) => ({ id: f.id, name: f.name, mimeType: f.mimeType })))
+    since === null ? message.text : "",
+    JSON.stringify(message.files.map((f) => ({ id: f.id, name: f.name, mimeType: f.mimeType }))),
+    since
   );
 }
 
@@ -151,9 +169,11 @@ Bun.serve({
     if (url.pathname === "/page.css") return new Response(CSS, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     if (url.pathname === "/updates.json") {
       const rows = db
-        .query<{ seq: number; at: number; text: string; files: string }, [string]>("SELECT seq, at, text, files FROM updates WHERE agent = ?1 ORDER BY seq DESC LIMIT 100")
+        .query<{ seq: number; at: number; text: string; files: string; no_updates_since: number | null }, [string]>(
+          "SELECT seq, at, text, files, no_updates_since FROM updates WHERE agent = ?1 ORDER BY seq DESC LIMIT 100"
+        )
         .all(agent)
-        .map((r) => ({ ...r, files: JSON.parse(r.files) }));
+        .map(({ no_updates_since, ...r }) => ({ ...r, files: JSON.parse(r.files), ...(no_updates_since === null ? {} : { noUpdatesSince: no_updates_since }) }));
       const asked = db.query<{ at: number }, [string]>("SELECT at FROM asks WHERE agent = ?1 ORDER BY seq DESC LIMIT 1").get(agent)?.at;
       return Response.json({ agent, updates: rows, asked: asked ?? null, every: EVERY_MS });
     }

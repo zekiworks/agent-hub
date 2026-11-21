@@ -12,6 +12,8 @@ interface Update {
   at: number;
   text: string;
   files: FileInfo[];
+  /** A NO_UPDATES answer (Can #14270): one small bar, the time of the update before it. */
+  noUpdatesSince?: number;
 }
 
 const agent = new URLSearchParams(location.search).get("agent") ?? "";
@@ -82,7 +84,8 @@ async function load(): Promise<void> {
     head.textContent = data.asked
       ? `@${agent} is asked for an update every ${Math.round(data.every / 60000)} min; last asked ${time(data.asked)}.`
       : `@${agent} has not been asked yet; the first ask goes out at the top of the hour.`;
-    panes.replaceChildren(head, ...(data.updates.length === 0 ? [el("p", "note", "No updates yet.")] : data.updates.map(pane)));
+    const entry = (u: Update) => (u.noUpdatesSince === undefined ? pane(u) : el("p", "no-updates", `No updates since ${time(u.noUpdatesSince)}`));
+    panes.replaceChildren(head, ...(data.updates.length === 0 ? [el("p", "note", "No updates yet.")] : data.updates.map(entry)));
   } catch (error) {
     panes.replaceChildren(el("p", "note", `Could not load the updates: ${error instanceof Error ? error.message : String(error)}`));
   }

@@ -85,3 +85,11 @@ pre {
 .files .inline-image {
   max-width: 240px;
 }
+/* A NO_UPDATES answer (Can #14270): one small bar in the timeline, not a pane. */
+.no-updates {
+  margin: 0;
+  padding: 2px 10px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
