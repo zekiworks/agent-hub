@@ -7,7 +7,7 @@ import { showError } from "./composer";
 import { dom, nearBottom, scrollToBottom } from "./dom";
 import { errorText } from "./format";
 import { notify } from "./notify";
-import { applyEarlyReceipts, renderHeader, renderMessages, showEmpty } from "./render";
+import { appendMessage, applyEarlyReceipts, renderHeader, renderMessages, showEmpty } from "./render";
 import { navigate } from "./routing";
 import { sharedFilesChanged, sharedFilesLoaded } from "./files";
 import { renderSidebar } from "./sidebar";
@@ -125,7 +125,7 @@ export function receive(message: Message, conversation: Conversation): void {
   if (current) {
     const stick = nearBottom() || message.from === state.me;
     renderHeader();
-    renderMessages();
+    if (known || !appendMessage(message)) renderMessages();
     if (stick) scrollToBottom();
   }
 }

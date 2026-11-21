@@ -2722,6 +2722,25 @@ ul.md-list ul.md-list { list-style: circle; }
   border-radius: calc(var(--radius) - 2px);
 }
 
+/* `/inline{#n}` (inline.ts; Can #14170): an image at its own size, or the column's width when larger; a Markdown file
+   in a bounded section that scrolls. */
+.msg-inline-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 6px 0;
+  border-radius: calc(var(--radius) - 2px);
+}
+.msg-inline-doc {
+  max-height: 360px;
+  overflow-y: auto;
+  margin: 6px 0;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
 .lightbox {
   max-width: none;
   max-height: none;

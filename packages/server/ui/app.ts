@@ -17,7 +17,7 @@ import { loadAgentRequests } from "./machines";
 import { closeMention, updateMention } from "./mentions";
 import { setDetails, setPhoneList, wasOnPhoneList } from "./phones";
 import { askProfile } from "./profile";
-import { applyReceipt, pulseUnread, renderAll, renderMessages, showEmpty } from "./render";
+import { applyReceipt, pulseUnread, renderAll, renderMessages, showEmpty, updateSeenLine } from "./render";
 import { navigate, parseHash, viewHash } from "./routing";
 import "./send";
 import "./convmenu";
@@ -236,7 +236,7 @@ function handleFrame(frame: ViewerServerFrame): void {
       if (!conv) break;
       conv.seen = { ...conv.seen, [frame.participant]: Math.max(frame.at, conv.seen?.[frame.participant] ?? 0) };
       renderSidebar();
-      if (isCurrent(conv.id)) renderMessages();
+      if (isCurrent(conv.id)) updateSeenLine();
       break;
     }
     case "tabs":

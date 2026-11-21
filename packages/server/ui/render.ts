@@ -1,5 +1,5 @@
 // The main pane: header and messages (with quotes, receipts, attachments), and renderAll.
-import { senderLabel, type Conversation, type Message, type Quote, type ReceiptEvent } from "@agent-bus/protocol";
+import { senderLabel, type Conversation, type FileRef, type Message, type Quote, type ReceiptEvent } from "@agent-bus/protocol";
 import { renderFile } from "./attachments";
 import { BRAND } from "./brand";
 import { setReplyTo, updateComposerState } from "./composer";
@@ -23,6 +23,7 @@ import { conversationAddress, conversationTitle, projectColor, state } from "./s
 import { conversationLink, flashMessage, markReadParts, markSelected, mentionNodes, mentionsMe, selectMessage, shownMessage, textBlocks } from "./text";
 import { PULSE_MS } from "./toast";
 import { noteAttention } from "./attention";
+import { inlinedFiles, markInlined, placeInlined } from "./inline";
 
 export function renderAll(): void {
   renderSidebar();
@@ -194,6 +195,43 @@ export function renderMessages(): void {
 }
 
 /**
+ * A new newest message of the open conversation, added at the end instead of drawing the whole list again: drawing
+ * every message and laying the list out anew for each arrival made a busy room slower by the minute, until typing
+ * froze (Ümit #14171; Safari's engine on a copy of #agent hub: 0.2 → 0.6 s stalls in 3 minutes). False when it is not
+ * simply the next one (then the caller draws the list).
+ */
+export function appendMessage(message: Message): boolean {
+  const view = state.view;
+  const messages = view.kind === "conversation" ? state.caches.get(view.id)?.messages : undefined;
+  if (!messages || messages.at(-1)?.seq !== message.seq || messages.length < 2) return false;
+  const lastLi = dom.messageList.querySelector<HTMLElement>(":scope > .msg:last-of-type");
+  const previous = messages.at(-2)!;
+  if (!lastLi || Number(lastLi.dataset.seq) !== previous.seq || !dom.messageEmpty.hidden) return false;
+  const nodes: HTMLElement[] = [];
+  const newDay = dayKey(message.createdAt) !== dayKey(previous.createdAt);
+  if (newDay) nodes.push(h("li", "day-divider", dayFormat.format(message.createdAt)));
+  const continued = !newDay && previous.from === message.from && message.createdAt - previous.createdAt < 5 * 60_000;
+  const li = renderMessage(message, continued);
+  nodes.push(li);
+  lastLi.querySelector(":scope > .msg-seen")?.remove();
+  seenLine(message, li);
+  dom.messageList.append(...nodes);
+  renderSpeaking();
+  updateJump();
+  return true;
+}
+
+/** Someone saw the conversation (Ümit #12323): only the newest message's "Seen by" line changes. */
+export function updateSeenLine(): void {
+  const view = state.view;
+  const last = view.kind === "conversation" ? state.caches.get(view.id)?.messages.at(-1) : undefined;
+  const li = last ? dom.messageList.querySelector<HTMLElement>(`:scope > .msg[data-seq="${last.seq}"]`) : null;
+  if (!last || !li) return;
+  li.querySelector(":scope > .msg-seen")?.remove();
+  seenLine(last, li);
+}
+
+/**
  * "Seen by can" under my message when it is the newest (Ümit #12323): the people in the conversation who have seen it
  * (agents have their receipts).
  */
@@ -306,13 +344,16 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   } else {
     const box = editBox(message);
     if (box) li.append(box);
-    else if (message.text) li.append(renderText(message.text));
+    else if (message.text) li.append(renderText(message.text, message.files));
   }
   // A forwarded copy, under the forwarder's note (Can #12470).
   if (message.forwarded && !deleted) li.append(renderForwarded(message.forwarded));
-  if (message.files.length > 0) {
+  // Attachments `/inline{#n}` shows in the text are not listed again (Can #14170).
+  const inText = deleted || !message.text.includes("/inline") ? new Set<FileRef>() : inlinedFiles(message.text, message.files);
+  const listed = message.files.filter((f) => !inText.has(f));
+  if (listed.length > 0) {
     const files = h("ul", "msg-files");
-    for (const file of message.files) files.append(renderFile(file));
+    for (const file of listed) files.append(renderFile(file));
     // Phones: a voice message is mostly its player, which keeps every tap for itself, so its buttons (🗑 among them)
     // were out of reach (Ümit #13297). ⋯ next to it opens them, as a tap on a written message does.
     if (!deleted && message.files.some((f) => f.mimeType.startsWith("audio/"))) {
@@ -638,8 +679,10 @@ function copier(name: IconName, title: string, text: () => string): HTMLButtonEl
   return button;
 }
 
-function renderText(text: string): HTMLDivElement {
+function renderText(text: string, files: FileRef[]): HTMLDivElement {
   const body = h("div", "msg-text");
-  body.append(...renderMarkdown(text, mentionNodes));
+  const inline = files.length > 0 && text.includes("/inline");
+  body.append(...renderMarkdown(inline ? markInlined(text, files) : text, mentionNodes));
+  if (inline) placeInlined(body, files);
   return body;
 }

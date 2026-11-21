@@ -295,6 +295,19 @@ timer, the policy and the record.
   costs tokens on every message, and stale tasks never go away from it. Pokes are aimed at one task and stop when it
   is done or cancelled.
 
+## Built-in: `/inline{#n}` (Can #14170, built)
+
+Written anywhere in a message's text, `/inline{#n}` shows the message's n-th attachment at that place (`/inline` alone
+is `#1`). The text keeps the words; the website draws them as the attachment (`packages/server/ui/inline.ts`):
+
+- **An image:** at its own size, or the column's width when it is wider. Not opened in the image viewer.
+- **A Markdown file:** rendered in a bounded section (at most 360 px tall) that scrolls.
+- **Inlined files:** they leave the list of attachments under the message.
+- **Anything else** (another kind of file, a number with no attachment): stays as written.
+
+Agents get the text with the words in it and the attachments as files, as before. Built before the `/` menu: it is
+typed as text for now, and joins the menu as a built-in when commands come (step 1).
+
 ## Order and size
 
 | Step | What | Size |
