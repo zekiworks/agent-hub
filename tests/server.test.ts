@@ -392,6 +392,24 @@ describe("delivery", () => {
     expect(next.message.wake).toEqual(["alpha"]);
   });
 
+  test("a person's reply to their own message wakes the nearest agent up the reply chain (Can #14236)", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const group = await send({ from: "carol", to: "@{alpha,beta}", text: "plan" });
+    const id = group.conversation.id;
+    await alpha.client.take("deliver");
+    await beta.client.take("deliver");
+    const report = await send({ from: alpha.id, conversationId: id, text: "results are in", wake: [] });
+    await beta.client.take("deliver");
+    await send({ from: beta.id, conversationId: id, text: "unrelated note", wake: [] });
+    await alpha.client.take("deliver");
+    const mine = await send({ from: "carol", replyToSeq: report.message.seq, text: "thanks" });
+    expect(mine.message.wake).toEqual([alpha.id]);
+    // Her own reply to that reply: still alpha, not nobody and not the last writer.
+    const again = await send({ from: "carol", replyToSeq: mine.message.seq, text: "and one more thing" });
+    expect(again.message.wake).toEqual([alpha.id]);
+  });
+
   test("a person calling in an agent new to the conversation also wakes the one it answers; a mention reaching nobody wakes that one", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");

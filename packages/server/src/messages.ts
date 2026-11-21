@@ -344,7 +344,7 @@ function wakeList(
 ): string[] | undefined {
   if (writer.kind === "human") {
     if (conversation.kind === "dm") return recipients;
-    const answered = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq)?.from : answeredBy(ctx, conversation.id, writer.id);
+    const answered = replyToSeq !== undefined ? answeredInChain(ctx, replyToSeq, writer.id) : answeredBy(ctx, conversation.id, writer.id);
     if (answered === undefined) return recipients; // a conversation started with them: they are meant
     // "@all" in a person's text wakes every agent of the conversation (Can, 15 Nov).
     if (mentionedIds(text).includes(ALL_CONVERSATION_ID)) return recipients;
@@ -384,6 +384,21 @@ export function answeredBy(ctx: BusContext, conversationId: string, person: stri
   const last = ctx.db.lastAuthorBesides(conversationId, person);
   if (last === undefined || !ctx.hub.isHuman(last)) return last;
   return ctx.db.lastAgentAuthorBesides(conversationId, person) ?? last;
+}
+
+/**
+ * Whom a person's reply answers: the replied-to message's author, and when that is a person (their own message, in a
+ * thread most often), the nearest agent up the reply chain (Can #14236: answering one's own message in a thread with
+ * an agent woke nobody). The direct author when the chain holds no agent.
+ */
+function answeredInChain(ctx: BusContext, replyToSeq: number, writer: string): string | undefined {
+  const first = ctx.db.getMessage(replyToSeq);
+  let m = first;
+  for (let steps = 0; m && steps < 50; steps++) {
+    if (!ctx.hub.isHuman(m.from) && m.from !== writer) return m.from;
+    m = m.quote ? ctx.db.getMessage(m.quote.seq) : null;
+  }
+  return first?.from;
 }
 
 /** An agent @mentions an agent its wake list leaves out: said, since the mention alone wakes nobody. */
