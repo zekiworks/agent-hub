@@ -8,6 +8,7 @@ import { state } from "./state";
 const THREADS_KEY = "agent-bus.threads";
 /** The newest reply I saw in each thread, by conversation and root: the replies after it are new. */
 const READ_KEY = "agent-bus.threadRead";
+const SINCE_KEY = "agent-bus.threadsSince";
 
 export function threadsOn(): boolean {
   return localStorage.getItem(THREADS_KEY) === "1";
@@ -15,6 +16,16 @@ export function threadsOn(): boolean {
 
 export function setThreadsOn(on: boolean): void {
   localStorage.setItem(THREADS_KEY, on ? "1" : "0");
+  if (on) localStorage.setItem(SINCE_KEY, String(Date.now()));
+}
+
+/** When threads were turned on here: replies older than that, in a thread never opened, count as read. */
+function threadsSince(): number {
+  const since = Number(localStorage.getItem(SINCE_KEY));
+  if (since > 0) return since;
+  const now = Date.now();
+  localStorage.setItem(SINCE_KEY, String(now));
+  return now;
 }
 
 /** The thread open in the main pane (its root's number), or undefined for the room. */
@@ -63,15 +74,15 @@ function readMarks(): Record<string, Record<string, number>> {
   }
 }
 
-/** Replies in thread `root` I have not seen (not mine). The first time a thread is seen, what it holds counts as read. */
+/**
+ * Replies in thread `root` I have not seen (not mine): those after the last one I saw in it, or, in a thread never
+ * opened, those that came after threads were turned on. Drawing its bar marks nothing read (codex-ui #14246: the first
+ * reply that made a thread showed "0 new").
+ */
 export function newReplies(conversationId: string, root: number, replies: readonly Message[]): number {
-  const marks = readMarks();
-  const seen = marks[conversationId]?.[root];
-  if (seen === undefined) {
-    markThreadRead(conversationId, root, replies.at(-1)?.seq ?? root);
-    return 0;
-  }
-  return replies.filter((m) => m.seq > seen && m.from !== state.me).length;
+  const seen = readMarks()[conversationId]?.[root];
+  const since = seen === undefined ? threadsSince() : 0;
+  return replies.filter((m) => m.from !== state.me && (seen === undefined ? m.createdAt > since : m.seq > seen)).length;
 }
 
 export function markThreadRead(conversationId: string, root: number, seq: number): void {

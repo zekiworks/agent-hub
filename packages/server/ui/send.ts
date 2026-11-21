@@ -11,7 +11,7 @@ import {
 import { api, postJson } from "./api";
 import { autosize, hideError, holdHours, renderStaged, setReplyTo, showError, updateComposerState } from "./composer";
 import { dom, PHONE } from "./dom";
-import { readDraft, saveDraft } from "./drafts";
+import { draftThread, readDraft, saveDraft } from "./drafts";
 import { errorText } from "./format";
 import { chosenSession } from "./live";
 import { loadMessages, receive } from "./loading";
@@ -107,7 +107,10 @@ async function send(): Promise<void> {
   const text = dom.input.value;
   if (!text.trim() && state.staged.length === 0) return;
   const view = state.view;
-  const sentFrom = viewHash(view);
+  // The place it was written in: the conversation, or a thread of it (its draft is its own; codex-ui #14246).
+  const thread = draftThread(view);
+  const place = () => `${viewHash(state.view)}/${draftThread(state.view) ?? ""}`;
+  const sentFrom = `${viewHash(view)}/${thread ?? ""}`;
   // Taken now: a reply picked or a conversation opened while files upload belongs to the next message (codex-ui
   // #11603, #11711), and so do files added meanwhile.
   const chosen = chosenNow(view);
@@ -129,10 +132,10 @@ async function send(): Promise<void> {
     if (view.kind === "conversation") askSent(view.id, text, !!(chosen.reply || chosen.item));
     // Clear what was sent, from the conversation it was sent in: another one opened meanwhile keeps its draft, and
     // text typed after Send stays (codex-ui #11711).
-    const stillThere = viewHash(state.view) === sentFrom;
-    const left = stillThere ? dom.input.value : readDraft(view);
+    const stillThere = place() === sentFrom;
+    const left = stillThere ? dom.input.value : readDraft(view, thread);
     const rest = left === text ? "" : left.startsWith(text) ? left.slice(text.length).replace(/^\n+/, "") : left;
-    saveDraft(view, rest);
+    saveDraft(view, rest, thread);
     state.staged = state.staged.filter((f) => !files.includes(f));
     if (stillThere) {
       dom.input.value = rest;
@@ -146,7 +149,7 @@ async function send(): Promise<void> {
     state.sending = false;
     renderStaged();
     updateComposerState();
-    if (viewHash(state.view) === sentFrom) dom.input.focus();
+    if (place() === sentFrom) dom.input.focus();
   }
 }
 
