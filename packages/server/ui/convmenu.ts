@@ -62,6 +62,9 @@ function kept<T extends HTMLInputElement | HTMLSelectElement>(el: T, key: string
   return el;
 }
 
+/** People and agents picked to add in the ⋯ menu's member list, kept while the dialog redraws (Ümit #14102). */
+let picking: { conv: string; ids: Set<string> } = { conv: "", ids: new Set() };
+
 function button(label: string, onClick: () => void, primary = false): HTMLButtonElement {
   const b = h("button", primary ? "btn btn-primary" : "btn", label);
   b.type = "button";
@@ -182,7 +185,7 @@ dom.convSettingsBtn.addEventListener("click", () => {
   delete dom.convDialog.dataset.conv;
   render();
   if (!dom.convDialog.open) dom.convDialog.showModal();
-  if (!PHONE.matches) dom.convDialog.querySelector<HTMLInputElement>(".member-add")?.focus();
+  if (!PHONE.matches) dom.convDialog.querySelector<HTMLInputElement>(".member-search")?.focus();
 });
 
 /** The full settings form of a group DM or project (⚙ beside its name). Fields keep what was typed in them, except
@@ -227,32 +230,62 @@ function render(consumed: string[] = []): void {
   }
   body.push(list);
   if (member) {
-    const add = kept(h("input", "member-add"), "add");
-    add.type = "text";
-    add.placeholder = "names to add, e.g. can, logic";
-    add.setAttribute("aria-label", "Names to add, separated by commas");
-    // Everyone on the bus who is not in it yet, offered as the name is typed.
-    const suggestions = h("datalist");
-    suggestions.id = "member-add-suggestions";
-    for (const p of state.participants) if (!conv.members.includes(p.id)) suggestions.append(Object.assign(document.createElement("option"), { value: p.id }));
-    add.setAttribute("list", suggestions.id);
-    const row = h("div", "conv-row");
-    row.append(
-      add,
-      suggestions,
-      button("Add", () => {
-        const ids = add.value.split(/[\s,]+/).map((s) => s.trim().replace(/^@/, "").toLowerCase()).filter(Boolean);
-        if (ids.length > 0) void act(conv, "members", { ids }, ["add"]);
-      })
-    );
-    // Enter adds, as the button does.
-    add.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.isComposing) {
-        event.preventDefault();
-        row.querySelector<HTMLButtonElement>("button")?.click();
-      }
+    // Add members by picking them from a list, as Forward does (Ümit #14102: typing ids, with only the keyboard's
+    // suggestions, was hard on the phone). Search narrows it; a tap picks or unpicks; Add adds the picked ones.
+    if (picking.conv !== conv.id) picking = { conv: conv.id, ids: new Set() };
+    const search = kept(h("input", "forward-search member-search"), "add");
+    search.type = "search";
+    search.placeholder = "Find a person or agent";
+    search.setAttribute("aria-label", "Find a person or agent to add");
+    search.autocomplete = "off";
+    const choices = h("ul", "forward-choices member-choices");
+    choices.setAttribute("role", "listbox");
+    choices.setAttribute("aria-multiselectable", "true");
+    const candidates = state.participants
+      .filter((p) => !conv.members.includes(p.id))
+      .sort((a, b) => Number(b.kind === "human") - Number(a.kind === "human") || Number(b.online) - Number(a.online) || a.id.localeCompare(b.id));
+    const addBtn = button("Add", () => {
+      const ids = [...picking.ids];
+      if (ids.length === 0) return;
+      picking.ids = new Set();
+      void act(conv, "members", { ids }, ["add"]);
+    }, true);
+    const draw = (): void => {
+      const q = search.value.trim().toLowerCase().replace(/^@+/, "");
+      const shown = candidates.filter((p) => !q || p.id.includes(q) || picking.ids.has(p.id));
+      choices.replaceChildren(
+        ...(shown.length === 0
+          ? [h("li", "forward-empty", candidates.length === 0 ? "Everyone on the bus is in it already." : "Nobody by that name.")]
+          : shown.map((p) => {
+              const on = picking.ids.has(p.id);
+              const li = h("li", on ? "forward-choice selected" : "forward-choice");
+              li.setAttribute("role", "option");
+              li.setAttribute("aria-selected", String(on));
+              const where = p.kind === "human" ? "person" : `agent · ${p.online ? "online" : "offline"}${p.host ? ` · ${p.host.split(".")[0]}` : ""}`;
+              li.append(h("span", "forward-label", `${on ? "✓ " : ""}${p.id}`), h("span", "forward-hint", where));
+              li.addEventListener("click", () => {
+                if (picking.ids.has(p.id)) picking.ids.delete(p.id);
+                else picking.ids.add(p.id);
+                draw();
+              });
+              return li;
+            }))
+      );
+      const n = picking.ids.size;
+      addBtn.textContent = n === 0 ? "Add" : `Add ${[...picking.ids].map((id) => `@${id}`).join(", ")}`;
+      addBtn.disabled = n === 0;
+    };
+    search.addEventListener("input", draw);
+    // Enter picks the first one shown, as a tap would.
+    search.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.isComposing) return;
+      event.preventDefault();
+      (choices.querySelector<HTMLLIElement>(".forward-choice:not(.selected)") ?? choices.querySelector<HTMLLIElement>(".forward-choice"))?.click();
     });
-    body.push(row, h("p", "dialog-hint", "Agents you add first get the last 5 messages."));
+    draw();
+    const row = h("div", "conv-row");
+    row.append(addBtn);
+    body.push(search, choices, row, h("p", "dialog-hint", "Agents you add first get the last 5 messages."));
 
     body.push(h("h3", "", "Under project"), parentSelect(conv));
 
@@ -389,7 +422,11 @@ function render(consumed: string[] = []): void {
   dom.convDialog.replaceChildren(...body);
   for (const el of dom.convDialog.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-keep]")) {
     const value = el.dataset.keep ? before.get(el.dataset.keep) : undefined;
-    if (value !== undefined) el.value = value;
+    if (value !== undefined) {
+      el.value = value;
+      // A search kept across a redraw narrows its list again (the member picker).
+      el.dispatchEvent(new Event("input"));
+    }
   }
 }
 

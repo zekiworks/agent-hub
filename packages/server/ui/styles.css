@@ -3626,6 +3626,29 @@ ul.md-list ul.md-list { list-style: circle; }
   min-width: 0;
 }
 
+/* The member picker (convmenu.ts; Ümit #14102): the Forward list's look; a long "Add @a, @b" wraps. */
+.member-choices {
+  max-height: 34vh;
+}
+.conv-dialog .conv-row .btn {
+  white-space: normal;
+  text-align: left;
+}
+
+/* Phones: 16 px fields, so iOS does not zoom the page in on a tap (Ümit #14102: the dialog went off the screen's
+   edge), and 44 px targets. */
+@media (max-width: 640px) {
+  .conv-dialog select,
+  .conv-dialog input[type="text"],
+  .conv-dialog input[type="search"] {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .member-choices .forward-choice {
+    min-height: 44px;
+  }
+}
+
 /* Each project in its own colour (state.ts projectColor): a straight band on the left and its name. The band is its
  * own element: an inset shadow follows the entry's rounded corners and bends at both ends. */
 .conv-item.conv-project {
