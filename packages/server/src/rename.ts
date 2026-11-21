@@ -30,8 +30,6 @@ const ID_COLUMNS: Array<[table: string, column: string]> = [
   ["messages", "from_id"],
   ["conversation_members", "participant_id"],
   ["pins", "participant_id"],
-  ["homes", "owner"],
-  ["homes", "updated_by"],
   ["checklists", "owner"],
   ["checklists", "updated_by"],
   ["pinned_messages", "pinned_by"],

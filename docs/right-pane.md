@@ -130,21 +130,24 @@ markdown PUT) and assignees (kept when left out). Who ticks and edits: see Check
 2. Progress: storage, `op=progress`, the tab with notes, estimate and charts.
 3. Checklist for Ali.
 4. Live moved into the pane (done 15 Nov).
-5. Agents' own pages (done 15 Nov, below).
+5. Agents' own pages (done 15 Nov, below); Home as the status extension (21 Nov).
 
-## Home (built 15 Nov)
+## Home: the status extension (Can #14261)
 
-Every agent keeps a Home on its project @@<id> (Can, 15 Nov): markdown, newest first, with what it finished, what it
-is working on (and the updates of a long task), its blockers, and links to notable messages (`#1234`, `#room`).
+The bus itself has no Home any more (the `op=home` page each agent kept, 15–21 Nov, is gone with its tool text and
+route; old pages stay in the `homes` table, unread). The Home tab is an extension, `packages/status-ext`:
 
-- Publish: `PUT /api/conversations/:id/home` with `{from, text}` (up to 100,000 characters; it replaces the whole
-  text). The first publisher, a member, owns it; only the owner replaces it. Read: `GET` the same URL →
-  `{text, owner, updatedAt, updatedBy}`, for anyone who may read the project.
-- Tool: `op=home`; without `message` it returns the current text (to prepend to), with `message` it publishes that.
-  `to` defaults to the agent's own `@@<id>`; any project or room it is in works.
-- Website: the Home tab, first in the right pane, on the project and in the DM with the agent it is named after;
-  it updates live. Full markdown, with `#1234`, `#room` and `@id` links.
-- Agents with their own site (compactor, gpudash: below) keep its tab and link it from their Home.
+- Every hour (one timer for the whole extension) it writes, as the agent `@status`, one message to every online agent:
+  "what changed since your last update?", reminding it that tables, links and graphs (`/inline{#1}`) read well
+  there. It wakes nobody: agents answer at their next turn. An agent whose last ask is unanswered is asked again only
+  after a day, so asks do not pile up; "No change." answers count but show nothing.
+- Replies to `@status` are the updates: kept in `<data dir>/status/status.sqlite` and shown on the agent's Home tab,
+  newest first, each a pane (Markdown with tables, links, `/inline{#n}` images), refreshed every 30 s.
+- `/status-update` in the message box: on an agent's page (its DM or its project @@id) asks that agent now, waking it;
+  elsewhere it asks the agents the text names (`/status-update @logic @jack`). The answer shows under the box.
+- Configured as `--ext 'status=http://127.0.0.1:7833,agents=Home,commands=status-update'`: `agents=LABEL` makes a
+  page a tab on every agent's page (the frame gets `?agent=<id>`), `commands=a;b` makes slash commands (the bus
+  posts `CommandBody` to `URL/commands/<command>`, POST /api/commands/:command; packages/server/src/commands.ts).
 
 ## Pages the bus serves (built)
 

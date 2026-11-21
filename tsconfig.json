@@ -23,6 +23,7 @@
     "packages/ask-ext/src/**/*.ts",
     "packages/ask-ext/scripts/**/*.ts",
     "packages/ask-ext/eval/**/*.ts",
+    "packages/status-ext/src/**/*.ts",
     "tests/**/*.ts"
   ]
 }

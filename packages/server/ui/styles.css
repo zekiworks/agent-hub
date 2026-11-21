@@ -3103,6 +3103,12 @@ ul.md-list ul.md-list { list-style: circle; }
   white-space: pre-wrap;
 }
 
+/* A slash command's answer (send.ts showNote; Can #14261): in the error's place, not red. */
+.composer-error.composer-note {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
 .staged-files {
   list-style: none;
   margin: 0 0 8px;

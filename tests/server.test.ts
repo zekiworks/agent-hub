@@ -1112,27 +1112,6 @@ describe("delivery", () => {
     expect((await answeredConversation(await project("carol", { title: "model-research" }))).title).toBeUndefined();
   });
 
-  test("a project's Home: its first publisher (a member) owns and replaces it; anyone who may read the project reads it", async () => {
-    const alpha = await joinPath("/tmp/x/alpha");
-    const beta = await joinPath("/tmp/x/beta");
-    const project = await send({ from: alpha.id, to: "@@alpha", text: "my home" });
-    const route = `/api/conversations/${project.conversation.id}/home`;
-    const put = (from: string, text: string) =>
-      busFetch(bus, route, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, text }) }, from === "carol" ? "carol" : undefined);
-    expect((await busFetch(bus, route, {}, "carol")).status).toBe(404); // none yet
-    expect((await put(beta.id, "# not mine")).status).toBe(403); // not a member
-    expect((await put(alpha.id, "## Done\n- shipped #1")).status).toBe(200);
-    expect(await (await busFetch(bus, route, {}, "carol")).json()).toMatchObject({ text: "## Done\n- shipped #1", owner: "alpha", updatedBy: "alpha" });
-    // A member who is not the owner cannot replace it; the owner can.
-    await send({ from: "carol", conversationId: project.conversation.id, text: "joining" });
-    expect((await put("carol", "mine now")).status).toBe(403);
-    expect((await put(alpha.id, "## Doing\n- the next thing")).status).toBe(200);
-    expect((await put(alpha.id, "x".repeat(100_001))).status).toBe(400);
-    // Only projects and rooms have one.
-    const dm = await send({ from: "carol", to: "@alpha", text: "hi" });
-    expect((await busFetch(bus, `/api/conversations/${dm.conversation.id}/home`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: alpha.id, text: "x" }) })).status).toBe(400);
-  });
-
   test("a checklist by markdown (the PUT from before ids): its creator publishes it with assignees; people tick; ids and ticks survive a republish", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const project = await send({ from: alpha.id, to: "@@alpha", text: "my page" });

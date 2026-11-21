@@ -16,7 +16,6 @@ import type {
   AgentStatus,
   AgentServerFrame,
   FileRef,
-  Home,
   Message,
   Participant,
   PostMessageRequest,
@@ -283,25 +282,6 @@ export class BusConnection {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ from, ...target, text, wake, fileIds, ...(holdHours === undefined ? {} : { holdHours }), ...(task ? { task } : {}) }),
-    });
-  }
-
-  /** A project's Home, or null when it has none yet. */
-  async home(conversationId: string): Promise<Home | null> {
-    try {
-      return await this.request<Home>(`/api/conversations/${encodeURIComponent(conversationId)}/home?as=${encodeURIComponent(this.requireId())}`, { method: "GET" });
-    } catch (error) {
-      if (error instanceof Error && /no Home yet/.test(error.message)) return null;
-      throw error;
-    }
-  }
-
-  /** Replaces a project's Home (the owner, or its first publisher). */
-  putHome(conversationId: string, text: string): Promise<Home> {
-    return this.request<Home>(`/api/conversations/${encodeURIComponent(conversationId)}/home`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from: this.requireId(), text }),
     });
   }
 

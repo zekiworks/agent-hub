@@ -3,13 +3,15 @@ import {
   ALL_CONVERSATION_ID,
   formatAddress,
   mentionedIds,
+  type CommandRequest,
+  type CommandResponse,
   type FileRef,
   type Message,
   type PostMessageRequest,
   type PostMessageResponse,
 } from "@agent-bus/protocol";
 import { api, postJson } from "./api";
-import { autosize, hideError, holdHours, renderStaged, setReplyTo, showError, updateComposerState } from "./composer";
+import { autosize, hideError, holdHours, renderStaged, setReplyTo, showError, showNote, updateComposerState } from "./composer";
 import { dom, PHONE } from "./dom";
 import { draftThread, readDraft, saveDraft } from "./drafts";
 import { errorText } from "./format";
@@ -107,6 +109,29 @@ async function send(): Promise<void> {
   const text = dom.input.value;
   if (!text.trim() && state.staged.length === 0) return;
   const view = state.view;
+  // A slash command of the bus (`/status-update …`; Can #14261) goes to its extension, not into the conversation;
+  // its answer shows under the box. A `/word` the bus does not know is sent as text.
+  const command = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (command?.[1] && state.commands.includes(command[1]) && state.staged.length === 0) {
+    if (view.kind !== "conversation") return showError(`/${command[1]} works in a conversation that exists already`);
+    state.sending = true;
+    hideError();
+    updateComposerState();
+    try {
+      const body: CommandRequest = { conversationId: view.id, text: command[2] ?? "" };
+      const res = await postJson<CommandResponse>(`/api/commands/${command[1]}`, body);
+      if (dom.input.value === text) dom.input.value = "";
+      saveDraft(view, dom.input.value);
+      autosize();
+      showNote(res.note);
+    } catch (error) {
+      showError(`/${command[1]}: ${errorText(error)}`);
+    } finally {
+      state.sending = false;
+      updateComposerState();
+    }
+    return;
+  }
   // The place it was written in: the conversation, or a thread of it (its draft is its own; codex-ui #14246).
   const thread = draftThread(view);
   const place = () => `${viewHash(state.view)}/${draftThread(state.view) ?? ""}`;

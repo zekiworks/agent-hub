@@ -1,0 +1,87 @@
+/* The Status tab (page.ts): panes on the Workspace's dark ground, in the website's colours. */
+:root {
+  color-scheme: dark;
+  --bg: #1e1e1e;
+  --panel: #262626;
+  --border: #3a3a3a;
+  --text: #e8e6e3;
+  --muted: #9a9894;
+  --accent: #b8a6dc;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.pane {
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.when {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.body > :first-child {
+  margin-top: 0;
+}
+.body > :last-child {
+  margin-bottom: 0;
+}
+a {
+  color: var(--accent);
+}
+table {
+  border-collapse: collapse;
+  margin: 6px 0;
+}
+th,
+td {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+th {
+  background: #2e2e2e;
+}
+code,
+pre {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+}
+pre {
+  overflow-x: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: #1a1a1a;
+}
+.inline-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 6px 0;
+  border-radius: 6px;
+}
+.files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.files .inline-image {
+  max-width: 240px;
+}
