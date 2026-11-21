@@ -36,6 +36,7 @@ export const dom = {
   subgroupsSummary: el<HTMLElement>("subgroups-summary"),
   subgroupsList: el<HTMLUListElement>("subgroups-list"),
   messageScroll: el<HTMLDivElement>("message-scroll"),
+  threadCrumb: el<HTMLElement>("thread-crumb"),
   jumpBtn: el<HTMLButtonElement>("jump-btn"),
   loadEarlier: el<HTMLDivElement>("load-earlier"),
   loadEarlierBtn: el<HTMLButtonElement>("load-earlier-btn"),

@@ -2320,6 +2320,68 @@ button:disabled {
   color: var(--accent);
 }
 
+/* Threads (threads.ts; Can #14203): a root's bar in the room, and the way back above an open thread. */
+.thread-bar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 6px 0 2px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.thread-bar:hover,
+.thread-bar:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.thread-count {
+  font-weight: 600;
+}
+.thread-new {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--primary-ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+.thread-last {
+  color: var(--muted);
+}
+.thread-crumb {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.thread-crumb[hidden] {
+  display: none;
+}
+.thread-sep,
+.thread-meta {
+  color: var(--muted);
+}
+.thread-title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-meta {
+  flex: none;
+}
+
 .msg-quote {
   display: flex;
   gap: 6px;

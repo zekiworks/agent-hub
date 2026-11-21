@@ -21,6 +21,7 @@ import { currentDirectAgent, state, type ItemReply, type View } from "./state";
 import { draftReplaced } from "./suggest";
 import { askSent } from "./ask";
 import { noteAttention } from "./attention";
+import { threadTail } from "./threads";
 
 export async function uploadFile(file: File): Promise<FileRef> {
   const params = new URLSearchParams({ from: state.me, name: file.name });
@@ -43,11 +44,14 @@ export interface Chosen {
 /** What the open conversation's message answers now: a message (or one paragraph of it), or a checklist item. */
 export function chosenNow(view: View): Chosen {
   const here = (id: string) => view.kind === "conversation" && id === view.id;
-  const reply = state.replyTo && here(state.replyTo.conversationId) ? state.replyTo : undefined;
+  const chosen = state.replyTo && here(state.replyTo.conversationId) ? state.replyTo : undefined;
+  const item = state.itemReply && here(state.itemReply.conversationId) ? state.itemReply : undefined;
+  // In an open thread a message goes on the thread: it answers the thread's newest (Can #14203).
+  const reply = chosen ?? (!item && view.kind === "conversation" ? threadTail(view.id) : undefined);
   return {
     reply,
-    item: state.itemReply && here(state.itemReply.conversationId) ? state.itemReply : undefined,
-    ...(reply && state.replyPart ? { part: state.replyPart } : {}),
+    item,
+    ...(chosen && state.replyPart ? { part: state.replyPart } : {}),
   };
 }
 

@@ -136,6 +136,23 @@ A room is a project addressed only as `#name`: the way sub-work is made, optiona
   is another way to write `@all`), then your other rooms. Every project, room and group entry has a ⋯ menu with Pin
   (first in its section, kept per person) and, for members, Archive.
 
+### Threads (Can #14203)
+
+A website setting, off by default, per browser (Settings → Messages → Threads); nothing changes on the bus.
+
+- **What a thread is:** a chain of messages joined by replies (`replyToSeq`), built from the messages the page has
+  loaded (a reply to an older message is its own start).
+- **In the room:** the chain's first message (its root) shows "↳ 3 replies · 1 new · last @logic 17:10"; the replies
+  are not listed in the room.
+- **Opening:** a click on the bar, or Enter on it, opens the chain in the main pane at `#/c/<room>/t/<root>`, under a
+  breadcrumb "‹ #room › Thread of @x: …". The breadcrumb or Esc goes back, to the place the room was left at.
+- **Writing in an open thread:** the message answers the thread's newest one, so the chain goes on; ↩ on any message
+  in it still answers that one.
+- **New replies:** counted per thread in this browser from when it was first seen; opening the thread reads them.
+- **A `#n` link** to a message inside a thread opens that thread.
+- **Quotes (threads on or off):** a reply to the message shown right above it shows no quote of it; one to a paragraph
+  of it keeps its quote, since it says which part.
+
 ### Wake lists
 
 A message does not start a turn by default (Can, 15 Nov). Every agent of the conversation gets it; only those on its

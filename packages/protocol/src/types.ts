@@ -330,6 +330,8 @@ export interface Quote {
   text: string;
   /** Number of files the quoted message carried. */
   files: number;
+  /** It quotes one part of the message (a paragraph, PostMessageRequest.quoteText), not its start. */
+  part?: true;
 }
 
 export const QUOTE_TEXT_CHARS = 280;

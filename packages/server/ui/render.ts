@@ -10,7 +10,7 @@ import { h } from "./html";
 import { icon, setIcon, type IconName } from "./icons";
 import { renderMarkdown } from "./markdown";
 import { setTitleBase } from "./notify";
-import { navigate } from "./routing";
+import { navigate, threadHash, viewHash } from "./routing";
 import { renderSidebar } from "./sidebar";
 import { ownTaskButton, renderTaskBadge } from "./inbox";
 import { forwardButton, renderForwarded, renderForwards } from "./forward";
@@ -24,6 +24,7 @@ import { conversationLink, flashMessage, markReadParts, markSelected, mentionNod
 import { PULSE_MS } from "./toast";
 import { noteAttention } from "./attention";
 import { inlinedFiles, markInlined, placeInlined } from "./inline";
+import { displayed, markThreadRead, newReplies, type Threads } from "./threads";
 
 export function renderAll(): void {
   renderSidebar();
@@ -171,25 +172,35 @@ export function renderMessages(): void {
     return;
   }
   dom.messageEmpty.hidden = true;
-  dom.loadEarlier.hidden = !cache.hasEarlier;
+  const { shown, threads } = displayed(cache.messages);
+  const inThread = threads && state.thread !== undefined && shown[0]?.seq === state.thread;
+  // An address naming a thread that is not here (not loaded, or not a thread): the room.
+  if (threads && state.thread !== undefined && !inThread) {
+    history.replaceState(null, "", viewHash(view));
+    state.thread = undefined;
+  }
+  renderCrumb(view.id, inThread ? shown[0] : undefined, threads);
+  dom.loadEarlier.hidden = !cache.hasEarlier || !!inThread;
 
   const nodes: HTMLElement[] = [];
   let lastDay = "";
   let previous: Message | undefined;
-  for (const message of cache.messages) {
+  for (const message of shown) {
     const day = dayKey(message.createdAt);
     if (day !== lastDay) {
       nodes.push(h("li", "day-divider", dayFormat.format(message.createdAt)));
       lastDay = day;
-      previous = undefined;
     }
     const continued =
-      previous !== undefined && previous.from === message.from && message.createdAt - previous.createdAt < 5 * 60_000;
-    nodes.push(renderMessage(message, continued));
+      previous !== undefined && dayKey(previous.createdAt) === day && previous.from === message.from && message.createdAt - previous.createdAt < 5 * 60_000;
+    const li = renderMessage(message, continued, previous?.seq);
+    if (threads && !inThread) threadBar(li, view.id, message, threads);
+    nodes.push(li);
     previous = message;
   }
-  seenLine(cache.messages.at(-1), nodes.at(-1));
+  seenLine(shown.at(-1), nodes.at(-1));
   dom.messageList.replaceChildren(...nodes);
+  if (inThread) markThreadRead(view.id, shown[0]!.seq, shown.at(-1)!.seq);
   renderSpeaking();
   updateJump();
 }
@@ -197,34 +208,99 @@ export function renderMessages(): void {
 /**
  * A new newest message of the open conversation, added at the end instead of drawing the whole list again: drawing
  * every message and laying the list out anew for each arrival made a busy room slower by the minute, until typing
- * froze (Ümit #14171; Safari's engine on a copy of #agent hub: 0.2 → 0.6 s stalls in 3 minutes). False when it is not
- * simply the next one (then the caller draws the list).
+ * froze (Ümit #14171; Safari's engine on a copy of #agent hub: 0.2 → 0.6 s stalls in 3 minutes). With threads on, a
+ * reply into a thread the room shows folded only redraws that thread's bar. False when it is neither (then the caller
+ * draws the list).
  */
 export function appendMessage(message: Message): boolean {
   const view = state.view;
-  const messages = view.kind === "conversation" ? state.caches.get(view.id)?.messages : undefined;
-  if (!messages || messages.at(-1)?.seq !== message.seq || messages.length < 2) return false;
+  if (view.kind !== "conversation") return false;
+  const messages = state.caches.get(view.id)?.messages;
+  if (!messages || messages.at(-1)?.seq !== message.seq || !dom.messageEmpty.hidden) return false;
+  const { shown, threads } = displayed(messages);
+  if (shown.at(-1)?.seq !== message.seq) {
+    // Folded into a thread of the room: only its root's bar changes.
+    const root = threads?.rootOf.get(message.seq);
+    const rootLi = root === undefined ? null : dom.messageList.querySelector<HTMLElement>(`:scope > .msg[data-seq="${root}"]`);
+    const rootMessage = messages.find((m) => m.seq === root);
+    if (!threads || !rootLi || !rootMessage || state.thread !== undefined) return false;
+    threadBar(rootLi, view.id, rootMessage, threads);
+    return true;
+  }
+  const previous = shown.at(-2);
   const lastLi = dom.messageList.querySelector<HTMLElement>(":scope > .msg:last-of-type");
-  const previous = messages.at(-2)!;
-  if (!lastLi || Number(lastLi.dataset.seq) !== previous.seq || !dom.messageEmpty.hidden) return false;
+  if (!previous || !lastLi || Number(lastLi.dataset.seq) !== previous.seq) return false;
   const nodes: HTMLElement[] = [];
   const newDay = dayKey(message.createdAt) !== dayKey(previous.createdAt);
   if (newDay) nodes.push(h("li", "day-divider", dayFormat.format(message.createdAt)));
   const continued = !newDay && previous.from === message.from && message.createdAt - previous.createdAt < 5 * 60_000;
-  const li = renderMessage(message, continued);
+  const li = renderMessage(message, continued, previous.seq);
+  if (threads && state.thread === undefined) threadBar(li, view.id, message, threads);
   nodes.push(li);
   lastLi.querySelector(":scope > .msg-seen")?.remove();
   seenLine(message, li);
   dom.messageList.append(...nodes);
+  if (threads && state.thread !== undefined) {
+    markThreadRead(view.id, state.thread, message.seq);
+    renderCrumb(view.id, shown[0], threads);
+  }
   renderSpeaking();
   updateJump();
   return true;
 }
 
+/** A thread root's bar in the room: how many replies, how many new, who wrote last; a click or Enter opens it. */
+function threadBar(li: HTMLElement, conversationId: string, root: Message, threads: Threads): void {
+  li.querySelector(":scope > .thread-bar")?.remove();
+  const replies = threads.replies.get(root.seq);
+  if (!replies || replies.length === 0) return;
+  const fresh = newReplies(conversationId, root.seq, replies);
+  const last = replies.at(-1)!;
+  const bar = h("button", fresh > 0 ? "thread-bar thread-bar-new" : "thread-bar");
+  bar.type = "button";
+  const count = `${replies.length} ${replies.length === 1 ? "reply" : "replies"}`;
+  bar.append(
+    h("span", "thread-count", `↳ ${count}`),
+    ...(fresh > 0 ? [h("span", "thread-new", `${fresh} new`)] : []),
+    h("span", "thread-last", `last @${last.from} ${timeFormat.format(last.createdAt)}`)
+  );
+  bar.title = `Open the thread: ${count}${fresh > 0 ? `, ${fresh} new` : ""}`;
+  bar.setAttribute("aria-label", `Open the thread of #${root.seq}: ${count}${fresh > 0 ? `, ${fresh} new` : ""}`);
+  bar.addEventListener("click", (event) => {
+    event.stopPropagation();
+    location.hash = threadHash(conversationId, root.seq);
+  });
+  const actions = li.querySelector(":scope > .msg-actions");
+  if (actions) actions.before(bar);
+  else li.append(bar);
+}
+
+/** Above an open thread: "‹ #room › thread of @x: …", the room a click (or Enter) away (Can #14203). */
+function renderCrumb(conversationId: string, root: Message | undefined, threads: Threads | undefined): void {
+  dom.threadCrumb.hidden = !root;
+  if (!root) return dom.threadCrumb.replaceChildren();
+  const conv = state.conversations.get(conversationId);
+  const back = h("button", "link-btn thread-back", `‹ ${conv ? conversationTitle(conv) : "the room"}`);
+  back.type = "button";
+  back.title = "Back to the room (Esc)";
+  back.addEventListener("click", () => {
+    location.hash = viewHash({ kind: "conversation", id: conversationId });
+  });
+  const words = root.text.replace(/\s+/g, " ").trim();
+  const n = threads?.replies.get(root.seq)?.length ?? 0;
+  dom.threadCrumb.replaceChildren(
+    back,
+    h("span", "thread-sep", "›"),
+    h("span", "thread-title", `Thread of @${root.from}: ${words.length > 60 ? `${words.slice(0, 59)}…` : words || "(file)"}`),
+    h("span", "thread-meta", `${n} ${n === 1 ? "reply" : "replies"}`)
+  );
+}
+
 /** Someone saw the conversation (Ümit #12323): only the newest message's "Seen by" line changes. */
 export function updateSeenLine(): void {
   const view = state.view;
-  const last = view.kind === "conversation" ? state.caches.get(view.id)?.messages.at(-1) : undefined;
+  const cache = view.kind === "conversation" ? state.caches.get(view.id) : undefined;
+  const last = cache ? displayed(cache.messages).shown.at(-1) : undefined;
   const li = last ? dom.messageList.querySelector<HTMLElement>(`:scope > .msg[data-seq="${last.seq}"]`) : null;
   if (!last || !li) return;
   li.querySelector(":scope > .msg-seen")?.remove();
@@ -246,7 +322,8 @@ function seenLine(last: Message | undefined, li: HTMLElement | undefined): void 
   else li.append(line);
 }
 
-function renderMessage(message: Message, continued: boolean): HTMLLIElement {
+/** `previousSeq`: the message shown just above it; a reply to that one needs no quote (Can #14203). */
+function renderMessage(message: Message, continued: boolean, previousSeq?: number): HTMLLIElement {
   const human = message.fromKind === "human";
   const li = h("li", `msg ${human ? "msg-human" : "msg-agent"}`);
   if (message.from === state.me) li.classList.add("msg-mine");
@@ -335,7 +412,9 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
     tapOpen(li, message.seq, !again, actions);
   });
 
-  if (message.quote) li.append(renderQuote(message.quote));
+  // A reply to the message right above it shows no quote of it (Can #14203); one to a paragraph keeps it, since it
+  // says which part (codex-ui #14204).
+  if (message.quote && (message.quote.seq !== previousSeq || message.quote.part)) li.append(renderQuote(message.quote));
   if (deleted) {
     li.classList.add("msg-deleted");
     const gone = h("div", "msg-text msg-deleted-text", "Message deleted");

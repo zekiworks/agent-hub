@@ -11,7 +11,7 @@ export function viewHash(view: View): string {
 
 export function parseHash(): View {
   const hash = location.hash;
-  const conv = /^#\/c\/(.+)$/.exec(hash);
+  const conv = /^#\/c\/(.+?)(?:\/t\/\d+)?$/.exec(hash);
   if (conv?.[1]) return { kind: "conversation", id: decodeURIComponent(conv[1]) };
   const project = /^#\/p\/(.+)$/.exec(hash);
   if (project?.[1]) return { kind: "draft", to: [], project: decodeURIComponent(project[1]) };
@@ -21,6 +21,17 @@ export function parseHash(): View {
     if (to.length > 0) return { kind: "draft", to };
   }
   return { kind: "conversation", id: ALL_CONVERSATION_ID };
+}
+
+/** A thread's root in the address (#/c/<room>/t/<n>; threads.ts), or undefined. */
+export function parseThread(): number | undefined {
+  const n = Number(/^#\/c\/.+\/t\/(\d+)$/.exec(location.hash)?.[1]);
+  return Number.isSafeInteger(n) && n > 0 ? n : undefined;
+}
+
+/** The address of thread `root` of conversation `id`. */
+export function threadHash(id: string, root: number): string {
+  return `#/c/${encodeURIComponent(id)}/t/${root}`;
 }
 
 export function navigate(view: View): void {

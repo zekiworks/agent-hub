@@ -11,6 +11,8 @@ import { setSuggestionsOn, suggestionBox, suggestionsOn } from "./suggest";
 import { askAgentOn, recipientBox, setAskAgentOn } from "./ask";
 import { autoSendMs, chosenMicrophone, microphones, setAutoSendMs, setChosenMicrophone } from "./voice";
 import { pushState, testPush, turnPushOff, turnPushOn, type PushState } from "./push";
+import { setThreadsOn, threadsOn } from "./threads";
+import { hooks } from "./hooks";
 
 type EnglishSpeech = NonNullable<AgentSettings["englishSpeech"]>;
 
@@ -239,9 +241,36 @@ function routingSetting(): HTMLElement {
       "dialog-hint",
       "Off: those lines appear when you hover or tap a message. Messages still waiting, held or expired always show " +
         "theirs. Only this browser; nothing changes for who gets or is woken by a message."
-    )
+    ),
+    threadsSetting()
   );
   return section;
+}
+
+/** Threads (Can #14203): reply chains as child conversations of the room; this browser only. */
+function threadsSetting(): HTMLElement {
+  const box = h("input");
+  box.type = "checkbox";
+  box.checked = threadsOn();
+  box.addEventListener("change", () => {
+    setThreadsOn(box.checked);
+    // The room as it is shown changes now; an open thread closes when they go off.
+    if (!box.checked && state.thread !== undefined && state.view.kind === "conversation") location.hash = `#/c/${encodeURIComponent(state.view.id)}`;
+    else hooks.applyView(state.view);
+  });
+  const label = h("label", "settings-check");
+  label.append(box, " Threads: show reply chains as threads of the room");
+  const wrap = h("div");
+  wrap.append(
+    label,
+    h(
+      "p",
+      "dialog-hint",
+      "A message with replies shows \"↳ 3 replies\" in the room; a click opens the chain on its own, under a way back to " +
+        "the room (or Esc). Writing there answers the chain. Built from the messages the page has loaded. Only this browser."
+    )
+  );
+  return wrap;
 }
 
 /**

@@ -71,6 +71,8 @@ export const state = {
   replyTo: undefined as Message | undefined,
   /** The paragraph of it the reply answers, as shown, when one was framed at ↩ (Ümit #13981); undefined: all of it. */
   replyPart: undefined as string | undefined,
+  /** The thread open in the main pane (its root message's number; threads.ts), from the address's /t/<n>. */
+  thread: undefined as number | undefined,
   /**
    * A checklist item the next send answers (↩ on the item): shown above the box and put in front of the message as a
    * quote when it is sent, never written into the box (Ümit #11598, codex-ui #11599).

@@ -424,7 +424,7 @@ function expiresAt(row: MessageRow): number {
 /** The quote of a reply to a part of a message (a paragraph; Ümit #13981): that part, not the message's beginning. */
 function partOf(quote: Quote | undefined, part: string | null): Quote | undefined {
   if (!quote || part === null) return quote;
-  return { ...quote, text: part.length > QUOTE_TEXT_CHARS ? `${part.slice(0, QUOTE_TEXT_CHARS - 1)}…` : part };
+  return { ...quote, text: part.length > QUOTE_TEXT_CHARS ? `${part.slice(0, QUOTE_TEXT_CHARS - 1)}…` : part, part: true };
 }
 
 function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefined, forwards: MessageForward[] = []): Message {

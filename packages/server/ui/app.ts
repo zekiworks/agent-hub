@@ -18,7 +18,8 @@ import { closeMention, updateMention } from "./mentions";
 import { setDetails, setPhoneList, wasOnPhoneList } from "./phones";
 import { askProfile } from "./profile";
 import { applyReceipt, pulseUnread, renderAll, renderMessages, showEmpty, updateSeenLine } from "./render";
-import { navigate, parseHash, viewHash } from "./routing";
+import { navigate, parseHash, parseThread, threadHash, viewHash } from "./routing";
+import { threadsOf, threadsOn } from "./threads";
 import "./send";
 import "./convmenu";
 import { checklistChanged } from "./checklist";
@@ -63,17 +64,24 @@ function resolveView(view: View): View {
  */
 const readingAt = new Map<string, number>();
 
+/** The place a view is kept under in readingAt: the conversation, or one thread of it. */
+const placeKey = (view: View, thread: number | undefined): string => `${viewHash(view)}${thread === undefined ? "" : `/t/${thread}`}`;
+
 function applyView(view: View): void {
   const resolved = resolveView(view);
   if (resolved !== view) {
     history.replaceState(null, "", viewHash(resolved));
   }
-  const changed = viewHash(resolved) !== viewHash(state.view);
+  // A thread of the conversation (threads.ts; Can #14203): its own place, so the room's is kept for coming back.
+  const thread = resolved.kind === "conversation" ? parseThread() : undefined;
+  const changed = placeKey(resolved, thread) !== placeKey(state.view, state.thread);
   if (changed && state.view.kind === "conversation") {
-    if (nearBottom()) readingAt.delete(state.view.id);
-    else readingAt.set(state.view.id, dom.messageScroll.scrollTop);
+    const key = placeKey(state.view, state.thread);
+    if (nearBottom()) readingAt.delete(key);
+    else readingAt.set(key, dom.messageScroll.scrollTop);
   }
   state.view = resolved;
+  state.thread = thread;
   if (resolved.kind === "conversation") {
     // What was unread pulses once as I arrive, and its banners fade with it (Can #11976).
     if (changed && (state.unread.get(resolved.id) ?? 0) > 0) pulseUnread(resolved.id, state.readAt[resolved.id] ?? 0);
@@ -94,7 +102,7 @@ function applyView(view: View): void {
   renderAll();
   if (changed) {
     loadDraft();
-    const at = resolved.kind === "conversation" && state.caches.has(resolved.id) ? readingAt.get(resolved.id) : undefined;
+    const at = resolved.kind === "conversation" && state.caches.has(resolved.id) ? readingAt.get(placeKey(resolved, thread)) : undefined;
     if (at === undefined) scrollToBottom();
     else dom.messageScroll.scrollTop = at;
   }
@@ -182,9 +190,20 @@ async function showMessage(seq: number): Promise<void> {
   for (;;) {
     const cache = state.caches.get(id);
     const first = cache?.messages[0]?.seq;
-    if (shownMessage(seq) || !cache?.hasEarlier || !isCurrent(id) || first === undefined || first < seq) break;
+    if (cache?.messages.some((m) => m.seq === seq) || !cache?.hasEarlier || !isCurrent(id) || first === undefined || first < seq) break;
     await loadEarlier();
     if (state.caches.get(id)?.messages[0]?.seq === first) break; // the page failed to load
+  }
+  // With threads on, a message folded into a thread opens that thread; a room message, the room (Can #14203).
+  const cache = state.caches.get(id);
+  if (threadsOn() && cache?.messages.some((m) => m.seq === seq)) {
+    const root = threadsOf(cache.messages).rootOf.get(seq) ?? seq;
+    // A reply is only in its thread; a root is in the room, and in its own thread when that is open.
+    const want = root !== seq ? root : state.thread === seq ? seq : undefined;
+    if (want !== state.thread) {
+      history.pushState(null, "", want === undefined ? viewHash({ kind: "conversation", id }) : threadHash(id, want));
+      applyView({ kind: "conversation", id });
+    }
   }
   const target = shownMessage(seq);
   if (target) flashMessage(target);
