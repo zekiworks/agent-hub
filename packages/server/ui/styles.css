@@ -1137,12 +1137,18 @@ button:disabled {
   border-bottom: 1px solid #000;
 }
 
-/* Opened from the Home Screen (no Safari bar), the top row sat right under the iPhone's clock (Ümit #13996): a little
-   room above it there, for the list's top bar and a conversation's tab row alike. */
+/* Opened from the Home Screen (no Safari bar), the top row sat right under the iPhone's clock and its rows were packed
+   (Ümit #13996, #14006): room above it and between its rows there, for the list's top bar and a conversation's tab
+   row alike. */
 @media (display-mode: standalone) {
-  .topbar,
-  .tab-row {
-    padding-top: 14px;
+  html .topbar,
+  html .tab-row {
+    padding-top: 28px;
+  }
+  /* `html` so it wins over the phone layout's own gap further down. */
+  html .topbar {
+    row-gap: 16px;
+    padding-bottom: 14px;
   }
 }
 
