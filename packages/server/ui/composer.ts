@@ -8,14 +8,7 @@ import { conversationTitle, state } from "./state";
 
 export function showError(text: string): void {
   dom.composerError.textContent = text;
-  dom.composerError.classList.remove("composer-note");
   dom.composerError.hidden = false;
-}
-
-/** A plain note in the error's place (a slash command's answer), not red. */
-export function showNote(text: string): void {
-  showError(text);
-  dom.composerError.classList.add("composer-note");
 }
 
 export function hideError(): void {

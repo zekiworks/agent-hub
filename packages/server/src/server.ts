@@ -27,7 +27,6 @@ import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
 import { forwardExtension } from "./extensions";
 import { getBoxUsage, postBox, postBoxReport, type BoxExtension } from "./boxes";
-import { postCommand } from "./commands";
 import { getTasks, taskAction } from "./tasks";
 import { postSpeech } from "./speech";
 import { WebPush } from "./push";
@@ -61,8 +60,6 @@ export interface BusServerOptions {
   launchers?: Record<string, string>;
   /** Which of them are a tab on every agent's page: name → its label (`--ext status=…,agents=Home`; Can #14261). */
   agentTabs?: Record<string, string>;
-  /** Slash commands: command → the extension (of `extensions`) that answers it (`--ext status=…,commands=status-update`). */
-  commands?: Record<string, string>;
   /** Services the message box asks, not Workspace pages (`--ext complete=URL,box=complete`; Can #12853). */
   boxes?: Record<string, BoxExtension>;
   /** This bus's name and pictures on the website (`--brand-name "Team Hub" --brand-logo FILE --brand-icon FILE`). */
@@ -230,7 +227,6 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
         ...(options.extensions && Object.keys(options.extensions).length > 0 ? { extensions: Object.keys(options.extensions) } : {}),
         ...(options.launchers && Object.keys(options.launchers).length > 0 ? { launchers: options.launchers } : {}),
         ...(options.agentTabs && Object.keys(options.agentTabs).length > 0 ? { agentTabs: options.agentTabs } : {}),
-        ...(options.commands && Object.keys(options.commands).length > 0 ? { commands: Object.keys(options.commands) } : {}),
         ...(options.boxes && Object.keys(options.boxes).length > 0
           ? { boxes: Object.fromEntries(Object.entries(options.boxes).map(([name, box]) => [name, box.role])) }
           : {}),
@@ -292,11 +288,6 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     if (method === "POST" && pathname === "/api/speech") return await postSpeech(req, options.ttsUrl);
     const boxMatch = /^\/api\/box\/([a-z0-9][a-z0-9_-]*)$/.exec(pathname);
     if (method === "POST" && boxMatch?.[1]) return json(await postBox(ctx, req, boxMatch[1], options.boxes ?? {}, viewer.kind === "human" ? viewer.id : undefined));
-    const commandMatch = /^\/api\/commands\/([a-z][a-z0-9-]*)$/.exec(pathname);
-    if (method === "POST" && commandMatch?.[1]) {
-      const person = viewer.kind === "human" ? viewer.id : undefined;
-      return json(await postCommand(ctx, req, commandMatch[1], options.commands ?? {}, options.extensions ?? {}, person));
-    }
     const boxReportMatch = /^\/api\/box\/([a-z0-9][a-z0-9_-]*)\/(report|usage)$/.exec(pathname);
     if (boxReportMatch?.[1]) {
       const person = viewer.kind === "human" ? viewer.id : undefined;

@@ -85,10 +85,39 @@ async function load(): Promise<void> {
       ? `@${agent} is asked for an update every ${Math.round(data.every / 60000)} min; last asked ${time(data.asked)}.`
       : `@${agent} has not been asked yet; the first ask goes out at the top of the hour.`;
     const entry = (u: Update) => (u.noUpdatesSince === undefined ? pane(u) : el("p", "no-updates", `No updates since ${time(u.noUpdatesSince)}`));
-    panes.replaceChildren(head, ...(data.updates.length === 0 ? [el("p", "note", "No updates yet.")] : data.updates.map(entry)));
+    const entries = data.updates.map(entry);
+    panes.replaceChildren(head, ...(entries.length === 0 ? [el("p", "note", "No updates yet.")] : entries));
+    watchNewest(entries[0], data.updates[0]?.seq);
   } catch (error) {
     panes.replaceChildren(el("p", "note", `Could not load the updates: ${error instanceof Error ? error.message : String(error)}`));
   }
+}
+
+/** How long the newest update stays on screen, the page in front, before it counts as seen. */
+const SEEN_MS = 1500;
+let watcher: IntersectionObserver | undefined;
+let reported = 0;
+let timer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Tells the extension once a person has had the newest update on screen (Can #14339: the agent is asked for the next
+ * one only after that). A Workspace tab not shown, or a page in the background, sees nothing.
+ */
+function watchNewest(node: HTMLElement | undefined, seq: number | undefined): void {
+  watcher?.disconnect();
+  clearTimeout(timer);
+  if (!node || seq === undefined || seq <= reported) return;
+  watcher = new IntersectionObserver((records) => {
+    clearTimeout(timer);
+    if (!records.some((r) => r.isIntersecting) || document.visibilityState !== "visible") return;
+    timer = setTimeout(() => {
+      if (document.visibilityState !== "visible") return;
+      reported = seq;
+      watcher?.disconnect();
+      void fetch(`seen?agent=${encodeURIComponent(agent)}&seq=${seq}`);
+    }, SEEN_MS);
+  });
+  watcher.observe(node);
 }
 
 void load();

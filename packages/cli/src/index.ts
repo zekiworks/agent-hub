@@ -70,7 +70,6 @@ serve:
                 NAME=URL: a tab of the project @@NAME and of agent NAME's DM (e.g. compactor=http://127.0.0.1:8899);
                 NAME=URL,launcher=LABEL: a global item opened from the top bar (e.g. gpudash=http://127.0.0.1:3420,launcher=GPUs);
                 NAME=URL,agents=LABEL: a tab LABEL on every agent's page, URL?agent=ID (e.g. status=http://127.0.0.1:7833,agents=Home);
-                ,commands=a;b also makes /a and /b slash commands, posted to URL/commands/a (e.g. …,commands=status-update)
   --tts-url     Text-to-speech server (llama-server with LFM3-Audio, e.g. http://127.0.0.1:9941): ▶ reads messages aloud
   --brand-name  The website's name instead of "Agent Hub" (e.g. "Team Hub"); --brand-logo: the header's mark and home-screen
                 icon (an image file); --brand-icon: the browser tab's icon (a small PNG)
@@ -158,18 +157,13 @@ function parseServeArgs(args: string[]): BusServerOptions {
         }
         (options.extensions ??= {})[name] = url;
         // ",agents=Label": a tab on every agent's page (its @@project and its DM), the frame told which agent with
-        // ?agent=ID (Can #14261); ",commands=a;b": slash commands people type, sent to URL/commands/<command>.
+        // ?agent=ID (Can #14261).
         for (const extra of extras) {
           const [key = "", label = ""] = extra.split(/=(.*)/s);
-          if (!label) throw new Error(`--ext ${name}: "${extra}" wants a value (launcher=Label, agents=Label, commands=a;b)`);
+          if (!label) throw new Error(`--ext ${name}: "${extra}" wants a value (launcher=Label or agents=Label)`);
           if (key === "launcher") (options.launchers ??= {})[name] = label;
           else if (key === "agents") (options.agentTabs ??= {})[name] = label;
-          else if (key === "commands") {
-            for (const command of label.split(";")) {
-              if (!/^[a-z][a-z0-9-]*$/.test(command)) throw new Error(`--ext ${name}: command "${command}" (lowercase letters, digits, -)`);
-              (options.commands ??= {})[command] = name;
-            }
-          } else throw new Error(`--ext ${name}: unknown option "${extra}" (launcher=, agents=, commands= or box=)`);
+          else throw new Error(`--ext ${name}: unknown option "${extra}" (launcher=, agents= or box=)`);
         }
         break;
       }

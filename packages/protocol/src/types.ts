@@ -505,8 +505,6 @@ export interface StateResponse {
   /** Among the pages, those shown on every agent's page (`--ext name=url,agents=Home`; Can #14261): name → tab label.
    * The frame gets ?agent=<id> of the agent whose project or DM is open. */
   agentTabs?: Record<string, string>;
-  /** Slash commands people type in the message box (`--ext name=url,commands=a;b`): POST /api/commands/<command>. */
-  commands?: string[];
   /** The bus books GPUs (`serve --gpudash URL`): the website offers GPU booking under Tools. */
   gpuBooking?: true;
   /** The signed-in person's own bookmarks (Can #11065), newest first; only people have them. */
@@ -898,29 +896,6 @@ export interface BoxRecipientResponse {
   recipient: string | null;
   /** The model's probability for that choice, 0–1 (the extension's cut-off is already applied). */
   confidence?: number;
-}
-
-/** POST /api/commands/:command: a person's slash command (`/status-update …`) typed in `conversationId` (Can #14261). */
-export interface CommandRequest {
-  conversationId: string;
-  /** What follows the command's name. */
-  text: string;
-}
-
-/** What the bus posts to `<extension URL>/commands/<command>` for a person's slash command; nothing is stored. */
-export interface CommandBody {
-  v: 1;
-  command: string;
-  caller: { id: string; kind: "human" };
-  conversation: { id: string; kind: ConversationKind; name?: string; members: string[] };
-  /** The agent whose page it was typed on: its DM, or its project @@<id>. */
-  agent?: string;
-  text: string;
-}
-
-/** The extension's answer, shown to the person under the message box. */
-export interface CommandResponse {
-  note: string;
 }
 
 /**

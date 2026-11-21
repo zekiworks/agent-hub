@@ -1,19 +1,18 @@
 // The status extension (Can #14261): every hour one message to every online agent asking for an update since its last
 // one (it wakes nobody: agents read it at their next turn), and each agent's replies shown on the Home tab of its page
-// in the Workspace, newest first, as panes. One timer for the whole extension. A person's `/status-update` asks now,
-// waking the agent.
+// in the Workspace, newest first, as panes. One timer for the whole extension.
 //
 //   STATUS_PORT=7833 BUS_URL=http://127.0.0.1:7800 bun run packages/status-ext/src/server.ts
-//   agent-bus serve … --ext 'status=http://127.0.0.1:7833,agents=Home,commands=status-update'
+//   agent-bus serve … --ext 'status=http://127.0.0.1:7833,agents=Home'
 //
 // On the bus it is the agent @status (it joins by name with this machine's agent token); its DMs with each agent hold
 // the asks and the updates. It keeps them in <data dir>/status/status.sqlite. It listens on 127.0.0.1 only: the bus
-// forwards the Home page (GET) and posts the slash command; the worst another local process can do is ask for updates.
+// forwards the Home page to signed-in people (GET only).
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import type { CommandBody, Message, PostMessageResponse, StateResponse } from "@agent-bus/protocol";
+import type { Message, PostMessageResponse, StateResponse } from "@agent-bus/protocol";
 
 const PORT = Number(process.env.STATUS_PORT ?? 7833);
 const BUS = (process.env.BUS_URL ?? "http://127.0.0.1:7800").replace(/\/+$/, "");
@@ -37,6 +36,10 @@ db.exec(`
 if (!db.query("SELECT 1 FROM pragma_table_info('updates') WHERE name = 'no_updates_since'").get()) {
   db.exec("ALTER TABLE updates ADD COLUMN no_updates_since INTEGER");
 }
+// When a person first saw it on the Home tab (Can #14339: an agent is not asked again while its last update is unseen).
+if (!db.query("SELECT 1 FROM pragma_table_info('updates') WHERE name = 'seen_at'").get()) {
+  db.exec("ALTER TABLE updates ADD COLUMN seen_at INTEGER");
+}
 
 const headers = { "Content-Type": "application/json", "X-Agent-Token": TOKEN };
 
@@ -46,10 +49,10 @@ async function bus<T>(route: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** The agents to ask: every agent on the bus but this one (`online`: only those connected now). */
-async function agents(online: boolean): Promise<string[]> {
+/** The agents to ask: every agent connected to the bus now, but this one. */
+async function agents(): Promise<string[]> {
   const s = await bus<StateResponse>(`/api/state?as=${ID}`);
-  return s.participants.filter((p) => p.kind === "agent" && p.id !== ID && p.id !== "resources" && (!online || p.online)).map((p) => p.id);
+  return s.participants.filter((p) => p.kind === "agent" && p.id !== ID && p.id !== "resources" && p.online).map((p) => p.id);
 }
 
 function lastUpdate(agent: string): number | undefined {
@@ -60,35 +63,42 @@ function lastUpdate(agent: string): number | undefined {
 
 const when = (at: number) => new Date(at).toLocaleString("en-GB", { timeZone: "Europe/Berlin", dateStyle: "medium", timeStyle: "short" });
 
-/** One ask to `agent`: waking only when a person asked for it now. */
-async function ask(agent: string, wake: boolean): Promise<number> {
+/** One ask to `agent`; it wakes nobody. */
+async function ask(agent: string): Promise<void> {
   const last = lastUpdate(agent);
   const text =
     `Status update, please: what changed since ${last ? `your last update (${when(last)})` : "you started"}? ` +
     "Reply to this message (op=reply) with it, newest first. It shows on your Home tab in Agent Hub, as a pane people " +
     "read rather than a chat message: present numbers in a table, include links, and put a graph in by attaching the " +
-    "image and writing /inline{#1} where it goes. Nothing changed since then? Reply with just NO_UPDATES." +
-    (wake ? "" : " (This wakes nobody: answer at your next turn.)");
+    "image and writing /inline{#1} where it goes. Nothing changed since then? Reply with just NO_UPDATES. " +
+    "(This wakes nobody: answer at your next turn.)";
   const res = await bus<PostMessageResponse>("/api/messages", {
     method: "POST",
-    body: JSON.stringify({ from: ID, to: `@${agent}`, text, wake: wake ? [agent] : [], holdHours: 2 }),
+    body: JSON.stringify({ from: ID, to: `@${agent}`, text, wake: [], holdHours: 2 }),
   });
-  db.query("INSERT OR REPLACE INTO asks (seq, agent, at, woke) VALUES (?1, ?2, ?3, ?4)").run(res.message.seq, agent, Date.now(), wake ? 1 : 0);
-  return res.message.seq;
+  db.query("INSERT OR REPLACE INTO asks (seq, agent, at, woke) VALUES (?1, ?2, ?3, 0)").run(res.message.seq, agent, Date.now());
 }
 
 /** How long an unanswered ask stands before the agent is asked again: asks do not pile up in an idle agent's inbox. */
 const UNANSWERED_MS = 24 * 3_600_000;
 
-/** The hourly round: one ask to each online agent that answered its last ask (or was asked a day ago). The one timer. */
+/**
+ * The hourly round, the one timer: one ask to each online agent, except one whose latest update nobody has seen yet on
+ * its Home tab (Can #14339: no new update while the last one is unread) and one whose last ask is unanswered and less
+ * than a day old.
+ */
 async function round(): Promise<void> {
   try {
     const now = Date.now();
-    const due = (await agents(true)).filter((agent) => {
+    const due = (await agents()).filter((agent) => {
       const last = db.query<{ at: number; answered: number }, [string]>("SELECT at, answered FROM asks WHERE agent = ?1 ORDER BY seq DESC LIMIT 1").get(agent);
-      return !last || last.answered === 1 || now - last.at >= UNANSWERED_MS;
+      if (last && last.answered === 0 && now - last.at < UNANSWERED_MS) return false;
+      const update = db
+        .query<{ seen_at: number | null }, [string]>("SELECT seen_at FROM updates WHERE agent = ?1 AND no_updates_since IS NULL ORDER BY seq DESC LIMIT 1")
+        .get(agent);
+      return !update || update.seen_at !== null;
     });
-    for (const agent of due) await ask(agent, false).catch((e) => console.error(`ask @${agent}: ${e}`));
+    for (const agent of due) await ask(agent).catch((e) => console.error(`ask @${agent}: ${e}`));
     console.log(`${new Date().toISOString()} asked ${due.length} agents`);
   } catch (error) {
     console.error(`round: ${error}`);
@@ -183,20 +193,11 @@ Bun.serve({
       const res = await fetch(`${BUS}/api/files/${file}?as=${ID}`, { headers: { "X-Agent-Token": TOKEN } });
       return new Response(res.body, { status: res.status, headers: { "Content-Type": res.headers.get("content-type") ?? "application/octet-stream" } });
     }
-    // A person's /status-update (Can #14261), posted by the bus with who and where (CommandBody): on an agent's page it
-    // asks that agent now, waking it; elsewhere it asks the agents the text names.
-    const command = /^\/commands\/([a-z][a-z0-9-]*)$/.exec(url.pathname)?.[1];
-    if (command === "status-update" && req.method === "POST") {
-      const body = (await req.json()) as CommandBody;
-      const named = [...body.text.matchAll(/@([a-z0-9][a-z0-9@._-]*)/gi)].map((m) => m[1]!.toLowerCase());
-      const wanted = body.agent ? [body.agent] : named;
-      if (wanted.length === 0) return Response.json({ note: "Type /status-update on an agent's page, or name agents: /status-update @logic @jack" });
-      const known = new Set(await agents(false));
-      const unknown = wanted.filter((id) => !known.has(id));
-      if (unknown.length > 0) return Response.json({ error: `No agent ${unknown.map((id) => `@${id}`).join(", ")}` }, { status: 404 });
-      for (const id of wanted) await ask(id, true);
-      const list = wanted.map((id) => `@${id}`).join(", ");
-      return Response.json({ note: `Asked ${list} for a status update now; it shows on the Home tab when it comes.` });
+    // The Home tab showed this agent's updates up to `seq` to a person (page.ts: on screen, page in front).
+    if (url.pathname === "/seen") {
+      const seq = Number(url.searchParams.get("seq"));
+      if (Number.isSafeInteger(seq)) db.query("UPDATE updates SET seen_at = ?3 WHERE agent = ?1 AND seq <= ?2 AND seen_at IS NULL").run(agent, seq, Date.now());
+      return Response.json({ ok: true });
     }
     return new Response("Not found", { status: 404 });
   },

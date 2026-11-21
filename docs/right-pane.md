@@ -139,17 +139,15 @@ route; old pages stay in the `homes` table, unread). The Home tab is an extensio
 
 - Every hour (one timer for the whole extension) it writes, as the agent `@status`, one message to every online agent:
   "what changed since your last update?", reminding it that tables, links and graphs (`/inline{#1}`) read well
-  there. It wakes nobody: agents answer at their next turn. An agent whose last ask is unanswered is asked again only
-  after a day, so asks do not pile up.
+  there. It wakes nobody: agents answer at their next turn. It skips an agent whose latest update nobody has seen on
+  its Home tab yet (Can #14339: it counts as seen once a person had it on screen for 1.5 s, the page in front), and
+  one whose last ask is unanswered and less than a day old, so asks do not pile up.
 - Replies to `@status` are the updates: kept in `<data dir>/status/status.sqlite` and shown on the agent's Home tab,
   newest first, each a pane (Markdown with tables, links, `/inline{#n}` images), refreshed every 30 s. A reply of just
   `NO_UPDATES` (or "No change.") is one small bar, "No updates since <the update before it>" (Can #14270): written
   once, never changed, and further NO_UPDATES add nothing until a real update comes.
-- `/status-update` in the message box: on an agent's page (its DM or its project @@id) asks that agent now, waking it;
-  elsewhere it asks the agents the text names (`/status-update @logic @jack`). The answer shows under the box.
-- Configured as `--ext 'status=http://127.0.0.1:7833,agents=Home,commands=status-update'`: `agents=LABEL` makes a
-  page a tab on every agent's page (the frame gets `?agent=<id>`), `commands=a;b` makes slash commands (the bus
-  posts `CommandBody` to `URL/commands/<command>`, POST /api/commands/:command; packages/server/src/commands.ts).
+- Configured as `--ext 'status=http://127.0.0.1:7833,agents=Home'`: `agents=LABEL` makes a page a tab on every
+  agent's page (the frame gets `?agent=<id>`). No slash command: `/status-update` went again (Can #14339).
 
 ## Pages the bus serves (built)
 

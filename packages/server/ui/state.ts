@@ -46,8 +46,6 @@ export const state = {
   tabs: [] as string[],
   /** The bus's box extensions (`--ext name=url,box=complete`): name → role (suggest.ts asks a "complete" one). */
   boxes: {} as Record<string, BoxRole>,
-  /** The bus's slash commands (`--ext name=url,commands=a;b`; send.ts sends `/a …` to POST /api/commands/a). */
-  commands: [] as string[],
   caches: new Map<string, MessageCache>(),
   /** Conversations whose first page is being fetched → live messages received meanwhile. */
   loading: new Map<string, Message[]>(),
