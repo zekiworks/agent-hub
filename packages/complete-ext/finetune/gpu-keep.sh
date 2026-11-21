@@ -9,8 +9,9 @@ set -euo pipefail
 BOOKING=${1:-r_9e07e06d2fab}
 BUS=http://127.0.0.1:7800
 TOKEN=$(cat "$HOME/.agent-bus/agent-token")
-exec > >(tee -a "$HOME/.agent-bus/gpu-keep.log") 2>&1
-log() { echo "$(date '+%F %T') gpu-keep $BOOKING: $*"; }
+# Each line goes to the log file directly (and to systemd's journal): a `tee` behind `exec` died with the script under
+# systemd before writing, so the 00:00 extension reached the journal but not the file.
+log() { echo "$(date '+%F %T') gpu-keep $BOOKING: $*" | tee -a "$HOME/.agent-bus/gpu-keep.log"; }
 when() { date -d "@$(($1 / 1000))" '+%a %F %H:%M %Z'; }
 
 listing=$(curl -sf "$BUS/api/resources?as=message-bus" -H "X-Agent-Token: $TOKEN") || { log "the bus did not answer"; exit 1; }
