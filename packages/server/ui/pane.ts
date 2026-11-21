@@ -62,7 +62,11 @@ let before: Tab | undefined;
 try {
   const saved = JSON.parse(localStorage.getItem(PINNED_KEY) ?? "null") as { tabs: Tab[]; active: number } | null;
   if (saved && Array.isArray(saved.tabs)) {
-    tabs = saved.tabs.filter((t) => typeof t.ext === "string").map((t) => ({ ext: t.ext, view: t.view, pinned: true }));
+    // A Home tab pinned before 21 Nov was the bus's own Home ("home"); now Home is the status extension's tab (Can #14261,
+    // #14383: the refresh after that change dropped them).
+    tabs = saved.tabs
+      .filter((t) => typeof t.ext === "string")
+      .map((t) => ({ ext: t.ext === "home" ? "ext-status" : t.ext, view: t.view, pinned: true }));
     active = tabs[saved.active];
   }
 } catch {
