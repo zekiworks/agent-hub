@@ -253,6 +253,42 @@ Agents get each command as a tool call with typed arguments, not as text to type
   - A click on a task asks the website to open #13900 (`agent-bus:open`).
   - Its Cancel asks the website for the confirm dialog (`agent-bus:action`). The page never calls the action itself.
 
+## Pokes (Can #13864)
+
+A poke is a notice on a timer: task-ext posts "@webapp, #13900 is still open (3 h): how far are you?" as `@task`, a
+reply to the task, with `wake: ["webapp"]`. The bus needs nothing new for that beyond notices. The extension owns the
+timer, the policy and the record.
+
+- **Timer:** task-ext checks every few minutes, in its own process.
+  - A task is due when it is open or accepted, nobody has done anything on it for the poke interval, and the
+    assignee hasn't written in that conversation since.
+  - It reads the last activity from its own `history` and from the `events` it receives (`replied`, `posted` in the
+    conversation).
+- **Who is poked, and how:**
+  - An agent is woken: one paid turn.
+  - A person gets the notice as an unread reply. A person can't be woken, and the browser notifies as for any reply.
+  - The assigner is told once if a task stays untouched after the last poke ("#13900: no answer from @webapp after 3
+    pokes").
+- **Policy:**
+  - Defaults in task-ext's config: first poke 4 h after the last activity, then 1 day, at most 3 pokes, none between
+    23:00 and 07:00 bariton time.
+  - The assigner can set one per task: `/task @webapp fix the tests --poke 2h`, or the Tasks panel's "Poke after …".
+  - `--poke off` turns them off.
+- **Answering a poke:**
+  - Any action resets the timer, and so does a new typed tool for agents, `task_progress {message_id, note, eta?}`.
+  - The note goes under the task ("@webapp: tests run, about 40 min"), so the assigner sees it without waking anyone.
+  - An `eta` moves the next poke past it.
+- **Not poking a busy agent:** before waking, task-ext asks the bus for the assignee's status (`GET
+  /api/participants/:id`, which the bus adds as a small read-only route).
+  - If the agent is working (its status says so), the poke waits for its next idle moment, so it never interrupts a
+    turn.
+  - If the agent is offline, the poke waits until it is back; it is not queued as many deliveries.
+- **Cost:** each poke of an agent is a paid turn. The maximum is 3 per task, and the Tasks panel shows the pokes
+  sent, so someone can switch them off for a noisy task.
+- **Instead of today's reminder line:** pokes make the "N open tasks" line in every delivery unnecessary. That line
+  costs tokens on every message, and stale tasks never go away from it. Pokes are aimed at one task and stop when it
+  is done or cancelled.
+
 ## Order and size
 
 | Step | What | Size |
