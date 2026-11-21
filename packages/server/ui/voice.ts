@@ -490,7 +490,12 @@ dom.voiceBtn.addEventListener("pointerdown", (event) => {
     hideStatus();
     return;
   }
-  dom.voiceBtn.setPointerCapture(event.pointerId);
+  // A pointer the browser no longer counts as down can't be captured; the recording starts anyway.
+  try {
+    dom.voiceBtn.setPointerCapture(event.pointerId);
+  } catch {
+    // the window listeners below still hear the release
+  }
   held = true;
   void start();
 });
@@ -516,13 +521,24 @@ dom.voiceBtn.addEventListener("pointerup", (event) => {
   if (away) showStatus("Recording discarded: your finger let go away from 🎤. Tap 🎤 once, then ➤, to send without holding.");
 });
 
+// The phone took the touch away (a permission prompt, the microphone's dialog in a Home Screen app, a swipe): the
+// recording goes on as if 🎤 had been tapped, so ➤ sends it and 🗑 drops it. Throwing it away lost what she said
+// ("it stops", Ümit #14009, #14010).
 dom.voiceBtn.addEventListener("pointercancel", () => {
   held = false;
-  if (!state.voiceLatched) {
-    void stop(true);
-    showStatus("Recording discarded: the phone took the touch away. Tap 🎤 once, then ➤, to send without holding.");
-  }
+  if (!recording || state.voiceLatched) return;
+  setLatched(true);
+  showStatus("Still recording: tap ➤ to send it (🗑 drops it).");
 });
+// A release the button never heard (the touch went to a dialog in between): the same, so ➤ is never left grey with the
+// finger already off 🎤 (Ümit #14009).
+for (const type of ["pointerup", "touchend"] as const) {
+  window.addEventListener(type, () => {
+    if (!held) return;
+    held = false;
+    if (recording && !state.voiceLatched) setLatched(true);
+  });
+}
 dom.voiceBtn.addEventListener("contextmenu", (event) => event.preventDefault());
 
 dom.voiceDelete.addEventListener("click", () => void stop(true));
@@ -544,11 +560,11 @@ export function startVoiceReply(view: View, reply: Message): void {
   held = false;
   void start({ view, chosen: { reply, item: undefined } });
 }
-// Send during a click-started recording sends the recording (capture: before send.ts sends the typed text).
+// Send during a recording sends the recording (capture: before send.ts sends the typed text).
 dom.composer.addEventListener(
   "submit",
   (event) => {
-    if (!recording || !state.voiceLatched) return;
+    if (!recording) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     void stop(false);
