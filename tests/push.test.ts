@@ -152,3 +152,10 @@ test("only people subscribe, only to a browser's push service, with a real key",
     await strict.stop();
   }
 });
+
+test("a notification's text has no markdown marks (Ümit #14043)", async () => {
+  const { plainText } = await import("../packages/server/src/push");
+  expect(plainText("**hide ▴** while the agents show, see [the notes](https://x.y/z)\n\n> quoted\n- item `code`")).toBe(
+    "hide ▴ while the agents show, see the notes quoted item code"
+  );
+});

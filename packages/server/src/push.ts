@@ -6,7 +6,7 @@
 import type { Database } from "bun:sqlite";
 import { createECDH, createPrivateKey, generateKeyPairSync, hkdfSync, randomBytes, sign, createCipheriv, type KeyObject } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { mentionedIds, titledLabel, type Conversation, type Message, type PushPayload, type WebPushSubscription } from "@agent-bus/protocol";
+import { conversationLabel, mentionedIds, type Conversation, type Message, type PushPayload, type WebPushSubscription } from "@agent-bus/protocol";
 import { HttpError } from "./http";
 
 /** The push services browsers use; a subscription elsewhere is refused (the bus would POST to any address). */
@@ -90,9 +90,11 @@ export class WebPush {
   notify(message: Message, conversation: Conversation, isHuman: (id: string) => boolean): void {
     const people = this.peopleFor(message, conversation, isHuman);
     if (people.length === 0) return;
-    const where = conversation.kind === "dm" ? "" : ` · ${titledLabel(conversation)}`;
+    // Where, as the website names it: a room's or project's own title ("#agent hub"), else its address (Ümit #14043:
+    // '#hilde-hub ("#agent hub")' was not its name).
+    const where = conversation.kind === "dm" ? "" : ` · ${conversation.kind === "project" && conversation.title ? conversation.title : conversationLabel(conversation)}`;
     const files = message.files.length > 0 ? ` [${message.files.map((f) => f.name).join(", ")}]` : "";
-    const text = `${message.text}${files}`.replace(/\s+/g, " ").trim();
+    const text = plainText(`${message.text}${files}`);
     const payload: PushPayload = {
       title: `@${message.from}${where}`,
       body: text.length > BODY_CHARS ? `${text.slice(0, BODY_CHARS - 1)}…` : text,
@@ -195,4 +197,15 @@ export function encrypt(plaintext: Buffer, uaPublic: Buffer, authSecret: Buffer)
   header.writeUInt32BE(4096, 16);
   header.writeUInt8(asPublic.length, 20);
   return Buffer.concat([header, asPublic, sealed]);
+}
+
+/** A message as a notification shows it: no markdown marks (`**`, `#`, `>`, a link's address), one line. */
+export function plainText(markdown: string): string {
+  return markdown
+    .replace(/```[^\n]*\n?/g, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/(\*\*|__|`)/g, "")
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
