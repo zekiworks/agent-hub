@@ -29,6 +29,49 @@ const WAVE_STEP_MS = 60;
 const WAVE_BAR_PX = 3;
 const WAVE_GAP_PX = 2;
 
+/** This browser's microphone (a MediaDeviceInfo deviceId; none: the browser's default; Can #13887). */
+const MIC_KEY = "agent-bus.microphone";
+/** Send a click-started recording by itself after a pause this long, once something was said; 0: off (Can #13890, #13892). */
+const AUTO_SEND_KEY = "agent-bus.voiceAutoSendMs";
+
+export function chosenMicrophone(): string {
+  return localStorage.getItem(MIC_KEY) ?? "";
+}
+
+export function setChosenMicrophone(deviceId: string): void {
+  if (deviceId) localStorage.setItem(MIC_KEY, deviceId);
+  else localStorage.removeItem(MIC_KEY);
+}
+
+export function autoSendMs(): number {
+  const ms = Number(localStorage.getItem(AUTO_SEND_KEY));
+  return Number.isFinite(ms) && ms > 0 ? ms : 0;
+}
+
+export function setAutoSendMs(ms: number): void {
+  if (ms > 0) localStorage.setItem(AUTO_SEND_KEY, String(ms));
+  else localStorage.removeItem(AUTO_SEND_KEY);
+}
+
+/** The microphones the browser offers (their names only once the page was allowed the microphone). */
+export async function microphones(): Promise<MediaDeviceInfo[]> {
+  if (!navigator.mediaDevices?.enumerateDevices) return [];
+  return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+}
+
+/** The chosen microphone, else (none chosen, or it is not connected) the default; `fellBack` when the chosen one failed. */
+async function openMicrophone(): Promise<{ stream: MediaStream; fellBack: boolean }> {
+  const wanted = chosenMicrophone();
+  if (!wanted) return { stream: await navigator.mediaDevices.getUserMedia({ audio: true }), fellBack: false };
+  try {
+    return { stream: await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: wanted } } }), fellBack: false };
+  } catch (err) {
+    const name = err instanceof DOMException ? err.name : "";
+    if (name !== "NotFoundError" && name !== "OverconstrainedError") throw err;
+    return { stream: await navigator.mediaDevices.getUserMedia({ audio: true }), fellBack: true };
+  }
+}
+
 interface Recording {
   recorder: MediaRecorder;
   stream: MediaStream;
@@ -60,6 +103,12 @@ interface Recording {
   confirmed: boolean;
   /** How long the microphone took to send anything (ms after the press), once live. */
   waitedMs?: number;
+  /** The microphone's name, as the browser gives it ("" when it gives none). */
+  mic: string;
+  /** Since when it has been quiet after speech (undefined while speaking, before any speech, or after a pause). */
+  quietSince?: number;
+  /** autoSendMs() when it started: 0 or the pause that sends it. */
+  autoSend: number;
 }
 
 /** "#room-a", "@@website", "logic, umit": where a recording started elsewhere will go. */
@@ -143,11 +192,19 @@ function tick(rec: Recording): void {
     const rms = Math.sqrt(sum / data.length);
     rec.levels.push(Math.min(1, rms * 5));
     if (sum > 0) rec.heard = true;
-    if (rms >= SPEECH_RMS) rec.spoke = true;
+    if (rms >= SPEECH_RMS) {
+      rec.spoke = true;
+      rec.quietSince = undefined;
+    } else if (rec.spoke && rec.quietSince === undefined) rec.quietSince = now;
     rec.lastLevelAt = now;
   }
   const elapsed = recordedMs(rec);
   if (elapsed >= MAX_RECORDING_MS) return void stop(false);
+  // Sends itself after a pause, once something was said (Can #13890, #13892): only a click-started recording (a held
+  // 🎤 sends on letting go), never while paused (⏸ is the way to think without sending).
+  if (rec.autoSend > 0 && state.voiceLatched && !rec.pausedAt && rec.quietSince !== undefined && now - rec.quietSince >= rec.autoSend) {
+    return void stop(false);
+  }
   // Until the microphone sends anything, "Wait…" stands where the timer will run, and the dot is grey (the panel's
   // `waiting` class). Then the timer counts from the press: the recording holds everything since then, and Ümit spoke
   // at once and saw it start late, after "Speak now" (#13669). "Speak now" shows only when the microphone was slow to
@@ -156,7 +213,12 @@ function tick(rec: Recording): void {
   // meter (audio not running) nothing can be known, and the timer just runs.
   const silent = !rec.heard && rec.audio.state === "running";
   const slowStart = rec.confirmed && (rec.waitedMs ?? 0) >= 1000 && elapsed - (rec.waitedMs ?? 0) < 1200;
-  const time = !rec.live ? "Wait…" : silent ? `${clock(elapsed)} · no sound from the microphone yet` : slowStart ? "Speak now" : clock(elapsed);
+  const live = slowStart ? "Speak now" : clock(elapsed);
+  // Which microphone, while it opens and for a moment after (a wrong one shows at once; Can #13887); then whether a
+  // pause will send it.
+  const named = rec.mic && (!rec.live || elapsed - (rec.waitedMs ?? 0) < 2000) ? ` · ${rec.mic}` : "";
+  const pauseSends = rec.autoSend > 0 && state.voiceLatched && rec.spoke && !named ? " · a pause sends it" : "";
+  const time = !rec.live ? `Wait…${named}` : silent ? `${clock(elapsed)} · no sound from the microphone yet` : `${live}${named}${pauseSends}`;
   // Opened another conversation meanwhile: the bar says where this one goes.
   dom.voiceTime.textContent = viewHash(state.view) === viewHash(rec.view) ? time : `${time} → ${viewLabel(rec.view)}`;
   drawWave(rec);
@@ -179,10 +241,11 @@ async function start(target?: { view: View; chosen: Chosen }): Promise<void> {
   // The permission prompt, or a slow microphone, can take a moment: say so at once (Ümit #10669).
   showStatus("Opening the microphone… (Esc or 🎤 again cancels)");
   let rec: Recording;
+  let fellBack = false;
   try {
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      ({ stream, fellBack } = await openMicrophone());
     } catch (err) {
       hideStatus();
       showError(microphoneError(err));
@@ -217,6 +280,8 @@ async function start(target?: { view: View; chosen: Chosen }): Promise<void> {
       spoke: false,
       live: false,
       confirmed: false,
+      mic: stream.getAudioTracks()[0]?.label ?? "",
+      autoSend: autoSendMs(),
     };
     const r = rec;
     recorder.addEventListener("dataavailable", (event) => {
@@ -234,6 +299,7 @@ async function start(target?: { view: View; chosen: Chosen }): Promise<void> {
   showPanel(true);
   // Let go while the microphone was opening: that was a click, so keep recording until Send.
   setLatched(!held);
+  if (fellBack) showStatus("The microphone chosen in Settings is not connected: recording with the browser's default.");
   tick(rec);
   const confirmed = await waitForSignal(rec);
   // A cancel (or a new recording) meanwhile: this one's panel state is no longer its to change (codex-ui #12868).
@@ -271,6 +337,7 @@ function setPaused(rec: Recording, paused: boolean): void {
     rec.recorder.resume();
     rec.pausedMs += Date.now() - rec.pausedAt;
     rec.pausedAt = undefined;
+    rec.quietSince = undefined;
   }
   setIcon(dom.voicePause, paused ? "play" : "pause");
   dom.voicePause.title = paused ? "Go on recording" : "Pause";

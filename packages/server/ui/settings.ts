@@ -9,6 +9,7 @@ import { h } from "./html";
 import { state } from "./state";
 import { setSuggestionsOn, suggestionBox, suggestionsOn } from "./suggest";
 import { askAgentOn, recipientBox, setAskAgentOn } from "./ask";
+import { autoSendMs, chosenMicrophone, microphones, setAutoSendMs, setChosenMicrophone } from "./voice";
 
 type EnglishSpeech = NonNullable<AgentSettings["englishSpeech"]>;
 
@@ -60,6 +61,7 @@ function render(): void {
         "with Whisper large-v3, the larger sibling of the turbo the bus runs). Lower is better."
     ),
     note,
+    voiceRecordingSetting(),
     routingSetting(),
     suggestionSetting(),
     askAgentSetting(),
@@ -92,6 +94,66 @@ function voiceLanguageSetting(current: AgentSettings["voiceLanguage"]): HTMLElem
   });
   const section = h("div");
   section.append(h("h3", "", "My voice messages are in"), select, note);
+  return section;
+}
+
+/** Which microphone 🎤 uses (Can #13887) and whether a pause sends the recording (Can #13890, #13892); this browser only. */
+function voiceRecordingSetting(): HTMLElement {
+  const mic = h("select");
+  const micNote = h("p", "dialog-hint", "");
+  const fill = async (): Promise<void> => {
+    const devices = await microphones().catch(() => [] as MediaDeviceInfo[]);
+    const chosen = chosenMicrophone();
+    const options = [["", "The browser's default"] as [string, string]];
+    devices.forEach((d, i) => {
+      if (d.deviceId && d.deviceId !== "default") options.push([d.deviceId, d.label || `Microphone ${i + 1}`]);
+    });
+    if (chosen && !options.some(([id]) => id === chosen)) options.push([chosen, "The one chosen before (not connected now)"]);
+    mic.replaceChildren(
+      ...options.map(([id, label]) => {
+        const option = h("option", "", label);
+        option.value = id;
+        return option;
+      })
+    );
+    mic.value = chosen;
+    micNote.textContent = devices.some((d) => d.label)
+      ? "If the chosen one is not connected, the default records instead, and the recording bar says which one it uses."
+      : "Their names show once this page has used the microphone (record with 🎤 once, then open Settings again).";
+  };
+  void fill();
+  mic.addEventListener("change", () => setChosenMicrophone(mic.value));
+
+  const pause = h("select");
+  for (const [ms, label] of [
+    [0, "Off: Send (or 🎤 again) sends it"],
+    [500, "After a pause of half a second"],
+    [1000, "After a pause of 1 second"],
+    [2000, "After a pause of 2 seconds"],
+  ] as const) {
+    const option = h("option", "", label);
+    option.value = String(ms);
+    pause.append(option);
+  }
+  pause.value = String(autoSendMs());
+  if (pause.value === "") pause.value = "0";
+  pause.addEventListener("change", () => setAutoSendMs(Number(pause.value)));
+
+  const section = h("div");
+  section.append(
+    h("h3", "", "Microphone"),
+    mic,
+    micNote,
+    h("h3", "", "Send a voice message when I stop talking"),
+    pause,
+    h(
+      "p",
+      "dialog-hint",
+      "Only a recording started with a tap on 🎤 (holding it sends when you let go), and only after you have said " +
+        "something: silence before you speak never sends. ⏸ stops it while you think. A pause longer than this " +
+        "sends what you said so far. Only this browser."
+    )
+  );
   return section;
 }
 

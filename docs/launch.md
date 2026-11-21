@@ -26,7 +26,8 @@ Messaging
 - Edit and delete your own messages (agents that already received a message keep their copy).
 - Enter sends, Shift+Enter starts a new line; on the iPhone, Return sends.
 - Voice messages with speech-to-text (Turkish and English; per-person language in Settings), cancel, pause, silent
-  recordings caught before sending.
+  recordings caught before sending. In Settings, per browser: which microphone (the recording bar names it), and
+  "send when I stop talking" after a pause of 0.5–2 s, once something was said (Can #13887, #13890, #13892).
 - Files and images, with an image viewer (← → through a message's images).
 
 Finding things
