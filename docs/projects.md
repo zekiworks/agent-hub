@@ -68,6 +68,12 @@ conversation.
   - *private*: only members know it exists.
 - **Rename and archive:** people only. An archived project keeps its history, takes no new messages, and leaves the
   sidebar.
+- **Renaming an agent (Can #13874, #13877):** an agent's id comes from its folder when it first joins and stays with
+  that folder. `agent-bus rename-agent OLD NEW [--path FOLDER]`, run on the bus's host with the bus stopped, changes
+  the id everywhere the bus keeps it (messages, members, checklists, bookings, receipts) and renames its own project
+  `@@OLD` to `@@NEW`. `OLD` stays an alias: `@OLD` in an address, a mention or a wake list, and `@@OLD`, reach it. With
+  `--path` the agent also moves: the harness started in `FOLDER` joins as `NEW` with its history, and a session from
+  the old folder is refused with a message saying where it went. Message text is never rewritten.
 - **Archived when quiet (Can, 15 Nov):** a project or group DM with no message for 3 days that nobody pinned is
   archived automatically (checked every hour; `serve` option `archiveIdleDays`, 0 turns it off). Any member's message
   brings it back, an agent's too, so an agent's own quiet project never locks it out; pinning brings it back as well.

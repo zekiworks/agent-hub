@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import os, { homedir, hostname } from "node:os";
 import path from "node:path";
-import { AgentTokens, createBusServer, createInvite, type BusServerOptions } from "@agent-bus/server";
+import { AgentTokens, createBusServer, createInvite, renameAgent, type BusServerOptions } from "@agent-bus/server";
 import { DEFAULT_BUS_PORT } from "@agent-bus/protocol";
 import type { TrainSuggestionsOptions } from "../../complete-ext/finetune/train-suggestions";
 import { runTicketed } from "./run";
@@ -15,6 +15,7 @@ const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir
        agent-bus agents [--data-dir DIR]
        agent-bus approve|deny CODE [--data-dir DIR]
        agent-bus reset-agent AGENT [--data-dir DIR]
+       agent-bus rename-agent AGENT NEW-ID [--path FOLDER] [--data-dir DIR]
        agent-bus run [--bus URL] RESERVATION[,RESERVATION…] -- COMMAND [ARGS…]
        agent-bus install HARNESS [--url http://BUS:7800] [--dir DIR] [--build-only] [--force]
        agent-bus uninstall HARNESS [--dir DIR]
@@ -90,6 +91,10 @@ approve / deny: decide a waiting token by the code its agents show (or a token i
 
 reset-agent: unbind AGENT from its agent token (lost token file, agent moved to another machine); the next
   join claims it again. Needs the bus's database.
+
+rename-agent: give AGENT the id NEW-ID everywhere the bus keeps it (messages, conversations, its project @@AGENT,
+  checklists, bookings); @AGENT stays an alias that still reaches it. --path also moves where it lives, so the harness
+  started in FOLDER joins as NEW-ID with its history (the old folder's session is then refused). Stop the bus first.
 
 run: start COMMAND on the GPUs of active reservations only (CUDA_VISIBLE_DEVICES), marked as theirs.
   --bus defaults to $AGENT_BUS_URL or http://127.0.0.1:${DEFAULT_BUS_PORT}.`;
@@ -277,6 +282,14 @@ export async function runCli(argv: string[]): Promise<number> {
       return 1;
     }
   }
+  if (command === "rename-agent") {
+    try {
+      return runRenameAgent(rest);
+    } catch (error) {
+      console.error(`agent-bus rename-agent: ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+  }
   if (command === "reset-agent") {
     try {
       return runResetAgent(rest);
@@ -391,6 +404,35 @@ function runTokens(command: "agents" | "approve" | "deny", args: string[]): numb
   } finally {
     db.close();
   }
+}
+
+function runRenameAgent(args: string[]): number {
+  let dataDir = process.env.AGENT_BUS_DATA_DIR || path.join(homedir(), ".agent-bus");
+  let folder: string | undefined;
+  const ids: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] ?? "";
+    if (arg === "--data-dir") dataDir = args[++i] ?? "";
+    else if (arg === "--path") folder = path.resolve(args[++i] ?? "");
+    else if (arg.startsWith("--")) throw new Error(`Unknown option "${arg}"`);
+    else ids.push(arg);
+  }
+  const [from, to] = ids;
+  if (!from || !to || ids.length > 2) throw new Error("Give the agent and its new id, e.g. agent-bus rename-agent turkce jack");
+  const db = openBusDatabase(dataDir);
+  try {
+    const r = renameAgent(db, from, to, folder);
+    const oldId = from.replace(/^@+/, "").toLowerCase();
+    const newId = to.replace(/^@+/, "").toLowerCase();
+    console.log(
+      `@${oldId} is now @${newId}: ${r.messages} messages, ${r.conversations} conversations${r.project ? `, project @@${r.project}` : ""}${folder ? `, lives in ${folder}` : ""}. @${oldId} stays an alias.`
+    );
+    if (r.siblings.length > 0) console.log(`Not renamed (other harnesses of its folder): ${r.siblings.map((id) => `@${id}`).join(", ")}`);
+    console.log("Start the bus again, then the agent's harness" + (folder ? ` in ${folder}.` : "."));
+  } finally {
+    db.close();
+  }
+  return 0;
 }
 
 function runResetAgent(args: string[]): number {

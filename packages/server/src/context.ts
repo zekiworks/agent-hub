@@ -100,12 +100,14 @@ export class BusContext {
     const sessions = new Map<string, number>();
     if (parsed.kind !== "ids") return { ...parsed, sessions };
     const ids = parsed.ids.map((id) => {
-      if (this.hub.knownParticipant(id)) return id;
+      // A renamed agent's old id reaches it under its new one.
+      const known = this.hub.knownParticipant(id);
+      if (known) return known.id;
       const match = /^(.+)-(\d+)$/.exec(id);
-      const base = match?.[1];
-      if (!base || this.hub.knownParticipant(base)?.kind !== "agent") return id;
-      sessions.set(base, Number(match[2]));
-      return base;
+      const base = match?.[1] ? this.hub.knownParticipant(match[1]) : null;
+      if (!match || base?.kind !== "agent") return id;
+      sessions.set(base.id, Number(match[2]));
+      return base.id;
     });
     const unknown = ids.filter((id) => !this.hub.knownParticipant(id));
     if (unknown.length > 0) {

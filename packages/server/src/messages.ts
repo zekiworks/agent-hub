@@ -4,7 +4,6 @@ import {
   ALL_CONVERSATION_ID,
   conversationLabel,
   mentionedIds,
-  mentions,
   RESOURCES_AGENT_ID,
   titledLabel,
   type Bookmark,
@@ -41,12 +40,16 @@ export const MAX_RECEIPT_WAIT_MS = 30_000;
 const DEFAULT_PAGE = 100;
 const MAX_PAGE = 500;
 
-/** Participants @mentioned in `text` (`@id-n` counts as agent `id`); unknown names and "@all" are left out. */
-function mentionedParticipants(ctx: BusContext, text: string): string[] {
+/**
+ * Participants @mentioned in `text` (`@id-n` counts as agent `id`; a renamed agent's old id counts as it); unknown
+ * names and "@all" are left out.
+ */
+export function mentionedParticipants(ctx: BusContext, text: string): string[] {
   const ids: string[] = [];
   for (const mention of mentionedIds(text)) {
     const session = /^(.+)-(\d+)$/.exec(mention)?.[1];
-    const id = ctx.hub.knownParticipant(mention) ? mention : session && ctx.hub.knownParticipant(session)?.kind === "agent" ? session : undefined;
+    const sessionAgent = session ? ctx.hub.knownParticipant(session) : null;
+    const id = ctx.hub.knownParticipant(mention)?.id ?? (sessionAgent?.kind === "agent" ? sessionAgent.id : undefined);
     if (id && !ids.includes(id)) ids.push(id);
   }
   return ids;
@@ -301,7 +304,8 @@ function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknow
   const updated = db.getConversation(conversation.id);
   if (!updated) throw new Error(`Conversation ${conversation.id} vanished`);
   hub.publishMessage(message, updated);
-  const warnings = writer.kind === "agent" ? [...unreadableRefs(ctx, text, updated), ...unwokenMentions(text, recipients, wake)] : [];
+  const warnings =
+    writer.kind === "agent" ? [...unreadableRefs(ctx, text, updated), ...unwokenMentions(mentionedParticipants(ctx, text), recipients, wake)] : [];
   return { message, conversation: updated, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
@@ -328,13 +332,21 @@ function wakeList(
     if (answered === undefined) return recipients; // a conversation started with them: they are meant
     // "@all" in a person's text wakes every agent of the conversation (Can, 15 Nov).
     if (mentionedIds(text).includes(ALL_CONVERSATION_ID)) return recipients;
-    const mentioned = recipients.filter((id) => mentions(text, id));
+    const named = mentionedParticipants(ctx, text);
+    const mentioned = recipients.filter((id) => named.includes(id));
     const withAnswered = mentioned.length === 0 || mentioned.some((id) => newcomers.includes(id));
     return recipients.filter((id) => mentioned.includes(id) || (withAnswered && id === answered));
   }
   if (given === undefined || given === null) return undefined;
   if (!Array.isArray(given) || !given.every((id) => typeof id === "string")) throw new HttpError(400, "wake must be a list of agent ids");
-  const wake = [...new Set(given.map((id: string) => id.trim().replace(/^@/, "").toLowerCase()).filter(Boolean))];
+  const wake = [
+    ...new Set(
+      given
+        .map((id: string) => id.trim().replace(/^@/, "").toLowerCase())
+        .filter(Boolean)
+        .map((id: string) => ctx.db.renamedTo(id) ?? id)
+    ),
+  ];
   const outside = wake.filter((id) => !recipients.includes(id));
   if (outside.length > 0) {
     throw new HttpError(
@@ -359,10 +371,10 @@ export function answeredBy(ctx: BusContext, conversationId: string, person: stri
 }
 
 /** An agent @mentions an agent its wake list leaves out: said, since the mention alone wakes nobody. */
-function unwokenMentions(text: string, recipients: string[], wake: string[] | undefined): string[] {
+function unwokenMentions(mentioned: string[], recipients: string[], wake: string[] | undefined): string[] {
   if (!wake) return [];
   return recipients
-    .filter((id) => !wake.includes(id) && mentions(text, id))
+    .filter((id) => !wake.includes(id) && mentioned.includes(id))
     .map((id) => `@${id} is mentioned but not in wake: it reads this at its next turn, no turn now`);
 }
 

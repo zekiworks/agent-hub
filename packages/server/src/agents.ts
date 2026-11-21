@@ -12,6 +12,7 @@ import {
   type Participant,
 } from "@agent-bus/protocol";
 import { tokenId } from "./agent-tokens";
+import { AgentRenamedError } from "./db";
 import { tokenHash, type BusContext } from "./context";
 import { HttpError, json, readJsonObject } from "./http";
 import { sendFrame, type Socket, type SocketData } from "./hub";
@@ -81,7 +82,14 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
     if (data.kind !== "agent" || data.host === null || data.tokenHash === null) return;
     const identity: AgentIdentity =
       data.path !== null ? { host: data.host, path: data.path } : { host: data.host, name: data.name ?? "" };
-    const { participant, isNew } = db.joinAgent(identity, data.harness, reservedIds);
+    let joined: ReturnType<typeof db.joinAgent>;
+    try {
+      joined = db.joinAgent(identity, data.harness, reservedIds);
+    } catch (error) {
+      if (error instanceof AgentRenamedError) return refuse(ws, 4401, error.message);
+      throw error;
+    }
+    const { participant, isNew } = joined;
     // An agent id belongs to the first approved token that joins as it.
     const bound = db.agentTokenHash(participant.id);
     if (bound !== null && bound !== data.tokenHash) {

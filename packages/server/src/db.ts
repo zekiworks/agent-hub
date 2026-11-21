@@ -69,6 +69,19 @@ export interface JoinResult {
   isNew: boolean;
 }
 
+/** An agent joined from a folder whose agent was renamed (and moved) by `agent-bus rename-agent`. */
+export class AgentRenamedError extends Error {
+  constructor(
+    readonly oldId: string,
+    readonly newId: string,
+    readonly newPath: string | undefined
+  ) {
+    super(
+      `@${oldId} was renamed to @${newId}${newPath ? `, which lives in ${newPath}` : ""}. Start the harness ${newPath ? `in ${newPath}` : `as @${newId}`}; this session is not joined.`
+    );
+  }
+}
+
 export interface NewMessage {
   conversationId: string;
   from: string;
@@ -221,6 +234,13 @@ CREATE INDEX IF NOT EXISTS conversation_members_participant
 CREATE TABLE IF NOT EXISTS conversation_aliases (
   old_id TEXT PRIMARY KEY,
   new_id TEXT NOT NULL
+);
+
+-- Old ids of renamed agents (agent-bus rename-agent; Can #13874): "@old" still reaches the agent.
+CREATE TABLE IF NOT EXISTS participant_aliases (
+  old_id TEXT PRIMARY KEY,
+  new_id TEXT NOT NULL,
+  renamed_at INTEGER NOT NULL
 );
 
 -- Who pinned which conversation: it sorts first in their sidebar. Anyone who can see a project may pin it, member or
@@ -628,11 +648,19 @@ export class BusDatabase {
     return row?.seq ?? 0;
   }
 
+  /** The participant `id`, or the agent it was renamed to (`participant_aliases`). */
   getParticipant(id: string): ParticipantRecord | null {
-    const row = this.db
-      .query<ParticipantRow, [string]>("SELECT * FROM participants WHERE id = ?1")
-      .get(id);
-    return row ? toParticipant(row) : null;
+    const row = this.db.query<ParticipantRow, [string]>("SELECT * FROM participants WHERE id = ?1").get(id);
+    if (row) return toParticipant(row);
+    const renamed = this.renamedTo(id);
+    return renamed ? this.getParticipant(renamed) : null;
+  }
+
+  /** The id agent `oldId` was renamed to, or undefined. */
+  renamedTo(oldId: string): string | undefined {
+    return this.db
+      .query<{ new_id: string }, [string]>("SELECT new_id FROM participant_aliases WHERE old_id = ?1")
+      .get(oldId)?.new_id;
   }
 
   /** Messages `agentId`'s harness accepted since `since` that its model has not seen yet. */
@@ -831,6 +859,12 @@ export class BusDatabase {
         };
       }
 
+      // A folder whose agent was renamed and moved: its old session is refused, not made a new agent under the old
+      // name (the alias would make it a second @old).
+      const base = baseAgentId(identity);
+      const renamed = sameFolder.length === 0 && base ? this.renamedTo(base) : undefined;
+      if (renamed) throw new AgentRenamedError(base, renamed, this.getParticipant(renamed)?.path ?? undefined);
+
       const first = sameFolder[0];
       const id = first && harness ? this.harnessId(first.id, harness, reservedIds) : this.pickId(identity, reservedIds);
       const deliveredSeq = this.maxSeq();
@@ -873,7 +907,8 @@ export class BusDatabase {
     const taken = (id: string): boolean =>
       id === ALL_CONVERSATION_ID ||
       reservedIds.has(id) ||
-      this.db.query<{ id: string }, [string]>("SELECT id FROM participants WHERE id = ?1").get(id) !== null;
+      this.db.query<{ id: string }, [string]>("SELECT id FROM participants WHERE id = ?1").get(id) !== null ||
+      this.renamedTo(id) !== undefined;
     const base = baseAgentId(identity) || "agent";
     if (!taken(base)) return base;
     const holder = this.db
@@ -1125,11 +1160,12 @@ export class BusDatabase {
     return this.getConversation(made.id) as Conversation;
   }
 
-  /** The project named `name` (archived or not), or null. */
+  /** The project named `name` (archived or not), or null. A renamed agent's old name finds its project. */
   projectByName(name: string): Conversation | null {
-    const row = this.db
-      .query<{ id: string }, [string]>("SELECT id FROM conversations WHERE kind = 'project' AND name = ?1")
-      .get(name);
+    const find = (n: string) =>
+      this.db.query<{ id: string }, [string]>("SELECT id FROM conversations WHERE kind = 'project' AND name = ?1").get(n);
+    const renamed = this.renamedTo(name);
+    const row = find(name) ?? (renamed ? find(renamed) : null);
     return row ? this.getConversation(row.id) : null;
   }
 
