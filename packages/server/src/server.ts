@@ -31,6 +31,7 @@ import { getBoxUsage, postBox, postBoxReport, type BoxExtension } from "./boxes"
 import { getTasks, taskAction } from "./tasks";
 import { postSpeech } from "./speech";
 import { WebPush } from "./push";
+import { postAttention } from "./attention";
 import { type Brand, Website } from "./website";
 
 export interface BusServerOptions {
@@ -296,6 +297,10 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       if (method === "GET" && boxReportMatch[2] === "usage") return json(getBoxUsage(boxReportMatch[1], options.boxes ?? {}, person, file));
     }
     if (method === "POST" && pathname === "/api/settings") return json(await postSetting(ctx, req));
+    if (method === "POST" && pathname === "/api/attention") {
+      const person = viewer.kind === "human" ? viewer.id : undefined;
+      return json(await postAttention(ctx, req, person, path.join(dataDir, "attention.jsonl"), path.join(dataDir, "attention-people.txt")));
+    }
     if (pathname.startsWith("/api/push/")) {
       if (viewer.kind !== "human") throw new HttpError(403, "Only a signed-in person's device takes notifications");
       if (method === "GET" && pathname === "/api/push/key") return json({ publicKey: push.publicKey } satisfies PushKeyResponse);

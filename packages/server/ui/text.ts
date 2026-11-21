@@ -6,6 +6,7 @@ import { errorText } from "./format";
 import { hooks } from "./hooks";
 import { h } from "./html";
 import { conversationTitle, state } from "./state";
+import { noteAttention } from "./attention";
 
 /** `text` mentions me as `@me` or inside `@{…}`. */
 export function mentionsMe(text: string): boolean {
@@ -189,7 +190,9 @@ function readButton(seq: number, index: number, block: HTMLElement): HTMLButtonE
     block.classList.toggle("md-read", read);
   };
   button.addEventListener("click", () => {
-    setPartRead(seq, index, !readSet.has(partKey(seq, index)));
+    const read = !readSet.has(partKey(seq, index));
+    setPartRead(seq, index, read);
+    if (read) noteAttention(seq, "marked-read");
     draw();
   });
   draw();

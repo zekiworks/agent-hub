@@ -98,7 +98,8 @@ export class WebPush {
     const payload: PushPayload = {
       title: `@${message.from}${where}`,
       body: text.length > BODY_CHARS ? `${text.slice(0, BODY_CHARS - 1)}…` : text,
-      url: `/#/c/${conversation.id}`,
+      // ?n=: the page notes it was opened from a notification (ui/attention.ts).
+      url: `/?n=${message.seq}#/c/${conversation.id}`,
       // One per message: Safari replaces a notification with the same tag silently, so a second message in the same
       // conversation came with no banner at all (Ümit #14070).
       tag: `${conversation.id}-${message.seq}`,

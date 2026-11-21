@@ -32,6 +32,7 @@ import "./stats";
 import "./tools";
 import "./search";
 import "./voice";
+import "./attention";
 import { renderSidebar } from "./sidebar";
 import { connectViewer, setLinkStatus } from "./socket";
 import { draftConversation, isCurrent, state, type View } from "./state";

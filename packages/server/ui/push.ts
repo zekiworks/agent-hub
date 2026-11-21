@@ -3,6 +3,7 @@
 // to the Home Screen and opened from there may (iOS 16.4+). Off until turned on in Settings, per device.
 import type { PushKeyResponse } from "@agent-bus/protocol";
 import { api, postJson } from "./api";
+import { noteAttention } from "./attention";
 
 /** This device is subscribed: the page's own notifications (notify.ts) step aside so nothing shows twice. */
 const PUSH_KEY = "agent-bus.push";
@@ -32,7 +33,11 @@ const registration: Promise<ServiceWorkerRegistration | undefined> =
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (event) => {
     const data = event.data as { type?: string; url?: string } | undefined;
-    if (data?.type === "open" && data.url) location.hash = new URL(data.url).hash;
+    if (data?.type !== "open" || !data.url) return;
+    const url = new URL(data.url);
+    const seq = Number(url.searchParams.get("n"));
+    if (seq) noteAttention(seq, "notification");
+    location.hash = url.hash;
   });
 }
 

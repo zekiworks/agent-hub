@@ -16,6 +16,7 @@ import { copyText } from "./render";
 import { speakButton } from "./speak";
 import { conversationTitle, state } from "./state";
 import { markRead } from "./unread";
+import { noteAttention } from "./attention";
 import { startVoiceReply } from "./voice";
 
 let box: HTMLElement | undefined;
@@ -164,6 +165,7 @@ export function showAnswer(message: Message, conversation: Conversation): void {
     // A reply being written in it stays: going to the message must not throw it away (codex-ui #12361).
     if (!holdsReply(toast)) toast.remove();
     void hooks.showMessage(message.seq);
+    if (message.fromKind === "agent") noteAttention(message.seq, "banner-opened");
   };
   // The header row: a visible grip, who/where, and ✕ (codex-ui #10866: the grip says it moves).
   const head = h("div", "answer-toast-head");
@@ -252,6 +254,7 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   read.title = "I've read it: close this and mark its conversation read (the message stays where it is)";
   read.addEventListener("click", () => {
     markRead(conversation.id);
+    if (message.fromKind === "agent") noteAttention(message.seq, "banner-read");
     if (!holdsReply(toast)) toast.remove();
   });
   row.prepend(read, reply, voice, listen, take, copy);

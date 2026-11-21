@@ -22,6 +22,7 @@ import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, projectColor, state } from "./state";
 import { conversationLink, flashMessage, markReadParts, markSelected, mentionNodes, mentionsMe, selectMessage, shownMessage, textBlocks } from "./text";
 import { PULSE_MS } from "./toast";
+import { noteAttention } from "./attention";
 
 export function renderAll(): void {
   renderSidebar();
@@ -291,6 +292,7 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
     const part = at >= 0 ? at : undefined;
     const again = state.selectedSeq === message.seq && state.selectedPart === part;
     selectMessage(again ? undefined : message.seq, part);
+    if (!again) noteAttention(message.seq, "tapped");
     if (!PHONE.matches) return;
     tapOpen(li, message.seq, !again, actions);
   });

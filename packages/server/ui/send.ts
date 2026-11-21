@@ -20,6 +20,7 @@ import { navigate, viewHash } from "./routing";
 import { currentDirectAgent, state, type ItemReply, type View } from "./state";
 import { draftReplaced } from "./suggest";
 import { askSent } from "./ask";
+import { noteAttention } from "./attention";
 
 export async function uploadFile(file: File): Promise<FileRef> {
   const params = new URLSearchParams({ from: state.me, name: file.name });
@@ -85,6 +86,7 @@ export async function postToView(view: View, text: string, fileIds: string[], ch
   if (hold !== undefined) request.holdHours = hold;
 
   const res = await postJson<PostMessageResponse>("/api/messages", request);
+  if (replyTo) noteAttention(replyTo.seq, "replied");
   // Clear the reply this message answered, not a newer one chosen meanwhile (a message or a checklist item).
   const same = (replyTo && state.replyTo?.seq === replyTo.seq) || (item && state.itemReply === item);
   if (same) setReplyTo(undefined);

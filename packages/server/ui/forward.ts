@@ -13,6 +13,7 @@ import { renderMarkdown } from "./markdown";
 import { mentionCandidates } from "./mentions";
 import { conversationAddress, conversationTitle, state } from "./state";
 import { mentionNodes, refLink } from "./text";
+import { noteAttention } from "./attention";
 
 /** At most this many choices are listed; the search narrows them. */
 const MAX_CHOICES = 50;
@@ -148,6 +149,7 @@ function openForward(message: Message): void {
         note: note.value.trim(),
       });
       dialog.close();
+      noteAttention(current.message.seq, "forwarded");
       showForwarded(`Forwarded to ${res.to}`);
     } catch (err) {
       error.textContent = errorText(err);

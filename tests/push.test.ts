@@ -96,8 +96,8 @@ test("a DM, a mention and a reply reach the person's device, encrypted for it an
   expect(pushed).toHaveLength(3);
   const [mention, inDm, reply] = pushed.map((p) => decrypt(p.body));
   const tag = (m: PostMessageResponse) => `${m.conversation.id}-${m.message.seq}`;
-  expect(mention).toEqual({ title: "@uma · @@plans", body: "@carol can you look?", url: `/#/c/${project.conversation.id}`, tag: tag(asked) });
-  expect(inDm).toMatchObject({ title: "@uma", body: "a word in private", url: `/#/c/${dm.conversation.id}` });
+  expect(mention).toEqual({ title: "@uma · @@plans", body: "@carol can you look?", url: `/?n=${asked.message.seq}#/c/${project.conversation.id}`, tag: tag(asked) });
+  expect(inDm).toMatchObject({ title: "@uma", body: "a word in private", url: `/?n=${dm.message.seq}#/c/${dm.conversation.id}` });
   // Two in one conversation keep their own tags: Safari shows nothing for one that replaces another (Ümit #14070).
   expect(reply).toMatchObject({ body: "agreed", tag: tag(answered) });
   expect(reply?.tag).not.toBe(mention?.tag);
@@ -161,4 +161,34 @@ test("a notification's text has no markdown marks (Ümit #14043)", async () => {
   expect(plainText("**hide ▴** while the agents show, see [the notes](https://x.y/z)\n\n> quoted\n- item `code`")).toBe(
     "hide ▴ while the agents show, see the notes quoted item code"
   );
+});
+
+test("what a person does with agents' messages is kept only for people who said yes, never the text (Ümit #13977)", async () => {
+  const { readFileSync, existsSync, writeFileSync } = await import("node:fs");
+  const ws = new WebSocket(`${bus.url.replace(/^http/, "ws")}/ws/agent?${new URLSearchParams({ token: (await import("./helpers")).TEST_TOKEN, host: "h1", harness: "omp", path: "/tmp/x/alpha" })}`);
+  await new Promise((r) => ws.addEventListener("message", r, { once: true }));
+  const sent = await send({ from: "alpha", to: "@carol", text: "secret build result", wake: [] });
+  const mine = await send({ from: "carol", to: "@uma", text: "a person's message" });
+  const file = path.join(dataDir, "attention.jsonl");
+  const report = (from: string, events: unknown[]) => postJson(bus, "/api/attention", { from, events });
+  // Nobody listed yet: nothing kept.
+  expect(await (await report("carol", [{ seq: sent.message.seq, action: "seen", ms: 4000 }])).json()).toEqual({ ok: true, kept: 0 });
+  expect(existsSync(file)).toBe(false);
+  writeFileSync(path.join(dataDir, "attention-people.txt"), "carol\n");
+  const res = await report("carol", [
+    { seq: sent.message.seq, action: "seen", ms: 4000.4 },
+    { seq: sent.message.seq, action: "replied" },
+    { seq: mine.message.seq, action: "seen" }, // a person's message: not part of it
+    { seq: sent.message.seq, action: "deleted-it" }, // no such action
+  ]);
+  expect(await res.json()).toEqual({ ok: true, kept: 2 });
+  // uma may not read carol's DM with alpha.
+  expect(await (await report("uma", [{ seq: sent.message.seq, action: "seen" }])).json()).toEqual({ ok: true, kept: 0 });
+  const lines = readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  expect(lines.map(({ at: _, ...rest }) => rest)).toEqual([
+    { person: "carol", seq: sent.message.seq, conversationId: sent.conversation.id, from: "alpha", action: "seen", ms: 4000 },
+    { person: "carol", seq: sent.message.seq, conversationId: sent.conversation.id, from: "alpha", action: "replied" },
+  ]);
+  expect(readFileSync(file, "utf8")).not.toContain("secret");
+  ws.close();
 });
