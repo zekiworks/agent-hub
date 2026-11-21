@@ -36,10 +36,6 @@ db.exec(`
 if (!db.query("SELECT 1 FROM pragma_table_info('updates') WHERE name = 'no_updates_since'").get()) {
   db.exec("ALTER TABLE updates ADD COLUMN no_updates_since INTEGER");
 }
-// When a person first saw it on the Home tab (Can #14339: an agent is not asked again while its last update is unseen).
-if (!db.query("SELECT 1 FROM pragma_table_info('updates') WHERE name = 'seen_at'").get()) {
-  db.exec("ALTER TABLE updates ADD COLUMN seen_at INTEGER");
-}
 
 const headers = { "Content-Type": "application/json", "X-Agent-Token": TOKEN };
 
@@ -79,25 +75,24 @@ async function ask(agent: string): Promise<void> {
   db.query("INSERT OR REPLACE INTO asks (seq, agent, at, woke) VALUES (?1, ?2, ?3, 0)").run(res.message.seq, agent, Date.now());
 }
 
-/** How long an unanswered ask stands before the agent is asked again: asks do not pile up in an idle agent's inbox. */
-const UNANSWERED_MS = 24 * 3_600_000;
-
 /**
- * The hourly round, the one timer: one ask to each online agent, except one whose latest update nobody has seen yet on
- * its Home tab (Can #14339: no new update while the last one is unread) and one whose last ask is unanswered and less
- * than a day old.
+ * Whether `agent` has its last ask in front of it already (the bus's receipt: seen by its model), or never got one.
+ * An agent in a long turn has not: another ask would only pile up behind the first, and its answer comes after the turn
+ * anyway (Can #14343). An ask that expired undelivered (the agent went offline) counts as done with.
  */
+async function lastAskSeen(agent: string): Promise<boolean> {
+  const last = db.query<{ seq: number }, [string]>("SELECT seq FROM asks WHERE agent = ?1 ORDER BY seq DESC LIMIT 1").get(agent);
+  if (!last) return true;
+  const { message } = await bus<{ message: Message }>(`/api/messages/${last.seq}?as=${ID}`);
+  const receipt = message.receipts.find((r) => r.to === agent);
+  return !receipt || receipt.seenAt !== null || receipt.expired === true;
+}
+
+/** The hourly round, the one timer: one ask to each online agent that has seen its last ask. */
 async function round(): Promise<void> {
   try {
-    const now = Date.now();
-    const due = (await agents()).filter((agent) => {
-      const last = db.query<{ at: number; answered: number }, [string]>("SELECT at, answered FROM asks WHERE agent = ?1 ORDER BY seq DESC LIMIT 1").get(agent);
-      if (last && last.answered === 0 && now - last.at < UNANSWERED_MS) return false;
-      const update = db
-        .query<{ seen_at: number | null }, [string]>("SELECT seen_at FROM updates WHERE agent = ?1 AND no_updates_since IS NULL ORDER BY seq DESC LIMIT 1")
-        .get(agent);
-      return !update || update.seen_at !== null;
-    });
+    const due: string[] = [];
+    for (const agent of await agents()) if (await lastAskSeen(agent).catch(() => true)) due.push(agent);
     for (const agent of due) await ask(agent).catch((e) => console.error(`ask @${agent}: ${e}`));
     console.log(`${new Date().toISOString()} asked ${due.length} agents`);
   } catch (error) {
@@ -123,7 +118,6 @@ const NO_UPDATES = /^\W*(no_updates|no (change|changes|update|updates|news))\W*$
  */
 function keep(message: Message): void {
   if (message.fromKind !== "agent" || message.from === ID || message.deletedAt) return;
-  db.query("UPDATE asks SET answered = 1 WHERE agent = ?1").run(message.from);
   let since: number | null = null;
   if (NO_UPDATES.test(message.text) && message.files.length === 0) {
     const latest = db
@@ -192,12 +186,6 @@ Bun.serve({
     if (file) {
       const res = await fetch(`${BUS}/api/files/${file}?as=${ID}`, { headers: { "X-Agent-Token": TOKEN } });
       return new Response(res.body, { status: res.status, headers: { "Content-Type": res.headers.get("content-type") ?? "application/octet-stream" } });
-    }
-    // The Home tab showed this agent's updates up to `seq` to a person (page.ts: on screen, page in front).
-    if (url.pathname === "/seen") {
-      const seq = Number(url.searchParams.get("seq"));
-      if (Number.isSafeInteger(seq)) db.query("UPDATE updates SET seen_at = ?3 WHERE agent = ?1 AND seq <= ?2 AND seen_at IS NULL").run(agent, seq, Date.now());
-      return Response.json({ ok: true });
     }
     return new Response("Not found", { status: 404 });
   },
