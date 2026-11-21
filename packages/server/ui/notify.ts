@@ -6,7 +6,7 @@ import { dom } from "./dom";
 import { el } from "./html";
 import { navigate } from "./routing";
 import { conversationTitle, isCurrent, state } from "./state";
-import { pushOnHere } from "./push";
+import { pushOnHere, pushState, turnPushOn } from "./push";
 
 type NotifyState = "unsupported" | "insecure" | NotificationPermission;
 
@@ -22,7 +22,8 @@ export function renderNotifyButton(): void {
   btn.hidden = s === "granted" || s === "unsupported";
   if (s === "default") {
     btn.textContent = "🔔 Enable notifications";
-    btn.title = "Get a browser notification for messages that mention you, and in your conversations of two (the ●● ones)";
+    btn.title =
+      "Get a notification for DMs, messages that name you and replies to you, also while Agent Hub is closed (Settings → Notifications on this device)";
   } else if (s === "denied") {
     btn.textContent = "🔕 Notifications blocked";
     btn.title = "Allow notifications for this site in the browser's site settings (icon left of the address bar), then reload.";
@@ -33,10 +34,21 @@ export function renderNotifyButton(): void {
       "chrome://flags/#unsafely-treat-insecure-origin-as-secure, add " +
       `${location.origin}, set it to Enabled and relaunch.`;
   }
+  // Allowed before notifications while closed existed (Ümit #13975, #13976): one click still turns those on here.
+  if (s === "granted") {
+    void pushState().then((state) => {
+      btn.hidden = state !== "off";
+      btn.textContent = "🔔 Notifications when closed";
+      btn.title = "Also get them while Agent Hub is closed: DMs, messages that name you, replies to you";
+    });
+  }
 }
 
 dom.notifyBtn.addEventListener("click", () => {
-  if (notifyState() === "default") void Notification.requestPermission().then(renderNotifyButton);
+  // One click: the permission (asked at once, inside the click: Safari allows it only then) and, where the browser can,
+  // the bus's notifications while Agent Hub is closed (push.ts).
+  const s = notifyState();
+  if (s === "default" || s === "granted") void turnPushOn().then(renderNotifyButton, renderNotifyButton);
   else alert(dom.notifyBtn.title);
 });
 
