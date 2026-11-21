@@ -1255,21 +1255,24 @@ button:disabled {
   cursor: pointer;
 }
 
-/* "hide" / "show" beside a foldable heading's name: a small outlined word, so the heading reads as a button. */
+/* "hide ▴" / "show ▾" beside a foldable heading's name: a small filled button in the accent colour, so the heading reads
+   as something to tap (Ümit #14029: the outlined word alone didn't). */
 .side-toggle-hint {
-  margin-left: 4px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
+  margin-left: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--accent);
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 400;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
-  line-height: 16px;
+  line-height: 18px;
 }
 
 .side-toggle:hover .side-toggle-hint {
-  border-color: var(--sidebar-muted);
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .side-toggle:hover {

@@ -499,7 +499,9 @@ function renderFilterNote(hidden: Conversation[]): void {
  */
 function renderFold(section: HTMLElement, toggle: HTMLButtonElement, label: string, folded: boolean): void {
   section.classList.toggle("folded", folded);
-  toggle.replaceChildren(label, h("span", "side-toggle-hint", folded ? "show" : "hide"));
+  // An arrow inside the word's own button, which looks pressable (Ümit #14029: "hide"/"show" alone didn't read as
+  // something to tap); still one control, not an arrow and a word apart (Can #11980).
+  toggle.replaceChildren(label, h("span", "side-toggle-hint", folded ? "show ▾" : "hide ▴"));
   toggle.setAttribute("aria-expanded", folded ? "false" : "true");
   toggle.title = folded ? `Show the ${label.toLowerCase()}` : `Hide the ${label.toLowerCase()}`;
 }
