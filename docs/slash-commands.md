@@ -20,43 +20,50 @@ extension knows the rest and keeps its own state.
 
 ## The manifest (`GET <url>/bus-extension.json`)
 
-```json
-{
-  "name": "task",
-  "title": "Tasks",
-  "commands": [
-    {
-      "name": "task",
-      "help": "Give a member a task: /task @webapp fix the two Safari tests",
-      "args": [
-        { "name": "to", "type": "member", "repeat": true, "required": true },
-        { "name": "text", "type": "rest", "required": true }
-      ],
-      "for": ["person", "agent"],
-      "where": ["dm", "group", "project"]
-    }
-  ],
-  "annotations": {
-    "actions": {
-      "accept": { "label": "On it", "for": "annotation.assignees" },
-      "done": { "label": "✓ Done", "for": "annotation.assignees" },
-      "reject": { "label": "✕ Reject", "for": "annotation.assignees", "ask": "Why not? (optional)" },
-      "cancel": { "label": "Cancel", "for": "message.author", "confirm": "Cancel this task?" }
-    }
-  },
-  "panel": { "title": "Tasks", "scope": "global", "page": "/panel" }
-}
-```
+The full one for tasks is [task-extension.json](task-extension.json) (Can #13866). Its parts, and who reads each:
 
-- **Argument types** the website and the agents' tool understand and check before anything is sent:
-  - `member`: a participant of this conversation (completed from the @ menu; `repeat` allows several);
+| Part | Read by | What it says |
+|---|---|---|
+| `commands` | website (`/` menu, argument hints), bus (checks) | name, help, typed `args`, `for` (person/agent), `where` (dm/group/project) |
+| `actions` | website (buttons, their questions and confirms), bus (input checks) | label, `input` fields to ask for, `confirm`, `verified` (passkey-signed person only) |
+| `tools` | harness plugins (register them), bus (maps a call onto a command or action) | the agents' tool: name, description, JSON schema, `map` |
+| `events`, `notices`, `panel` | bus, website | which events it wants, that it posts `@task` notices, its Workspace tab |
+
+- **Argument types** the website and the bus check before anything is sent:
+  - `member`: a participant of this conversation (completed from the @ menu; `repeat` allows several; `kinds`
+    limits it to people or agents);
   - `participant`: anyone on the bus;
   - `message`: `#13900`, readable by the caller;
-  - `string` / `number` / `enum` (with `values`);
+  - `string`, `number`, `duration` (`40m`, `2h`, `1d`), `enum` (with `values`);
   - `rest`: everything after the last argument.
 
-  Can's `/task $ID string` is `[member, rest]`. An `$ID` that is a message (`/cancel #13900`) is `message`.
-- `for` and `where` limit who may use it and in which kind of conversation. The bus enforces both.
+  Can's `/task $ID string` is `[member, rest]`. An `$ID` that is a message (`/cancel #13900`) is `message`. A `flag`
+  argument (`--poke 2h`) may stand anywhere.
+- `for` and `where` limit who may use a command and in which kind of conversation. The bus enforces both.
+- **Who may press which action is not in the manifest:** it depends on the task, so the extension says it in each
+  annotation, as `allowed`. The bus checks the caller against that list. The manifest only says how an action looks
+  and what it asks for. #13900's annotation after Ümit sent it:
+
+  ```json
+  {
+    "label": "Task · open · @webapp",
+    "state": "open",
+    "allowed": { "webapp": ["accept", "progress", "done", "reject"], "umit": ["cancel"] },
+    "data": { "kind": "task", "by": "umit", "assignees": [{ "id": "webapp", "state": "open" }], "poke": "4h" }
+  }
+  ```
+
+  The website draws `label` and the buttons in `allowed` for this reader. Agents get `label` and their own `allowed`
+  in the delivery. `data` is the extension's own; the bus stores it and passes it along, nothing more.
+- **One tool per extension, with ops** (Can #13866): `task` with `op: create | mutate`.
+  - `create` runs the command named by `kind` (`task` or `approval`).
+  - `mutate` runs `action` on `message_id`.
+  - `map` tells the bus which fields go where, so the bus has no task code.
+  - The schema is flat (`op` plus optional fields, each saying which op it belongs to) rather than one `oneOf` per op,
+    because not every model provider accepts `oneOf` at the top of a tool schema. The bus checks the per-op required
+    fields and answers a clear error.
+  - Agents can't `approve`/`deny`: those actions are `verified` (passkey-signed people only), so the tool's `action`
+    enum leaves them out.
 
 ## The flow, end to end
 
@@ -75,7 +82,7 @@ sequenceDiagram
   B->>B: stores the message with message.ext.task = annotation; wakes @webapp
   B->>E: POST <url>/events {type:"posted", seq, annotation}
   B->>A: delivery "#13900 task for you: fix the Safari tests" (+ its actions)
-  A->>B: op=ext name=task action=done message_id=13900
+  A->>B: tool task {op:"mutate", action:"done", message_id:13900}
   B->>E: POST <url>/actions/done {seq, caller:"webapp"} (signed)
   E-->>B: {annotation:{state:"done"}, notice:"Done by @webapp"}
   B->>P: message #13900 redrawn "Task · done ✓"; notice posted as @task under it
@@ -97,13 +104,13 @@ sequenceDiagram
    conversation and this text's command, then stores the message with `message.ext.task` = the annotation. It applies
    the proposal's `wake` list (members only, as agents' wake lists), and tells the extension (`events`, `posted`).
    Proposals live for 10 minutes and are used once.
-5. **Annotations on the message.** Every reader's page draws `message.ext.<name>` under the message: a badge line
-   (`label`, `state`, names) and the buttons from the manifest's `annotations.actions` that this reader may use.
-   `for` names who: the message's author, the annotation's assignees, any member. Agents get the same in their
-   delivery ("Task #13900 for you: …; op=ext name=task action=accept|done|reject").
-6. **Buttons and agent actions.** `POST /api/ext/task/actions/<action> {seq, input?}` from the website, or
-   `op=ext name=task action=done message_id=13900` from an agent. The bus checks the action exists and the caller is
-   in its `for`. It calls the extension signed, and stores the returned annotation on the message. Then it publishes
+5. **Annotations on the message.** Every reader's page draws `message.ext.<name>` under the message: its `label`,
+   and the buttons this reader finds in `allowed`, looked as the manifest's `actions` say. Agents get the label and
+   their own allowed actions in the delivery ("Task #13900 for you: …; task op=mutate action=accept|progress|done|reject").
+6. **Buttons and agent actions.** `POST /api/ext/task/actions/<action> {seq, input?}` from the website, or the `task`
+   tool with `op: "mutate"` from an agent (the bus maps it onto the same route). The bus checks that the action
+   exists, that the caller is in the annotation's `allowed` for it, the `input` fields, and `verified` if the action
+   asks for it. It calls the extension signed, and stores the returned annotation on the message. Then it publishes
    the change (every open page redraws it) and posts the returned `notice`, if any, as `@task`, a reply to the
    message, with `wake` as the extension asks.
 7. **The panel.** `--ext task=URL` makes the Tasks tab (global: one per person, like Inbox).
@@ -119,11 +126,11 @@ sequenceDiagram
 | `commands` in the manifest, `/api/state` lists them | extensions.ts, protocol | read with the manifest, every 10 min |
 | `POST /api/ext/:name/command` → `post`/`fill`/`note`/`open` | new route | proposal ids, 10 min, single use |
 | `message.ext` (JSON per extension, ≤ 4 KB), set only by that extension | db column `ext_json`, Message type | changes publish like edits |
-| `POST /api/ext/:name/actions/:action` with `seq` | extensions.md stage 4 route | `for` checked against the annotation |
+| `POST /api/ext/:name/actions/:action` with `seq` | extensions.md stage 4 route | caller checked against the annotation's `allowed` |
 | events to the extension (`posted`, `deleted`, `replied`) | one webhook | retried, so a down extension catches up |
 | `@<name>` notices as replies | built-in participant per extension | wake rules as agents' |
 | `/` menu, argument hints, annotation line and buttons | website | drawn from data, nothing per extension |
-| typed tools for agents: one per command and per annotation action, plus generic `op=command` | harness plugins, client tool | args checked on the bus the same way |
+| the manifest's `tools` for agents (one per extension, with ops), mapped onto commands and actions | harness plugins, client tool | args checked on the bus the same way |
 
 ## Tasks as the first extension
 
@@ -131,12 +138,11 @@ sequenceDiagram
   started like `complete-ext`.
 - **Commands:** `/task @a @b text`, `/approval @can text`. Approval decisions keep needing a passkey-signed person,
   so the bus passes `verified` with the caller.
-- **Annotation:** `{type, state per assignee, assignees, by}`; actions accept, done, reject (reason), cancel (author;
-  Can's "cancel").
+- **Annotation:** `label`, `state`, `allowed` per participant, and `data` `{kind, by, assignees with their states,
+  poke}`; actions accept, progress, done, reject (reason), cancel (the author; Can's "cancel"), approve/deny
+  (people, passkey).
 - **Panel:** "Tasks": For me / Assigned by me, open first, each linking to its message.
-- **Agents:** a delivery carries "N open tasks: op=ext name=task action=list" the way the bus does today, but from the
-  extension: it answers `events` with a per-agent count the bus adds to deliveries. Or there's no reminder at all if
-  we drop it (#13584).
+- **Agents:** pokes (below) instead of the "N open tasks" line in every delivery, if Can agrees (#13865).
 - **Moving today's tasks:** the bus's tasks (39 tasks, 49 approvals, 12 open) are copied into the extension once, and
   `message.task` becomes `message.ext.task`. The old routes (`/api/tasks`, op=accept/done/…) answer through the
   extension until no harness uses them, then go. The ✉ Inbox becomes the Tasks panel.
@@ -147,16 +153,16 @@ sequenceDiagram
 
 Agents get each command as a tool call with typed arguments, not as text to type:
 
-- **Schemas:** the manifest's args map onto a tool's JSON schema. `/task` becomes `task {to: string[], text: string,
-  conversation?: string}`; each annotation action becomes `task_done {message_id}`, `task_reject {message_id,
-  reason?}`, and so on, offered only to agents in the action's `for`.
+- **Schemas:** one tool per extension, from the manifest's `tools`: `task {op: "create" | "mutate", …}` (Can #13866).
+  `create` takes `kind`, `conversation`, `to`, `text`, `poke`; `mutate` takes `message_id`, `action`, and `reason`,
+  `note` or `eta`. The manifest's `map` says which command or action each op becomes.
 - **Running a call:** the bus runs it as a person's Enter, and a `post` answer is sent at once (the call is the
   agent's send). `note` comes back as the tool result; `fill` and `open` are not offered to agents.
 - **When tools are listed:** harnesses fix their tool list when a session starts (omp and pi at startup; the MCP
-  plugins for Claude Code and Codex when the session opens). Each plugin fetches the bus's commands then and
-  registers one typed tool per command and action. A command added later appears at the agent's next session; until
-  then the message-bus tool's generic `op=command name=… args={…}` reaches it, and `op=command` without a name lists
-  the schemas.
+  plugins for Claude Code and Codex when the session opens). Each plugin fetches the extensions' `tools` then and
+  registers them next to `message-bus`. A tool added later appears at the agent's next session; until then the
+  message-bus tool's generic `op=ext name=task args={…}` reaches it with the same arguments, and `op=ext` without a
+  name lists the schemas.
 - **Arguments the schema can't pin:** a type like "a member of this room" changes per conversation, so it is a string
   with a description in the schema. The bus checks it on every call and returns a clear error ("@xyz is not in this
   room"), as it does for wake lists.
@@ -172,10 +178,10 @@ Agents get each command as a tool call with typed arguments, not as text to type
   - `history(seq, who, action, at)`.
   It serves `GET /bus-extension.json`, `POST /commands/task`, `POST /actions/:action`, `POST /events` and `GET /panel`.
   Every POST checks the bus's HMAC header with the shared secret from its env.
-- **Bus:** reads the manifest (at start, then every 10 min) and adds `task` to `/api/state` (`commands`, `panels`,
-  `annotationActions`).
-- **omp plugin on @webapp's machine:** at session start, `GET /api/state` (agent token). It registers the tools
-  `task`, `task_accept`, `task_done`, `task_reject` from the manifest's schemas, next to `message-bus`.
+- **Bus:** reads the manifest (at start, then every 10 min) and adds it to `/api/state` (`commands`, `actions`,
+  `tools`, `panels`).
+- **omp plugin on @webapp's machine:** at session start, `GET /api/state` (agent token). It registers the manifest's
+  one tool, `task`, with its schema, next to `message-bus`.
 
 **1. Ümit types** `/task @webapp fix the two Safari tests` in #launch.
 - **Website (`ui/commands.ts`, new):** at `/` it shows the command menu from `state.commands`. Once `task` is picked,
@@ -191,8 +197,9 @@ Agents get each command as a tool call with typed arguments, not as text to type
   `POST <task-ext>/commands/task {v:1, caller:{id:"umit", kind:"person", verified:true},
   conversation:{id, kind, members}, args, messages:[latest 20]}`.
 - **task-ext:** writes nothing yet. It answers with a proposal:
-  `{post:{text:"@webapp fix the two Safari tests", annotation:{type:"task", by:"umit",
-  assignees:[{id:"webapp", state:"open"}]}, wake:["webapp"]}}`.
+  `{post:{text:"@webapp fix the two Safari tests", annotation:{label:"Task · open · @webapp", state:"open",
+  allowed:{webapp:[accept, progress, done, reject], umit:[cancel]}, data:{kind:"task", by:"umit",
+  assignees:[{id:"webapp", state:"open"}], poke:"4h"}}, wake:["webapp"]}}`.
 - **Bus:** keeps the proposal under an id (10 min, Ümit only, #launch only) and returns `{proposal:{id, text,
   annotation}}`.
 - **Website:** shows the text in the box with a card above it ("Task for @webapp · Send gives it"). Ümit may still
@@ -209,30 +216,31 @@ Agents get each command as a tool call with typed arguments, not as text to type
   the task exists.
 
 **4. @webapp is woken**
-- **Bus → @webapp's plugin:** the delivery of #13900 carries the annotation, along with the action list the bus
-  computed from the manifest's `for` (webapp is an assignee: accept, done, reject).
-- **Plugin:** shows the model "Task #13900 for you from @umit: fix the two Safari tests. Tools: task_accept,
-  task_done, task_reject (message_id 13900)." The tools were registered at step 0, so no reload is needed.
+- **Bus → @webapp's plugin:** the delivery of #13900 carries the annotation's `label` and webapp's own `allowed`
+  (accept, progress, done, reject).
+- **Plugin:** shows the model "Task #13900 for you from @umit: fix the two Safari tests. task op=mutate message_id=13900
+  action=accept|progress|done|reject." The tool was registered at step 0, so no reload is needed.
 
 **5. @webapp accepts**
-- **Model → plugin:** `task_accept {message_id:13900}`.
-- **Plugin → bus:** `POST /api/ext/task/actions/accept {seq:13900}` (agent token).
-- **Bus:** checks that webapp is in the action's `for` (it is in `annotation.assignees`), then calls `POST <task-ext>/actions/accept {seq, caller:{id:"webapp", kind:"agent"}}`, signed.
+- **Model → plugin:** `task {op:"mutate", action:"accept", message_id:13900}`.
+- **Plugin → bus:** `POST /api/ext/task/tool {op:"mutate", action:"accept", message_id:13900}` (agent token). The bus
+  applies the manifest's `map`: this is action `accept` on #13900.
+- **Bus:** checks that `accept` is in `allowed.webapp`, then calls `POST <task-ext>/actions/accept {seq, caller:{id:"webapp", kind:"agent"}}`, signed.
 - **task-ext:** sets the assignee to `accepted` and logs history. It answers `{annotation:{…, assignees:[{id:"webapp",
   state:"accepted"}]}}`, with no notice and no wake (accepting wakes nobody, as today).
 - **Bus:** stores the new `ext_json` and publishes `messageChanged`. Ümit's page redraws: "Task · @webapp is on it".
 
 **6. @webapp finishes**
-- **Model → plugin → bus → task-ext:** `task_done {message_id:13900}`, by the same path.
+- **Model → plugin → bus → task-ext:** `task {op:"mutate", action:"done", message_id:13900}`, by the same path.
 - **task-ext:** sets `done` and answers `{annotation (done), notice:{text:"Done by @webapp.", wake:[]}}`.
 - **Bus:** stores the annotation, publishes the change, and posts the notice as `@task`, a reply to #13900. It wakes
   nobody (Ümit is a person; her page marks it unread, as any reply).
 - **Ümit's page:** the line under #13900 says "Task · done ✓ · @webapp", and the Tasks panel moves it to "done".
 
 **Other endings**
-- **Rejected:** `task_reject {message_id, reason}`. The notice is "Rejected by @webapp: not today", and it wakes the
+- **Rejected:** `task {op:"mutate", action:"reject", message_id, reason}`. The notice is "Rejected by @webapp: not today", and it wakes the
   assigner if the assigner is an agent.
-- **Cancelled:** Ümit's Cancel button → `POST /api/ext/task/actions/cancel` (`for` = the message's author) → a confirm
+- **Cancelled:** Ümit's Cancel button (`allowed.umit`) → `POST /api/ext/task/actions/cancel` → a confirm
   dialog drawn from the manifest's `confirm` → the extension sets `cancelled_at` → the notice "Cancelled by @umit."
   wakes @webapp (the assignee must stop).
 - **Message deleted:** the bus sends `events {type:"deleted", seq}`. task-ext cancels the task, and the line goes with
@@ -242,9 +250,7 @@ Agents get each command as a tool call with typed arguments, not as text to type
 - **The extension is down at a later step:** events are queued and retried, so the task row appears once it is back.
   Actions return an error to the caller and change nothing.
 
-**Reminders (if kept)**
-- **task-ext:** answers each `events` call with `{open:{webapp:1}}`.
-- **Bus:** keeps that small map and adds "(1 open task: task_done …)" to webapp's deliveries until the count drops.
+**Reminders:** pokes (next section) instead of the "N open tasks" line, if Can agrees.
 
 **The panel**
 - **Website:** Ümit opens Tasks in the Workspace. The website frames `<task-ext>/panel?who=umit&sig=…`, a link
@@ -275,7 +281,7 @@ timer, the policy and the record.
   - The assigner can set one per task: `/task @webapp fix the tests --poke 2h`, or the Tasks panel's "Poke after …".
   - `--poke off` turns them off.
 - **Answering a poke:**
-  - Any action resets the timer, and so does a new typed tool for agents, `task_progress {message_id, note, eta?}`.
+  - Any action resets the timer, and so does `task {op:"mutate", action:"progress", message_id, note, eta?}`.
   - The note goes under the task ("@webapp: tests run, about 40 min"), so the assigner sees it without waking anyone.
   - An `eta` moves the next poke past it.
 - **Not poking a busy agent:** before waking, task-ext asks the bus for the assignee's status (`GET
@@ -296,8 +302,8 @@ timer, the policy and the record.
 | 1 | manifest `commands`, `/` menu and argument checks in the box, `command` route with `fill`/`note`/`open` | ~1 day |
 | 2 | `post` with proposals, `message.ext`, annotation line and buttons, actions route, events, notices | ~1½ days |
 | 3 | `task-ext`: /task, /approval, panel; move today's tasks; old routes answered through it | ~1½ days |
-| 4 | agents: typed tools per command and action in the 7 harness plugins, generic `op=command`, actions in deliveries | ~1 day |
+| 4 | agents: the manifest's `tools` in the 7 harness plugins (`POST /api/ext/:name/tool`, mapped by `map`), generic `op=ext`, allowed actions in deliveries | ~1 day |
 
 Open points for Can:
 - Is `cancel` the author only, or the author and any person?
-- Does the "N open tasks" reminder stay?
+- Does the "N open tasks" reminder go, with pokes instead (#13865)?
