@@ -313,4 +313,22 @@ chip.addEventListener("touchend", (event) => {
   tookOnPointerUp = true;
   take();
 });
+// A tap on the grey words themselves takes them (Ümit #13730: "when I tap on a suggestion" nothing happened; the grey
+// words lie under the box, so a tap there only moved the cursor). Only a short tap, not one that scrolls or selects.
+let boxTouch: { x: number; y: number } | undefined;
+dom.input.addEventListener("touchstart", (event) => {
+  const t = event.touches[0];
+  boxTouch = shown && event.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : undefined;
+}, { passive: true });
+dom.input.addEventListener("touchend", (event) => {
+  const t = event.changedTouches[0];
+  const was = boxTouch;
+  boxTouch = undefined;
+  if (!was || !t || !shown || Math.hypot(t.clientX - was.x, t.clientY - was.y) > 10) return;
+  const words = ghost.querySelector(".ghost-words");
+  const onWords = words && [...words.getClientRects()].some((r) => t.clientX >= r.left - 4 && t.clientX <= r.right + 4 && t.clientY >= r.top - 4 && t.clientY <= r.bottom + 4);
+  if (!onWords) return;
+  event.preventDefault();
+  take();
+});
 window.addEventListener("hashchange", reset);
