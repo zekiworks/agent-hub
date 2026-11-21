@@ -244,8 +244,32 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   const listen = speakButton(message);
   listen.classList.add("answer-toast-speak");
   row.prepend(reply, voice, listen, take, copy);
+  for (const button of row.querySelectorAll("button")) tapOnTouchEnd(button);
   toast.append(row);
   place(savedPosition());
+}
+
+/**
+ * A finger's tap on `button` acts when it lifts, not on the browser's click: on the iPhone a banner button sometimes
+ * took several taps (Ümit #13664), the click going astray while the keyboard closed and the banner moved. A tap that
+ * moved more than a few pixels is a scroll or a drag and does nothing; touchend is kept from the page, so the browser's
+ * own click for it never comes and nothing runs twice. Mouse and keyboard keep the plain click.
+ */
+function tapOnTouchEnd(button: HTMLButtonElement): void {
+  let start: { x: number; y: number } | undefined;
+  button.addEventListener("touchstart", (event) => {
+    const t = event.touches[0];
+    start = event.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : undefined;
+  }, { passive: true });
+  button.addEventListener("touchend", (event) => {
+    const t = event.changedTouches[0];
+    const was = start;
+    start = undefined;
+    if (!was || !t || button.disabled || Math.hypot(t.clientX - was.x, t.clientY - was.y) > 10) return;
+    event.preventDefault();
+    button.click();
+  });
+  button.addEventListener("touchcancel", () => (start = undefined));
 }
 
 /**
