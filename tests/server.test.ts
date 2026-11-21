@@ -2158,3 +2158,23 @@ describe("forwarding (Can #12470)", () => {
     expect(text).toContain("> File: /tmp/received/data.csv (data.csv,");
   });
 });
+
+describe("replying to a paragraph (Ümit #13981)", () => {
+  test("the reply quotes the paragraph it answers, as the page shows it; words not in the message are never quoted as its", async () => {
+    const asked = await send({
+      from: "uma",
+      to: "@carol",
+      text: "First, the **plan** for today.\n\nSecond: see [the notes](https://example.com/notes) and tell me.\n\nThird.",
+    });
+    const reply = await send({ from: "carol", replyToSeq: asked.message.seq, quoteText: "Second: see the notes and tell me.", text: "done" });
+    expect(reply.message.quote).toMatchObject({ seq: asked.message.seq, from: "uma", text: "Second: see the notes and tell me." });
+    const page = await getJson<MessagesResponse>(bus, `/api/conversations/${asked.conversation.id}/messages`, "carol");
+    expect(page.messages.at(-1)?.quote?.text).toBe("Second: see the notes and tell me.");
+    // Without quoteText: the message's beginning, as before.
+    expect((await send({ from: "carol", replyToSeq: asked.message.seq, text: "all of it" })).message.quote?.text).toStartWith("First, the **plan**");
+    // Words she never wrote are not quoted as hers: the reply quotes the message as usual, and still goes.
+    const made = await send({ from: "carol", replyToSeq: asked.message.seq, quoteText: "Something uma never wrote.", text: "x" });
+    expect(made.message.quote?.text).toStartWith("First, the **plan**");
+    expect((await post({ from: "carol", conversationId: asked.conversation.id, quoteText: "Third.", text: "x" })).status).toBe(400);
+  });
+});

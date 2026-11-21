@@ -35,14 +35,18 @@ export async function uploadFile(file: File): Promise<FileRef> {
 export interface Chosen {
   reply: Message | undefined;
   item: ItemReply | undefined;
+  /** The paragraph of `reply` it answers (Ümit #13981). */
+  part?: string;
 }
 
-/** What the open conversation's message answers now: a message, or a checklist item. */
+/** What the open conversation's message answers now: a message (or one paragraph of it), or a checklist item. */
 export function chosenNow(view: View): Chosen {
   const here = (id: string) => view.kind === "conversation" && id === view.id;
+  const reply = state.replyTo && here(state.replyTo.conversationId) ? state.replyTo : undefined;
   return {
-    reply: state.replyTo && here(state.replyTo.conversationId) ? state.replyTo : undefined,
+    reply,
     item: state.itemReply && here(state.itemReply.conversationId) ? state.itemReply : undefined,
+    ...(reply && state.replyPart ? { part: state.replyPart } : {}),
   };
 }
 
@@ -57,6 +61,7 @@ export async function postToView(view: View, text: string, fileIds: string[], ch
   if (fileIds.length > 0) request.fileIds = fileIds;
   if (replyTo) {
     request.replyToSeq = replyTo.seq;
+    if (chosen.part) request.quoteText = chosen.part;
   } else if (view.kind === "draft") request.to = view.project !== undefined ? `@@${view.project}` : formatAddress(view.to);
   else if (view.id === ALL_CONVERSATION_ID) request.to = "@all";
   else request.conversationId = view.id;

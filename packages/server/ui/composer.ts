@@ -164,17 +164,22 @@ setIcon(dom.attachBtn, "paperclip");
   grip.setAttribute("aria-valuemin", String(COMPOSER_MIN));
 }
 
-/** Sets (or, with undefined, cancels) the message the next send replies to; also cancels a checklist item's reply. */
-export function setReplyTo(message: Message | undefined): void {
+/**
+ * Sets (or, with undefined, cancels) the message the next send replies to; also cancels a checklist item's reply.
+ * `part`: the paragraph it answers, when one was framed (Ümit #13981); the reply then quotes only that.
+ */
+export function setReplyTo(message: Message | undefined, part?: string): void {
   state.replyTo = message;
+  state.replyPart = message ? part : undefined;
   state.itemReply = undefined;
   dom.replyBar.hidden = !message;
   // The message being replied to stays framed until the reply is sent or cancelled (✕, Esc, Reply again).
   for (const li of dom.messageList.querySelectorAll<HTMLLIElement>(".msg-replying")) li.classList.remove("msg-replying");
   if (message) {
     dom.messageList.querySelector<HTMLLIElement>(`.msg[data-seq="${message.seq}"]`)?.classList.add("msg-replying");
-    const text = message.text.replace(/\s+/g, " ").trim();
-    dom.replyBarText.textContent = `Replying to ${message.from}: ${text.length > 120 ? `${text.slice(0, 119)}…` : text || "(file)"}`;
+    const text = (part ?? message.text).replace(/\s+/g, " ").trim();
+    const what = part ? "this paragraph of" : "";
+    dom.replyBarText.textContent = `Replying to ${what ? `${what} ` : ""}${message.from}: ${text.length > 120 ? `${text.slice(0, 119)}…` : text || "(file)"}`;
     dom.input.focus();
   }
 }

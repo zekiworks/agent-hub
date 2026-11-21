@@ -97,6 +97,8 @@ export interface NewMessage {
   fromSession?: number;
   /** The message this one replies to (same conversation). */
   replyToSeq?: number;
+  /** The part of that message it answers, when not all of it (a paragraph; Ümit #13981). */
+  quoteText?: string;
   /** Human messages while authentication is on: written from a signed-in session (true) or not (false). */
   verified?: boolean;
   /** The agents it wakes (Message.wake); absent: the old rule. */
@@ -170,6 +172,7 @@ interface MessageRow {
   files_json: string;
   created_at: number;
   reply_to_seq: number | null;
+  quote_text: string | null;
   verified: number | null;
   from_session: number | null;
   expires_at: number | null;
@@ -418,6 +421,12 @@ function expiresAt(row: MessageRow): number {
   return row.expires_at ?? row.created_at + DEFAULT_HOLD_MS;
 }
 
+/** The quote of a reply to a part of a message (a paragraph; Ümit #13981): that part, not the message's beginning. */
+function partOf(quote: Quote | undefined, part: string | null): Quote | undefined {
+  if (!quote || part === null) return quote;
+  return { ...quote, text: part.length > QUOTE_TEXT_CHARS ? `${part.slice(0, QUOTE_TEXT_CHARS - 1)}…` : part };
+}
+
 function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefined, forwards: MessageForward[] = []): Message {
   return {
     seq: row.seq,
@@ -499,6 +508,8 @@ export class BusDatabase {
     if (!messageColumns.some((c) => c.name === "deleted_at")) this.db.exec("ALTER TABLE messages ADD COLUMN deleted_at INTEGER");
     // Databases created before forwarding lack the column (Can #12470; null: not a forwarded copy).
     if (!messageColumns.some((c) => c.name === "forwarded_json")) this.db.exec("ALTER TABLE messages ADD COLUMN forwarded_json TEXT");
+    // Databases created before replying to a paragraph lack the column (Ümit #13981; null: the whole message).
+    if (!messageColumns.some((c) => c.name === "quote_text")) this.db.exec("ALTER TABLE messages ADD COLUMN quote_text TEXT");
     // Databases created before tabs lack the column (Can #11480; null: in the order they were pinned).
     const pinColumns = this.db.query<{ name: string }, []>("PRAGMA table_info(pins)").all();
     if (!pinColumns.some((c) => c.name === "position")) this.db.exec("ALTER TABLE pins ADD COLUMN position INTEGER");
@@ -1475,8 +1486,8 @@ export class BusDatabase {
     return this.db.transaction((): Message => {
       const result = this.db
         .query(
-          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json, task_json, forwarded_json)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`
+          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json, task_json, forwarded_json, quote_text)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`
         )
         .run(
           id,
@@ -1492,7 +1503,8 @@ export class BusDatabase {
           input.expiresAt,
           input.wake ? JSON.stringify(input.wake) : null,
           input.task ? JSON.stringify(input.task) : null,
-          input.forwarded ? JSON.stringify(input.forwarded) : null
+          input.forwarded ? JSON.stringify(input.forwarded) : null,
+          input.quoteText ?? null
         );
       const seq = Number(result.lastInsertRowid);
       const addReceipt = this.db.query("INSERT INTO receipts (seq, recipient, delivered_at, session) VALUES (?1, ?2, NULL, ?3)");
@@ -1500,7 +1512,8 @@ export class BusDatabase {
       this.db
         .query("UPDATE conversations SET last_message_at = MAX(last_message_at, ?2) WHERE id = ?1")
         .run(input.conversationId, input.createdAt);
-      const quote = input.replyToSeq === undefined ? undefined : this.quotesFor([input.replyToSeq]).get(input.replyToSeq);
+      const whole = input.replyToSeq === undefined ? undefined : this.quotesFor([input.replyToSeq]).get(input.replyToSeq);
+      const quote = partOf(whole, input.quoteText ?? null);
       return {
         seq,
         id,
@@ -1635,7 +1648,7 @@ export class BusDatabase {
       list.push({ by: f.by_id, to: f.to_label, at: f.at });
     }
     return rows.map((row) =>
-      toMessage(row, bySeq.get(row.seq) ?? [], row.reply_to_seq === null ? undefined : quotes.get(row.reply_to_seq), forwards.get(row.seq))
+      toMessage(row, bySeq.get(row.seq) ?? [], partOf(row.reply_to_seq === null ? undefined : quotes.get(row.reply_to_seq), row.quote_text), forwards.get(row.seq))
     );
   }
 

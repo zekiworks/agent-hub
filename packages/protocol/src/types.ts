@@ -751,6 +751,11 @@ export interface PostMessageRequest {
   conversationId?: string;
   /** Reply into the conversation of message `replyToSeq` (the `#n` in a delivery header). */
   replyToSeq?: number;
+  /**
+   * With replyToSeq: the part of that message it answers (a paragraph, as the page shows it; Ümit #13981), quoted instead
+   * of the message's beginning. It must be from the message.
+   */
+  quoteText?: string;
   text: string;
   fileIds?: string[];
   /** For a conversation with one agent: the session of that agent to reach (else its most recently active one). */

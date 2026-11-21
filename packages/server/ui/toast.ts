@@ -15,6 +15,7 @@ import { setOwnTask } from "./inbox";
 import { copyText } from "./render";
 import { speakButton } from "./speak";
 import { conversationTitle, state } from "./state";
+import { markRead } from "./unread";
 import { startVoiceReply } from "./voice";
 
 let box: HTMLElement | undefined;
@@ -172,7 +173,7 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   makeHandle(toast, activate);
   const dismiss = h("button", "answer-toast-close", "✕");
   dismiss.type = "button";
-  dismiss.title = "Close (the message stays in its conversation)";
+  dismiss.title = "Close, leaving it unread (✓ Read marks it read)";
   dismiss.setAttribute("aria-label", "Close this notification");
   head.append(dismiss);
   const open = h("button", "answer-toast-open");
@@ -243,7 +244,17 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   voice.addEventListener("click", () => startVoiceReply({ kind: "conversation", id: conversation.id }, message));
   const listen = speakButton(message);
   listen.classList.add("answer-toast-speak");
-  row.prepend(reply, voice, listen, take, copy);
+  // ✓ Read (Ümit #13983): one tap says "seen it" and the banner goes, its conversation read; not "unimportant", the
+  // message stays where it is (and ✕ still only closes, leaving it unread).
+  const read = h("button", "link-btn answer-toast-reply answer-toast-read");
+  read.type = "button";
+  setIcon(read, "check", "Read");
+  read.title = "I've read it: close this and mark its conversation read (the message stays where it is)";
+  read.addEventListener("click", () => {
+    markRead(conversation.id);
+    if (!holdsReply(toast)) toast.remove();
+  });
+  row.prepend(read, reply, voice, listen, take, copy);
   for (const button of row.querySelectorAll("button")) tapOnTouchEnd(button);
   toast.append(row);
   place(savedPosition());

@@ -40,6 +40,15 @@ export const MAX_RECEIPT_WAIT_MS = 30_000;
 const DEFAULT_PAGE = 100;
 const MAX_PAGE = 500;
 
+/** Text as words only, lowercased: a link's address and the markdown marks dropped, so the shown text matches its source. */
+function plainWords(text: string): string {
+  return text
+    .replace(/\]\([^)]*\)/g, "]")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}@]+/gu, " ")
+    .trim();
+}
+
 /**
  * Participants @mentioned in `text` (`@id-n` counts as agent `id`; a renamed agent's old id counts as it); unknown
  * names and "@all" are left out.
@@ -133,6 +142,7 @@ function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknow
   const verified = ctx.checkWriter(req, writer);
   // A reply goes to the conversation of the message it answers (then it is a conversationId post) and quotes it.
   let replyToSeq: number | undefined;
+  let quoteText: string | undefined;
   if (body.replyToSeq !== undefined && body.replyToSeq !== null) {
     if (typeof body.replyToSeq !== "number" || !Number.isSafeInteger(body.replyToSeq)) {
       throw new HttpError(400, "replyToSeq must be a message number");
@@ -144,7 +154,12 @@ function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknow
     if (!original) throw new HttpError(404, `Unknown message #${body.replyToSeq}`);
     body.conversationId = original.conversationId;
     replyToSeq = original.seq;
-  }
+    // A reply to one paragraph quotes that paragraph (Ümit #13981). Only words that are in the message (as the page
+    // shows it: without the markdown) count, so nobody is quoted saying what they did not write; anything else quotes
+    // the message as usual, and the reply still goes.
+    const part = typeof body.quoteText === "string" ? body.quoteText.trim() : "";
+    if (part && plainWords(original.text).includes(plainWords(part))) quoteText = part;
+  } else if (body.quoteText != null) throw new HttpError(400, "quoteText goes with replyToSeq");
   const hasTo = body.to !== undefined && body.to !== null;
   const hasConversation = body.conversationId !== undefined && body.conversationId !== null;
   if (hasTo === hasConversation) throw new HttpError(400, "Give exactly one of to, conversationId or replyToSeq");
@@ -293,6 +308,7 @@ function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknow
     recipients,
     expiresAt: now + holdMs,
     replyToSeq,
+    ...(quoteText === undefined ? {} : { quoteText }),
     ...(sessions.size > 0 ? { sessions } : {}),
     ...(fromSession === undefined ? {} : { fromSession }),
     ...(verified === undefined ? {} : { verified }),

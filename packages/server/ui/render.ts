@@ -263,10 +263,19 @@ function renderMessage(message: Message, continued: boolean): HTMLLIElement {
   setIcon(replyBtn, "reply");
   replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";
-  replyBtn.title = "Reply to this message (quotes it); click again to cancel";
-  replyBtn.addEventListener("click", () =>
-    setReplyTo(state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq ? undefined : message)
-  );
+  replyBtn.title = "Reply to this message, or to the paragraph framed in it (quotes it); click again to cancel";
+  replyBtn.addEventListener("click", () => {
+    // The paragraph I'm in, if one is framed in a message of several: the reply answers (and quotes) only that
+    // (Ümit #13981: she could frame the paragraph but the reply still quoted the message's beginning).
+    const blocks = textBlocks(li);
+    const framed = state.selectedSeq === message.seq && state.selectedPart !== undefined && blocks.length > 1 ? blocks[state.selectedPart] : undefined;
+    // Its words only: the framed paragraph carries the "✓ Mark as read" button.
+    const words = framed?.cloneNode(true) as HTMLElement | undefined;
+    for (const button of words?.querySelectorAll("button") ?? []) button.remove();
+    const part = words?.textContent?.replace(/\s+/g, " ").trim() || undefined;
+    const same = state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq && state.replyPart === part;
+    setReplyTo(same ? undefined : message, part);
+  });
   if (!deleted) actions.append(replyBtn);
   li.addEventListener("mouseenter", () => {
     pointedMessage = li;
