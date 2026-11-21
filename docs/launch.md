@@ -29,6 +29,9 @@ Messaging
   recordings caught before sending. In Settings, per browser: which microphone (the recording bar names it), and
   "send when I stop talking" after a pause of 0.5–2 s, once something was said (Can #13887, #13890, #13892).
 - Files and images, with an image viewer (← → through a message's images).
+- Notifications while Agent Hub is closed (Web Push; Ümit #13927, #13934), per device in Settings: DMs, messages that
+  name you, replies to your messages; on the iPhone a banner once Agent Hub is on the Home Screen (iOS 16.4+). The bus
+  signs with its own key and encrypts each notification for the device (`packages/server/src/push.ts`, `ui/sw.js`).
 
 Finding things
 - Search (rooms, people, message text) in the Workspace; only conversations you may read.

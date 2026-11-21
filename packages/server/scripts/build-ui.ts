@@ -25,7 +25,7 @@ for (const name of ["app", "auth"]) {
   }
 }
 
-for (const file of ["index.html", "auth.html", "styles.css", "logo.svg", "logo-180.png", "logo-64.png", "logo-64-unread.png"]) {
+for (const file of ["index.html", "auth.html", "styles.css", "logo.svg", "logo-180.png", "logo-64.png", "logo-64-unread.png", "sw.js", "manifest.webmanifest"]) {
   copyFileSync(path.join(uiDir, file), path.join(publicDir, file));
 }
 

@@ -10,6 +10,7 @@ import { state } from "./state";
 import { setSuggestionsOn, suggestionBox, suggestionsOn } from "./suggest";
 import { askAgentOn, recipientBox, setAskAgentOn } from "./ask";
 import { autoSendMs, chosenMicrophone, microphones, setAutoSendMs, setChosenMicrophone } from "./voice";
+import { pushState, testPush, turnPushOff, turnPushOn, type PushState } from "./push";
 
 type EnglishSpeech = NonNullable<AgentSettings["englishSpeech"]>;
 
@@ -45,6 +46,7 @@ function render(): void {
   });
   dom.settingsDialog.replaceChildren(
     head,
+    notificationsSetting(),
     voiceLanguageSetting(me?.settings.voiceLanguage),
     h("h3", "", "Voice messages in English are written by"),
     select,
@@ -94,6 +96,60 @@ function voiceLanguageSetting(current: AgentSettings["voiceLanguage"]): HTMLElem
   });
   const section = h("div");
   section.append(h("h3", "", "My voice messages are in"), select, note);
+  return section;
+}
+
+/**
+ * Notifications on this device while Agent Hub is closed (Ümit #13927, #13934): DMs, messages that name me, replies to
+ * my messages; a banner on the iPhone once Agent Hub is on the Home Screen.
+ */
+function notificationsSetting(): HTMLElement {
+  const section = h("div");
+  const line = h("p", "dialog-hint", "");
+  const on = h("button", "link-btn", "Turn on");
+  const off = h("button", "link-btn", "Turn off");
+  const test = h("button", "link-btn", "Send me a test");
+  for (const b of [on, off, test]) b.type = "button";
+  const buttons = h("p", "");
+  const TEXT: Record<PushState, string> = {
+    unsupported: "This browser can't take notifications from the bus here (it needs https and a newer browser).",
+    "home-screen-first":
+      "On the iPhone: Share (the square with the arrow) → Add to Home Screen, then open Agent Hub from that icon " +
+      "and turn them on here. Safari itself can't take them.",
+    denied: "Notifications are blocked for this site: allow them in the browser's (or the iPhone's) settings for Agent Hub, then come back.",
+    off: "Off on this device.",
+    on: "On for this device: a banner when a message needs you, even with Agent Hub closed.",
+  };
+  const show = (state: PushState, note = ""): void => {
+    line.textContent = `${TEXT[state]}${note ? ` ${note}` : ""}`;
+    buttons.replaceChildren(...(state === "off" ? [on] : state === "on" ? [test, " · ", off] : []));
+  };
+  on.addEventListener("click", () => {
+    // The permission is asked from inside the click: an iPhone allows it only then.
+    turnPushOn().then(
+      (state) => show(state),
+      (err) => show("off", `It didn't work: ${errorText(err)}`)
+    );
+  });
+  off.addEventListener("click", () => void turnPushOff().then(() => show("off")));
+  test.addEventListener("click", () => {
+    testPush().then(
+      () => show("on", "Sent: it should show in a moment."),
+      (err) => show("on", `The test failed: ${errorText(err)}`)
+    );
+  });
+  void pushState().then((state) => show(state));
+  section.append(
+    h("h3", "", "Notifications on this device"),
+    line,
+    buttons,
+    h(
+      "p",
+      "dialog-hint",
+      "For DMs, messages that name you, and replies to your messages; a conversation whose 🔔 is set to none stays " +
+        "quiet. The text goes encrypted through the phone's or browser's push service (Apple, Google, Mozilla)."
+    )
+  );
   return section;
 }
 

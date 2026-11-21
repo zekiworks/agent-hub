@@ -506,6 +506,9 @@ export class Hub {
     };
   }
 
+  /** Called with every new message once it is published (the bus's Web Push, push.ts). */
+  onMessage?: (message: Message, conversation: Conversation) => void;
+
   /** Delivers a new message to its connected recipients and shows it to the viewers. */
   publishMessage(message: Message, conversation: Conversation): void {
     for (const { to, session } of message.receipts) {
@@ -515,6 +518,7 @@ export class Hub {
     }
     const viewerFrame = JSON.stringify({ type: "message", message, conversation } satisfies ViewerServerFrame);
     for (const ws of this.viewersOf(conversation)) ws.send(viewerFrame);
+    this.onMessage?.(message, conversation);
   }
 
   /**

@@ -1,0 +1,13 @@
+{
+  "name": "Agent Hub",
+  "short_name": "Agent Hub",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1b1b1b",
+  "theme_color": "#1b1b1b",
+  "icons": [
+    { "src": "/logo-180.png?v=2", "sizes": "180x180", "type": "image/png" },
+    { "src": "/logo-64.png?v=2", "sizes": "64x64", "type": "image/png" }
+  ]
+}

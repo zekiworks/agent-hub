@@ -6,6 +6,7 @@ import { dom } from "./dom";
 import { el } from "./html";
 import { navigate } from "./routing";
 import { conversationTitle, isCurrent, state } from "./state";
+import { pushOnHere } from "./push";
 
 type NotifyState = "unsupported" | "insecure" | NotificationPermission;
 
@@ -41,6 +42,8 @@ dom.notifyBtn.addEventListener("click", () => {
 
 export function notify(message: Message, conv: Conversation): void {
   if (notifyState() !== "granted" || (isCurrent(conv.id) && document.hasFocus())) return;
+  // This device gets the bus's notifications (push.ts): the same message must not show twice.
+  if (pushOnHere()) return;
   const files = message.files.length > 0 ? ` [${message.files.map((f) => f.name).join(", ")}]` : "";
   const n = new Notification(`${message.from} · ${conversationTitle(conv)}`, {
     body: `${message.text.slice(0, 300)}${files}`,

@@ -21,6 +21,9 @@ const UI_ASSETS: Record<string, { source: string; type: string }> = {
   "logo-64.png": { source: "logo-64.png", type: "image/png" },
   // The same with the unread dot, a file because Safari ignores a data: URL tab icon (Ümit #13435).
   "logo-64-unread.png": { source: "logo-64-unread.png", type: "image/png" },
+  // Notifications while the website is closed, and the Home Screen app (Ümit #13927, #13934).
+  "sw.js": { source: "sw.js", type: "application/javascript; charset=utf-8" },
+  "manifest.webmanifest": { source: "manifest.webmanifest", type: "application/manifest+json" },
 };
 
 function mtime(file: string): number {
@@ -80,6 +83,7 @@ export class Website {
   serve(pathname: string, headers?: Headers): Promise<Response> | undefined {
     if (pathname === "/" || pathname === "/index.html") return this.asset("index.html");
     if (pathname === "/auth") return this.asset("auth.html");
+    if (pathname === "/manifest.webmanifest") return this.asset("manifest.webmanifest");
     // Browsers also ask /favicon.ico on their own (Safari for its tab and favourites icons): the same leaves, or the
     // brand's icon (Ümit #13273).
     if (pathname === "/favicon.ico") return this.brand?.icon ? this.brandImage(this.brand.icon) : this.asset("logo-64.png");

@@ -7,6 +7,7 @@ import {
   PROTOCOL_VERSION,
   slugifyId,
   type HealthResponse,
+  type PushKeyResponse,
   type StateResponse,
 } from "@agent-bus/protocol";
 import { AgentTokens } from "./agent-tokens";
@@ -17,7 +18,7 @@ import { BusContext, tokenHash } from "./context";
 import { canSee, handleConversationRoute, mayRead, type Reader } from "./conversations";
 import { BusDatabase } from "./db";
 import { getFile, MAX_FILE_BYTES, postFile, transcribeFile } from "./files";
-import { CORS_HEADERS, errorResponse, HttpError, json, nonEmptyParam } from "./http";
+import { CORS_HEADERS, errorResponse, HttpError, json, nonEmptyParam, readJsonObject } from "./http";
 import type { SocketData } from "./hub";
 import { resolveLanAddresses } from "./lan";
 import { editChecklist, getChecklist, pinChecklist, putChecklist, tickChecklist } from "./checklists";
@@ -29,6 +30,7 @@ import { forwardExtension } from "./extensions";
 import { getBoxUsage, postBox, postBoxReport, type BoxExtension } from "./boxes";
 import { getTasks, taskAction } from "./tasks";
 import { postSpeech } from "./speech";
+import { WebPush } from "./push";
 import { type Brand, Website } from "./website";
 
 export interface BusServerOptions {
@@ -75,6 +77,8 @@ export interface BusServerOptions {
    * and http://localhost:<port>.
    */
   auth?: { rpId?: string; origins?: string[] };
+  /** Tests only: Web Push subscriptions may point at any http(s) address, not only the browsers' push services. */
+  pushAnyEndpoint?: boolean;
 }
 
 export interface BusServerHandle {
@@ -139,6 +143,12 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
   const tokens = new AgentTokens(db.db);
   tokens.approveBound();
   const ctx = new BusContext(db, humans, auth, tokens, filesDir);
+  // Notifications to people's devices while Agent Hub is closed (Ümit #13927, #13934).
+  const push = new WebPush(db.db, path.join(dataDir, "push-vapid.json"), {
+    subject: options.publicUrls?.[0] ?? "mailto:agent-hub@localhost",
+    anyEndpoint: options.pushAnyEndpoint,
+  });
+  ctx.hub.onMessage = (message, conversation) => push.notify(message, conversation, (id) => ctx.hub.isHuman(id));
   // Nobody is connected yet: apply the logoff rule to everyone (also cleans up after a crash).
   for (const agent of db.listAgents()) db.removeIfIdle(agent.id);
   const startedAt = Date.now();
@@ -286,6 +296,21 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       if (method === "GET" && boxReportMatch[2] === "usage") return json(getBoxUsage(boxReportMatch[1], options.boxes ?? {}, person, file));
     }
     if (method === "POST" && pathname === "/api/settings") return json(await postSetting(ctx, req));
+    if (pathname.startsWith("/api/push/")) {
+      if (viewer.kind !== "human") throw new HttpError(403, "Only a signed-in person's device takes notifications");
+      if (method === "GET" && pathname === "/api/push/key") return json({ publicKey: push.publicKey } satisfies PushKeyResponse);
+      if (method === "POST" && pathname === "/api/push/subscribe") {
+        push.subscribe(viewer.id, await readJsonObject(req));
+        return json({ ok: true });
+      }
+      if (method === "POST" && pathname === "/api/push/unsubscribe") {
+        push.unsubscribe(viewer.id, (await readJsonObject(req)).endpoint);
+        return json({ ok: true });
+      }
+      if (method === "POST" && pathname === "/api/push/test") {
+        return json({ ok: true, status: await push.test(viewer.id, (await readJsonObject(req)).endpoint) });
+      }
+    }
     return (await schedule.handle(req, url)) ?? json({ error: `No route for ${method} ${pathname}` }, 404);
   };
 

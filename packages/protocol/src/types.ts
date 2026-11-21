@@ -968,3 +968,33 @@ export interface HealthResponse {
 export interface ErrorResponse {
   error: string;
 }
+
+/**
+ * Web Push (Ümit #13927, #13934): a person's device (an iPhone's Home Screen app, a desktop browser) asks to be told of
+ * messages for them while Agent Hub is closed. GET /api/push/key gives the bus's VAPID key; the device's subscription
+ * goes to POST /api/push/subscribe, and POST /api/push/unsubscribe or /api/push/test name it by `endpoint`.
+ */
+export interface PushKeyResponse {
+  /** The bus's VAPID public key (uncompressed P-256 point, base64url): the device's `applicationServerKey`. */
+  publicKey: string;
+}
+
+/** A PushSubscription as the browser gives it (`subscription.toJSON()`). */
+export interface WebPushSubscription {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+export interface PushSubscribeRequest {
+  subscription: WebPushSubscription;
+}
+
+/** What a notification carries to the device's service worker (sw.js), encrypted for that device. */
+export interface PushPayload {
+  title: string;
+  body: string;
+  /** Opened on a tap: the conversation. */
+  url: string;
+  /** Notifications with one tag replace each other: one per conversation. */
+  tag: string;
+}
