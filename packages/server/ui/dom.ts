@@ -174,11 +174,6 @@ export function holdInView(seq: number): void {
   held = { seq, until: performance.now() + 3000 };
 }
 
-/** Whether a message is being held in view (scrollToBottom then centres it instead). */
-export function holdingView(): boolean {
-  return heldMessage() !== undefined;
-}
-
 function heldMessage(): HTMLElement | undefined {
   if (held && performance.now() < held.until) {
     const el = dom.messageList.querySelector<HTMLElement>(`.msg[data-seq="${held.seq}"]`);
@@ -201,3 +196,23 @@ export function scrollToBottom(): void {
   if (el) showInView(el);
   else dom.messageScroll.scrollTop = dom.messageScroll.scrollHeight;
 }
+
+// Following the newest message: true while the view is at the bottom, false once I scroll away. Whatever makes the
+// list taller afterwards (pictures and /inline images loading, an inlined file, the "Seen by" line, text rewrapping
+// when the Workspace opens) or the view shorter (the message box growing) keeps it there; before, the view stayed
+// where those left it, a couple of messages above the newest (Can #14268). A message jumped to stays centred.
+// Scroll events come only when scrollTop moves, so content growing under a still view does not end the following.
+let following = true;
+dom.messageScroll.addEventListener(
+  "scroll",
+  () => {
+    const s = dom.messageScroll;
+    following = s.scrollHeight - s.scrollTop - s.clientHeight < 80;
+  },
+  { passive: true }
+);
+const keepFollowing = new ResizeObserver(() => {
+  if (following || heldMessage()) scrollToBottom();
+});
+keepFollowing.observe(dom.messageList);
+keepFollowing.observe(dom.messageScroll);
