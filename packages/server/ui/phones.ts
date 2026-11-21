@@ -27,6 +27,9 @@ function fitViewport(): void {
   const zoomed = (viewport.scale ?? 1) > 1.05;
   const layout = document.documentElement.clientHeight;
   const keyboard = !zoomed && typing() && viewport.height < layout - 80;
+  // While the keyboard is up the tab row and the header's second row step aside (styles.css .keyboard-up), so the
+  // messages keep more than a strip (Ümit #13794: about five lines were left between header and message box).
+  document.documentElement.classList.toggle("keyboard-up", keyboard);
   if (keyboard) {
     root.setProperty("--vvh", `${Math.round(viewport.height)}px`);
     root.setProperty("--vvt", `${Math.max(0, Math.round(viewport.offsetTop))}px`);

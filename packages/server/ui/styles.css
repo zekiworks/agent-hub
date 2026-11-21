@@ -5021,3 +5021,15 @@ ul.md-list ul.md-list { list-style: circle; }
   font: inherit;
   font-size: 16px;
 }
+
+/* Phones with the keyboard up (phones.ts): the tab row and the header's second row (📌, Workspace ▾, ⓘ, "Parent:")
+   step aside, so the messages get the room the keyboard leaves (Ümit #13794); they come back with the keyboard down. */
+@media (max-width: 640px) {
+  .keyboard-up .tab-row,
+  .keyboard-up #checklist-btn,
+  .keyboard-up #pane-btn,
+  .keyboard-up #details-btn,
+  .keyboard-up .conv-parent {
+    display: none !important;
+  }
+}
