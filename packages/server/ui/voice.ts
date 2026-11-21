@@ -54,10 +54,12 @@ interface Recording {
   heard: boolean;
   /** The level meter has seen speech-loud sound (SPEECH_RMS), not only a silent microphone's faint noise. */
   spoke: boolean;
-  /** The microphone has sent something, or SIGNAL_WAIT_MS passed without it (or no meter): the timer runs from here. */
+  /** The microphone has sent something, or SIGNAL_WAIT_MS passed without it (or no meter): the timer shows from here. */
   live: boolean;
   /** It went live because the microphone sent something, not because the wait ran out (codex-ui #12868). */
   confirmed: boolean;
+  /** How long the microphone took to send anything (ms after the press), once live. */
+  waitedMs?: number;
 }
 
 /** "#room-a", "@@website", "logic, umit": where a recording started elsewhere will go. */
@@ -147,11 +149,14 @@ function tick(rec: Recording): void {
   const elapsed = recordedMs(rec);
   if (elapsed >= MAX_RECORDING_MS) return void stop(false);
   // Until the microphone sends anything, "Wait…" stands where the timer will run, and the dot is grey (the panel's
-  // `waiting` class); the first second after, "Speak now" (Ümit #12649: with AirPods she spoke into 1.8 s of silence).
+  // `waiting` class). Then the timer counts from the press: the recording holds everything since then, and Ümit spoke
+  // at once and saw it start late, after "Speak now" (#13669). "Speak now" shows only when the microphone was slow to
+  // start (a second or more, as AirPods are: Ümit #12649, 1.8 s of silence), for a second.
   // Only when sound came: after a wait that ran out it says so instead of promising (codex-ui #12868); without a level
   // meter (audio not running) nothing can be known, and the timer just runs.
   const silent = !rec.heard && rec.audio.state === "running";
-  const time = !rec.live ? "Wait…" : silent ? `${clock(elapsed)} · no sound from the microphone yet` : rec.confirmed && elapsed < 1200 ? "Speak now" : clock(elapsed);
+  const slowStart = rec.confirmed && (rec.waitedMs ?? 0) >= 1000 && elapsed - (rec.waitedMs ?? 0) < 1200;
+  const time = !rec.live ? "Wait…" : silent ? `${clock(elapsed)} · no sound from the microphone yet` : slowStart ? "Speak now" : clock(elapsed);
   // Opened another conversation meanwhile: the bar says where this one goes.
   dom.voiceTime.textContent = viewHash(state.view) === viewHash(rec.view) ? time : `${time} → ${viewLabel(rec.view)}`;
   drawWave(rec);
@@ -234,8 +239,7 @@ async function start(target?: { view: View; chosen: Chosen }): Promise<void> {
   // A cancel (or a new recording) meanwhile: this one's panel state is no longer its to change (codex-ui #12868).
   if (recording !== rec) return;
   dom.voiceRec.classList.remove("waiting");
-  rec.startedAt = Date.now();
-  rec.pausedMs = 0;
+  rec.waitedMs = recordedMs(rec);
   rec.live = true;
   rec.confirmed = confirmed;
 }
