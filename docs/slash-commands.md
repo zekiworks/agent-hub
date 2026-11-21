@@ -123,7 +123,7 @@ sequenceDiagram
 | events to the extension (`posted`, `deleted`, `replied`) | one webhook | retried, so a down extension catches up |
 | `@<name>` notices as replies | built-in participant per extension | wake rules as agents' |
 | `/` menu, argument hints, annotation line and buttons | website | drawn from data, nothing per extension |
-| `op=command` / `op=ext` for agents | client tool | lists commands; checks args the same way |
+| typed tools for agents: one per command and per annotation action, plus generic `op=command` | harness plugins, client tool | args checked on the bus the same way |
 
 ## Tasks as the first extension
 
@@ -143,6 +143,24 @@ sequenceDiagram
 - **What stays in the bus:** nothing about tasks. The approval's passkey check is the bus's `verified` flag, which
   any extension can require.
 
+## Agents: typed tools (Can #13860)
+
+Agents get each command as a tool call with typed arguments, not as text to type:
+
+- **Schemas:** the manifest's args map onto a tool's JSON schema. `/task` becomes `task {to: string[], text: string,
+  conversation?: string}`; each annotation action becomes `task_done {message_id}`, `task_reject {message_id,
+  reason?}`, and so on, offered only to agents in the action's `for`.
+- **Running a call:** the bus runs it as a person's Enter, and a `post` answer is sent at once (the call is the
+  agent's send). `note` comes back as the tool result; `fill` and `open` are not offered to agents.
+- **When tools are listed:** harnesses fix their tool list when a session starts (omp and pi at startup; the MCP
+  plugins for Claude Code and Codex when the session opens). Each plugin fetches the bus's commands then and
+  registers one typed tool per command and action. A command added later appears at the agent's next session; until
+  then the message-bus tool's generic `op=command name=… args={…}` reaches it, and `op=command` without a name lists
+  the schemas.
+- **Arguments the schema can't pin:** a type like "a member of this room" changes per conversation, so it is a string
+  with a description in the schema. The bus checks it on every call and returns a clear error ("@xyz is not in this
+  room"), as it does for wake lists.
+
 ## Order and size
 
 | Step | What | Size |
@@ -150,9 +168,8 @@ sequenceDiagram
 | 1 | manifest `commands`, `/` menu and argument checks in the box, `command` route with `fill`/`note`/`open` | ~1 day |
 | 2 | `post` with proposals, `message.ext`, annotation line and buttons, actions route, events, notices | ~1½ days |
 | 3 | `task-ext`: /task, /approval, panel; move today's tasks; old routes answered through it | ~1½ days |
-| 4 | agents: `op=command`, annotation actions in deliveries, in all 7 harness plugins | ~1 day |
+| 4 | agents: typed tools per command and action in the 7 harness plugins, generic `op=command`, actions in deliveries | ~1 day |
 
 Open points for Can:
-- Do agents use slash commands too (step 4), or only people?
 - Is `cancel` the author only, or the author and any person?
 - Does the "N open tasks" reminder stay?
