@@ -89,15 +89,18 @@ test("a DM, a mention and a reply reach the person's device, encrypted for it an
   await settle();
   expect(pushed).toHaveLength(0); // her own message, and one that doesn't need her
 
-  await send({ from: "uma", conversationId: project.conversation.id, text: "@carol can you look?" });
+  const asked = await send({ from: "uma", conversationId: project.conversation.id, text: "@carol can you look?" });
   const dm = await send({ from: "uma", to: "@carol", text: "a word in private" });
-  await send({ from: "uma", replyToSeq: project.message.seq, text: "agreed" });
+  const answered = await send({ from: "uma", replyToSeq: project.message.seq, text: "agreed" });
   await settle();
   expect(pushed).toHaveLength(3);
   const [mention, inDm, reply] = pushed.map((p) => decrypt(p.body));
-  expect(mention).toEqual({ title: "@uma · @@plans", body: "@carol can you look?", url: `/#/c/${project.conversation.id}`, tag: project.conversation.id });
+  const tag = (m: PostMessageResponse) => `${m.conversation.id}-${m.message.seq}`;
+  expect(mention).toEqual({ title: "@uma · @@plans", body: "@carol can you look?", url: `/#/c/${project.conversation.id}`, tag: tag(asked) });
   expect(inDm).toMatchObject({ title: "@uma", body: "a word in private", url: `/#/c/${dm.conversation.id}` });
-  expect(reply?.body).toBe("agreed");
+  // Two in one conversation keep their own tags: Safari shows nothing for one that replaces another (Ümit #14070).
+  expect(reply).toMatchObject({ body: "agreed", tag: tag(answered) });
+  expect(reply?.tag).not.toBe(mention?.tag);
 
   // Headers as push services want them, and a VAPID token the bus's public key verifies.
   const headers = pushed[0]!.headers;

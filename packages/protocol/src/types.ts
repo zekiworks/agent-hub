@@ -1000,6 +1000,6 @@ export interface PushPayload {
   body: string;
   /** Opened on a tap: the conversation. */
   url: string;
-  /** Notifications with one tag replace each other: one per conversation. */
+  /** One per message (Safari replaces a notification with the same tag without showing it; Ümit #14070). */
   tag: string;
 }
