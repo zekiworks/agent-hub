@@ -173,16 +173,39 @@ export function setReplyTo(message: Message | undefined, part?: string): void {
   state.replyPart = message ? part : undefined;
   state.itemReply = undefined;
   dom.replyBar.hidden = !message;
+  setReplyExpanded(false);
   // The message being replied to stays framed until the reply is sent or cancelled (✕, Esc, Reply again).
   for (const li of dom.messageList.querySelectorAll<HTMLLIElement>(".msg-replying")) li.classList.remove("msg-replying");
   if (message) {
-    dom.messageList.querySelector<HTMLLIElement>(`.msg[data-seq="${message.seq}"]`)?.classList.add("msg-replying");
-    const text = (part ?? message.text).replace(/\s+/g, " ").trim();
+    const li = dom.messageList.querySelector<HTMLLIElement>(`.msg[data-seq="${message.seq}"]`);
+    li?.classList.add("msg-replying");
+    // Its ⋯ row folds again: writing, the screen is for the box and what it answers (Ümit #14607).
+    li?.querySelector(".msg-actions")?.classList.remove("msg-actions-open");
+    const text = (part ?? message.text).trim();
     const what = part ? "this paragraph of" : "";
-    dom.replyBarText.textContent = `Replying to ${what ? `${what} ` : ""}${message.from}: ${text.length > 120 ? `${text.slice(0, 119)}…` : text || "(file)"}`;
+    dom.replyBarText.textContent = `Replying to ${what ? `${what} ` : ""}${message.from}: ${text || "(file)"}`;
     dom.input.focus();
   }
 }
+
+/**
+ * The reply bar shows one line; a tap on it opens the whole message it answers, to read while writing, and closes it
+ * again (Ümit #14607: replying on the phone she could not see what she was answering).
+ */
+function setReplyExpanded(on: boolean): void {
+  dom.replyBar.classList.toggle("expanded", on);
+  dom.replyBarText.setAttribute("aria-expanded", String(on));
+  dom.replyBarText.title = on ? "Tap to show one line again" : "Tap to see the whole message";
+}
+const toggleReply = () => setReplyExpanded(!dom.replyBar.classList.contains("expanded"));
+dom.replyBar.addEventListener("click", (event) => {
+  if (!(event.target as Element).closest("#reply-cancel")) toggleReply();
+});
+dom.replyBarText.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  toggleReply();
+});
 
 /**
  * ↩ on a checklist item (Ümit #11598): the item shows above the message box like a reply, and goes in front of the
@@ -192,7 +215,7 @@ export function setItemReply(conversationId: string, item: string): void {
   setReplyTo(undefined);
   state.itemReply = { conversationId, item };
   dom.replyBar.hidden = false;
-  dom.replyBarText.textContent = `Replying to the checklist item: ${item.length > 120 ? `${item.slice(0, 119)}…` : item}`;
+  dom.replyBarText.textContent = `Replying to the checklist item: ${item}`;
   dom.input.focus();
 }
 

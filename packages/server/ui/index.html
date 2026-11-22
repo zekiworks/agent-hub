@@ -168,7 +168,9 @@
         <div id="composer-grip" class="composer-grip" role="separator" aria-orientation="horizontal" aria-label="Message box height" tabindex="0" title="Drag to make the message box taller or shorter (double-click: automatic)"></div>
         <div id="composer-error" class="composer-error" role="alert" hidden></div>
         <div id="reply-bar" class="reply-bar" hidden>
-          <span id="reply-bar-text" class="reply-bar-text"></span>
+          <!-- One line; a tap opens the whole message it answers (composer.ts; Ümit #14607). -->
+          <span id="reply-bar-text" class="reply-bar-text" role="button" tabindex="0" aria-expanded="false"></span>
+          <span class="reply-bar-caret" aria-hidden="true">▾</span>
           <button id="reply-cancel" type="button" class="link-btn" title="Cancel the reply (Esc)">✕</button>
         </div>
         <ul id="staged-files" class="staged-files" hidden></ul>

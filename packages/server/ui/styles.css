@@ -2701,6 +2701,29 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.reply-bar-caret {
+  flex: none;
+  color: var(--accent);
+}
+
+/* Opened (composer.ts; Ümit #14607): the whole message it answers, its lines kept, scrolling past 40% of the screen. */
+.reply-bar.expanded {
+  align-items: flex-start;
+}
+
+.reply-bar.expanded .reply-bar-text {
+  max-height: 40vh;
+  overflow-y: auto;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reply-bar.expanded .reply-bar-caret {
+  transform: rotate(180deg);
 }
 
 .msg-text {
