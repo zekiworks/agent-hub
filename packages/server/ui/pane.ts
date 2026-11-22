@@ -501,7 +501,9 @@ function saveWidth(): void {
 
 function resetWidth(): void {
   localStorage.removeItem(WIDTH_KEY);
+  localStorage.removeItem(HEIGHT_KEY);
   dom.app.style.removeProperty("--ws-width");
+  dom.app.style.removeProperty("--ws-height");
   dom.wsResize.removeAttribute("aria-valuenow");
   dom.wsReset.hidden = true;
 }
@@ -509,28 +511,70 @@ function resetWidth(): void {
 const savedWidth = Number(localStorage.getItem(WIDTH_KEY));
 if (savedWidth > 0) setWidth(savedWidth);
 
+// A desktop window under 1100 px puts the Workspace under the conversation (styles.css; Can #14926): there the same
+// divider sets its height, kept per browser apart from the width.
+const STACKED = window.matchMedia("(min-width: 641px) and (max-width: 1100px)");
+const HEIGHT_KEY = "agent-bus.workspaceHeight";
+const MIN_HEIGHT = 160;
+/** The conversation above keeps at least this much (its message box must stay usable). */
+const MIN_ABOVE = 260;
+
+function setHeight(px: number): void {
+  const top = dom.pane.parentElement?.getBoundingClientRect().top ?? 0;
+  const max = Math.max(MIN_HEIGHT, innerHeight - top - MIN_ABOVE);
+  const height = Math.round(Math.min(Math.max(px, MIN_HEIGHT), max));
+  dom.app.style.setProperty("--ws-height", `${height}px`);
+  dom.wsResize.setAttribute("aria-valuenow", String(height));
+  dom.wsReset.hidden = false;
+}
+
+function currentHeight(): number {
+  return Math.round(dom.pane.getBoundingClientRect().height);
+}
+
+function saveHeight(): void {
+  const height = parseInt(dom.app.style.getPropertyValue("--ws-height"), 10);
+  if (height > 0) localStorage.setItem(HEIGHT_KEY, String(height));
+}
+
+const savedHeight = Number(localStorage.getItem(HEIGHT_KEY));
+if (savedHeight > 0) dom.app.style.setProperty("--ws-height", `${savedHeight}px`);
+
+function orient(): void {
+  dom.wsResize.setAttribute("aria-orientation", STACKED.matches ? "horizontal" : "vertical");
+  dom.wsResize.setAttribute("aria-label", STACKED.matches ? "Workspace height" : "Workspace width");
+}
+orient();
+STACKED.addEventListener("change", orient);
+
 // Dragging: a drag ends however the pointer goes away (up, cancelled by the system, capture lost), once (#10400).
 dom.wsResize.addEventListener("pointerdown", (event) => {
   event.preventDefault();
   dom.wsResize.setPointerCapture(event.pointerId);
   dom.app.classList.add("ws-resizing");
-  const move = (e: PointerEvent) => setWidth(innerWidth - e.clientX);
+  const stacked = STACKED.matches;
+  const move = (e: PointerEvent) => (stacked ? setHeight(innerHeight - e.clientY) : setWidth(innerWidth - e.clientX));
   const finish = () => {
     dom.wsResize.removeEventListener("pointermove", move);
     for (const type of ["pointerup", "pointercancel", "lostpointercapture"] as const) dom.wsResize.removeEventListener(type, finish);
     dom.app.classList.remove("ws-resizing");
-    saveWidth();
+    if (stacked) saveHeight();
+    else saveWidth();
   };
   dom.wsResize.addEventListener("pointermove", move);
   for (const type of ["pointerup", "pointercancel", "lostpointercapture"] as const) dom.wsResize.addEventListener(type, finish);
 });
-// Keyboard (#10400): the edge is a focusable separator; ← widens, → narrows (16 px a step), Home or "Reset width" gives
-// the default back. Double-click does too.
+// Keyboard (#10400): the edge is a focusable separator; ← widens, → narrows (16 px a step), or under the
+// conversation ↑ taller, ↓ shorter; Home or "Reset width" gives the default back. Double-click does too.
 dom.wsResize.addEventListener("keydown", (event) => {
-  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+  if (!STACKED.matches && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
     event.preventDefault();
     setWidth(currentWidth() + (event.key === "ArrowLeft" ? 16 : -16));
     saveWidth();
+  } else if (STACKED.matches && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+    event.preventDefault();
+    setHeight(currentHeight() + (event.key === "ArrowUp" ? 16 : -16));
+    saveHeight();
   } else if (event.key === "Home") {
     event.preventDefault();
     resetWidth();

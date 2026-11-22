@@ -202,7 +202,8 @@ button:disabled {
   font-size: 14px;
 }
 
-@media (max-width: 1100px) {
+/* Phones show the Workspace as its own screen: nothing to drag. Narrow desktop windows stack it (below, #14926). */
+@media (max-width: 640px) {
   .ws-resize {
     display: none;
   }
@@ -4301,15 +4302,40 @@ ul.md-list ul.md-list { list-style: circle; }
   }
 }
 
-@media (max-width: 1100px) {
-  /* Too narrow for three columns: the document covers the conversation instead. */
+/* Too narrow for three columns (a desktop window under 1100 px): the Workspace sits under the conversation, both
+   visible, the divider between them dragged up or down (pane.ts; Can #14914, #14926: it used to cover the
+   conversation). Phones keep one screen at a time (below). */
+@media (min-width: 641px) and (max-width: 1100px) {
   .app.with-pane {
     grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) var(--ws-height, 45vh);
     grid-template-areas:
       "top top"
+      "side main"
       "side doc";
   }
 
+  .app.with-pane .pane {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .app.with-pane .ws-resize {
+    top: -4px;
+    bottom: auto;
+    left: 0;
+    right: 0;
+    width: auto;
+    height: 8px;
+    cursor: row-resize;
+  }
+
+  .app.with-pane.ws-resizing {
+    cursor: row-resize;
+  }
+}
+
+@media (max-width: 640px) {
   .app.with-pane .main {
     display: none;
   }
