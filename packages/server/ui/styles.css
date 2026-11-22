@@ -4607,13 +4607,13 @@ ul.md-list ul.md-list { list-style: circle; }
   }
 
   /* No hover on phones: tapping a message frames it and shows its buttons, finger-sized, in a row under the message
-   * (floating over it covered the text). The four of the first row are bare icons spread across the width, as in X's
-   * row under a post (Ümit #14587); ⋯'s named ones wrap below (render.ts). */
+   * (floating over it covered the text). Up to eight on one's own messages (☆ 📌 ✎ 🗑 joined ▶ ⧉ # ↩): they wrap to a
+   * second row rather than run off the left edge (codex-ui #11070 capture). */
   .msg-actions {
     position: static;
     display: none;
     flex-wrap: wrap;
-    justify-content: space-around;
+    justify-content: flex-end;
     gap: 4px;
     margin-top: 6px;
   }
@@ -4626,22 +4626,6 @@ ul.md-list ul.md-list { list-style: circle; }
   .msg-action-btn {
     padding: 4px 12px;
     font-size: 20px;
-  }
-
-  .msg-actions > .msg-action-btn {
-    min-width: 44px;
-    min-height: 44px;
-    border-color: transparent;
-    background: transparent;
-    box-shadow: none;
-    color: var(--muted);
-  }
-
-  /* What is on stays marked in the bare row: ★ saved, ↩ replying, ⋯ open. */
-  .msg-actions > .msg-bookmark-btn.bookmarked,
-  .msg-replying .msg-actions > .msg-reply-btn,
-  .msg-actions-open > .msg-overflow-btn {
-    color: var(--accent);
   }
 
   .msg-reply-label {
