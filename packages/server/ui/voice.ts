@@ -466,8 +466,14 @@ async function send(file: File, duration: number, view: View, chosen: Chosen): P
       showError("Your voice message was sent, but without its text: turning speech into text failed three times (the page was in the background, or the connection dropped). Agents get the recording, which few of them can play: if it matters, say it again or type it.");
       return;
     }
-    if (viewHash(state.view) !== viewHash(view)) showStatus(`Voice message sent to ${viewLabel(view)}, where it was recorded.`);
-    else hideStatus();
+    if (viewHash(state.view) !== viewHash(view)) {
+      // Said once, then gone: it stayed under the box and later read as news about the next message (Ümit #14599).
+      const note = `Voice message sent to ${viewLabel(view)}, where it was recorded.`;
+      showStatus(note);
+      setTimeout(() => {
+        if (dom.voiceBar.textContent === note) hideStatus();
+      }, 8000);
+    } else hideStatus();
   } catch (err) {
     // "Nothing was lost: try again" is not true of a recording; the offer below says what is kept.
     const why = errorText(err).replace(/ Nothing was lost: try again in a moment\.$/, "").replace(/\.$/, "");
