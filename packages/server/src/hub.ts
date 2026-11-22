@@ -564,6 +564,12 @@ export class Hub {
     for (const ws of this.viewers) if (ws.data.kind === "viewer" && ws.data.human === human) ws.send(frame);
   }
 
+  /** `human`'s "Waiting for your answer" changed (Ümit #14881): only their own open pages hear of it, and refetch. */
+  needsChanged(human: string): void {
+    const frame = JSON.stringify({ type: "needs" } satisfies ViewerServerFrame);
+    for (const ws of this.viewers) if (ws.data.kind === "viewer" && ws.data.human === human) ws.send(frame);
+  }
+
   /** Records `agentId`'s ack/seen of `seq` and tells viewers, the writer's agent connections and receipt waiters. */
   recordReceipt(agentId: string, seq: number, state: "ack" | "seen"): void {
     const receipt = this.db.markReceipt(agentId, seq, state);

@@ -9,7 +9,7 @@ import { runTicketed } from "./run";
 
 const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR] --humans carol,uma
                        [--https-port 7843 --tls-cert FILE --tls-key FILE] [--gpudash URL] [--forget-offline-days 15]
-                       [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL] [--ext NAME=URL[,launcher=LABEL|,box=complete|recipient]]…
+                       [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL] [--ext NAME=URL[,launcher=LABEL|,box=complete|recipient|needs]]…
                        [--brand-name NAME [--brand-logo FILE] [--brand-icon FILE]]
        agent-bus invite HUMAN [--data-dir DIR] [--url http://localhost:7800]
        agent-bus agents [--data-dir DIR]
@@ -143,14 +143,15 @@ function parseServeArgs(args: string[]): BusServerOptions {
       case "--ext": {
         const eq = value.indexOf("=");
         const name = value.slice(0, eq);
-        if (eq < 1 || !/^[a-z0-9][a-z0-9_-]*$/.test(name)) throw new Error(`--ext wants name=url[,launcher=Label|,box=complete|recipient], got "${value}"`);
+        if (eq < 1 || !/^[a-z0-9][a-z0-9_-]*$/.test(name)) throw new Error(`--ext wants name=url[,launcher=Label|,box=complete|recipient|needs], got "${value}"`);
         // ",launcher=Label" makes it a global Workspace item with a top-bar launcher (#10211); ",box=ROLE" a service the
-        // message box asks while a person types, not a Workspace page: "complete" (Can #12853), "recipient" (Ümit #13030).
+        // message box asks while a person types, not a Workspace page: "complete" (Can #12853), "recipient" (Ümit #13030);
+        // or one the bus asks about agents' messages: "needs" (Ümit #14881, the Inbox's "Waiting for your answer").
         const [url = "", ...extras] = value.slice(eq + 1).split(",");
         const box = extras.find((extra) => extra.startsWith("box="))?.slice(4);
         if (box !== undefined) {
-          if ((box !== "complete" && box !== "recipient") || extras.length > 1) {
-            throw new Error(`--ext ${name}: box= takes complete or recipient, and no other option`);
+          if ((box !== "complete" && box !== "recipient" && box !== "needs") || extras.length > 1) {
+            throw new Error(`--ext ${name}: box= takes complete, recipient or needs, and no other option`);
           }
           (options.boxes ??= {})[name] = { url, role: box };
           break;

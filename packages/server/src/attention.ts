@@ -12,6 +12,15 @@ type Action = (typeof ATTENTION_ACTIONS)[number];
 const MAX_EVENTS = 200;
 
 /**
+ * The people listed (one id per line) in `peopleFile` (attention-people.txt): those who said yes to having their doings
+ * noted (Ümit #13977) and their agents' messages judged for "Waiting for your answer" (Ümit #14881). Read each time, so
+ * a listing takes effect without a restart.
+ */
+export function listedPeople(peopleFile: string): string[] {
+  return existsSync(peopleFile) ? readFileSync(peopleFile, "utf8").split(/\s+/).filter(Boolean) : [];
+}
+
+/**
  * POST /api/attention {events: [{seq, action, ms?}]}: a signed-in person's events, kept only for agents' messages they
  * may read, and only for people listed (one id per line) in `peopleFile`: each person says yes first (Ümit #13977; not
  * Can until he asks).
@@ -26,7 +35,7 @@ export async function postAttention(
 ): Promise<{ ok: true; kept: number }> {
   if (!person) throw new HttpError(403, "Only a signed-in person reports what they did with messages");
   const body = await readJsonObject(req);
-  const listed = existsSync(peopleFile) && readFileSync(peopleFile, "utf8").split(/\s+/).includes(person);
+  const listed = listedPeople(peopleFile).includes(person);
   if (!listed) return { ok: true, kept: 0 };
   const events = Array.isArray(body.events) ? body.events.slice(0, MAX_EVENTS) : [];
   const at = new Date(now).toISOString();

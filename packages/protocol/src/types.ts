@@ -451,6 +451,8 @@ export type ViewerServerFrame =
   | { type: "seen"; conversationId: string; participant: string; at: number }
   /** The viewer's own tab order changed (another of their pages, or this one). */
   | { type: "tabs"; tabs: string[] }
+  /** The viewer's "Waiting for your answer" changed (a model marked a message, or they answered or dismissed one): GET /api/needs. */
+  | { type: "needs" }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
   | ExpiredFrame
@@ -859,9 +861,11 @@ export interface TranscriptResponse {
 /**
  * Box extensions (Can #12841–#12853): services the message box asks while a person types, set with
  * `serve --ext NAME=URL,box=ROLE`. They are not Workspace pages. "complete" suggests the next words of a draft;
- * "recipient" (Ümit #13030) suggests the one agent of a room to ask ("Ask @webapp"), or none.
+ * "recipient" (Ümit #13030) suggests the one agent of a room to ask ("Ask @webapp"), or none. "needs" (Ümit #14881)
+ * is asked by the bus itself, not by the box: whether an agent's new message needs a person's answer (the Inbox's
+ * "Waiting for your answer").
  */
-export type BoxRole = "complete" | "recipient";
+export type BoxRole = "complete" | "recipient" | "needs";
 
 /** POST /api/box/:name, from the website: the draft being typed in a conversation the person reads. */
 export interface BoxRequest {
@@ -952,6 +956,49 @@ export interface BoxRecipientBody {
   /** The agents it may name: the room's agent members, besides the person. At least two. */
   agents: string[];
   draft: { text: string };
+}
+
+/**
+ * What the bus sends a "needs" extension (Ümit #14881): `POST <its URL>/needs`, about one agent's new message for one
+ * person who may read it (listed in attention-people.txt). Versioned like BoxCompleteBody.
+ */
+export interface BoxNeedsBody {
+  v: 1;
+  kind: "needs";
+  /** The person the question is for. */
+  person: string;
+  /** `people`: the conversation's people (every person, in #all); the others are agents. */
+  conversation: { id: string; kind: ConversationKind; name?: string; title?: string; members: string[]; people: string[] };
+  /** The few messages before it, oldest first (deleted ones left out). */
+  messages: Array<{ seq: number; from: string; fromKind: ParticipantKind; text: string; createdAt: number }>;
+  /** The message to judge; `task` when it is a task or approval for `person`. */
+  message: { seq: number; from: string; fromKind: ParticipantKind; text: string; createdAt: number; task?: TaskType };
+}
+
+/** One model's verdict on a BoxNeedsBody: needs the person (`p` at or above the cut-off), with its probability. */
+export interface NeedsVerdict {
+  needs: boolean;
+  /** The model's probability that the message needs the person, 0–1. */
+  p: number;
+}
+
+/**
+ * The answer of a "needs" extension's `POST /needs`: each model's verdict by its short name ("d1", "glide"), or why it
+ * gave none. The bus keeps every verdict (the benchmark's record).
+ */
+export interface BoxNeedsResponse {
+  verdicts: Record<string, NeedsVerdict | { error: string }>;
+}
+
+/**
+ * GET /api/needs?from=<person> (Ümit #14881): the person's "Waiting for your answer": agents' messages of the last 7
+ * days that at least one model marked as needing them, which they have not answered (no later message of theirs in
+ * the conversation) or dismissed (POST /api/needs/dismiss {from, seq}); newest first, each with every model's verdict.
+ */
+export interface NeedsResponse {
+  items: Array<{ message: Message; verdicts: Record<string, NeedsVerdict> }>;
+  /** The conversations of the messages. */
+  conversations: Conversation[];
 }
 
 export interface HealthResponse {

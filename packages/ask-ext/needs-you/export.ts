@@ -4,7 +4,7 @@
 //
 //   bun export.ts PHRASING OUT_DIR
 import { loadItems, shuffled, splits } from "./data.ts";
-import { requestFor } from "./prompt.ts";
+import { requestFor } from "../src/needs.ts";
 import type { Item } from "./build.ts";
 
 const NEGATIVES_PER_POSITIVE = 2;

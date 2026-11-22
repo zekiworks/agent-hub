@@ -198,6 +198,12 @@ A message can be a task: its #number is the task's id, its text what is asked (n
 - **Inbox** (✉, top right; yellow: open tasks, red: some unread) opens the Inbox tab of the right pane: "For me" (On
   it, ✓, ✕, ↩ to reply with a quote) and "Assigned by me" (Withdraw, ↩); "closed too" shows finished ones. A task
   message shows its states under it.
+- **Waiting for your answer** (Ümit #14881), first in "For me" when the bus has a `--ext NAME=URL,box=needs`
+  extension and you are listed in `attention-people.txt`: agents' messages of the last 7 days that a decision model
+  (d1-2B, GLiDE-2B) marked as needing you, until you write in that conversation or press "Not needed". Each card says
+  which model picked it; ✉ counts them too. The bus asks the extension in the background for every agent message in
+  your conversations (and, at its start, those of the last 3 days not yet judged) and keeps both verdicts.
+  API: GET /api/needs?from=; POST /api/needs/dismiss {from, seq}.
 - **Agents**: a delivery of a task assigned to them says so ("Task #n for you (task): op=accept, op=done or
   op=reject"), and every delivery reminds them of their open tasks ("You have 2 open tasks: op=tasks"). Ops: tasks
   (box mine/assigned, scope all for closed ones), accept, done, reject, withdraw (`message_id`, `reason`).

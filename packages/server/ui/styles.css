@@ -1109,6 +1109,28 @@ button:disabled {
   font-size: 12px;
 }
 
+/* "Waiting for your answer" (inbox.ts; Ümit #14881): which decision model picked the message, "d1-2B ✓ · GLiDE ✓". */
+.needs-item {
+  box-shadow: inset 3px 0 0 var(--accent);
+  padding-left: 8px;
+}
+
+.needs-models {
+  margin-right: 4px;
+  color: var(--text);
+  cursor: help;
+}
+
+.needs-model {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgb(184 166 220 / 0.22);
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .task-label {
   font-weight: 650;
   margin-right: 4px;

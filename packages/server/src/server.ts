@@ -31,6 +31,7 @@ import { getTasks, taskAction } from "./tasks";
 import { postSpeech } from "./speech";
 import { WebPush } from "./push";
 import { postAttention } from "./attention";
+import { NeedsJudge } from "./needs";
 import { type Brand, Website } from "./website";
 
 export interface BusServerOptions {
@@ -60,7 +61,10 @@ export interface BusServerOptions {
   launchers?: Record<string, string>;
   /** Which of them are a tab on every agent's page: name → its label (`--ext status=…,agents=Home`; Can #14261). */
   agentTabs?: Record<string, string>;
-  /** Services the message box asks, not Workspace pages (`--ext complete=URL,box=complete`; Can #12853). */
+  /**
+   * Services the message box asks, not Workspace pages (`--ext complete=URL,box=complete`; Can #12853), and the one
+   * the bus asks about agents' messages (`box=needs`, Ümit #14881).
+   */
   boxes?: Record<string, BoxExtension>;
   /** This bus's name and pictures on the website (`--brand-name "Team Hub" --brand-logo FILE --brand-icon FILE`). */
   brand?: Brand;
@@ -150,8 +154,16 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     subject: options.publicUrls?.[0] ?? "mailto:agent-hub@localhost",
     anyEndpoint: options.pushAnyEndpoint,
   });
-  ctx.hub.onMessage = (message, conversation) =>
+  // "Waiting for your answer" (Ümit #14881): the first `box=needs` extension judges agents' messages for listed people.
+  const needsBox = Object.values(options.boxes ?? {}).find((box) => box.role === "needs");
+  const needs = needsBox
+    ? new NeedsJudge(ctx, needsBox, path.join(dataDir, "attention-people.txt"), path.join(dataDir, "finetune", "needs-you", "live-verdicts.jsonl"))
+    : undefined;
+  ctx.hub.onMessage = (message, conversation) => {
     push.notify(message, conversation, (id) => ctx.hub.isHuman(id), (id) => ctx.hub.isLooking(id));
+    needs?.onMessage(message, conversation);
+  };
+  needs?.start();
   // Nobody is connected yet: apply the logoff rule to everyone (also cleans up after a crash).
   for (const agent of db.listAgents()) db.removeIfIdle(agent.id);
   const startedAt = Date.now();
@@ -301,6 +313,14 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       const person = viewer.kind === "human" ? viewer.id : undefined;
       return json(await postAttention(ctx, req, person, path.join(dataDir, "attention.jsonl"), path.join(dataDir, "attention-people.txt")));
     }
+    if (pathname === "/api/needs" || pathname === "/api/needs/dismiss") {
+      if (!needs) throw new HttpError(404, "No needs box extension on this bus (--ext NAME=URL,box=needs)");
+      if (viewer.kind !== "human") throw new HttpError(403, "Only a signed-in person reads their own Waiting for your answer");
+      const from = url.searchParams.get("from");
+      if (from !== null && from !== viewer.id) throw new HttpError(403, `You are signed in as ${viewer.id}, not ${from}`);
+      if (method === "GET" && pathname === "/api/needs") return json(needs.list(viewer.id));
+      if (method === "POST" && pathname === "/api/needs/dismiss") return json(await needs.dismiss(viewer.id, req));
+    }
     if (pathname.startsWith("/api/push/")) {
       if (viewer.kind !== "human") throw new HttpError(403, "Only a signed-in person's device takes notifications");
       if (method === "GET" && pathname === "/api/push/key") return json({ publicKey: push.publicKey } satisfies PushKeyResponse);
@@ -415,6 +435,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       if (stopped) return;
       stopped = true;
       ctx.hub.stop();
+      needs?.stop();
       schedule.stop();
       clearInterval(forgetTimer);
       clearInterval(archiveTimer);

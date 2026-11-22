@@ -298,6 +298,26 @@ CREATE TABLE IF NOT EXISTS own_tasks (
   PRIMARY KEY (participant_id, seq)
 );
 
+-- What decision models said of agents' messages for a person (Ümit #14881, the Inbox's "Waiting for your answer"):
+-- one row per model, its verdict and its probability. The record for comparing the models later.
+CREATE TABLE IF NOT EXISTS needs_verdicts (
+  person TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  model TEXT NOT NULL,
+  needs INTEGER NOT NULL,
+  p REAL NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (person, seq, model)
+);
+
+-- Messages a person said were "Not needed" in "Waiting for your answer".
+CREATE TABLE IF NOT EXISTS needs_dismissed (
+  person TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (person, seq)
+);
+
 -- Where a message was forwarded (Can #12470): who, to whom ("@b", "#room"), when. The copies are messages of their own.
 CREATE TABLE IF NOT EXISTS message_forwards (
   seq INTEGER NOT NULL,
@@ -1022,6 +1042,78 @@ export class BusDatabase {
       .run(participantId, seq, taskState === "done" ? now : null);
   }
 
+  /** Keeps `model`'s verdict on message `seq` for `person` (Ümit #14881); false when it already had one (kept as it was). */
+  addNeedsVerdict(person: string, seq: number, model: string, needs: boolean, p: number, at = Date.now()): boolean {
+    return (
+      this.db
+        .query("INSERT OR IGNORE INTO needs_verdicts (person, seq, model, needs, p, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
+        .run(person, seq, model, needs ? 1 : 0, p, at).changes > 0
+    );
+  }
+
+  /**
+   * Agents' messages since `since` (not deleted, not empty) not judged for `person` by every model yet (fewer verdicts
+   * than the models that ever judged for them: one was down), newest first.
+   */
+  unjudgedAgentMessages(person: string, since: number, limit: number): Array<{ seq: number; conversationId: string; text: string }> {
+    return this.db
+      .query<{ seq: number; conversation_id: string; text: string }, [string, number, number]>(
+        `SELECT m.seq, m.conversation_id, m.text FROM messages m
+         WHERE m.created_at >= ?2 AND m.from_kind = 'agent' AND m.deleted_at IS NULL AND m.text != ''
+           AND (SELECT COUNT(*) FROM needs_verdicts v WHERE v.person = ?1 AND v.seq = m.seq)
+             < MAX(1, (SELECT COUNT(DISTINCT model) FROM needs_verdicts WHERE person = ?1))
+         ORDER BY m.seq DESC LIMIT ?3`
+      )
+      .all(person, since, limit)
+      .map((r) => ({ seq: r.seq, conversationId: r.conversation_id, text: r.text }));
+  }
+
+  /**
+   * `person`'s "Waiting for your answer" (Ümit #14881): messages since `since` that a model marked as needing them, not
+   * deleted, not dismissed, with no later message of theirs in the conversation; newest first, each with its verdicts.
+   */
+  openNeeds(person: string, since: number, limit: number): Array<{ seq: number; verdicts: Record<string, { needs: boolean; p: number }> }> {
+    const seqs = this.db
+      .query<{ seq: number }, [string, number, number]>(
+        `SELECT DISTINCT m.seq FROM needs_verdicts v JOIN messages m ON m.seq = v.seq
+         WHERE v.person = ?1 AND v.needs = 1 AND m.created_at >= ?2 AND m.deleted_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM needs_dismissed d WHERE d.person = ?1 AND d.seq = m.seq)
+           AND NOT EXISTS (SELECT 1 FROM messages r WHERE r.conversation_id = m.conversation_id AND r.seq > m.seq
+                           AND r.from_id = ?1 AND r.deleted_at IS NULL)
+         ORDER BY m.seq DESC LIMIT ?3`
+      )
+      .all(person, since, limit)
+      .map((r) => r.seq);
+    const verdicts = new Map(seqs.map((seq) => [seq, {} as Record<string, { needs: boolean; p: number }>]));
+    const rows = this.db
+      .query<{ seq: number; model: string; needs: number; p: number }, [string, number]>(
+        "SELECT seq, model, needs, p FROM needs_verdicts WHERE person = ?1 AND seq >= ?2"
+      )
+      .all(person, seqs.at(-1) ?? Number.MAX_SAFE_INTEGER);
+    for (const r of rows) {
+      const of = verdicts.get(r.seq);
+      if (of) of[r.model] = { needs: r.needs === 1, p: r.p };
+    }
+    return seqs.map((seq) => ({ seq, verdicts: verdicts.get(seq)! }));
+  }
+
+  /** Whether a message before `beforeSeq` in `conversationId`, since `since`, was marked as needing `person`. */
+  hasNeeds(person: string, conversationId: string, beforeSeq: number, since: number): boolean {
+    return (
+      this.db
+        .query(
+          `SELECT 1 FROM needs_verdicts v JOIN messages m ON m.seq = v.seq
+           WHERE v.person = ?1 AND v.needs = 1 AND m.conversation_id = ?2 AND m.seq < ?3 AND m.created_at >= ?4 LIMIT 1`
+        )
+        .get(person, conversationId, beforeSeq, since) !== null
+    );
+  }
+
+  /** `person` said message `seq` was not needed; false when they had already. */
+  dismissNeeds(person: string, seq: number, at = Date.now()): boolean {
+    return this.db.query("INSERT OR IGNORE INTO needs_dismissed (person, seq, at) VALUES (?1, ?2, ?3)").run(person, seq, at).changes > 0;
+  }
+
   private toConversation(row: ConversationRow, members: MemberRow[], pins: string[], pinned: PinnedMessage[] = [], lastFrom?: string): Conversation {
     const kind: ConversationKind = row.kind === "dm" || row.kind === "group" || row.kind === "project" ? row.kind : "all";
     const notify: Record<string, "mentions" | "none"> = {};
@@ -1272,6 +1364,8 @@ export class BusDatabase {
       this.db.query("DELETE FROM receipts WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM bookmarks WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM own_tasks WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
+      this.db.query("DELETE FROM needs_verdicts WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
+      this.db.query("DELETE FROM needs_dismissed WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM message_forwards WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ?1)").run(conversationId);
       this.db.query("DELETE FROM messages WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_members WHERE conversation_id = ?1").run(conversationId);

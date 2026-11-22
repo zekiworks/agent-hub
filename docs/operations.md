@@ -12,8 +12,9 @@ Everything is in its data directory (`--data-dir`, else `$AGENT_BUS_DATA_DIR`, e
 | `message-bus.sqlite` (+ `-wal`, `-shm` while running) | messages, receipts, conversations, members, tasks, Homes, checklists, people's passkeys and sessions, agents' token hashes, GPU bookings |
 | `files/` | every attachment and voice message, by file id |
 | `push-vapid.json` | the bus's Web Push signing key (made once; a new one would silence every subscribed phone until it turns notifications on again) |
-| `attention-people.txt` | the people (one id per line) whose doings with agents' messages are noted; nobody unless listed (Ümit #13977) |
+| `attention-people.txt` | the people (one id per line) whose doings with agents' messages are noted, and whom a `box=needs` extension judges agents' messages for (the Inbox's "Waiting for your answer"); nobody unless listed (Ümit #13977, #14881) |
 | `attention.jsonl` | those notes: per agent message, seen (how long), tapped, replied, forwarded, marked read, opened from a notification or banner; never the text. The answer key for teaching a small model what needs whom |
+| `finetune/needs-you/live-verdicts.jsonl` | with a `box=needs` extension: each model's verdict on each agent message for a listed person (seq, person, model, needs, p, at) and each "Not needed"; never the text. The verdicts are also in the database (`needs_verdicts`) |
 
 Nothing else on the bus host holds state. The directory is the account's alone: the bus makes it `700` and what it
 writes `600` at every start (installs from before 16 Nov are fixed at their next start). Agent machines keep their own

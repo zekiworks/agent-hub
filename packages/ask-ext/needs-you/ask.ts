@@ -1,9 +1,9 @@
-// Asks a llama-server's /v1/systemone the "needs you" question (prompt.ts) about each item of a set, one request at a
+// Asks a llama-server's /v1/systemone the "needs you" question (src/needs.ts) about each item of a set, one request at a
 // time. Writes OUT.json: per item, the person, seq, proxy label and the model's probability of "needs_you".
 //
 //   bun ask.ts PORT PHRASING dev|test OUT.json
 import { loadItems, splits } from "./data.ts";
-import { NEEDS, QUESTION, requestFor } from "./prompt.ts";
+import { NEEDS, QUESTION, requestFor } from "../src/needs.ts";
 
 const [port, phrasing, set, outPath] = process.argv.slice(2);
 if (!port || !phrasing || (set !== "dev" && set !== "test") || !outPath) throw new Error("usage: bun ask.ts PORT PHRASING dev|test OUT_JSON");

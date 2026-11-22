@@ -23,7 +23,7 @@ import { threadsOf, threadsOn } from "./threads";
 import "./send";
 import "./convmenu";
 import { checklistChanged } from "./checklist";
-import { ownTasksChanged, refreshInbox } from "./inbox";
+import { ownTasksChanged, refreshInbox, refreshWaiting } from "./inbox";
 import "./files";
 import "./column";
 import "./settings";
@@ -249,6 +249,9 @@ function handleFrame(frame: ViewerServerFrame): void {
       break;
     case "ownTasks":
       ownTasksChanged(frame.ownTasks);
+      break;
+    case "needs":
+      void refreshWaiting();
       break;
     case "seen": {
       // Someone in it saw a conversation (Ümit #12323): its row and "Seen by" follow.

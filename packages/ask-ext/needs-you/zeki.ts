@@ -2,7 +2,7 @@
 // "needs Ümit" judged from the message and what came before. Asks the live /v1/systemone one item at a time.
 //
 //   bun zeki.ts PORT DIR   (DIR holds items.jsonl and ratings.jsonl; writes DIR/d1-PHRASING.json and prints a table)
-import { NEEDS, PHRASINGS, QUESTION, requestFor } from "./prompt.ts";
+import { NEEDS, PHRASINGS, QUESTION, requestFor } from "../src/needs.ts";
 import type { Item } from "./build.ts";
 
 const [port, dir] = process.argv.slice(2);

@@ -7,6 +7,7 @@
 //   checklist with owners, its agents) → {recipient, confidence}: the one agent to offer ("Ask @webapp"), or null.
 //   Asked only for a room with at least two agents besides the person, about a draft that names none of its members;
 //   the bus passes on only one of those agents.
+// - "needs" (Ümit #14881) is not asked from here: the bus itself asks it about agents' messages (needs.ts).
 import {
   ALL_CONVERSATION_ID,
   BOX_REPORT_OUTCOMES,
@@ -44,7 +45,7 @@ const MAX_CHECKLIST_ITEMS = 40;
  * An answer that comes later than this is no use: the person has typed on. A recipient takes longer (a model on the
  * hub's processor reads the room), and is still useful while the person finishes the sentence.
  */
-const TIMEOUT_MS: Record<BoxRole, number> = { complete: 3000, recipient: 8000 };
+const TIMEOUT_MS: Record<Exclude<BoxRole, "needs">, number> = { complete: 3000, recipient: 8000 };
 
 /** Each person's request in flight, per extension: a new one cancels it (they typed on). */
 const inFlight = new Map<string, AbortController>();
@@ -64,7 +65,7 @@ export async function postBox(
   person: string | undefined
 ): Promise<BoxResponse | BoxRecipientResponse> {
   const box = boxes[name];
-  if (!box) throw new HttpError(404, `No box extension "${name}" on this bus`);
+  if (!box || box.role === "needs") throw new HttpError(404, `No box extension "${name}" on this bus`);
   if (!person) throw new HttpError(403, "Only a signed-in person's message box asks a box extension");
   const body = await readJsonObject(req);
   if (typeof body.conversationId !== "string" || typeof body.text !== "string") {

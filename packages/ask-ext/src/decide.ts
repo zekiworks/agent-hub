@@ -56,7 +56,7 @@ export interface Decision {
 }
 
 /** One line of text, at most `max` characters (an ellipsis marks the cut). */
-function clip(text: string, max: number): string {
+export function clip(text: string, max: number): string {
   const line = text.replace(/\s+/g, " ").trim();
   return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`;
 }

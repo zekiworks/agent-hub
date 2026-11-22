@@ -2,7 +2,9 @@
 // the right pane, with the tasks assigned to you and those you assigned. A task is a message (its #number its id);
 // ✓ finishes it (approves an approval), ✕ rejects it, "On it" accepts it, ↩ answers it with a quote. Each step is
 // posted in the conversation as a reply to the task by the bus.
-import type { Conversation, Message, OwnTask, Task, TasksResponse } from "@agent-bus/protocol";
+// "Waiting for your answer" (Ümit #14881) comes first under "For me" when the bus has a needs box: agents' messages a
+// decision model (d1-2B, GLiDE-2B) marked as needing you, until you write in that conversation or say "Not needed".
+import type { Conversation, Message, NeedsResponse, OwnTask, Task, TasksResponse } from "@agent-bus/protocol";
 import { api, postJson } from "./api";
 import { setReplyTo } from "./composer";
 import { dom, PHONE } from "./dom";
@@ -22,14 +24,18 @@ let showClosed = false;
 let data: TasksResponse | undefined;
 let counts = { open: 0, unread: 0 };
 let visible = false;
+/** "Waiting for your answer", when the bus judges messages (a "needs" box) and has answered. */
+let waiting: NeedsResponse | undefined;
 
 const LABEL: Record<Task["type"], string> = { task: "Task", approval: "Approval" };
+/** The models' names on the cards, by the short names their verdicts carry. */
+const MODEL_NAMES: Record<string, string> = { d1: "d1-2B", glide: "GLiDE" };
 
 /** Fetches the counts for the button, and the list when the Inbox is open. */
 export async function refreshInbox(): Promise<void> {
   if (!state.me) return;
   try {
-    const mine = await api<TasksResponse>(`/api/tasks?box=mine&state=open`);
+    const [mine] = await Promise.all([api<TasksResponse>(`/api/tasks?box=mine&state=open`), fetchWaiting()]);
     counts = { open: mine.open, unread: mine.unread };
     data = box === "mine" && !showClosed ? mine : await api<TasksResponse>(`/api/tasks?box=${box}&state=${showClosed ? "all" : "open"}`);
   } catch {
@@ -40,22 +46,46 @@ export async function refreshInbox(): Promise<void> {
   if (visible) markShownRead();
 }
 
-/** Open tasks for me: assigned ones and my own (Can #12197). */
+/** "Waiting for your answer" from the bus; nothing when it has no needs box. */
+async function fetchWaiting(): Promise<void> {
+  if (!Object.values(state.boxes).includes("needs")) {
+    waiting = undefined;
+    return;
+  }
+  waiting = await api<NeedsResponse>(`/api/needs?from=${encodeURIComponent(state.me)}`);
+}
+
+/** The list changed on the bus (a model marked a message; you answered or dismissed one): only it is fetched again. */
+export async function refreshWaiting(): Promise<void> {
+  if (!state.me) return;
+  try {
+    await fetchWaiting();
+  } catch {
+    return;
+  }
+  renderButton();
+  refreshPane("inbox");
+}
+
+/** Open tasks for me: assigned ones and my own (Can #12197), and the messages waiting for my answer (Ümit #14881). */
 function openTotal(): number {
-  return counts.open + state.ownTasks.filter((t) => t.doneAt === undefined).length;
+  return counts.open + state.ownTasks.filter((t) => t.doneAt === undefined).length + (waiting?.items.length ?? 0);
 }
 
 function renderButton(): void {
   const btn = dom.inboxBtn;
   const open = openTotal();
+  const answers = waiting?.items.length ?? 0;
   setIcon(btn, "mail", open > 0 ? String(open) : "");
   btn.setAttribute("aria-label", open > 0 ? `Your inbox, ${open} open` : "Your inbox");
   btn.classList.toggle("inbox-open", open > 0 && counts.unread === 0);
   btn.classList.toggle("inbox-unread", counts.unread > 0);
-  btn.title =
-    open === 0
-      ? "Your inbox: no open tasks"
-      : `Your inbox: ${open} open task${open === 1 ? "" : "s"}${counts.unread ? `, ${counts.unread} unread` : ""}`;
+  const tasks = open - answers;
+  const parts = [
+    ...(tasks > 0 ? [`${tasks} open task${tasks === 1 ? "" : "s"}${counts.unread ? `, ${counts.unread} unread` : ""}`] : []),
+    ...(answers > 0 ? [`${answers} waiting for your answer`] : []),
+  ];
+  btn.title = parts.length === 0 ? "Your inbox: no open tasks" : `Your inbox: ${parts.join("; ")}`;
   dom.inboxRow.hidden = !state.me;
   dom.inboxRowCount.textContent = open > 0 ? String(open) : "";
   dom.inboxRow.classList.toggle("inbox-unread", counts.unread > 0);
@@ -152,6 +182,74 @@ function renderOwnTasks(root: HTMLElement): boolean {
       },
       (error) => (text.textContent = `(${errorText(error)})`)
     );
+  }
+  root.append(list);
+  return true;
+}
+
+// ---- Waiting for your answer (Ümit #14881): agents' messages a decision model marked as needing you ----
+
+/** "d1-2B ✓ · GLiDE ✓": the models that picked the message; each one's probability in the title. */
+function modelMarks(verdicts: NeedsResponse["items"][number]["verdicts"]): HTMLElement {
+  const line = h("span", "needs-models");
+  const entries = Object.entries(verdicts);
+  entries
+    .filter(([, v]) => v.needs)
+    .forEach(([model], i) => {
+      if (i > 0) line.append(" · ");
+      line.append(h("span", "needs-model", `${MODEL_NAMES[model] ?? model} ✓`));
+    });
+  line.title = entries.map(([model, v]) => `${MODEL_NAMES[model] ?? model}: ${v.needs ? "needs you" : "can wait"} (${Math.round(v.p * 100)}%)`).join(" · ");
+  return line;
+}
+
+/** "Not needed": the message leaves the list for good. */
+async function dismissWaiting(seq: number, note: HTMLElement): Promise<void> {
+  note.textContent = "…";
+  try {
+    await postJson("/api/needs/dismiss", { from: state.me, seq });
+    if (waiting) waiting = { ...waiting, items: waiting.items.filter((item) => item.message.seq !== seq) };
+    renderButton();
+    refreshPane("inbox");
+  } catch (error) {
+    note.textContent = `Not saved: ${errorText(error)}`;
+  }
+}
+
+/** "Waiting for your answer" first under "For me", newest first. False when nothing waits. */
+function renderWaiting(root: HTMLElement): boolean {
+  if (!waiting || waiting.items.length === 0) return false;
+  root.append(h("h3", "inbox-section", "Waiting for your answer"));
+  const list = h("ul", "inbox-list needs-list");
+  const byId = new Map(waiting.conversations.map((c) => [c.id, c]));
+  for (const { message, verdicts } of waiting.items) {
+    const conversation = byId.get(message.conversationId);
+    const card = h("li", "inbox-item needs-item");
+    card.dataset.seq = String(message.seq);
+    const head = h("div", "inbox-head");
+    head.append(modelMarks(verdicts), ...mentionNodes(` #${message.seq} from @${message.from}`));
+    if (conversation) head.append(h("span", "inbox-where", ` in ${conversationTitle(state.conversations.get(conversation.id) ?? conversation)}`));
+    head.append(h("span", "inbox-when", ` · ${relativeTime(message.createdAt)}`));
+    const text = h("div", "inbox-text");
+    text.append(...inline(message.text.length > 600 ? `${message.text.slice(0, 599)}…` : message.text));
+    const actions = h("div", "inbox-actions");
+    const note = h("span", "inbox-note");
+    const button = (label: string, title: string, run: () => void) => {
+      const b = h("button", "btn inbox-btn", label);
+      b.type = "button";
+      b.title = title;
+      b.addEventListener("click", run);
+      actions.append(b);
+    };
+    button("Open", "Go to the message in its conversation", () => {
+      leaveForMessage();
+      void hooks.showMessage(message.seq);
+    });
+    button("↩", "Reply to it in its conversation (quotes it); it leaves this list once you write there", () => replyTo(message));
+    button("Not needed", "Take it off this list: it does not need your answer", () => void dismissWaiting(message.seq, note));
+    actions.append(note);
+    card.append(head, text, actions);
+    list.append(card);
   }
   root.append(list);
   return true;
@@ -320,13 +418,14 @@ registerExtension({
     closed.append(check, " closed too");
     bar.append(closed);
     root.append(bar);
-    // Under "For me": my own tasks first, then those others gave me.
+    // Under "For me": the messages waiting for my answer, then my own tasks, then those others gave me.
+    const answers = box === "mine" && renderWaiting(root);
     const own = box === "mine" && renderOwnTasks(root);
     if (!data) root.append(h("p", "check-note", "Loading…"));
     else if (data.messages.length === 0) {
-      if (!own) root.append(h("p", "check-note", box === "mine" ? "No tasks for you. Make any message a task for yourself with its task button (hover, or tap it on a phone)." : "No tasks you assigned."));
+      if (!own && !answers) root.append(h("p", "check-note", box === "mine" ? "No tasks for you. Make any message a task for yourself with its task button (hover, or tap it on a phone)." : "No tasks you assigned."));
     } else {
-      if (own) root.append(h("h3", "inbox-section", "Given to you"));
+      if (own || answers) root.append(h("h3", "inbox-section", "Given to you"));
       const list = h("ul", "inbox-list");
       const byId = new Map(data.conversations.map((c) => [c.id, c]));
       for (const message of data.messages) list.append(renderCard(message, byId.get(message.conversationId)));
