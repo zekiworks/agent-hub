@@ -44,7 +44,13 @@
       <section id="auth-otherhost" class="auth-card" hidden>
         <h2>Sign in</h2>
         <p>Passkeys work only at the bus's own name, <strong id="auth-otherhost-name"></strong>, not at this address. Here you sign in with a code instead:</p>
-        <p>On a device where you are signed in (your computer), open this page there, choose <strong>Add a device</strong>, and scan its code with this one. You then stay signed in here.</p>
+        <p>On a device where you are signed in, open this page, choose <strong>Add a device</strong>, and scan its code with this one. You then stay signed in here.</p>
+        <!-- A Home Screen app has no address bar and a scanned code opens Safari, not the app (Can #14893): it takes the link pasted. -->
+        <p>In the app on your Home Screen: in Safari, where you are signed in, open this page, choose <strong>Add a device</strong>, tap <strong>Copy link</strong>, then paste it here.</p>
+        <form id="auth-paste" class="auth-paste">
+          <input id="auth-paste-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the sign-in link" aria-label="Sign-in link from Add a device" />
+          <button type="submit" class="btn btn-primary">Sign in</button>
+        </form>
       </section>
 
       <section id="auth-me" class="auth-card" hidden>
@@ -62,6 +68,8 @@
           <div id="auth-link-qr" class="auth-link-qr"></div>
           <label class="auth-note">Address it opens <select id="auth-link-origin"></select></label>
           <p class="auth-note"><a id="auth-link-url" href="#"></a></p>
+          <!-- For the Home Screen app, which can't scan: copy here, paste there (Can #14893). -->
+          <button id="auth-link-copy" type="button" class="btn">Copy link</button>
           <p id="auth-link-status" class="auth-note"></p>
         </div>
         <h3>Machines on the bus</h3>

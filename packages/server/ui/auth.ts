@@ -190,6 +190,13 @@ async function showLink(site: Site): Promise<void> {
   };
   select.onchange = draw;
   draw();
+  el("auth-link-copy").onclick = () => {
+    const url = el<HTMLAnchorElement>("auth-link-url").href;
+    void navigator.clipboard.writeText(url).then(
+      () => (msg.textContent = "Copied: paste it into the app's sign-in page."),
+      () => (msg.textContent = "Not copied: press and hold the link above, then Copy.")
+    );
+  };
   el("auth-link").hidden = false;
   linkTimer = setInterval(() => {
     const left = Math.round((expiresAt - Date.now()) / 1000);
@@ -312,6 +319,15 @@ async function boot(): Promise<void> {
   if (!secure && window.isSecureContext && !passkeyHost) {
     show("auth-otherhost");
     el("auth-otherhost-name").textContent = state.rpId;
+    el("auth-paste").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const raw = el<HTMLInputElement>("auth-paste-input").value.trim();
+      // The whole link (…/auth#link=CODE) or the code alone.
+      const code = /[#&]link=([^&\s]+)/.exec(raw)?.[1] ?? raw;
+      if (!code) return;
+      msg.textContent = "";
+      redeemLink(code).catch((err: Error) => (msg.textContent = err.message));
+    });
     return;
   }
   if (!secure) {
