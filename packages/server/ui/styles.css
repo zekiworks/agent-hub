@@ -2418,26 +2418,27 @@ button:disabled {
   }
 }
 
-/* Threads (threads.ts; Can #14203): a root's bar in the room, and the way back above an open thread. */
+/* Threads (threads.ts; Can #14203): a root's bar in the room, and the way back above an open thread. The bar is a
+   filled lilac button a size up, so it stands out from the text around it (Ümit #14680: too small, same tone). */
 .thread-bar {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 10px;
-  margin: 6px 0 2px;
-  padding: 4px 12px;
-  border: 1px solid var(--border);
+  margin: 8px 0 2px;
+  padding: 7px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
   border-radius: 999px;
-  background: transparent;
-  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
   cursor: pointer;
 }
 .thread-bar:hover,
 .thread-bar:focus-visible {
   border-color: var(--accent);
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
 .thread-count {
   font-weight: 600;
