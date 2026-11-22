@@ -6,7 +6,8 @@ lora/ (adapter), merged/ (HF model with the adapter merged), train-log.json. Bat
 --micro-batch 1 (8 accumulated) with --checkpointing when the GPU is short of memory (about 9 GB then), and --max-gib
 caps this process's CUDA memory (an out-of-memory error rather than crowding others on a shared GPU). --device cpu
 trains on the CPU (hours). --max-steps, --max-windows and --max-tokens make a smoke run (a few steps on a sample);
---no-merge then skips merged/. train-suggestions.ts runs it:
+--no-merge then skips merged/. --base DIR fine-tunes another Hugging Face model (hf_base.py) instead of LFM3 1.7B, with
+the same data and settings. train-suggestions.ts runs it:
 
   python train.py --data DIR/data --out DIR --people carol,uma --micro-batch 1 --checkpointing [--device cpu]
 """
@@ -23,6 +24,7 @@ import time
 import torch
 from peft import LoraConfig, get_peft_model
 
+import hf_base
 import lfm3
 
 args = argparse.ArgumentParser()
@@ -37,7 +39,11 @@ args.add_argument("--max-steps", type=int)
 args.add_argument("--max-windows", type=int)
 args.add_argument("--max-tokens", type=int, default=2048)
 args.add_argument("--no-merge", action="store_true")
+args.add_argument("--base", help="a Hugging Face model folder to fine-tune instead of LFM3 1.7B (hf_base.py)")
 ARGS = args.parse_args()
+if ARGS.base:
+    hf_base.use(ARGS.base)
+BASE = hf_base if ARGS.base else lfm3
 
 ROOT = ARGS.out
 DATA = ARGS.data
@@ -50,7 +56,7 @@ LR = 2e-4
 WARMUP = 20
 RANK = 32
 ALPHA = 64
-TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "in_proj", "out_proj", "w1", "w2", "w3"]
+TARGETS = BASE.TARGETS
 PEOPLE_LINE = re.compile(f"^@({'|'.join(re.escape(p) for p in ARGS.people.split(',') if p)}): ", re.M)
 
 
@@ -114,10 +120,10 @@ def main() -> None:
     cuda = device.type == "cuda"
     if cuda and ARGS.max_gib:
         torch.cuda.set_per_process_memory_fraction(ARGS.max_gib * 2**30 / torch.cuda.get_device_properties(device).total_memory)
-    tok = lfm3.tokenizer()
-    pad = 124893
+    tok = BASE.tokenizer()
+    pad = BASE.PAD
     train, held = load("train", tok, ARGS.max_windows), load("heldout", tok, ARGS.max_windows and max(1, ARGS.max_windows // 8))
-    base = lfm3.model().to(device)
+    base = BASE.model().to(device)
     if ARGS.checkpointing:
         base.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
         base.enable_input_require_grads()
@@ -181,10 +187,10 @@ def main() -> None:
         merged = model.merge_and_unload()
         out = f"{ROOT}/merged"
         merged.save_pretrained(out, safe_serialization=True)
-        # The base's own config, tokenizer and code: the converter reads them as they are on the Hub.
-        for name in os.listdir(lfm3.base()):
-            if name != "model.safetensors" and not name.startswith("."):
-                shutil.copy(os.path.join(lfm3.base(), name), os.path.join(out, name))
+        # The base's own config, tokenizer and code (not its weights): the converter reads them as they are on the Hub.
+        for name in os.listdir(BASE.base()):
+            if not name.endswith(".safetensors") and name != "model.safetensors.index.json" and not name.startswith("."):
+                shutil.copy(os.path.join(BASE.base(), name), os.path.join(out, name))
     log["total_seconds"] = round(time.time() - t0, 1)
     json.dump(log, open(f"{ROOT}/train-log.json", "w"), indent=2)
     print(json.dumps({k: v for k, v in log.items() if k != "steps"}, indent=2))

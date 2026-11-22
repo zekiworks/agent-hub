@@ -23,6 +23,9 @@ from transformers.modeling_rope_utils import RotaryEmbeddingConfigMixin
 
 REPO = "LiquidAI/LFM3-1.7B"
 REVISION = "0dc4268b561499c648c7ba7c9466bf3d8d01517a"
+# What train.py puts the LoRA on (attention, conv and MLP projections) and pads with.
+TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "in_proj", "out_proj", "w1", "w2", "w3"]
+PAD = 124893
 
 
 @functools.cache
