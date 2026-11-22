@@ -285,7 +285,11 @@ async function boot(): Promise<void> {
     return;
   }
   const state = await api<Site & { me: string | null }>("/api/auth/state");
-  const secure = window.isSecureContext && window.PublicKeyCredential !== undefined;
+  // Passkeys belong to the bus's name (its rp ID, "bariton"): on another of its addresses (the tailnet's
+  // bariton.….ts.net) the browser refuses them with "The origin of the document is not authorized for the provided RP
+  // ID" (Can #14870). There this page says so and offers what does work: a device link from a signed-in device.
+  const passkeyHost = location.hostname === state.rpId || location.hostname.endsWith(`.${state.rpId}`);
+  const secure = window.isSecureContext && window.PublicKeyCredential !== undefined && passkeyHost;
   const invite = new URLSearchParams(location.hash.slice(1)).get("invite");
   if (invite && secure) {
     try {
@@ -304,6 +308,11 @@ async function boot(): Promise<void> {
       showLink(state).catch((err: Error) => (msg.textContent = err.message));
     });
     return renderMe(state.me);
+  }
+  if (!secure && window.isSecureContext && !passkeyHost) {
+    show("auth-otherhost");
+    el("auth-otherhost-name").textContent = state.rpId;
+    return;
   }
   if (!secure) {
     show("auth-insecure");

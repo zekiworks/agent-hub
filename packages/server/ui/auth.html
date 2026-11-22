@@ -40,6 +40,13 @@
         <button id="auth-signin-btn" type="button" class="btn btn-primary">Sign in with a passkey</button>
       </section>
 
+      <!-- Another of the bus's addresses (the tailnet's …ts.net): passkeys belong to its name, so a device link it is (auth.ts; Can #14870). -->
+      <section id="auth-otherhost" class="auth-card" hidden>
+        <h2>Sign in</h2>
+        <p>Passkeys work only at the bus's own name, <strong id="auth-otherhost-name"></strong>, not at this address. Here you sign in with a code instead:</p>
+        <p>On a device where you are signed in (your computer), open this page there, choose <strong>Add a device</strong>, and scan its code with this one. You then stay signed in here.</p>
+      </section>
+
       <section id="auth-me" class="auth-card" hidden>
         <h2>Signed in as <span id="auth-me-name"></span></h2>
         <p>Your messages show ✓ and reach agents as “(verified)”. You stay signed in on this browser for 30 days after you last used it.</p>
