@@ -80,3 +80,32 @@ window.addEventListener("online", () => {
   reconnectTimer = null;
   connect();
 });
+
+/** Away longer than this, a page coming back reconnects rather than trust its socket. */
+const RESUME_RECONNECT_MS = 5000;
+let hiddenAt: number | undefined;
+
+// A phone stops a page in the background (the Home Screen app above all) and its socket dies without a "close": back
+// in front, the page said "live" and showed nothing new (Ümit #14473, #14475: no messages, the bus had no connection
+// of hers). Coming back after a while it connects afresh; the fresh connection reloads what it missed (onOpen).
+function resume(): void {
+  const away = hiddenAt === undefined ? 0 : Date.now() - hiddenAt;
+  hiddenAt = undefined;
+  if (socket && socket.readyState === WebSocket.OPEN && away < RESUME_RECONNECT_MS) return;
+  clearTimeout(reconnectTimer ?? undefined);
+  reconnectTimer = null;
+  const old = socket;
+  socket = null;
+  old?.close();
+  reconnectDelay = RECONNECT_MIN_MS;
+  connect();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") hiddenAt = Date.now();
+  else resume();
+});
+// Back from the page cache (iOS keeps the whole page and its dead socket).
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) resume();
+});
