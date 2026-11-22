@@ -1889,6 +1889,13 @@ button:disabled {
   max-width: var(--column);
 }
 
+/* Next to the Workspace the conversation takes all the room the divider leaves it, so dragging the divider widens one
+   as it narrows the other (Can #14522); 80 characters held it back and left a gap that only the Workspace changed. */
+.app.with-pane .chat,
+.app.with-pane .conv-header > * {
+  max-width: none;
+}
+
 /* The bar: title, then its buttons, the pin last at the right end (Ümit #10735). */
 .conv-bar {
   display: flex;

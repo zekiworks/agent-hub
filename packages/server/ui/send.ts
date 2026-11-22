@@ -104,6 +104,7 @@ export async function postToView(view: View, text: string, fileIds: string[], ch
 
 async function send(): Promise<void> {
   if (state.sending || !state.me) return;
+  browsing = undefined;
   const text = dom.input.value;
   if (!text.trim() && state.staged.length === 0) return;
   const view = state.view;
@@ -195,13 +196,46 @@ dom.input.addEventListener("keydown", (event) => {
     setReplyTo(undefined);
     return;
   }
+  if ((event.key === "ArrowUp" || event.key === "ArrowDown") && recall(event)) {
+    event.preventDefault();
+    return;
+  }
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !TOUCH.matches) {
     event.preventDefault();
     void send();
   }
 });
 
+/**
+ * ↑ and ↓ in the box go through what I sent here, newest first, as a shell's history does (Can #14522): ↑ on the box's
+ * first line starts, and while one is shown ↑ / ↓ go on to the one before / after; past the newest the draft I had
+ * comes back. Typing ends it, keeping what is shown as the new draft. Otherwise the arrows move the cursor as usual.
+ */
+let browsing: { conversationId: string; at: number; draft: string } | undefined;
+
+function recall(event: KeyboardEvent): boolean {
+  const view = state.view;
+  const step = event.key === "ArrowUp" ? 1 : -1;
+  if (view.kind !== "conversation" || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) return false;
+  if (browsing?.conversationId !== view.id) browsing = undefined;
+  const caret = dom.input.selectionStart;
+  const value = dom.input.value;
+  // Not yet going through them: only ↑ on the first line (with nothing selected) starts.
+  if (!browsing && (step === -1 || caret !== dom.input.selectionEnd || value.slice(0, caret).includes("\n"))) return false;
+  const mine = (state.caches.get(view.id)?.messages ?? []).filter((m) => m.from === state.me && !m.deletedAt && m.text.trim()).reverse();
+  const at = (browsing?.at ?? -1) + step;
+  if (at >= mine.length) return browsing !== undefined;
+  const draft = browsing?.draft ?? value;
+  browsing = at === -1 ? undefined : { conversationId: view.id, at, draft };
+  dom.input.value = at === -1 ? draft : mine[at]!.text;
+  dom.input.setSelectionRange(dom.input.value.length, dom.input.value.length);
+  autosize();
+  updateComposerState();
+  return true;
+}
+
 dom.input.addEventListener("input", () => {
+  browsing = undefined;
   autosize();
   updateComposerState();
   updateMention();
