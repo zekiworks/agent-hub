@@ -3683,6 +3683,14 @@ ul.md-list ul.md-list { list-style: circle; }
   justify-content: space-between;
 }
 
+/* A dialog's ✕ (Ümit #14422: it was a 12 px letter): big enough to hit, a thumb's size on a phone (below). */
+.dialog-x {
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 20px;
+  line-height: 1;
+}
+
 /* The ⋯ menu of a group DM or project, and how projects show in the sidebar. */
 .conv-dialog select,
 .conv-dialog input[type="text"] {
@@ -4373,8 +4381,18 @@ ul.md-list ul.md-list { list-style: circle; }
     min-height: 44px;
   }
 
-  /* ✉, ☆ and the account in the phone's top bar: a thumb's size. */
+  /* ✉, ☆, Settings, Tools, the launchers and the account in the phone's top bar: a thumb's size. */
   .inbox-topbtn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Settings and Tools are their icons on a phone (Ümit #14422); the name stays as their aria-label. */
+  .topbar-btn .icon-label {
+    display: none;
+  }
+
+  .dialog-x {
     min-width: 44px;
     min-height: 44px;
   }

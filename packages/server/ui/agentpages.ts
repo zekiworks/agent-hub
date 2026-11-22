@@ -73,7 +73,7 @@ export function registerAgentPages(
       },
     });
     if (!launcher) continue;
-    const button = h("button", "link-btn launcher-btn", launcher);
+    const button = h("button", "inbox-topbtn launcher-btn", launcher);
     button.type = "button";
     button.title = `${launcher} in the Workspace`;
     button.addEventListener("click", () => toggleGlobal(id));

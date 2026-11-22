@@ -206,7 +206,7 @@ function render(consumed: string[] = []): void {
   const member = conv.members.includes(state.me);
   const head = h("div", "gpu-head");
   const close = button("✕", () => dom.convDialog.close());
-  close.className = "link-btn";
+  close.className = "link-btn dialog-x";
   close.title = "Close (Esc)";
   head.append(h("h2", "", conversationTitle(conv)), close);
   const body: HTMLElement[] = [head];

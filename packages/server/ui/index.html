@@ -25,10 +25,12 @@
       </div>
       <span id="link-status" class="link-status" data-state="connecting">connecting…</span>
       <div class="topbar-spacer"></div>
-      <button id="settings-btn" type="button" class="link-btn" title="Your settings">Settings</button>
+      <!-- Settings, Tools and the launchers are buttons with a shape (Ümit #14422: as plain words they did not look
+           tappable and were small); on a phone Settings and Tools are their icons only. -->
+      <button id="settings-btn" type="button" class="inbox-topbtn topbar-btn" title="Your settings" aria-label="Settings"><span data-icon="settings"></span><span class="icon-label">Settings</span></button>
       <!-- Tools (#10101): occasional utilities in one menu (tools.ts). -->
       <div class="tools">
-        <button id="tools-btn" type="button" class="link-btn" aria-haspopup="menu" aria-expanded="false">Tools ▾</button>
+        <button id="tools-btn" type="button" class="inbox-topbtn topbar-btn" title="Tools" aria-label="Tools" aria-haspopup="menu" aria-expanded="false"><span data-icon="wrench"></span><span class="icon-label">Tools ▾</span></button>
         <div id="tools-menu" class="entry-menu tools-menu" role="menu" hidden>
           <button id="stats-btn" type="button" class="entry-menu-item" role="menuitem" title="Messages written and agent turns started, per participant">Stats</button>
           <button id="gpu-btn" type="button" class="entry-menu-item" role="menuitem" title="Who holds which GPU, and book one" hidden>GPU booking</button>
@@ -279,7 +281,7 @@
         <option value="7" selected>last 7 days</option>
         <option value="30">last 30 days</option>
       </select>
-      <button type="button" id="stats-close" class="link-btn" title="Close (Esc)">✕</button>
+      <button type="button" id="stats-close" class="link-btn dialog-x" title="Close (Esc)" aria-label="Close">✕</button>
     </div>
     <p class="dialog-hint">
       Turns: messages that woke the agent (a model turn, or added to the one already running).
@@ -299,7 +301,7 @@
   <dialog id="gpu-dialog" class="dialog gpu-dialog">
     <div class="gpu-head">
       <h2>GPU booking</h2>
-      <button type="button" id="gpu-close" class="link-btn" title="Close (Esc)">✕</button>
+      <button type="button" id="gpu-close" class="link-btn dialog-x" title="Close (Esc)" aria-label="Close">✕</button>
     </div>
     <p id="gpu-focus" class="gpu-focus" hidden></p>
     <div id="gpu-error" class="composer-error" role="alert" hidden></div>

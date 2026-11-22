@@ -81,9 +81,13 @@ export function setPhoneList(on: boolean): void {
 export function wasOnPhoneList(): boolean {
   return sessionStorage.getItem(LIST_KEY) === "1";
 }
+
+// ← leaves an open thread for its room, not the room for the list (Ümit #14422: from a thread it took her out to the
+// list); from the room it goes to the list as before.
 dom.backBtn.addEventListener("click", () => {
   dom.input.blur();
-  setPhoneList(true);
+  if (state.thread !== undefined && state.view.kind === "conversation") location.hash = `#/c/${encodeURIComponent(state.view.id)}`;
+  else setPhoneList(true);
 });
 
 /** Phones: members, subtitle and the agent panel stay folded behind ⓘ so the messages get the screen. */

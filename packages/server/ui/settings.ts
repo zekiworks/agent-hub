@@ -24,7 +24,7 @@ const CHOICES: Array<[EnglishSpeech, string]> = [
 function render(): void {
   const me = state.participants.find((p) => p.id === state.me);
   const head = h("div", "gpu-head");
-  const close = h("button", "link-btn", "✕");
+  const close = h("button", "link-btn dialog-x", "✕");
   close.type = "button";
   close.title = "Close (Esc)";
   close.addEventListener("click", () => dom.settingsDialog.close());
