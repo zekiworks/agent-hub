@@ -2622,15 +2622,21 @@ button:disabled {
   font-size: 14px;
 }
 
-/* Phones: the dialog is a full-width sheet at the bottom, with 44 px targets; 16 px fields so iOS does not zoom.
+/* Phones: the dialog is a full-width sheet at the top, with 44 px targets; 16 px fields so iOS does not zoom. At the
+   bottom the keyboard covered the names to pick, and it had to be pulled up by hand (Ümit #14651): at the top it sits
+   over the visible area (--vvt, --vvh from phones.ts while the keyboard is up) and scrolls inside.
    `.dialog.` so it wins over the general `.dialog` width and padding further down. */
 @media (max-width: 640px) {
   .dialog.forward-dialog {
+    top: var(--vvt, 0px);
+    bottom: auto;
     width: 100vw;
     max-width: 100vw;
-    margin: auto 0 0;
-    border-radius: 12px 12px 0 0;
-    padding: 16px;
+    max-height: var(--vvh, 100dvh);
+    margin: 0;
+    overflow-y: auto;
+    border-radius: 0 0 12px 12px;
+    padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px 16px;
   }
 
   .forward-choice {
