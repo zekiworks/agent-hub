@@ -40,6 +40,11 @@ export interface Threads {
   replies: Map<number, Message[]>;
 }
 
+/**
+ * Reply chains of the loaded messages. A chain folds into a thread only once a person has replied in it (Can #14532:
+ * the decision is the person's): an agent answering me stays in the room, where I see it; my reply to that answer
+ * moves the whole chain into its own thread.
+ */
 export function threadsOf(messages: readonly Message[]): Threads {
   const loaded = new Set(messages.map((m) => m.seq));
   const parent = new Map<number, number>();
@@ -51,6 +56,11 @@ export function threadsOf(messages: readonly Message[]): Threads {
     for (let p = parent.get(root); p !== undefined; p = parent.get(root)) root = rootOf.get(p) ?? p;
     rootOf.set(m.seq, root);
     if (root !== m.seq) (replies.get(root) ?? replies.set(root, []).get(root)!).push(m);
+  }
+  for (const [root, chain] of replies) {
+    if (chain.some((m) => m.fromKind === "human")) continue;
+    replies.delete(root);
+    for (const m of chain) rootOf.set(m.seq, m.seq);
   }
   return { rootOf, replies };
 }

@@ -141,7 +141,9 @@ A room is a project addressed only as `#name`: the way sub-work is made, optiona
 A website setting, off by default, per browser (Settings → Messages → Threads); nothing changes on the bus.
 
 - **What a thread is:** a chain of messages joined by replies (`replyToSeq`), built from the messages the page has
-  loaded (a reply to an older message is its own start).
+  loaded (a reply to an older message is its own start). It folds only once a person has replied in it (Can #14532:
+  the decision is the person's): an agent answering stays in the room; a person's reply to it moves the whole chain
+  into its own thread.
 - **In the room:** the chain's first message (its root) shows "↳ 3 replies · 1 new · last @logic 17:10"; the replies
   are not listed in the room.
 - **Opening:** a click on the bar, or Enter on it, opens the chain in the main pane at `#/c/<room>/t/<root>`, under a

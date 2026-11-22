@@ -224,6 +224,8 @@ export function appendMessage(message: Message): boolean {
     const rootLi = root === undefined ? null : dom.messageList.querySelector<HTMLElement>(`:scope > .msg[data-seq="${root}"]`);
     const rootMessage = messages.find((m) => m.seq === root);
     if (!threads || !rootLi || !rootMessage || state.thread !== undefined) return false;
+    // A person's reply just turned a chain into a thread (Can #14532): its earlier replies, in the room until now, go.
+    if (threads.replies.get(root!)?.some((m) => dom.messageList.querySelector(`:scope > .msg[data-seq="${m.seq}"]`))) return false;
     threadBar(rootLi, view.id, rootMessage, threads);
     return true;
   }
