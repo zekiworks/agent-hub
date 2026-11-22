@@ -13,10 +13,12 @@ import { hooks } from "./hooks";
 import { h } from "./html";
 import { setIcon } from "./icons";
 
-/** ▶, ⏸, or "…" while the first sentence's audio is made. */
+/** ▶, ⏸, or "…" while the first sentence's audio is made; a name beside it (a phone's ⋯ row) stays. */
 function face(button: HTMLElement, state: "play" | "pause" | "loading"): void {
+  const label = button.querySelector(".msg-extra-label");
   if (state === "loading") button.textContent = "…";
   else setIcon(button, state);
+  if (label) button.append(label);
 }
 
 /** A sentence of the message as shown: its place in the rendered text, and its audio once made. */

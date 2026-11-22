@@ -2358,6 +2358,45 @@ button:disabled {
   color: var(--accent);
 }
 
+/* The buttons ⋯ holds on a phone (render.ts; Ümit #14570). A computer shows them in the row, Reply last. */
+.msg-actions-extra {
+  display: contents;
+}
+.msg-overflow-btn,
+.msg-extra-label {
+  display: none;
+}
+.msg-actions .msg-reply-btn {
+  order: 1;
+}
+
+@media (max-width: 640px) {
+  .msg-overflow-btn {
+    display: inline-block;
+    order: 2;
+  }
+  .msg-actions-extra {
+    display: none;
+    order: 3;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+  .msg-actions-open .msg-actions-extra {
+    display: flex;
+  }
+  .msg-actions-extra .msg-action-btn {
+    display: inline-flex;
+    align-items: center;
+  }
+  .msg-extra-label {
+    display: inline;
+    margin-left: 6px;
+    font-size: 15px;
+  }
+}
+
 /* Threads (threads.ts; Can #14203): a root's bar in the room, and the way back above an open thread. */
 .thread-bar {
   display: inline-flex;
@@ -3017,7 +3056,7 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .msg-receipts {
-  margin-top: 3px;
+  margin-top: 8px;
   font-size: 11.5px;
   color: var(--muted);
   cursor: default;
@@ -3030,8 +3069,9 @@ ul.md-list ul.md-list { list-style: circle; }
   font-size: 11.5px;
 }
 
+/* Plain grey, not the lilac of things to tap (Ümit #14570: "✓ · woke nobody" looked like a button beside Mark as read). */
 .msg-receipts.receipts-delivered {
-  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
+  color: var(--muted);
 }
 
 /* "Show routing details" off (settings.ts, #10096): a delivered message's line shows on hover, tap or keyboard focus

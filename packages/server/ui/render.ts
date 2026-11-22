@@ -365,18 +365,19 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   // (no hover) after tapping the message. Clicking Reply again cancels.
   const actions = h("div", "msg-actions");
   const deleted = !!message.deletedAt;
-  if (message.text && !deleted) actions.append(speakButton(message), copyButton(message));
-  // ↪ shows it to someone else (Can #12470), next to Copy.
-  if (state.me && !deleted) actions.append(forwardButton(message));
-  actions.append(copyIdButton(message));
+  const speak = message.text && !deleted ? speakButton(message) : undefined;
+  const copy = message.text && !deleted ? copyButton(message) : undefined;
+  // ↪ shows it to someone else (Can #12470).
+  const forward = state.me && !deleted ? forwardButton(message) : undefined;
+  const copyId = copyIdButton(message);
   // ☆ saves it in my own bookmarks, ★ drops it (Can #11065); a deleted one keeps its ★ so it can still be dropped here.
-  if (!deleted || isBookmarked(message.seq)) actions.append(bookmarkButton(message));
+  const bookmark = !deleted || isBookmarked(message.seq) ? bookmarkButton(message) : undefined;
   // Take it as a task for myself, into my inbox (Can #12197); people only.
-  if (state.me && (!deleted || state.ownTasks.some((t) => t.seq === message.seq))) actions.append(ownTaskButton(message.seq));
+  const ownTask = state.me && (!deleted || state.ownTasks.some((t) => t.seq === message.seq)) ? ownTaskButton(message.seq) : undefined;
   // 📌 for members: pins the message in its conversation, or unpins it (#10757).
-  if (!deleted && state.conversations.get(message.conversationId)?.members.includes(state.me)) actions.append(pinButton(message));
+  const pin = !deleted && state.conversations.get(message.conversationId)?.members.includes(state.me) ? pinButton(message) : undefined;
   // ✎ 🗑 on my own messages (Ümit #10890).
-  actions.append(...changeButtons(message));
+  const changes = changeButtons(message);
   const replyBtn = h("button", "msg-action-btn msg-reply-btn");
   setIcon(replyBtn, "reply");
   replyBtn.append(h("span", "msg-reply-label", "Reply"));
@@ -394,7 +395,37 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     const same = state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq && state.replyPart === part;
     setReplyTo(same ? undefined : message, part);
   });
+  // On a phone the row shows Copy, ☆, Reply and ⋯; ⋯ opens the rest as a second row, each with its name (Ümit #14570:
+  // eight look-alike icons in a row could not be told apart or even counted). A computer shows them all, as before.
+  const extra = h("div", "msg-actions-extra");
+  const named: Array<[HTMLElement | undefined, string]> = [
+    [speak, "Listen"],
+    [forward, "Forward"],
+    [copyId, `Copy #${message.seq}`],
+    [ownTask, "Task for me"],
+    [pin, pin?.classList.contains("pinned") ? "Unpin" : "Pin"],
+    [changes[0], "Edit"],
+    [changes[1], "Delete"],
+  ];
+  for (const [button, name] of named) {
+    if (!button) continue;
+    button.append(h("span", "msg-extra-label", name));
+    extra.append(button);
+  }
+  const overflow = h("button", "msg-action-btn msg-overflow-btn", "⋯");
+  overflow.type = "button";
+  overflow.title = "More: listen, forward, task, pin…";
+  overflow.setAttribute("aria-label", `More buttons for message #${message.seq}`);
+  overflow.setAttribute("aria-expanded", "false");
+  overflow.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = actions.classList.toggle("msg-actions-open");
+    overflow.setAttribute("aria-expanded", String(open));
+  });
+  if (copy) actions.append(copy);
+  if (bookmark) actions.append(bookmark);
   if (!deleted) actions.append(replyBtn);
+  if (extra.childElementCount > 0) actions.append(overflow, extra);
   li.addEventListener("mouseenter", () => {
     pointedMessage = li;
     keepActionsInView(li);
@@ -748,12 +779,16 @@ function copier(name: IconName, title: string, text: () => string): HTMLButtonEl
     const value = text();
     const copied = await copyText(value);
     const short = value.length > 40 ? `${value.slice(0, 39)}…` : value;
+    // A name beside the icon (a phone's ⋯ row, Ümit #14570) stays through the ✓.
+    const label = button.querySelector(".msg-extra-label");
     setIcon(button, copied ? "check" : "x");
+    if (label) button.append(label);
     button.title = copied ? "Copied" : "Not copied";
     announce(copied ? `Copied ${short}` : "Not copied automatically: the text is selected below the message, copy it from there");
     if (!copied) manualCopy(button.closest(".msg"), value);
     setTimeout(() => {
       setIcon(button, name);
+      if (label) button.append(label);
       button.title = title;
     }, 1500);
   });
