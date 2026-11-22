@@ -1798,6 +1798,7 @@ button:disabled {
 }
 
 .chat {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1807,6 +1808,36 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--panel-raised);
+}
+
+/* The conversation's right edge, a divider (column.ts; Can #14526), in the margin beside the box. Next to the Workspace
+   the Workspace's own divider does this job, and a phone has one column. */
+.chat-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -12px;
+  z-index: 5;
+  width: 8px;
+  border-radius: 4px;
+  cursor: col-resize;
+}
+
+.chat-resize:hover,
+.chat-resize:focus-visible {
+  outline: none;
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+.app.with-pane .chat-resize {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .chat-resize {
+    display: none;
+  }
 }
 
 /* My tabs above the conversation (tabs.ts; Can #11480, codex-ui #11481): one flat row, square ends, the open one

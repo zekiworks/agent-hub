@@ -35,6 +35,8 @@ export const dom = {
   subgroupsPanel: el<HTMLDetailsElement>("subgroups-panel"),
   subgroupsSummary: el<HTMLElement>("subgroups-summary"),
   subgroupsList: el<HTMLUListElement>("subgroups-list"),
+  chat: el<HTMLDivElement>("chat"),
+  chatResize: el<HTMLDivElement>("chat-resize"),
   messageScroll: el<HTMLDivElement>("message-scroll"),
   threadCrumb: el<HTMLElement>("thread-crumb"),
   jumpBtn: el<HTMLButtonElement>("jump-btn"),

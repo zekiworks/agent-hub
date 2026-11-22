@@ -145,7 +145,9 @@
           <ul id="subgroups-list" class="subgroups-list"></ul>
         </details>
       </div>
-      <div class="chat">
+      <div id="chat" class="chat">
+      <!-- The conversation's own right edge (column.ts; Can #14526): drag to widen it past 80 characters, Workspace or not. -->
+      <div id="chat-resize" class="chat-resize" role="separator" aria-orientation="vertical" aria-label="Conversation width" tabindex="0" title="Drag, or ← / → with the keyboard, to widen or narrow the conversation; double-click for the usual width"></div>
       <!-- An open thread's way back to its room (threads.ts, render.ts; Can #14203). -->
       <nav id="thread-crumb" class="thread-crumb" aria-label="Thread" hidden></nav>
       <div id="message-scroll" class="message-scroll">

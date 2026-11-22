@@ -25,6 +25,7 @@ import "./convmenu";
 import { checklistChanged } from "./checklist";
 import { ownTasksChanged, refreshInbox } from "./inbox";
 import "./files";
+import "./column";
 import "./settings";
 import "./suggest";
 import "./ask";
