@@ -150,7 +150,8 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     subject: options.publicUrls?.[0] ?? "mailto:agent-hub@localhost",
     anyEndpoint: options.pushAnyEndpoint,
   });
-  ctx.hub.onMessage = (message, conversation) => push.notify(message, conversation, (id) => ctx.hub.isHuman(id));
+  ctx.hub.onMessage = (message, conversation) =>
+    push.notify(message, conversation, (id) => ctx.hub.isHuman(id), (id) => ctx.hub.isLooking(id));
   // Nobody is connected yet: apply the logoff rule to everyone (also cleans up after a crash).
   for (const agent of db.listAgents()) db.removeIfIdle(agent.id);
   const startedAt = Date.now();

@@ -217,6 +217,11 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
       hub.addViewer(ws);
       return;
     }
+    if (frame.type === "visible") {
+      if (frame.visible === true) data.visibleAt = Date.now();
+      else delete data.visibleAt;
+      return;
+    }
     if (frame.type !== "watch") return;
     const agentId = typeof frame.agentId === "string" && frame.agentId !== "" ? frame.agentId : undefined;
     const session = typeof frame.session === "number" && Number.isSafeInteger(frame.session) && frame.session > 0 ? frame.session : undefined;

@@ -628,6 +628,27 @@ button:disabled {
   filter: none;
 }
 
+/* A phone shows the Workspace as its own screen: a tab is its title, plain and full size, and the screen has one ✕,
+   the one that closes it (Ümit #14594: a small italic tab with 📌 and its own ✕, beside the big ✕, made no sense). */
+@media (max-width: 640px) {
+  .ws-label,
+  .pane-tabs .tab-pin,
+  .pane-tabs .tab-close {
+    display: none;
+  }
+
+  .pane-tabs .tab {
+    max-width: none;
+  }
+
+  .pane-tabs .tab .tab-open,
+  .pane-tabs .tab.passing .tab-open {
+    font-size: 17px;
+    font-style: normal;
+    font-weight: 650;
+  }
+}
+
 .pane-body {
   flex: 1;
   min-height: 0;

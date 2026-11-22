@@ -50,6 +50,7 @@ function connect(): void {
     const reconnected = everConnected;
     everConnected = true;
     handlers?.onOpen(reconnected);
+    sayVisible();
   });
   ws.addEventListener("message", (event) => {
     if (typeof event.data !== "string") return;
@@ -104,8 +105,23 @@ function resume(): void {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") hiddenAt = Date.now();
   else resume();
+  sayVisible();
 });
 // Back from the page cache (iOS keeps the whole page and its dead socket).
 window.addEventListener("pageshow", (event) => {
   if (event.persisted) resume();
 });
+
+/**
+ * Tells the bus whether this page is in front (shown and focused): while it is, the bus sends the person no phone or
+ * desktop notification, the page shows the message already (Ümit #14595: a banner on top of the open app). Repeated
+ * every 30 s while in front; the bus stops counting a page it has not heard from for a minute.
+ */
+function sayVisible(): void {
+  sendViewer({ type: "visible", visible: document.visibilityState === "visible" && document.hasFocus() });
+}
+window.addEventListener("focus", sayVisible);
+window.addEventListener("blur", sayVisible);
+setInterval(() => {
+  if (document.visibilityState === "visible" && document.hasFocus()) sayVisible();
+}, 30_000);

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PostMessageResponse, PushKeyResponse, PushPayload } from "@agent-bus/protocol";
 import type { BusServerHandle } from "@agent-bus/server";
-import { getJson, postJson, startBus } from "./helpers";
+import { getJson, postJson, startBus, viewerSocket } from "./helpers";
 
 interface Pushed {
   headers: Headers;
@@ -139,6 +139,25 @@ test("a muted conversation stays quiet; a device the push service says is gone i
   await send({ from: "uma", to: "@carol", text: "three" });
   await settle();
   expect(pushed).toHaveLength(1);
+});
+
+test("no notification while the person has Agent Hub in front; back in the background they come again (Ümit #14595)", async () => {
+  await subscribe();
+  const page = viewerSocket(bus, "carol");
+  await new Promise((resolve) => page.addEventListener("open", resolve, { once: true }));
+  const say = async (visible: boolean) => {
+    page.send(JSON.stringify({ type: "visible", visible }));
+    await Bun.sleep(50);
+  };
+  await say(true);
+  await send({ from: "uma", to: "@carol", text: "seen on the open page" });
+  await settle();
+  expect(pushed).toHaveLength(0);
+  await say(false);
+  await send({ from: "uma", to: "@carol", text: "the app is in the background" });
+  await settle();
+  expect(pushed).toHaveLength(1);
+  page.close();
 });
 
 test("only people subscribe, only to a browser's push service, with a real key", async () => {

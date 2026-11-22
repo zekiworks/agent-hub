@@ -84,11 +84,11 @@ export class WebPush {
   }
 
   /**
-   * Tells the people a new message needs (see the file comment). Never throws: a notification that fails costs
-   * nothing but itself.
+   * Tells the people a new message needs (see the file comment), except those `looking` at Agent Hub right now: the
+   * open page shows it already (Ümit #14595). Never throws: a notification that fails costs nothing but itself.
    */
-  notify(message: Message, conversation: Conversation, isHuman: (id: string) => boolean): void {
-    const people = this.peopleFor(message, conversation, isHuman);
+  notify(message: Message, conversation: Conversation, isHuman: (id: string) => boolean, looking: (id: string) => boolean = () => false): void {
+    const people = this.peopleFor(message, conversation, isHuman).filter((id) => !looking(id));
     if (people.length === 0) return;
     // Where, as the website names it: a room's or project's own title ("#agent hub"), else its address (Ümit #14043:
     // '#hilde-hub ("#agent hub")' was not its name).

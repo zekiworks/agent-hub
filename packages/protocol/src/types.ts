@@ -469,7 +469,12 @@ export type ViewerServerFrame =
  */
 export type ViewerClientFrame =
   | { type: "auth"; session?: string; agentToken?: string }
-  | { type: "watch"; agentId: string | null; session?: number };
+  | { type: "watch"; agentId: string | null; session?: number }
+  /**
+   * The page is in front (or not), sent on change and every 30 s while in front: the bus sends no phone notification
+   * to a person who is looking at Agent Hub somewhere (Ümit #14595: the banner came on top of the open app).
+   */
+  | { type: "visible"; visible: boolean };
 
 /** A machine account's agent token as people see it: the hub stores its hash; `id` is the hash's first 12 characters. */
 export interface AgentTokenInfo {

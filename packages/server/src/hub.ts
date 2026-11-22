@@ -63,6 +63,8 @@ export type SocketData =
       /** Agent whose live output this viewer watches, and which session (undefined: its most recently active one). */
       watching?: string;
       watchingSession?: number;
+      /** When the page last said it is in front (frame "visible"); undefined while it is in the background. */
+      visibleAt?: number;
     };
 
 export type Socket = Bun.ServerWebSocket<SocketData>;
@@ -513,6 +515,18 @@ export class Hub {
     const viewerFrame = JSON.stringify({ type: "message", message, conversation } satisfies ViewerServerFrame);
     for (const ws of this.viewersOf(conversation)) ws.send(viewerFrame);
     this.onMessage?.(message, conversation);
+  }
+
+  /**
+   * `human` has Agent Hub in front on some device: a viewer of theirs said "visible" in the last minute (a page that
+   * went away without saying so stops counting then).
+   */
+  isLooking(human: string, now = Date.now()): boolean {
+    for (const ws of this.viewers) {
+      const data = ws.data;
+      if (data.kind === "viewer" && data.human === human && data.visibleAt !== undefined && now - data.visibleAt < 60_000) return true;
+    }
+    return false;
   }
 
   /**
