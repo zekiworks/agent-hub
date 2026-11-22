@@ -4,6 +4,7 @@ import { dom, nearBottom, PHONE, scrollToBottom } from "./dom";
 import { nameList } from "./format";
 import { h } from "./html";
 import { setIcon } from "./icons";
+import { viewHash } from "./routing";
 import { conversationTitle, state } from "./state";
 
 export function showError(text: string): void {
@@ -260,6 +261,35 @@ function stageFiles(files: Iterable<File>): void {
   renderStaged();
   updateComposerState();
   dom.input.focus();
+}
+
+/**
+ * Files waiting in the box belong to the conversation they were added in (Ümit #14611: a pasted screenshot followed her
+ * into #science-bench): leaving it keeps them there for coming back, and the box of the one opened shows its own.
+ */
+const stagedElsewhere = new Map<string, File[]>();
+export function moveStaged(from: string, to: string): void {
+  if (from === to) return;
+  if (state.staged.length > 0) stagedElsewhere.set(from, state.staged);
+  state.staged = stagedElsewhere.get(to) ?? [];
+  stagedElsewhere.delete(to);
+  renderStaged();
+}
+
+/** Sent files leave the box, wherever it is now (the conversation may have changed while they uploaded). */
+export function unstage(files: readonly File[]): void {
+  state.staged = state.staged.filter((f) => !files.includes(f));
+  for (const [place, list] of stagedElsewhere) {
+    const left = list.filter((f) => !files.includes(f));
+    if (left.length > 0) stagedElsewhere.set(place, left);
+    else stagedElsewhere.delete(place);
+  }
+  renderStaged();
+}
+
+/** The files waiting in the box of `place` (a view's hash): the open box's, or one left behind. */
+export function stagedFor(place: string): File[] {
+  return place === viewHash(state.view) ? [...state.staged] : [...(stagedElsewhere.get(place) ?? [])];
 }
 
 /** Browsers name every pasted image "image.png"; give each a distinct, dated name instead. */

@@ -9,7 +9,7 @@ import {
   type PostMessageResponse,
 } from "@agent-bus/protocol";
 import { api, postJson } from "./api";
-import { autosize, hideError, holdHours, renderStaged, setReplyTo, showError, updateComposerState } from "./composer";
+import { autosize, hideError, holdHours, renderStaged, setReplyTo, showError, unstage, updateComposerState } from "./composer";
 import { dom, PHONE } from "./dom";
 import { draftThread, readDraft, saveDraft } from "./drafts";
 import { errorText } from "./format";
@@ -137,7 +137,7 @@ async function send(): Promise<void> {
     const left = stillThere ? dom.input.value : readDraft(view, thread);
     const rest = left === text ? "" : left.startsWith(text) ? left.slice(text.length).replace(/^\n+/, "") : left;
     saveDraft(view, rest, thread);
-    state.staged = state.staged.filter((f) => !files.includes(f));
+    unstage(files);
     if (stillThere) {
       dom.input.value = rest;
       autosize();

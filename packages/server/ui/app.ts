@@ -3,7 +3,7 @@ import { QUOTE_TEXT_CHARS, type Conversation, type Message, type ViewerServerFra
 import { api, PROFILE_KEY, setFileKey } from "./api";
 import { bookmarksChanged } from "./bookmarks";
 import { tabsChanged } from "./tabs";
-import { hideError, setReplyTo, showError, updateComposerState } from "./composer";
+import { hideError, moveStaged, setReplyTo, showError, updateComposerState } from "./composer";
 import { dom, nearBottom, PHONE, scrollToBottom } from "./dom";
 import { rememberAddress, restoreAddress, takeDraftLink } from "./compose";
 import { loadDraft } from "./drafts";
@@ -80,6 +80,7 @@ function applyView(view: View): void {
     if (nearBottom()) readingAt.delete(key);
     else readingAt.set(key, dom.messageScroll.scrollTop);
   }
+  moveStaged(viewHash(state.view), viewHash(resolved));
   state.view = resolved;
   state.thread = thread;
   if (resolved.kind === "conversation") {

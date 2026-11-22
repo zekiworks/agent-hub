@@ -5,7 +5,7 @@
 // player (attachments.ts).
 import type { Message, TranscriptResponse } from "@agent-bus/protocol";
 import { api } from "./api";
-import { hideError, showError, updateComposerState } from "./composer";
+import { hideError, showError, stagedFor, unstage, updateComposerState } from "./composer";
 import { dom } from "./dom";
 import { errorText, nameList } from "./format";
 import { h } from "./html";
@@ -454,12 +454,18 @@ async function send(file: File, duration: number, view: View, chosen: Chosen): P
   dom.voiceBtn.disabled = true;
   updateComposerState();
   try {
+    // Files waiting in that conversation's box go with it, as Send would take them (Ümit #14611: a screenshot stayed
+    // behind after the voice message went, and showed up again in the next room).
+    const attached = stagedFor(viewHash(view));
     showStatus(`Sending the voice message (${clock(duration)})…`);
     const ref = await uploadFile(file);
+    const others: string[] = [];
+    for (const extra of attached) others.push((await uploadFile(extra)).id);
     showStatus("Turning speech into text…");
     const said = await transcribe(ref.id);
     const text = said === undefined ? "🎤 (voice message: the recording only; its text could not be made)" : said ? `🎤 ${said}` : "🎤 (voice message: no speech recognized)";
-    await postToView(view, text, [ref.id], chosen);
+    await postToView(view, text, [ref.id, ...others], chosen);
+    unstage(attached);
     if (said === undefined) {
       // Said in the person's terms, not as a connection error: the message did go out (Ümit #12058).
       hideStatus();
