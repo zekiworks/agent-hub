@@ -45,6 +45,28 @@ main {
 a {
   color: var(--accent);
 }
+.message-ref {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  white-space: nowrap;
+}
+.message-link {
+  font-variant-numeric: tabular-nums;
+}
+.message-reply {
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.message-reply:hover,
+.message-reply:focus-visible {
+  color: var(--accent);
+}
 table {
   border-collapse: collapse;
   margin: 6px 0;

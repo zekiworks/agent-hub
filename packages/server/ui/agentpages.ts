@@ -5,10 +5,13 @@
 // extension's "Home"). The frame gets scripts but not the website's origin, so the page cannot read the session;
 // clipboard writes are allowed for click-to-copy.
 import { extensionUrl } from "./api";
-import { dom } from "./dom";
+import { setReplyTo, showError } from "./composer";
+import { dom, PHONE } from "./dom";
 import { h } from "./html";
-import { globalShown, onWorkspaceChange, registerExtension, toggleGlobal } from "./pane";
+import { hooks } from "./hooks";
+import { closePane, globalShown, onWorkspaceChange, registerExtension, toggleGlobal } from "./pane";
 import { directAgentOf, state, type View } from "./state";
+import { fetchMessage } from "./text";
 
 const registered = new Set<string>();
 
@@ -85,6 +88,30 @@ export function registerAgentPages(
     });
   }
 }
+
+/**
+ * A page in the Workspace may point at a bus message. The page has no session and cannot read messages itself:
+ * the website validates that the request came from one of its frames, then opens it or sets the real reply state.
+ */
+window.addEventListener("message", (event) => {
+  const fromPane = [...document.querySelectorAll<HTMLIFrameElement>("iframe.agent-page")].some((f) => f.contentWindow === event.source);
+  const data = event.data as { type?: unknown; seq?: unknown } | null;
+  if (!fromPane || (data?.type !== "agent-bus:show-message" && data?.type !== "agent-bus:reply-message")) return;
+  const seq = data.seq;
+  if (!Number.isSafeInteger(seq) || (seq as number) <= 0) return;
+  const open = async () => {
+    if (PHONE.matches) closePane();
+    if (data.type === "agent-bus:show-message") return hooks.showMessage(seq as number);
+    try {
+      const { message } = await fetchMessage(seq as number);
+      await hooks.showMessage(seq as number);
+      setReplyTo(message);
+    } catch (error) {
+      showError(`Message #${seq}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  void open();
+});
 
 /** At most one pointerleave notice per frame this often (ms). */
 const POINTERLEAVE_EVERY_MS = 250;

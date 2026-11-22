@@ -18,7 +18,35 @@ interface Update {
 
 const agent = new URLSearchParams(location.search).get("agent") ?? "";
 const panes = document.getElementById("panes")!;
-const plain = (text: string): Node[] => [document.createTextNode(text)];
+/** A plain message reference in an update: open it in the conversation, with ↩ beside it to reply there (Can #15044). */
+const plain = (text: string): Node[] => {
+  const out: Node[] = [];
+  let last = 0;
+  // Same boundary as message text's references (server/ui/text.ts): not a URL fragment, ##heading or part of a word.
+  for (const match of text.matchAll(/(^|[^\w#&@])#([1-9]\d{0,6})(?![\w-])/g)) {
+    const at = (match.index ?? 0) + (match[1]?.length ?? 0);
+    if (at > last) out.push(document.createTextNode(text.slice(last, at)));
+    const seq = Number(match[2]);
+    const wrap = el("span", "message-ref");
+    const open = el("a", "message-link", `#${seq}`);
+    open.href = `#/m/${seq}`;
+    open.title = `Open message #${seq}`;
+    open.addEventListener("click", (event) => {
+      event.preventDefault();
+      parent.postMessage({ type: "agent-bus:show-message", seq }, "*");
+    });
+    const reply = el("button", "message-reply", "↩");
+    reply.type = "button";
+    reply.title = `Reply to message #${seq}`;
+    reply.setAttribute("aria-label", `Reply to message #${seq}`);
+    reply.addEventListener("click", () => parent.postMessage({ type: "agent-bus:reply-message", seq }, "*"));
+    wrap.append(open, reply);
+    out.push(wrap);
+    last = at + 1 + (match[2]?.length ?? 0);
+  }
+  if (last < text.length) out.push(document.createTextNode(text.slice(last)));
+  return out;
+};
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
