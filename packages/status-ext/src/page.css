@@ -67,6 +67,13 @@ a {
 .message-reply:focus-visible {
   color: var(--accent);
 }
+.action-status {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--text);
+}
 table {
   border-collapse: collapse;
   margin: 6px 0;

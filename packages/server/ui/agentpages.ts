@@ -94,11 +94,13 @@ export function registerAgentPages(
  * the website validates that the request came from one of its frames, then opens it or sets the real reply state.
  */
 window.addEventListener("message", (event) => {
-  const fromPane = [...document.querySelectorAll<HTMLIFrameElement>("iframe.agent-page")].some((f) => f.contentWindow === event.source);
+  const sourceFrame = [...document.querySelectorAll<HTMLIFrameElement>("iframe.agent-page")].find((f) => f.contentWindow === event.source);
   const data = event.data as { type?: unknown; seq?: unknown } | null;
-  if (!fromPane || (data?.type !== "agent-bus:show-message" && data?.type !== "agent-bus:reply-message")) return;
+  if (!sourceFrame || (data?.type !== "agent-bus:show-message" && data?.type !== "agent-bus:reply-message")) return;
   const seq = data.seq;
   if (!Number.isSafeInteger(seq) || (seq as number) <= 0) return;
+  // Immediate: fetching an old message may take longer, but Home only needs to know this outer page has the bridge.
+  sourceFrame.contentWindow?.postMessage({ type: "agent-bus:message-action-accepted", seq }, "*");
   const open = async () => {
     if (PHONE.matches) closePane();
     if (data.type === "agent-bus:show-message") return hooks.showMessage(seq as number);

@@ -33,13 +33,13 @@ const plain = (text: string): Node[] => {
     open.title = `Open message #${seq}`;
     open.addEventListener("click", (event) => {
       event.preventDefault();
-      parent.postMessage({ type: "agent-bus:show-message", seq }, "*");
+      messageAction("agent-bus:show-message", seq);
     });
     const reply = el("button", "message-reply", "↩");
     reply.type = "button";
     reply.title = `Reply to message #${seq}`;
     reply.setAttribute("aria-label", `Reply to message #${seq}`);
-    reply.addEventListener("click", () => parent.postMessage({ type: "agent-bus:reply-message", seq }, "*"));
+    reply.addEventListener("click", () => messageAction("agent-bus:reply-message", seq));
     wrap.append(open, reply);
     out.push(wrap);
     last = at + 1 + (match[2]?.length ?? 0);
@@ -53,6 +53,35 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: s
   if (text !== undefined) e.textContent = text;
   return e;
 };
+
+let actionTimer: number | undefined;
+
+/**
+ * Home and the outer website are deployed separately. An already-open website can have the old parent script while a
+ * newly opened Home has these controls (Can #15049): require an acknowledgement instead of making that mismatch silent.
+ */
+function messageAction(type: "agent-bus:show-message" | "agent-bus:reply-message", seq: number): void {
+  parent.postMessage({ type, seq }, "*");
+  if (actionTimer !== undefined) clearTimeout(actionTimer);
+  actionTimer = window.setTimeout(() => {
+    let notice = document.getElementById("message-action-status");
+    if (!notice) {
+      notice = el("p", "action-status");
+      notice.id = "message-action-status";
+      notice.setAttribute("role", "status");
+      panes.prepend(notice);
+    }
+    notice.textContent = "Reload the whole Agent Hub page once to use message links; Home is newer than the open page.";
+  }, 500);
+}
+
+window.addEventListener("message", (event) => {
+  const data = event.data as { type?: unknown } | null;
+  if (event.source !== parent || data?.type !== "agent-bus:message-action-accepted") return;
+  if (actionTimer !== undefined) clearTimeout(actionTimer);
+  actionTimer = undefined;
+  document.getElementById("message-action-status")?.remove();
+});
 const time = (at: number) => new Date(at).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
 
 function attachment(file: FileInfo): HTMLElement {
