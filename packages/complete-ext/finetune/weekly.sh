@@ -8,7 +8,10 @@
 #    training capped at 8.5 GiB, in the env and llama.cpp we already have; the candidate is tested against the live
 #    model (the unit's -m) on the 4 days after and replaces that file only if better, the one before kept as
 #    *.previous.gguf for rollback. Outputs: ~/.agent-bus/suggest-training/<date>/.
-# 3. Starts both units again, always (also when anything fails), and posts the result to #hilde-hub without waking anyone.
+# 3. Runs bench.sh (the typing-suggestion bench, Ümit #14950): Qwen3.5-2B and MiniCPM5-2B fine-tuned on the same
+#    export, every model untrained and fine-tuned tested against the live one; measures only, never installs.
+# 4. Starts both units again, always (also when anything fails), and posts the results to #hilde-hub without waking
+#    anyone.
 #
 # SMOKE=1: train-suggestions --smoke (the export and 5 training steps on a sample) into suggest-training/<date>-smoke;
 # never puts anything live and posts nothing. Log: ~/.agent-bus/finetune/weekly.log.
@@ -95,6 +98,13 @@ STEP=train-suggestions
 "$AGENT_BUS" run "$BOOKING" -- "$AGENT_BUS" train-suggestions --data-dir "$HOME/.agent-bus" --people can,umit --test-days 4 \
   --model-out "$LIVE" --python "$PY" --llama-cpp "$LLAMA" --max-gib 8.5 $([[ $SMOKE == 1 ]] && echo --smoke || true)
 
+# 3. The bench (bench.sh; Ümit #14949, #14950): the other small models fine-tuned on the same export, all tested
+#    against the (possibly new) live model. Measures only; its failure does not fail the retraining.
+if [[ $SMOKE != 1 ]]; then
+  STEP=bench
+  "$(dirname "$0")/bench.sh" "$WEEK" "$LIVE" || log "bench failed (exit $?); the retraining result stands"
+fi
+
 STEP="start the live models"
 start_units
 
@@ -111,4 +121,9 @@ $train_line; $loss_line.
 Test: $cuts cut points in can's and umit's messages after the cutoff, through the production pipeline:
 
 $(jq -r .table "$WEEK/results/summary.json")"
+if [[ -f $WEEK/bench/table.md ]]; then
+  post "Typing-suggestion bench (Ümit #14950), $DATE: the other small models fine-tuned on the same export, each tested against the live model on $cuts cut points after the cutoff (all fine-tuned the same way; history in ~/.agent-bus/finetune/suggest-bench.jsonl):
+
+$(cat "$WEEK/bench/table.md")"
+fi
 STEP=end
