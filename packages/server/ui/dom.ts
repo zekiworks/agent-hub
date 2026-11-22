@@ -52,6 +52,7 @@ export const dom = {
   backBtn: el<HTMLButtonElement>("back-btn"),
   backBadge: el<HTMLSpanElement>("back-badge"),
   detailsBtn: el<HTMLButtonElement>("details-btn"),
+  foldBtn: el<HTMLButtonElement>("fold-btn"),
   fileInput: el<HTMLInputElement>("file-input"),
   mentionMenu: el<HTMLUListElement>("mention-menu"),
   input: el<HTMLTextAreaElement>("composer-input"),

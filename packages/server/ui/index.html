@@ -134,6 +134,8 @@
           <button id="checklist-btn" type="button" class="link-btn checklist-btn" aria-pressed="false" hidden><svg class="pin-icon icon" viewBox="0 0 24 24" aria-hidden="true"><path class="pin-needle" d="M12 17v5" /><path class="pin-head" d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg><span id="checklist-count" class="checklist-count"></span></button>
           <button id="pane-btn" type="button" class="link-btn ws-open-btn" title="Open this conversation's tools in the Workspace on the right" aria-haspopup="menu" aria-pressed="false" hidden>Workspace ▾</button>
           <button id="details-btn" type="button" class="icon-btn details-btn" title="Members and details" aria-pressed="false">ⓘ</button>
+          <!-- Phones: one tap folds the tabs, the room's buttons and "Back to …" away, and brings them back (phones.ts; Ümit #14561, codex-ui #14563). -->
+          <button id="fold-btn" type="button" class="icon-btn fold-btn" aria-expanded="true" title="Hide the tabs and the room's buttons" aria-label="Hide controls">⌃</button>
         </div>
         <!-- Phones: after a task opened its message from Your inbox, the way back to it (inbox.ts). -->
         <button id="inbox-return" type="button" class="link-btn inbox-return" hidden>‹ <span data-icon="mail"></span> Back to your inbox</button>

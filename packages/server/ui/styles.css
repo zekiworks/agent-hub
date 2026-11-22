@@ -2405,6 +2405,14 @@ button:disabled {
 .thread-crumb[hidden] {
   display: none;
 }
+/* The way back stays one line: on a phone "‹ #science-bench" broke over three (Ümit #14558). */
+.thread-back {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .thread-sep,
 .thread-meta {
   color: var(--muted);
@@ -2719,6 +2727,9 @@ ul.md-list ul.md-list { list-style: circle; }
   border: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
+  /* Words stay whole in a cell (a message's text breaks anywhere): on a phone "466" and "3,316" came out a digit a line
+     (Ümit #14558). A table too wide for the column scrolls sideways in its wrap instead. */
+  overflow-wrap: normal;
 }
 .md-table th {
   background: var(--panel-raised);
@@ -4178,7 +4189,8 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .back-btn,
-.details-btn {
+.details-btn,
+.fold-btn {
   display: none;
 }
 
@@ -4315,6 +4327,31 @@ ul.md-list ul.md-list { list-style: circle; }
 
   .details-btn[aria-pressed="true"] {
     color: var(--accent);
+  }
+
+  /* The fold toggle (phones.ts): in the first row, at its right end, beside the name. */
+  .conv-bar .fold-btn {
+    display: grid;
+    flex: none;
+    order: 1;
+    margin-left: auto;
+    min-width: 44px;
+    min-height: 44px;
+    place-items: center;
+    font-size: 20px;
+  }
+
+  /* Folded (Ümit #14561): the first row only (←, the name, the toggle); the tabs, the room's buttons and "Back to …"
+     step aside together, back with the same toggle. */
+  .header-folded .tab-row,
+  .header-folded #conv-settings-btn,
+  .header-folded #checklist-btn,
+  .header-folded #pane-btn,
+  .header-folded #details-btn,
+  .header-folded .conv-parent,
+  .header-folded .inbox-return,
+  .header-folded .conv-subtitle {
+    display: none !important;
   }
 
   .main:not(.show-details) .conv-subtitle {

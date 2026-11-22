@@ -97,6 +97,25 @@ export function setDetails(on: boolean): void {
 }
 dom.detailsBtn.addEventListener("click", () => setDetails(!dom.main.classList.contains("show-details")));
 
+// Phones: the tabs, the room's buttons and "Back to …" fold away with one tap, leaving ←, the name and the toggle, so
+// the messages get the screen (Ümit #14561: the grey header took half of it; codex-ui #14563). Kept per browser. The
+// newest message seen stays where it is while the header changes height.
+const FOLD_KEY = "agent-bus.headerFolded";
+function setFolded(on: boolean): void {
+  const s = dom.messageScroll;
+  const fromBottom = s.scrollHeight - s.scrollTop - s.clientHeight;
+  document.documentElement.classList.toggle("header-folded", on);
+  s.scrollTop = s.scrollHeight - s.clientHeight - fromBottom;
+  dom.foldBtn.textContent = on ? "⌄" : "⌃";
+  dom.foldBtn.setAttribute("aria-expanded", String(!on));
+  dom.foldBtn.setAttribute("aria-label", on ? "Show controls" : "Hide controls");
+  dom.foldBtn.title = on ? "Show the tabs and the room's buttons" : "Hide the tabs and the room's buttons";
+  if (on) localStorage.setItem(FOLD_KEY, "1");
+  else localStorage.removeItem(FOLD_KEY);
+}
+setFolded(localStorage.getItem(FOLD_KEY) === "1");
+dom.foldBtn.addEventListener("click", () => setFolded(!document.documentElement.classList.contains("header-folded")));
+
 /** Unread messages in the other conversations, on the ← button. */
 export function renderBackBadge(): void {
   let n = 0;
