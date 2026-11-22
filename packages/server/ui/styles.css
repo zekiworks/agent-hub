@@ -4434,16 +4434,19 @@ ul.md-list ul.md-list { list-style: circle; }
     color: var(--accent);
   }
 
-  /* The fold toggle (phones.ts): in the first row, at its right end, beside the name. */
+  /* The search and fold toggles (search.ts, phones.ts): in the first row, at its right end, beside the name. */
+  .conv-bar .conv-search-btn,
   .conv-bar .fold-btn {
     display: grid;
     flex: none;
     order: 1;
-    margin-left: auto;
     min-width: 44px;
     min-height: 44px;
     place-items: center;
     font-size: 20px;
+  }
+  .conv-bar .conv-search-btn {
+    margin-left: auto;
   }
 
   /* Folded (Ümit #14561): the first row only (←, the name, the toggle); the tabs, the room's buttons and "Back to …"

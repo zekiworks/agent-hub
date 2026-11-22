@@ -261,6 +261,16 @@ onWorkspaceChange(() => {
 });
 dom.searchRow.addEventListener("click", () => toggleGlobal("search"));
 dom.searchReturn.addEventListener("click", () => toggleGlobal("search"));
+// 🔍 in the conversation's header (Ümit #14829, #14830): Search, set to this conversation, its threads included.
+dom.convSearchBtn.addEventListener("click", () => {
+  scope = "here";
+  if (!globalShown("search")) toggleGlobal("search");
+  else {
+    for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="search-scope"]')) radio.checked = radio.value === "here";
+    void run();
+  }
+  input?.focus();
+});
 // A new conversation on the left changes what "This conversation" searches.
 window.addEventListener("hashchange", () => {
   if (scope === "here" && query.trim().length >= MIN_CHARS) void run();

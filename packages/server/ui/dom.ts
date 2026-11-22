@@ -132,6 +132,7 @@ export const dom = {
   bookmarksRowCount: el<HTMLSpanElement>("bookmarks-row-count"),
   bookmarksReturn: el<HTMLButtonElement>("bookmarks-return"),
   searchRow: el<HTMLButtonElement>("search-row"),
+  convSearchBtn: el<HTMLButtonElement>("conv-search-btn"),
   searchReturn: el<HTMLButtonElement>("search-return"),
   tabRow: el<HTMLElement>("tab-row"),
   toolsBtn: el<HTMLButtonElement>("tools-btn"),
