@@ -2469,10 +2469,24 @@ button:disabled {
 /* The way back stays one line: on a phone "‹ #science-bench" broke over three (Ümit #14558). */
 .thread-back {
   flex: none;
-  max-width: 45%;
+  max-width: 55%;
   overflow: hidden;
+  padding: 5px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+}
+.thread-back:hover,
+.thread-back:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
 .thread-sep,
 .thread-meta {

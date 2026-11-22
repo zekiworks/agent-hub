@@ -283,7 +283,8 @@ function renderCrumb(conversationId: string, root: Message | undefined, threads:
   dom.threadCrumb.hidden = !root;
   if (!root) return dom.threadCrumb.replaceChildren();
   const conv = state.conversations.get(conversationId);
-  const back = h("button", "link-btn thread-back", `‹ ${conv ? conversationTitle(conv) : "the room"}`);
+  // A button that reads as one: "‹ Back to #room" (Ümit #14688, #14705: the lilac name alone was not found).
+  const back = h("button", "thread-back", `‹ Back to ${conv ? conversationTitle(conv) : "the room"}`);
   back.type = "button";
   back.title = "Back to the room (Esc)";
   back.addEventListener("click", () => {
