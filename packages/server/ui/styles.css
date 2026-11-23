@@ -2426,6 +2426,20 @@ button:disabled {
   color: var(--accent);
 }
 
+/* Whole-message Copy names itself on phones, then visibly confirms the tap (render.ts; Ümit #15385). */
+.msg-copy-label {
+  display: none;
+}
+.msg-copy-btn.copy-confirmed {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 18%, var(--panel-raised));
+  color: var(--success);
+}
+.msg-copy-btn.copy-failed {
+  border-color: var(--error);
+  color: var(--error);
+}
+
 /* The buttons ⋯ holds on a phone (render.ts; Ümit #14570). A computer shows them in the row, Reply last. */
 .msg-actions-extra {
   display: contents;
@@ -2459,6 +2473,11 @@ button:disabled {
     align-items: center;
   }
   .msg-extra-label {
+    display: inline;
+    margin-left: 6px;
+    font-size: 15px;
+  }
+  .msg-copy-label {
     display: inline;
     margin-left: 6px;
     font-size: 15px;
@@ -3078,7 +3097,7 @@ ul.md-list ul.md-list { list-style: circle; }
   color: var(--muted);
 }
 
-.copy-manual input {
+.copy-manual textarea {
   flex: 1 1 180px;
   min-width: 0;
   padding: 4px 8px;
@@ -3087,6 +3106,7 @@ ul.md-list ul.md-list { list-style: circle; }
   background: var(--input);
   color: var(--text);
   font-size: 14px;
+  resize: vertical;
 }
 
 /* Editing and deleting one's own messages (edit.ts; Ümit #10890). */

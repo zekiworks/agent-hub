@@ -691,7 +691,7 @@ function copyButton(message: Message): HTMLButtonElement {
     } finally {
       clean.remove();
     }
-  });
+  }, "Copy");
 }
 
 /** "#10228" to the clipboard (Can, #10228): the number stays easy to share while it is drawn quietly. */
@@ -762,9 +762,10 @@ function manualCopy(near: Element | null, value: string): void {
   if (!near) return;
   near.querySelector(".copy-manual")?.remove();
   const row = h("div", "copy-manual");
-  const field = h("input");
+  const field = h("textarea");
   field.readOnly = true;
   field.value = value;
+  field.rows = Math.min(4, Math.max(2, value.split("\n").length));
   field.setAttribute("aria-label", "Text to copy");
   const close = h("button", "link-btn", "✕");
   close.type = "button";
@@ -781,10 +782,12 @@ function manualCopy(near: Element | null, value: string): void {
   field.select();
 }
 
-/** A message action that copies `text()`: ✓ "Copied" only when it was (#10401), else the text to copy by hand. */
-function copier(name: IconName, title: string, text: () => string): HTMLButtonElement {
+/** A message action that copies `text()`: visibly says ✓ Copied only when it was (#10401, Ümit #15385). */
+function copier(name: IconName, title: string, text: () => string, visibleLabel?: string): HTMLButtonElement {
   const button = h("button", "msg-action-btn msg-copy-btn");
+  const copyLabel = visibleLabel ? h("span", "msg-copy-label", visibleLabel) : undefined;
   setIcon(button, name);
+  if (copyLabel) button.append(copyLabel);
   button.type = "button";
   button.title = title;
   button.setAttribute("aria-label", title);
@@ -792,17 +795,30 @@ function copier(name: IconName, title: string, text: () => string): HTMLButtonEl
     const value = text();
     const copied = await copyText(value);
     const short = value.length > 40 ? `${value.slice(0, 39)}…` : value;
-    // A name beside the icon (a phone's ⋯ row, Ümit #14570) stays through the ✓.
-    const label = button.querySelector(".msg-extra-label");
+    // A name beside an overflow action (Ümit #14570) and Copy's visible phone label stay through the ✓.
+    const extraLabel = button.querySelector(".msg-extra-label");
     setIcon(button, copied ? "check" : "x");
-    if (label) button.append(label);
+    if (copyLabel) {
+      copyLabel.textContent = copied ? "Copied" : "Copy below";
+      button.append(copyLabel);
+    }
+    if (extraLabel) button.append(extraLabel);
+    button.classList.toggle("copy-confirmed", copied);
+    button.classList.toggle("copy-failed", !copied);
     button.title = copied ? "Copied" : "Not copied";
+    button.setAttribute("aria-label", button.title);
     announce(copied ? `Copied ${short}` : "Not copied automatically: the text is selected below the message, copy it from there");
     if (!copied) manualCopy(button.closest(".msg"), value);
     setTimeout(() => {
       setIcon(button, name);
-      if (label) button.append(label);
+      if (copyLabel) {
+        copyLabel.textContent = visibleLabel ?? "";
+        button.append(copyLabel);
+      }
+      if (extraLabel) button.append(extraLabel);
+      button.classList.remove("copy-confirmed", "copy-failed");
       button.title = title;
+      button.setAttribute("aria-label", title);
     }, 1500);
   });
   return button;
