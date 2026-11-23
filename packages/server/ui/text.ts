@@ -114,13 +114,9 @@ function onScreen(el: HTMLElement): boolean {
   return r.bottom > view.top && r.top < view.bottom;
 }
 
-/**
- * Lights message `seq` as the one I am in, always with one frame around the whole message (Ümit #15125).
- * Paragraph Seen controls are independent and always visible; `part` remembers which paragraph was tapped.
- */
-export function selectMessage(seq: number | undefined, part?: number): void {
+/** Lights message `seq` as the one I am in, with one frame around the whole message (Ümit #15125, Can #15873). */
+export function selectMessage(seq: number | undefined): void {
   state.selectedSeq = seq;
-  state.selectedPart = seq === undefined ? undefined : part;
   for (const li of dom.messageList.querySelectorAll<HTMLElement>(".msg-selected")) li.classList.remove("msg-selected");
   const li = seq === undefined ? null : dom.messageList.querySelector<HTMLElement>(`.msg[data-seq="${seq}"]`);
   if (li) markSelected(li);

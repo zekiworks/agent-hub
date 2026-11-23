@@ -83,11 +83,9 @@ export const state = {
   itemReply: undefined as ItemReply | undefined,
   /**
    * The message I am "in" (Ümit #11622): the one I clicked, or the one a banner, #number, bookmark or search took me to.
-   * Lit until I click another one, press Esc, or leave the conversation.
+   * Lit until I click it again, click another one, press Esc, or leave the conversation.
    */
   selectedSeq: undefined as number | undefined,
-  /** Within it, the paragraph (block of its text) I clicked, if it has several (Ümit #11855); else the whole message. */
-  selectedPart: undefined as number | undefined,
   /** Phones: the message whose buttons are showing (tapped), kept through redraws (Ümit #11869: they vanished). */
   tappedSeq: undefined as number | undefined,
   sending: false,

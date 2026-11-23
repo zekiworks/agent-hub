@@ -427,12 +427,10 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     if ((event.target as Element).closest("a, button, audio, img, input, textarea, summary, .msg-edit, .msg-delete-ask")) return;
     // Selecting text inside it is not a click on it.
     if (String(getSelection() ?? "").trim()) return;
-    // A click on a message puts me "in" it, on the paragraph clicked: lit until I click another, press Esc or leave
-    // (Ümit #11622, #11855). A second click on the same paragraph steps out again: a phone has no Esc (Ümit #12975).
-    const at = textBlocks(li).findIndex((block) => block.contains(event.target as Node));
-    const part = at >= 0 ? at : undefined;
-    const again = state.selectedSeq === message.seq && state.selectedPart === part;
-    selectMessage(again ? undefined : message.seq, part);
+    // Selection keeps a navigation target visible and, on phones, identifies whose actions are open. The whole-message
+    // frame is one toggle: clicking anywhere in the selected message steps out again (Can #15873).
+    const again = state.selectedSeq === message.seq;
+    selectMessage(again ? undefined : message.seq);
     if (!again) noteAttention(message.seq, "tapped");
     if (!PHONE.matches) return;
     tapOpen(li, message.seq, !again, actions);
