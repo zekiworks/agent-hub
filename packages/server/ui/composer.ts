@@ -1,6 +1,6 @@
 // The message box: its state, size, reply bar and staged files. Sending is send.ts.
 import { formatBytes, type Message } from "@agent-bus/protocol";
-import { dom, nearBottom, PHONE, scrollToBottom } from "./dom";
+import { dom, nearBottom, PHONE, scrollToBottom, showInView } from "./dom";
 import { nameList } from "./format";
 import { h } from "./html";
 import { setIcon } from "./icons";
@@ -186,6 +186,15 @@ export function setReplyTo(message: Message | undefined, part?: string): void {
     const what = part ? "this paragraph of" : "";
     dom.replyBarText.textContent = `Replying to ${what ? `${what} ` : ""}${message.from}: ${text || "(file)"}`;
     dom.input.focus();
+    // The iPhone keyboard animates in after focus and repeatedly shortens the message view. Keep moving the message
+    // answered into that shrinking view; otherwise the fixed composer covers it (Ümit #15082).
+    if (PHONE.matches && li) {
+      for (const ms of [0, 100, 400, 800]) {
+        setTimeout(() => {
+          if (state.replyTo?.seq === message.seq) showInView(li);
+        }, ms);
+      }
+    }
   }
 }
 

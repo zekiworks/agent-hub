@@ -5393,14 +5393,28 @@ ul.md-list ul.md-list { list-style: circle; }
   font-size: 16px;
 }
 
-/* Phones with the keyboard up (phones.ts): the tab row and the header's second row (📌, Workspace ▾, ⓘ, "Parent:")
-   step aside, so the messages get the room the keyboard leaves (Ümit #13794); they come back with the keyboard down. */
+/* Phones with the keyboard up (phones.ts): keep one compact row (← and conversation name) and move the rest of the
+   header away. Together with composer.ts scrolling the message answered back into view, the header and fixed composer
+   no longer cover it (Ümit #13794, #15082). Everything comes back with the keyboard down. */
 @media (max-width: 640px) {
   .keyboard-up .tab-row,
   .keyboard-up #checklist-btn,
   .keyboard-up #pane-btn,
   .keyboard-up #details-btn,
-  .keyboard-up .conv-parent {
+  .keyboard-up #conv-search-btn,
+  .keyboard-up #conv-settings-btn,
+  .keyboard-up #fold-btn,
+  .keyboard-up .conv-parent,
+  .keyboard-up .conv-subtitle,
+  .keyboard-up .inbox-return {
     display: none !important;
+  }
+
+  .keyboard-up .conv-bar {
+    flex-wrap: nowrap;
+  }
+
+  .keyboard-up .conv-title-wrap {
+    flex-basis: auto;
   }
 }
