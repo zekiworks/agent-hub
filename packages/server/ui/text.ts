@@ -81,8 +81,8 @@ export function conversationLink(conv: Conversation): HTMLAnchorElement {
 }
 
 /**
- * "#n" as a link: click shows message n (in its conversation); hovering highlights it when it is on screen,
- * otherwise its text shows as a tooltip.
+ * "#n" as a link: click shows message n (in its conversation); hovering highlights it when it is on screen and shows
+ * its message in the same floating-card language as a new-message banner (Can #15519).
  */
 export function refLink(seq: number): HTMLAnchorElement {
   const a = h("a", "msg-ref", `#${seq}`);
@@ -93,14 +93,13 @@ export function refLink(seq: number): HTMLAnchorElement {
   });
   a.addEventListener("mouseenter", () => {
     const target = shownMessage(seq);
-    if (target && onScreen(target)) {
-      a.removeAttribute("title");
-      target.classList.add("msg-ref-target");
-      return;
-    }
-    void refSummary(seq).then((text) => (a.title = text));
+    if (target && onScreen(target)) target.classList.add("msg-ref-target");
+    void showRefPreview(a, seq);
   });
-  a.addEventListener("mouseleave", () => shownMessage(seq)?.classList.remove("msg-ref-target"));
+  a.addEventListener("mouseleave", () => {
+    shownMessage(seq)?.classList.remove("msg-ref-target");
+    hideRefPreview(a);
+  });
   return a;
 }
 
@@ -230,14 +229,64 @@ export function forgetFetched(seq: number): void {
   refFetches.delete(seq);
 }
 
-/** Tooltip for "#n": sender, conversation and the start of the text. */
-async function refSummary(seq: number): Promise<string> {
+let refPreview: HTMLElement | undefined;
+let refPreviewOwner: HTMLAnchorElement | undefined;
+let refPreviewRequest = 0;
+
+/** Removes only `owner`'s preview: a late mouseleave from an older reference must not close the current one. */
+function hideRefPreview(owner?: HTMLAnchorElement): void {
+  if (owner && refPreviewOwner !== owner) return;
+  refPreviewRequest += 1;
+  refPreview?.remove();
+  refPreviewOwner?.removeAttribute("aria-describedby");
+  refPreview = refPreviewOwner = undefined;
+}
+
+/** Keeps the hover card beside its reference and inside the visual viewport. */
+function placeRefPreview(anchor: HTMLAnchorElement, preview: HTMLElement): void {
+  const link = anchor.getBoundingClientRect();
+  const card = preview.getBoundingClientRect();
+  const vv = window.visualViewport;
+  const leftEdge = (vv?.offsetLeft ?? 0) + 8;
+  const rightEdge = (vv ? vv.offsetLeft + vv.width : innerWidth) - 8;
+  const topEdge = (vv?.offsetTop ?? 0) + 8;
+  const bottomEdge = (vv ? vv.offsetTop + vv.height : innerHeight) - 8;
+  const left = Math.min(Math.max(link.left, leftEdge), Math.max(leftEdge, rightEdge - card.width));
+  const below = link.bottom + 8;
+  const above = link.top - card.height - 8;
+  const top = below + card.height <= bottomEdge ? below : Math.max(topEdge, above);
+  preview.style.left = `${Math.round(left)}px`;
+  preview.style.top = `${Math.round(top)}px`;
+}
+
+/** A transient, non-interactive message card for a hovered "#n"; leaving the reference removes it. */
+async function showRefPreview(owner: HTMLAnchorElement, seq: number): Promise<void> {
+  hideRefPreview();
+  const request = refPreviewRequest;
+  refPreviewOwner = owner;
+  let result: MessageWithConversation | undefined;
+  let failure: string | undefined;
   try {
-    const { message, conversation } = await fetchMessage(seq);
-    const text = message.text.replace(/\s+/g, " ").trim();
-    const files = message.files.length > 0 ? ` [${message.files.map((f) => f.name).join(", ")}]` : "";
-    return `#${seq} · ${message.from} in ${conversationTitle(conversation)}\n${text.length > 400 ? `${text.slice(0, 399)}…` : text}${files}`;
-  } catch (err) {
-    return `#${seq}: ${errorText(err)}`;
+    result = await fetchMessage(seq);
+  } catch (error) {
+    failure = errorText(error);
   }
+  if (request !== refPreviewRequest || refPreviewOwner !== owner || !owner.matches(":hover")) return;
+
+  const preview = h("div", "answer-toast message-ref-preview");
+  preview.id = `message-ref-preview-${seq}`;
+  preview.setAttribute("role", "tooltip");
+  preview.dataset.seq = String(seq);
+  const where = result ? `#${seq} · @${result.message.from} in ${conversationTitle(result.conversation)}` : `#${seq}`;
+  const head = h("div", "answer-toast-head");
+  head.append(h("span", "answer-toast-where", where));
+  const body = h("div", "answer-toast-open");
+  const text = result?.message.text.replace(/\s+/g, " ").trim() ?? `Could not show this message: ${failure ?? "unknown error"}`;
+  const files = result && result.message.files.length > 0 ? `\nFiles: ${result.message.files.map((file) => file.name).join(", ")}` : "";
+  body.append(h("span", "answer-toast-text", `${text || "(file)"}${files}`));
+  preview.append(head, body);
+  document.body.append(preview);
+  refPreview = preview;
+  owner.setAttribute("aria-describedby", preview.id);
+  placeRefPreview(owner, preview);
 }

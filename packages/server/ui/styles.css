@@ -5184,6 +5184,32 @@ ul.md-list ul.md-list { list-style: circle; }
   overflow-wrap: anywhere;
 }
 
+/* Hovering a #message reference shows its message in a transient banner-like card beside the reference (text.ts;
+ * Can #15519). It never catches the pointer, so leaving the reference removes it immediately. */
+.message-ref-preview.answer-toast {
+  position: fixed;
+  z-index: 70;
+  width: min(380px, calc(100vw - 16px));
+  max-height: min(320px, calc(100dvh - 16px));
+  overflow: hidden;
+  pointer-events: none;
+  cursor: default;
+  touch-action: auto;
+}
+
+.message-ref-preview .answer-toast-head {
+  min-height: 32px;
+  padding: 6px 12px 0;
+}
+
+.message-ref-preview .answer-toast-open {
+  padding: 4px 12px 12px;
+}
+
+.message-ref-preview .answer-toast-text {
+  white-space: pre-line;
+}
+
 /* Answers elsewhere (toast.ts): tap to open the message, ✕ to close. Desktop: at the right, below the top bar and the
  * headers, so the room's controls and the message box stay free (Ümit #10782, codex-ui #10783); never taller than
  * the space between them. */
