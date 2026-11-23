@@ -161,13 +161,17 @@ dom.composer.addEventListener("submit", (event) => {
 
 // Tapping Send keeps the input focused: the keyboard stays up and nothing moves before the tap lands. Safari sends no
 // click after a pointerdown kept from the focus, so Send took several taps (Ümit #13345): such a tap sends on
-// pointerup, and a click that still follows (Chrome) does not send twice.
+// pointerup, and a click that still follows (Chrome) does not send twice. Pointer capture keeps that pointerup attached
+// to Send if iOS adjusts the visual viewport under the finger during the press (Ümit #15089).
 let sendPressed = false;
 let sentOnPointerUp = false;
 dom.sendBtn.addEventListener("pointerdown", (event) => {
   sentOnPointerUp = false;
   sendPressed = PHONE.matches && document.activeElement === dom.input;
-  if (sendPressed) event.preventDefault();
+  if (sendPressed) {
+    event.preventDefault();
+    dom.sendBtn.setPointerCapture(event.pointerId);
+  }
 });
 dom.sendBtn.addEventListener("pointercancel", () => (sendPressed = false));
 dom.sendBtn.addEventListener("pointerup", () => {
