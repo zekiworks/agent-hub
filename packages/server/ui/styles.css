@@ -3304,6 +3304,24 @@ ul.md-list ul.md-list { list-style: circle; }
   white-space: pre-wrap;
 }
 
+.command-proposal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.command-proposal[hidden] {
+  display: none;
+}
+
 .staged-files {
   list-style: none;
   margin: 0 0 8px;

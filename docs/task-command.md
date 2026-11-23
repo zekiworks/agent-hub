@@ -1,10 +1,10 @@
-# `/task` extension: simple design
+# `/task` extension: shipped interaction
 
-Status: design. Not built.
+Status: implemented 23 Nov 2026.
 
-This document explains how `/task` talks to Agent Hub. It does not define a new task system inside the bus. The task feature is an extension service.
-
-The detailed generic command contract is in [slash-commands.md](slash-commands.md). The extension manifest example is [task-extension.json](task-extension.json).
+This document explains the shipped `/task` path through Agent Hub. The generic bridge is in
+`packages/server/src/extension-runtime.ts`; task rules and persistence are in `packages/task-ext/src/server.ts`.
+The detailed generic command contract remains in [slash-commands.md](slash-commands.md).
 
 ## Goal
 
@@ -29,13 +29,14 @@ The bus does not contain task rules. It only provides generic extension features
 
 ## How the extension joins the system
 
-The bus config contains the extension name, URL, and shared secret. For example:
+The bus is started with the extension URL:
 
 ```text
-name = task
-url = http://127.0.0.1:7860
-secret = …
+agent-bus serve … --task-ext http://127.0.0.1:7834
 ```
+
+Both processes read `<data-dir>/task-extension.secret`. The bus creates that file with mode `0600` when needed. It
+fetches `GET /bus-extension.json`; the secret is never sent to a browser or agent.
 
 The bus reads `GET /bus-extension.json` from that URL. The manifest says:
 
@@ -146,24 +147,20 @@ The bus stores the new annotation and publishes a live message update. If there 
 
 The bus is the only path to an action. The website, panel, and agent plugin never call the extension action endpoint directly.
 
-## Current agent API and cutover
+## Agent API and compatibility
 
-Today agents use task operations inside the single `message-bus` tool:
+Every supported harness registers the extension-native tool:
 
-| Need | Current call |
-|---|---|
-| Create | `op=write`, `reply`, or `send` with `task="task"` and `assignees=[…]` |
-| List tasks for me | `op=tasks` |
-| List tasks I assigned | `op=tasks box="assigned"` |
-| Include closed tasks | `op=tasks scope="all"` |
-| Change a task | `op=accept`, `done`, `reject`, or `withdraw` with `message_id` |
+```text
+task { op: "create", conversation: "@webapp", to: ["webapp"], text: "fix Safari" }
+task { op: "list", box: "mine", state: "open" }
+task { op: "mutate", message_id: 13900, action: "progress", note: "reproduced", eta: "today" }
+task { op: "mutate", message_id: 13900, action: "done", reason: "fixed" }
+```
 
-These calls use `GET /api/tasks` and `POST /api/tasks/:seq/:action`. The human Inbox reads and changes the same task
-records through those routes.
-
-The extension replaces the task-specific tool operations with the manifest-provided `task` tool below. Every harness
-must move in the same cutover. The old tool operations and `/api/tasks` routes are then removed; they are not a second
-permanent interface.
+The older task operations inside `message-bus` remain as a compatibility mapping during harness upgrades:
+`write|reply|send task="task"`, `tasks`, and `accept|done|reject|withdraw`. They call the same extension state through
+`GET /api/tasks` and `POST /api/tasks/:seq/:action`; there is no second task store.
 
 ## Agent interaction
 
@@ -216,35 +213,38 @@ The extension's database is the source of truth for task behavior. The annotatio
 
 ## Failure behavior
 
-- **Bad command arguments:** the website explains the problem before Enter; the bus rejects it again if needed.
-- **Extension is down before Send:** the composer shows `Tasks is not answering`. No message or task is created.
+- **Bad command arguments:** the extension explains the problem on Enter; no proposal or message is created.
+- **Extension is down before Enter:** the composer shows that Tasks is not answering; no proposal or message is created.
 - **Proposal expires:** Send asks the person to run `/task` again. Nothing is posted.
+- **Extension stops after a proposal:** Send stores the message and annotation. The bus retries the idempotent `posted`
+  event until the extension catches up.
 - **Action fails:** the message state does not change. The caller sees the extension's error.
-- **Posted-event delivery fails:** the bus retries it. Events have stable ids, so the extension handles repeats without creating duplicate tasks.
 - **Live update is missed:** reloading reads the annotation stored on the message.
 
-## Minimal extension endpoints
+## Implemented extension endpoints
 
 | Endpoint | Use |
 |---|---|
-| `GET /bus-extension.json` | Describe commands, actions, tool, events, and panel |
+| `GET /bus-extension.json` | Describe `/task`, its actions, agent tool, event, and Inbox slot |
 | `POST /commands/task` | Validate a task request and return a proposal |
-| `POST /actions/:action` | Apply Accept, Progress, Done, Reject, or Cancel |
-| `POST /events` | Receive posted, replied, and deleted message events |
-| `GET /panel` | Render For me and Assigned by me inside the existing Inbox |
-| `GET /api/mine` | Return tasks and open/unread counts for the signed Inbox viewer |
+| `POST /actions/:action` | Apply Accept, Progress, Done, Reject, Read, or Cancel |
+| `POST /events` | Receive idempotent posted-message events |
+| `POST /queries/tasks` | Return For me / Assigned by me tasks and open/unread counts to the bus |
 
-All mutating endpoints accept only signed bus requests.
+All extension endpoints except the public manifest require a signed bus request. The existing Inbox renders the bus's
+task response; it receives no bus session token or extension secret.
 
-## First implementation boundary
 
-The first version includes:
+## First implementation
+
+The shipped version includes:
 
 - `/task @member… text`;
-- Accept, Progress, Done, Reject, and Cancel;
+- Accept, Progress, Done, Reject, Read, and Cancel;
 - one task annotation under the message;
-- one typed agent tool;
+- the typed `task` tool in OMP, Pi, Claude, Codex, OpenCode, Copilot, Antigravity, and Hermes;
 - For me and Assigned by me lists in the existing Inbox;
-- notices as replies to the task message.
+- notices as replies to the task message;
+- one-time migration of existing built-in task rows into extension annotations.
 
-Reminders and `/approval` use the same system but are not needed to prove `/task` end to end.
+Legacy approvals remain actionable during migration. A new `/approval` command and reminders are separate scope.

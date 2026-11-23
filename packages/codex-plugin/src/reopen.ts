@@ -21,6 +21,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { textResult, type McpToolResult } from "../../client/src/mcp";
 import { TOOL_NAME, type MessageBusToolParams } from "../../client/src/tool";
+import { runTaskTool, TASK_TOOL_NAME, type TaskToolParams } from "../../client/src/task-tool";
 import { isThreadId } from "./live-output";
 import { CodexSession, HOOK_EVENTS, HOOK_TOOL, type HookEvent, type HookInput } from "./session";
 import { queueWake } from "./wake";
@@ -306,6 +307,8 @@ export async function worker(input: string, log: (line: string) => void): Promis
             result = { ...textResult(JSON.stringify(answer)), structuredContent: answer };
           } else if (name === TOOL_NAME) {
             result = textResult(await session.runTool(args as unknown as MessageBusToolParams));
+          } else if (name === TASK_TOOL_NAME) {
+            result = textResult(await runTaskTool(session.conn, args as unknown as TaskToolParams));
           } else {
             throw new Error("invalid presence call");
           }

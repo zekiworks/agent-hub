@@ -7,6 +7,7 @@ import { UnseenSeqs } from "../../client/src/held";
 import { envBusUrl, realFolder } from "../../client/src/runtime";
 import { StatusTracker } from "../../client/src/status";
 import { BusTool, deliveryText, isScratchFolder, TOOL_NAME, toolDescription, toolInputSchema, type MessageBusToolParams } from "../../client/src/tool";
+import { runTaskTool, TASK_TOOL_DESCRIPTION, TASK_TOOL_NAME, taskToolInputSchema, type TaskToolParams } from "../../client/src/task-tool";
 import type { Context, OpenCodeEvent, Plugin, SessionInfo } from "./opencode";
 
 export type { Context } from "./opencode";
@@ -124,6 +125,19 @@ const plugin: Plugin = {
           const binding = await join(context.sessionID);
           if (!binding) throw new Error("This session is not on the message bus: subagents and sessions in the temp directory do not join.");
           return { content: await binding.tool.run(input as MessageBusToolParams, binding.directory) };
+        },
+      });
+    }));
+    registrations.push(await ctx.tool.transform((editor) => {
+      editor.add({
+        name: TASK_TOOL_NAME,
+        description: TASK_TOOL_DESCRIPTION,
+        input: taskToolInputSchema(),
+        options: { codemode: true },
+        async execute(input, context) {
+          const binding = await join(context.sessionID);
+          if (!binding) throw new Error("This session is not on the message bus: subagents and sessions in the temp directory do not join.");
+          return { content: await runTaskTool(binding.connection, input as TaskToolParams) };
         },
       });
     }));

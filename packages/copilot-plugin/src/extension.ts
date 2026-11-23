@@ -9,6 +9,7 @@ import { HeldQueue, UnseenSeqs } from "../../client/src/held";
 import { realFolder } from "../../client/src/runtime";
 import { StatusTracker } from "../../client/src/status";
 import { BusTool, deliveryText, isScratchFolder, TOOL_NAME, toolDescription, toolInputSchema, type MessageBusToolParams } from "../../client/src/tool";
+import { runTaskTool, TASK_TOOL_DESCRIPTION, TASK_TOOL_NAME, taskToolInputSchema, type TaskToolParams } from "../../client/src/task-tool";
 import type { ReceiptEvent } from "../../protocol/src/types";
 import type { CopilotSession, HookContext, JoinSession, SessionEvent } from "./copilot";
 
@@ -168,19 +169,31 @@ export async function start(joinSession: JoinSession, options: ExtensionOptions)
   const binding = skip ? undefined : new CopilotBinding(folder, options.busUrl, log);
 
   const session = await joinSession({
-    tools: [{
-      name: TOOL_NAME,
-      description: toolDescription({
-        arrives: "a message for you starts a turn, or reaches the running one at its next step",
-        notJoining: NOT_JOINING,
-      }),
-      parameters: toolInputSchema(),
-      skipPermission: true,
-      async handler(args) {
-        if (!binding) throw new Error(`This session is not on the message bus: ${NOT_JOINING}.`);
-        return binding.runTool(args as unknown as MessageBusToolParams);
+    tools: [
+      {
+        name: TOOL_NAME,
+        description: toolDescription({
+          arrives: "a message for you starts a turn, or reaches the running one at its next step",
+          notJoining: NOT_JOINING,
+        }),
+        parameters: toolInputSchema(),
+        skipPermission: true,
+        async handler(args) {
+          if (!binding) throw new Error(`This session is not on the message bus: ${NOT_JOINING}.`);
+          return binding.runTool(args as unknown as MessageBusToolParams);
+        },
       },
-    }],
+      {
+        name: TASK_TOOL_NAME,
+        description: TASK_TOOL_DESCRIPTION,
+        parameters: taskToolInputSchema(),
+        skipPermission: true,
+        async handler(args) {
+          if (!binding) throw new Error(`This session is not on the message bus: ${NOT_JOINING}.`);
+          return runTaskTool(binding.conn, args as unknown as TaskToolParams);
+        },
+      },
+    ],
     hooks: {
       // Only the main agent's turns take held messages; a subagent's tool calls run these hooks too.
       onUserPromptSubmitted: async (input) => (input.agentId ? undefined : binding?.context()),

@@ -20,6 +20,7 @@ import { askProfile } from "./profile";
 import { applyReceipt, pulseUnread, renderAll, renderMessages, showEmpty, updateSeenLine } from "./render";
 import { navigate, parseHash, parseThread, threadHash, viewHash } from "./routing";
 import { threadsOf, threadsOn } from "./threads";
+import "./commands";
 import "./send";
 import "./convmenu";
 import { checklistChanged } from "./checklist";
@@ -243,6 +244,7 @@ function handleFrame(frame: ViewerServerFrame): void {
       break;
     case "changed":
       messageChanged(frame.message, frame.conversation);
+      if (frame.message.ext?.task) void refreshInbox();
       break;
     case "bookmarks":
       bookmarksChanged(frame.bookmarks);

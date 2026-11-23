@@ -45,11 +45,13 @@ export interface AgentSockets {
   settleAll(): void;
 }
 
+const TASK_AGENT_ID = "task";
+
 /** The `websocket` handlers of `Bun.serve` for `/ws/agent` and `/ws/viewer`. */
 export function socketHandlers(ctx: BusContext): AgentSockets {
   const { db, hub } = ctx;
-  /** Ids no agent can take: humans and the built-in @resources. */
-  const reservedIds = new Set([...ctx.humans, RESOURCES_AGENT_ID]);
+  /** Ids no agent can take: humans and the built-in notice senders. */
+  const reservedIds = new Set([...ctx.humans, RESOURCES_AGENT_ID, TASK_AGENT_ID]);
 
   const refuse = (ws: Socket, code: number, error: string): void => {
     sendFrame(ws, { type: "error", error });
@@ -325,7 +327,7 @@ export async function postSetting(ctx: BusContext, req: Request): Promise<{ part
 /** Forgets agents offline for more than `days` days (0: never): their participant record and pending receipts. */
 export function forgetOfflineAgents(ctx: BusContext, days: number): void {
   if (days <= 0) return;
-  const keep = new Set([...ctx.hub.onlineAgentIds(), RESOURCES_AGENT_ID]);
+  const keep = new Set([...ctx.hub.onlineAgentIds(), RESOURCES_AGENT_ID, TASK_AGENT_ID]);
   const gone = ctx.db.forgetAgentsSeenBefore(Date.now() - days * 24 * 3600_000, keep);
   if (gone.length === 0) return;
   console.log(`forgot agents offline for more than ${days} days: ${gone.join(", ")}`);

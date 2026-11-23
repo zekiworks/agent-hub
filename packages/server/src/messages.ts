@@ -21,7 +21,6 @@ import {
 import type { BusContext } from "./context";
 import { addMembers, canRead, canSee, checkedProjectName, leave, mayRead, type Reader } from "./conversations";
 import { DEFAULT_HOLD_MS, type ParticipantRecord } from "./db";
-import { newTask } from "./tasks";
 import { HttpError, readJsonObject } from "./http";
 
 const MAX_TEXT_LENGTH = 100_000;
@@ -132,7 +131,7 @@ export async function postMessage(ctx: BusContext, req: Request): Promise<PostMe
 }
 
 /** Writes the message `body` asks for (POST /api/messages), carrying `forwarded` when it forwards one (Can #12470). */
-function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknown>, forwarded?: ForwardedMessage): PostMessageResponse {
+async function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknown>, forwarded?: ForwardedMessage): Promise<PostMessageResponse> {
   const { db, hub } = ctx;
   if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
   const writer = hub.knownParticipant(body.from.trim().toLowerCase());
@@ -166,7 +165,7 @@ function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknow
 
   if (body.text !== undefined && typeof body.text !== "string") throw new HttpError(400, "text must be a string");
   // The bus shows every message's sender; agents that start with their own name ("logic: …") only repeat it.
-  const text = writer.kind === "agent" ? withoutOwnName(body.text ?? "", writer.id) : (body.text ?? "");
+  let text = writer.kind === "agent" ? withoutOwnName(body.text ?? "", writer.id) : (body.text ?? "");
   if (text.length > MAX_TEXT_LENGTH) {
     throw new HttpError(400, `text is longer than ${MAX_TEXT_LENGTH} characters`);
   }
@@ -290,14 +289,24 @@ function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknow
     holdMs = body.holdHours * 3600_000;
   }
 
+  // Extension proposals are consumed only while their message is written. Agents' legacy task fields run the same
+  // extension command and post its answer immediately.
+  let extension: { ext: NonNullable<Message["ext"]>; wake: string[] } | undefined;
+  if (body.proposal !== undefined) {
+    if (!ctx.extensions) throw new HttpError(503, "The task extension is not configured");
+    extension = ctx.extensions.consume(body.proposal, writer.id, conversation.id);
+  } else if (body.task !== undefined) {
+    if (!ctx.extensions) throw new HttpError(503, "The task extension is not configured");
+    const prepared = await ctx.extensions.agentTask(writer, conversation, text, body.task);
+    extension = { ext: prepared.ext, wake: prepared.wake };
+    text = prepared.text;
+  }
   // Every agent of the conversation (for @all, every agent): the online ones get it now, the offline ones when they are
   // back, until it expires. Only those on the wake list get a turn for it.
   const recipients = recipientsFor(ctx, conversation, writer.id).map((p) => p.id);
-  const task = newTask(ctx, body.task, writer, conversation, mentionedIds(text));
   const listed = wakeList(ctx, writer, body.wake, conversation, recipients, text, replyToSeq, newcomers);
-  // A task wakes the agents it is assigned to.
-  const assigned = task ? task.assignees.map((a) => a.id).filter((id) => recipients.includes(id)) : [];
-  const wake = listed && assigned.length > 0 ? [...new Set([...listed, ...assigned])] : listed;
+  const assigned = extension?.wake.filter((id) => recipients.includes(id)) ?? [];
+  const wake = assigned.length > 0 ? [...new Set([...(listed ?? []), ...assigned])] : listed;
   const message = db.insertMessage({
     conversationId: conversation.id,
     from: writer.id,
@@ -313,16 +322,18 @@ function writeMessage(ctx: BusContext, req: Request, body: Record<string, unknow
     ...(fromSession === undefined ? {} : { fromSession }),
     ...(verified === undefined ? {} : { verified }),
     ...(wake ? { wake } : {}),
-    ...(task ? { task } : {}),
+    ...(extension ? { ext: extension.ext } : {}),
     ...(forwarded ? { forwarded } : {}),
   });
   if (writer.kind === "human") db.touchParticipant(writer.id, now);
   const updated = db.getConversation(conversation.id);
   if (!updated) throw new Error(`Conversation ${conversation.id} vanished`);
   hub.publishMessage(message, updated);
+  const response: PostMessageResponse = { message, conversation: updated };
+  await ctx.extensions?.posted(response);
   const warnings =
     writer.kind === "agent" ? [...unreadableRefs(ctx, text, updated), ...unwokenMentions(mentionedParticipants(ctx, text), recipients, wake)] : [];
-  return { message, conversation: updated, ...(warnings.length > 0 ? { warnings } : {}) };
+  return { ...response, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 /**
@@ -611,9 +622,9 @@ export async function forwardMessage(ctx: BusContext, req: Request, seq: number)
     // An agent who can read it already gets a reply there that names it. A person always gets a copy in the DM: in a
     // busy room a mention was missed, and "forward to Can" was taken for not arriving (Ümit #13324).
     if (target.kind === "agent" && (source.kind === "all" || source.members.includes(target.id))) {
-      sent = writeMessage(ctx, req, { from: writer.id, replyToSeq: seq, text: `${label} ${note || "(forwarded to you)"}`, ...wake });
+      sent = await writeMessage(ctx, req, { from: writer.id, replyToSeq: seq, text: `${label} ${note || "(forwarded to you)"}`, ...wake });
     } else {
-      sent = writeMessage(ctx, req, { from: writer.id, to: label, text: note, ...wake }, copy);
+      sent = await writeMessage(ctx, req, { from: writer.id, to: label, text: note, ...wake }, copy);
     }
   } else {
     const target = conversationFor(ctx, writer, ctx.knownAddress(to), Date.now());
@@ -621,7 +632,7 @@ export async function forwardMessage(ctx: BusContext, req: Request, seq: number)
     label = target.kind === "all" ? "#all" : conversationLabel(target);
     // An agent forwarding into a DM wakes its other member; elsewhere nobody (it says whom in the note, with wake).
     const wake = agentWriter ? { wake: target.kind === "dm" ? target.members.filter((m) => m !== writer.id && !hub.isHuman(m)) : [] } : {};
-    sent = writeMessage(ctx, req, { from: writer.id, conversationId: target.id, text: note, ...wake }, copy);
+    sent = await writeMessage(ctx, req, { from: writer.id, conversationId: target.id, text: note, ...wake }, copy);
   }
   db.addForward(seq, writer.id, label);
   const updated = db.getMessage(seq);

@@ -166,6 +166,29 @@ SCHEMA = {
     },
 }
 
+TASK_SCHEMA = {
+    "name": "task",
+    "description": "Create, list, and act on Agent Hub tasks.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "op": {"type": "string", "enum": ["create", "list", "mutate"]},
+            "conversation": {"type": "string"},
+            "to": {"type": "array", "items": {"type": "string"}},
+            "text": {"type": "string"},
+            "box": {"type": "string", "enum": ["mine", "assigned"]},
+            "state": {"type": "string", "enum": ["open", "all"]},
+            "message_id": {"type": "integer"},
+            "action": {"type": "string", "enum": ["accept", "progress", "done", "reject", "cancel"]},
+            "reason": {"type": "string"},
+            "note": {"type": "string"},
+            "eta": {"type": "string"},
+        },
+        "required": ["op"],
+        "additionalProperties": False,
+    },
+}
+
 
 def _format_address(ids: list[str]) -> str:
     if not ids:
@@ -487,6 +510,11 @@ class BusClient:
         """One step on task #seq (accept, done, reject, withdraw), as in BusConnection.taskAction."""
         body = {"from": self.my_id(), **({"reason": reason} if reason else {})}
         return self._request("POST", f"/api/tasks/{seq}/{action}", json.dumps(body).encode())
+
+    def extension_action(self, name: str, seq: int, action: str, values: dict) -> dict:
+        body = {"from": self.my_id(), "message_id": seq, **{k: v for k, v in values.items() if v is not None}}
+        return self._request("POST", f"/api/ext/{urllib.parse.quote(name)}/actions/{urllib.parse.quote(action)}",
+                             json.dumps(body).encode())
 
     def get(self, path: str, params: dict) -> dict:
         """GET a reading endpoint (no turns for anyone); None values are left out."""
@@ -927,6 +955,33 @@ def register(ctx: Any) -> None:
                 return f"{where} has no checklist yet; start one with op=checklist base=0 and `ops` adding its first steps. (you are @{me})"
             return f"{format_checklist(now, where)}\n (you are @{me})"
         raise ValueError("op must be reply, write, send, set, inbox, show, history, search, tasks, accept, done, reject, withdraw, home or checklist.")
+
+    def handle_task(args: dict, **_: Any) -> str:
+        op = args.get("op")
+        if op == "create":
+            if not args.get("conversation") or not args.get("to") or not (args.get("text") or "").strip():
+                raise ValueError("task create needs conversation, to and text.")
+            res = client.write({"to": args["conversation"]}, args["text"], [],
+                               task={"type": "task", "assignees": args["to"]})
+            return f"Created task #{res['message']['seq']} for " + ", ".join(f"@{i}" for i in args["to"]) + "."
+        if op == "list":
+            box = "assigned" if args.get("box") == "assigned" else "mine"
+            state = "all" if args.get("state") == "all" else "open"
+            res = client.get("/api/tasks", {"for": me, "box": box, "state": state})
+            by_id = {c["id"]: c for c in res["conversations"]}
+            head = f"{len(res['messages'])} task(s) you assigned" if box == "assigned" else f"{res['open']} open task(s) for you"
+            return f"{head}." if not res["messages"] else f"{head}:\n\n" + "\n".join(
+                format_task(m, by_id.get(m["conversationId"])) for m in res["messages"])
+        if op == "mutate":
+            if args.get("message_id") is None or not args.get("action"):
+                raise ValueError("task mutate needs message_id and action.")
+            res = client.extension_action("task", int(args["message_id"]), args["action"],
+                                          {k: args.get(k) for k in ("reason", "note", "eta")})
+            return f"#{args['message_id']} {args['action']}: {task_states(res['message'])}."
+        raise ValueError("task op must be create, list or mutate.")
+
+    ctx.register_tool(name="task", toolset="message_bus", schema=TASK_SCHEMA, handler=handle_task,
+                      description=TASK_SCHEMA["description"], emoji="✓")
 
     ctx.register_tool(name=TOOL_NAME, toolset="message_bus", schema=SCHEMA, handler=handle,
                       description=SCHEMA["description"], emoji="📨")

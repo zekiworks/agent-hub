@@ -6,6 +6,7 @@ import type { HumanAuth } from "./auth";
 import type { BusDatabase } from "./db";
 import { HttpError } from "./http";
 import { Hub } from "./hub";
+import type { ExtensionRuntime } from "./extension-runtime";
 
 /** SHA-256 hex of an agent token (the database never holds the token itself). */
 export function tokenHash(token: string): string {
@@ -17,6 +18,8 @@ export type Reader = { kind: "human"; id: string } | { kind: "agent"; tokenHash:
 
 export class BusContext {
   readonly hub: Hub;
+  /** Configured after construction because the runtime needs this context. */
+  extensions?: ExtensionRuntime;
 
   constructor(
     readonly db: BusDatabase,

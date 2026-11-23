@@ -169,6 +169,10 @@
       <form id="composer" class="composer" autocomplete="off">
         <div id="composer-grip" class="composer-grip" role="separator" aria-orientation="horizontal" aria-label="Message box height" tabindex="0" title="Drag to make the message box taller or shorter (double-click: automatic)"></div>
         <div id="composer-error" class="composer-error" role="alert" hidden></div>
+        <div id="command-proposal" class="command-proposal" hidden>
+          <span id="command-proposal-text"></span>
+          <button id="command-proposal-cancel" type="button" class="link-btn" title="Cancel this command proposal">✕</button>
+        </div>
         <div id="reply-bar" class="reply-bar" hidden>
           <!-- One line by default; explicit Show/Hide opens the whole quote (composer.ts; Ümit #14607, #15105). -->
           <span id="reply-bar-text" class="reply-bar-text"></span>

@@ -27,12 +27,12 @@ import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
 import { forwardExtension } from "./extensions";
 import { getBoxUsage, postBox, postBoxReport, type BoxExtension } from "./boxes";
-import { getTasks, taskAction } from "./tasks";
 import { postSpeech } from "./speech";
 import { WebPush } from "./push";
 import { postAttention } from "./attention";
 import { NeedsJudge } from "./needs";
 import { type Brand, Website } from "./website";
+import { ExtensionRuntime } from "./extension-runtime";
 
 export interface BusServerOptions {
   host?: string;
@@ -66,6 +66,8 @@ export interface BusServerOptions {
    * the bus asks about agents' messages (`box=needs`, Ümit #14881).
    */
   boxes?: Record<string, BoxExtension>;
+  /** HTTP task extension service. Its shared HMAC secret is `<dataDir>/task-extension.secret`. */
+  taskExtension?: string;
   /** This bus's name and pictures on the website (`--brand-name "Team Hub" --brand-logo FILE --brand-icon FILE`). */
   brand?: Brand;
   /** Agents offline for this many days are forgotten (participant record and their pending receipts). 0: never. Default 15. */
@@ -149,6 +151,11 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
   const tokens = new AgentTokens(db.db);
   tokens.approveBound();
   const ctx = new BusContext(db, humans, auth, tokens, filesDir);
+  const extensions = options.taskExtension
+    ? new ExtensionRuntime(ctx, "task", options.taskExtension, path.join(dataDir, "task-extension.secret"))
+    : undefined;
+  ctx.extensions = extensions;
+  if (extensions) void extensions.start().catch((error) => console.error(`[task extension] ${error instanceof Error ? error.message : String(error)}`));
   // Notifications to people's devices while Agent Hub is closed (Ümit #13927, #13934).
   const push = new WebPush(db.db, path.join(dataDir, "push-vapid.json"), {
     subject: options.publicUrls?.[0] ?? "mailto:agent-hub@localhost",
@@ -243,6 +250,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
         ...(options.boxes && Object.keys(options.boxes).length > 0
           ? { boxes: Object.fromEntries(Object.entries(options.boxes).map(([name, box]) => [name, box.role])) }
           : {}),
+        ...(extensions ? { commands: await extensions.commands().catch(() => []) } : {}),
         ...(options.gpudash ? { gpuBooking: true as const } : {}),
         // A person's own bookmarks (Can #11065), tasks (Can #12197) and tabs (Can #11480): theirs alone, in their own state.
         ...(viewer.kind === "human" ? { bookmarks: db.bookmarksOf(viewer.id), ownTasks: db.ownTasksOf(viewer.id), tabs: db.tabsOf(viewer.id) } : {}),
@@ -256,9 +264,24 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 7));
       return json(db.stats(Date.now() - days * 86_400_000, days));
     }
-    if (method === "GET" && pathname === "/api/tasks") return json(getTasks(ctx, req, url, viewer.kind === "human" ? viewer.id : undefined));
+    if (method === "GET" && pathname === "/api/tasks") {
+      if (!extensions) throw new HttpError(503, "The task extension is not configured");
+      const box = url.searchParams.get("box") === "assigned" ? "assigned" : "mine";
+      const state = url.searchParams.get("state") === "all" ? "all" : "open";
+      const id = viewer.kind === "human" ? viewer.id : (url.searchParams.get("for") ?? "");
+      if (viewer.kind === "agent") {
+        const agent = ctx.hub.knownParticipant(id);
+        if (!agent || agent.kind !== "agent") throw new HttpError(400, `Unknown agent "${id}"`);
+        ctx.checkWriter(req, agent);
+      }
+      return json(await extensions.tasks(id, box, state));
+    }
     const taskMatch = /^\/api\/tasks\/(\d+)\/(accept|done|reject|withdraw|read)$/.exec(pathname);
-    if (method === "POST" && taskMatch?.[1] && taskMatch[2]) return json(await taskAction(ctx, req, Number(taskMatch[1]), taskMatch[2]));
+    if (method === "POST" && taskMatch?.[1] && taskMatch[2]) {
+      if (!extensions) throw new HttpError(503, "The task extension is not configured");
+      const body = await readJsonObject(req);
+      return json(await extensions.action(req, taskMatch[2], { ...body, message_id: Number(taskMatch[1]) }));
+    }
     const checklistMatch = /^\/api\/conversations\/([^/]+)\/checklist(?:\/(tick|edit|pin))?$/.exec(pathname);
     if (checklistMatch?.[1]) {
       const id = decodeURIComponent(checklistMatch[1]);
@@ -299,6 +322,17 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     const transcriptMatch = /^\/api\/files\/([^/]+)\/transcript$/.exec(pathname);
     if (method === "POST" && transcriptMatch?.[1]) return json(await transcribeFile(ctx, decodeURIComponent(transcriptMatch[1]), options.sttUrl, viewer.kind === "human" ? viewer.id : undefined));
     if (method === "POST" && pathname === "/api/speech") return await postSpeech(req, options.ttsUrl);
+    const extensionCommand = /^\/api\/ext\/([a-z0-9][a-z0-9_-]*)\/command$/.exec(pathname);
+    if (method === "POST" && extensionCommand?.[1]) {
+      if (!extensions || extensionCommand[1] !== "task") throw new HttpError(404, `No command extension "${extensionCommand[1]}"`);
+      if (viewer.kind !== "human") throw new HttpError(403, "Slash commands in the composer are for signed-in people");
+      return json(await extensions.command(req, viewer.id, await readJsonObject(req)));
+    }
+    const extensionAction = /^\/api\/ext\/([a-z0-9][a-z0-9_-]*)\/actions\/([a-z]+)$/.exec(pathname);
+    if (method === "POST" && extensionAction?.[1] && extensionAction[2]) {
+      if (!extensions || extensionAction[1] !== "task") throw new HttpError(404, `No action extension "${extensionAction[1]}"`);
+      return json(await extensions.action(req, extensionAction[2], await readJsonObject(req)));
+    }
     const boxMatch = /^\/api\/box\/([a-z0-9][a-z0-9_-]*)$/.exec(pathname);
     if (method === "POST" && boxMatch?.[1]) return json(await postBox(ctx, req, boxMatch[1], options.boxes ?? {}, viewer.kind === "human" ? viewer.id : undefined));
     const boxReportMatch = /^\/api\/box\/([a-z0-9][a-z0-9_-]*)\/(report|usage)$/.exec(pathname);

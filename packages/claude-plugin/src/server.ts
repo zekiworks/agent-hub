@@ -6,6 +6,7 @@ import { serveHookSocket, type HookSocket } from "../../client/src/hook-socket";
 import { McpToolServer, serveStdio, textResult, writeStdout, type McpToolResult } from "../../client/src/mcp";
 import { pluginBusUrl, pluginLog, realFolder } from "../../client/src/runtime";
 import { isScratchFolder, TOOL_NAME, toolDescription, toolInputSchema, type MessageBusToolParams } from "../../client/src/tool";
+import { runTaskTool, TASK_TOOL_DESCRIPTION, TASK_TOOL_NAME, taskToolInputSchema, type TaskToolParams } from "../../client/src/task-tool";
 import { ClaudeSession, type HookEvent, type HookInput } from "./session";
 import { hookSocketPath } from "./socket";
 
@@ -48,7 +49,10 @@ export class McpServer extends McpToolServer {
     super(write, {
       capabilities: { tools: {}, experimental: { "claude/channel": {} } },
       instructions: INSTRUCTIONS,
-      tools: [{ name: TOOL_NAME, description: DESCRIPTION, inputSchema: toolInputSchema() }],
+      tools: [
+        { name: TOOL_NAME, description: DESCRIPTION, inputSchema: toolInputSchema() },
+        { name: TASK_TOOL_NAME, description: TASK_TOOL_DESCRIPTION, inputSchema: taskToolInputSchema() },
+      ],
     });
   }
 
@@ -58,8 +62,9 @@ export class McpServer extends McpToolServer {
     this.notify("notifications/claude/channel", { content, meta });
   }
 
-  protected async callTool(_name: string, args: Record<string, unknown>): Promise<McpToolResult> {
+  protected async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
     if (!this.session) throw new Error(`This session is not on the message bus (${this.offBus ?? "not joined"}).`);
+    if (name === TASK_TOOL_NAME) return textResult(await runTaskTool(this.session.conn, args as unknown as TaskToolParams));
     return textResult(await this.session.runTool(args as unknown as MessageBusToolParams));
   }
 }

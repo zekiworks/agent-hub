@@ -23,6 +23,7 @@ import {
   type ToolField,
   type ToolParam,
 } from "../../client/src/tool";
+import { runTaskTool, TASK_TOOL_DESCRIPTION, TASK_TOOL_NAME, type TaskToolParams } from "../../client/src/task-tool";
 import type { ReceiptEvent } from "../../protocol/src/types";
 
 export { TOOL_NAME, type MessageBusToolParams };
@@ -252,6 +253,29 @@ export default function messageBus(pi: MessageBusApi): void {
         throw new Error("This session is not on the message bus: subagents and sessions started in the temp directory do not join.");
       }
       return { content: [{ type: "text", text: await tool.run(params, ctx.cwd) }] };
+    },
+  });
+
+  pi.registerTool({
+    name: TASK_TOOL_NAME,
+    label: "Tasks",
+    description: TASK_TOOL_DESCRIPTION,
+    parameters: pi.zod.object({
+      op: pi.zod.enum(["create", "list", "mutate"]),
+      conversation: pi.zod.string().optional().describe("create: @agent, #room or @@project"),
+      to: pi.zod.array(pi.zod.string()).optional().describe("create: assignee ids"),
+      text: pi.zod.string().optional().describe("create: what to do"),
+      box: pi.zod.enum(["mine", "assigned"]).optional(),
+      state: pi.zod.enum(["open", "all"]).optional(),
+      message_id: pi.zod.number().optional(),
+      action: pi.zod.enum(["accept", "progress", "done", "reject", "cancel"]).optional(),
+      reason: pi.zod.string().optional(),
+      note: pi.zod.string().optional(),
+      eta: pi.zod.string().optional(),
+    }),
+    async execute(_toolCallId, params) {
+      if (!connection) throw new Error("This session is not on the message bus.");
+      return { content: [{ type: "text", text: await runTaskTool(connection, params as unknown as TaskToolParams) }] };
     },
   });
 }

@@ -21,6 +21,7 @@ import { currentDirectAgent, state, type ItemReply, type View } from "./state";
 import { draftReplaced } from "./suggest";
 import { askSent } from "./ask";
 import { noteAttention } from "./attention";
+import { clearProposal, proposalId } from "./commands";
 import { threadTail } from "./threads";
 
 export async function uploadFile(file: File): Promise<FileRef> {
@@ -63,6 +64,8 @@ export function chosenNow(view: View): Chosen {
 export async function postToView(view: View, text: string, fileIds: string[], chosen: Chosen): Promise<void> {
   const { reply: replyTo, item } = chosen;
   const request: PostMessageRequest = { from: state.me, text: item ? `> ${item.item}\n\n${text}` : text };
+  const proposal = proposalId();
+  if (proposal) request.proposal = proposal;
   if (fileIds.length > 0) request.fileIds = fileIds;
   if (replyTo) {
     request.replyToSeq = replyTo.seq;
@@ -90,6 +93,7 @@ export async function postToView(view: View, text: string, fileIds: string[], ch
   if (hold !== undefined) request.holdHours = hold;
 
   const res = await postJson<PostMessageResponse>("/api/messages", request);
+  if (proposal) clearProposal();
   if (replyTo) noteAttention(replyTo.seq, "replied");
   // Clear the reply this message answered, not a newer one chosen meanwhile (a message or a checklist item).
   const same = (replyTo && state.replyTo?.seq === replyTo.seq) || (item && state.itemReply === item);
@@ -206,7 +210,7 @@ dom.input.addEventListener("keydown", (event) => {
   }
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !TOUCH.matches) {
     event.preventDefault();
-    void send();
+    dom.composer.requestSubmit();
   }
 });
 

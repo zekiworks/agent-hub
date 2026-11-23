@@ -8,6 +8,7 @@ import { serveHookSocket, type HookSocket } from "../../client/src/hook-socket";
 import { McpToolServer, serveStdio, textResult, writeStdout, type McpToolResult } from "../../client/src/mcp";
 import { pluginBusUrl, pluginLog, realFolder } from "../../client/src/runtime";
 import { isScratchFolder, TOOL_NAME, toolDescription, toolInputSchema, type MessageBusToolParams } from "../../client/src/tool";
+import { runTaskTool, TASK_TOOL_DESCRIPTION, TASK_TOOL_NAME, taskToolInputSchema, type TaskToolParams } from "../../client/src/task-tool";
 import { AgentApi, appDataDir, daemonSocketPath, hookDefault } from "./antigravity";
 import { FolderAgent } from "./folder-agent";
 
@@ -149,9 +150,10 @@ export class Daemon {
       }
       case "PreToolUse": {
         const call = payload.toolCall;
-        agent?.toolStarted(call?.name ?? "tool", call?.args?.toolSummary);
-        if (call?.name !== "call_mcp_tool" || call.args?.ToolName !== TOOL_NAME) return neutral;
-        let args = call.args.Arguments;
+        const callArgs = call?.args;
+        agent?.toolStarted(call?.name ?? "tool", callArgs?.toolSummary);
+        if (call?.name !== "call_mcp_tool" || !callArgs || ![TOOL_NAME, TASK_TOOL_NAME].includes(String(callArgs.ToolName))) return neutral;
+        let args = callArgs.Arguments;
         if (typeof args === "string") {
           try {
             args = JSON.parse(args);
@@ -171,8 +173,10 @@ export class Daemon {
     }
   }
 
-  /** Runs a `message-bus` tool call; returns the result text, throws with a message for the model. */
-  async callTool(args: Record<string, unknown>): Promise<string> {
+  /** Runs a bus tool call; returns the result text, throws with a message for the model. */
+  async callTool(nameOrArgs: string | Record<string, unknown>, supplied?: Record<string, unknown>): Promise<string> {
+    const name = typeof nameOrArgs === "string" ? nameOrArgs : TOOL_NAME;
+    const args = typeof nameOrArgs === "string" ? (supplied ?? {}) : nameOrArgs;
     const { [CONVERSATION_ARG]: conversation, ...params } = args;
     let agent: FolderAgent | undefined;
     if (typeof conversation === "string") {
@@ -192,7 +196,9 @@ export class Daemon {
     }
     if (!agent) throw new Error("This conversation is not on the message bus yet.");
     if (!agent.conn.id) throw new Error(`Not connected to the bus at ${this.url} yet (still trying).`);
-    return agent.tool.run(params as unknown as MessageBusToolParams, agent.folder);
+    return name === TASK_TOOL_NAME
+      ? runTaskTool(agent.conn, params as unknown as TaskToolParams)
+      : agent.tool.run(params as unknown as MessageBusToolParams, agent.folder);
   }
 
   close(): void {
@@ -210,11 +216,16 @@ const DESCRIPTION = toolDescription({
 
 class DaemonMcpServer extends McpToolServer {
   constructor(private readonly daemon: Daemon) {
-    super(writeStdout, { tools: [{ name: TOOL_NAME, description: DESCRIPTION, inputSchema: toolInputSchema() }] });
+    super(writeStdout, {
+      tools: [
+        { name: TOOL_NAME, description: DESCRIPTION, inputSchema: toolInputSchema() },
+        { name: TASK_TOOL_NAME, description: TASK_TOOL_DESCRIPTION, inputSchema: taskToolInputSchema() },
+      ],
+    });
   }
 
-  protected async callTool(_name: string, args: Record<string, unknown>): Promise<McpToolResult> {
-    return textResult(await this.daemon.callTool(args));
+  protected async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
+    return textResult(await this.daemon.callTool(name, args));
   }
 }
 

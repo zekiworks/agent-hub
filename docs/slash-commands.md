@@ -1,13 +1,11 @@
-# Slash-command extensions, with /task as the first (design)
+# Slash-command extensions, with `/task` first
 
-Status: design, 21 Nov 2026, for Can (#13857: "/task is an extension, activated with the slash command; it declares
-the arguments it needs, /task $ID string; it needs a task panel and to extend the chat entries with cancel and an
-annotation that this is a task"). Nothing here is built. It extends the extension contract of
-[extensions.md](extensions.md) (manifest, signed calls, notices) with three things: **commands**, **message
-annotations** and **panels**. With those, tasks leave the bus core and become an ordinary extension.
+Status: `/task` command proposals, message annotations, signed extension actions, the existing Inbox integration, and
+the agent `task` tool shipped 23 Nov 2026. The broader generic panel/action contract below remains the direction for
+later extensions. It extends [extensions.md](extensions.md).
 
-For the short, plain-language view of how `/task` interacts with the website, bus, extension service and agents, see
-[task-command.md](task-command.md). This document is the detailed protocol reference.
+For the concise implemented flow, service paths, compatibility API, and failure behavior, see
+[task-command.md](task-command.md). This document keeps the detailed protocol design.
 
 ## What an extension can do
 
@@ -15,11 +13,12 @@ For the short, plain-language view of how `/task` interacts with the website, bu
 |---|---|---|---|
 | Command | `/task` in the box's `/` menu, its arguments checked as typed | the website, from the manifest | the extension, on Enter |
 | Annotation | "Task · open · @webapp" under a message, with buttons (Accept, Done, Cancel) | the website, from data the bus stores | the extension, on each button |
-| Panel | task lists inside the existing ✉ Inbox: For me, Assigned by me | the extension's own page, mounted by the website | the extension |
+| Inbox list | task lists inside the existing ✉ Inbox: For me, Assigned by me | the website, from the extension query through the bus | the extension |
 | Notices | "Task #13900 done by @webapp" as a reply under the task | the bus, as a message from `@task` | the extension |
 
-The bus never knows what a task is. It knows commands, annotations on messages, panels and who may do what; the
-extension knows the rest and keeps its own state.
+The bus treats extension annotations and actions generically. During the clean task cutover it also mirrors
+`ext.task.data` to the legacy `message.task` field and keeps compatibility routes; task rules and history live only in
+the extension.
 
 ## The manifest (`GET <url>/bus-extension.json`)
 

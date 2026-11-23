@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { McpToolServer, serveStdio, textResult, writeStdout, type McpTool, type McpToolResult } from "../../client/src/mcp";
 import { pluginBusUrl, pluginLog, realFolder } from "../../client/src/runtime";
 import { isScratchFolder, TOOL_NAME, toolDescription, toolInputSchema, type MessageBusToolParams } from "../../client/src/tool";
+import { runTaskTool, TASK_TOOL_DESCRIPTION, TASK_TOOL_NAME, taskToolInputSchema, type TaskToolParams } from "../../client/src/task-tool";
 import { Reopen, worker } from "./reopen";
 import { CodexSession, HOOK_EVENTS, HOOK_TOOL, type HookEvent, type HookInput } from "./session";
 
@@ -22,6 +23,7 @@ const INSTRUCTIONS =
 
 const TOOLS: McpTool[] = [
   { name: TOOL_NAME, description: DESCRIPTION, inputSchema: toolInputSchema() },
+  { name: TASK_TOOL_NAME, description: TASK_TOOL_DESCRIPTION, inputSchema: taskToolInputSchema() },
   {
     name: HOOK_TOOL,
     description: "Internal lifecycle handler for Codex. Do not call manually.",
@@ -74,6 +76,7 @@ export class McpServer extends McpToolServer {
     }
     if (!this.session) throw new Error(`This task is not on the message bus (${this.offBus ?? "not joined"}).`);
     await this.session.waitForStartup();
+    if (name === TASK_TOOL_NAME) return textResult(await runTaskTool(this.session.conn, args as unknown as TaskToolParams));
     return textResult(await this.session.runTool(args as unknown as MessageBusToolParams));
   }
 }

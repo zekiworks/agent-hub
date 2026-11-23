@@ -2,75 +2,53 @@
   "v": 1,
   "name": "task",
   "title": "Tasks",
-  "version": "0.1.0",
-  "description": "Give a member of the conversation a task, or ask a person for an approval. Assignees accept, report progress, finish or reject; the author cancels. Unanswered tasks are poked.",
-
+  "version": "1.0.0",
+  "description": "Give conversation members tasks and track their state in the existing Inbox.",
   "commands": [
     {
       "name": "task",
-      "help": "Give a member a task: /task @webapp fix the two Safari tests",
-      "usage": "/task @member… text [--poke 2h|off]",
+      "help": "Give one or more members a task",
+      "usage": "/task @member… what to do",
       "for": ["person", "agent"],
       "where": ["dm", "group", "project"],
       "args": [
-        { "name": "to", "type": "member", "repeat": true, "required": true, "help": "who does it" },
-        { "name": "poke", "type": "duration", "flag": "--poke", "values": ["off"], "required": false, "help": "first reminder after this long without an answer (default 4h)" },
-        { "name": "text", "type": "rest", "required": true, "help": "what to do" }
-      ]
-    },
-    {
-      "name": "approval",
-      "help": "Ask a person for a yes or no: /approval @can ship 2.0 tonight?",
-      "usage": "/approval @person… question",
-      "for": ["person", "agent"],
-      "where": ["dm", "group", "project"],
-      "args": [
-        { "name": "to", "type": "member", "kinds": ["person"], "repeat": true, "required": true, "help": "who decides (people only)" },
-        { "name": "text", "type": "rest", "required": true, "help": "the question" }
+        { "name": "to", "type": "member", "repeat": true, "required": true },
+        { "name": "text", "type": "rest", "required": true }
       ]
     }
   ],
-
   "actions": {
-    "accept":   { "label": "On it" },
-    "progress": { "label": "Progress…", "input": { "note": { "type": "string", "required": true, "ask": "How far are you?" }, "eta": { "type": "duration", "required": false, "ask": "Done in about (e.g. 40m)" } } },
-    "done":     { "label": "✓ Done" },
-    "reject":   { "label": "✕ Reject", "input": { "reason": { "type": "string", "required": false, "ask": "Why not? (optional)" } } },
-    "cancel":   { "label": "Cancel", "confirm": "Cancel this task? The assignees are told to stop.", "input": { "reason": { "type": "string", "required": false, "ask": "Why? (optional)" } } },
-    "approve":  { "label": "✓ Approve", "verified": true },
-    "deny":     { "label": "✕ Deny", "verified": true, "input": { "reason": { "type": "string", "required": false, "ask": "Why not? (optional)" } } }
+    "accept": { "label": "On it" },
+    "progress": { "label": "Progress…" },
+    "done": { "label": "✓ Done" },
+    "reject": { "label": "✕ Reject" },
+    "cancel": { "label": "Cancel" }
   },
-
   "tools": [
     {
       "name": "task",
-      "description": "Tasks on the bus. op=create gives members of a conversation a task (kind=task) or asks people for a yes/no (kind=approval); it is posted at once. op=mutate acts on a task message: accept, progress, done, reject (as an assignee) or cancel (as its author). Approvals are answered by people only.",
+      "description": "Create and act on Agent Hub tasks.",
       "input_schema": {
         "type": "object",
         "properties": {
-          "op": { "type": "string", "enum": ["create", "mutate"] },
-          "kind": { "type": "string", "enum": ["task", "approval"], "default": "task", "description": "create: task, or approval (a yes/no from people)" },
-          "conversation": { "type": "string", "description": "create: where to post it: a conversation id, #room, or @agent for its DM" },
-          "to": { "type": "array", "items": { "type": "string" }, "description": "create: who does it; members of that conversation, without @" },
-          "text": { "type": "string", "description": "create: what to do, or the question" },
-          "poke": { "type": "string", "description": "create: first reminder after this long without an answer, e.g. \"2h\"; \"off\" for none; default 4h" },
-          "message_id": { "type": "integer", "description": "mutate: the task's message number (#13900 → 13900)" },
-          "action": { "type": "string", "enum": ["accept", "progress", "done", "reject", "cancel"], "description": "mutate: what to do with the task" },
-          "reason": { "type": "string", "description": "mutate reject/cancel: why (optional)" },
-          "note": { "type": "string", "description": "mutate progress: how far you are" },
-          "eta": { "type": "string", "description": "mutate progress: done in about, e.g. \"40m\"; no poke before then" }
+          "op": { "type": "string", "enum": ["create", "list", "mutate"] },
+          "conversation": { "type": "string" },
+          "to": { "type": "array", "items": { "type": "string" } },
+          "text": { "type": "string" },
+          "box": { "type": "string", "enum": ["mine", "assigned"] },
+          "state": { "type": "string", "enum": ["open", "all"] },
+          "message_id": { "type": "integer" },
+          "action": { "type": "string", "enum": ["accept", "progress", "done", "reject", "cancel"] },
+          "reason": { "type": "string" },
+          "note": { "type": "string" },
+          "eta": { "type": "string" }
         },
         "required": ["op"],
         "additionalProperties": false
-      },
-      "map": {
-        "create": { "command": "{kind}", "conversation": "conversation", "args": ["to", "poke", "text"] },
-        "mutate": { "action": "{action}", "message": "message_id", "input": ["reason", "note", "eta"] }
       }
     }
   ],
-
-  "events": ["posted", "replied", "deleted"],
+  "events": ["posted"],
   "notices": true,
-  "panel": { "title": "Tasks", "scope": "global", "slot": "inbox.tasks", "path": "/panel" }
+  "panel": { "title": "Tasks", "slot": "inbox.tasks" }
 }

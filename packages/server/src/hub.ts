@@ -497,7 +497,6 @@ export class Hub {
       conversation,
       replyTo: replyAddress(conversation, recipient.id),
       wake: shouldWake(conversation, message, recipient.id, recipient.settings),
-      openTasks: this.db.openTaskCounts(recipient.id).open,
       ...(held ? { held } : {}),
     };
   }

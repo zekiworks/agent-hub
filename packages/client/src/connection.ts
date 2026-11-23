@@ -328,6 +328,15 @@ export class BusConnection {
     });
   }
 
+  /** Runs one action supplied by an extension manifest. */
+  extensionAction(name: string, seq: number, action: string, input: Record<string, string | undefined> = {}): Promise<{ message: Message }> {
+    return this.request<{ message: Message }>(`/api/ext/${encodeURIComponent(name)}/actions/${encodeURIComponent(action)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: this.requireId(), message_id: seq, ...input }),
+    });
+  }
+
   /** Messages sent to this agent (newest `limit`, after `sinceSeq`). Reads only: no turns for anyone. */
   inbox(sinceSeq: number, limit: number): Promise<ReadResponse> {
     const qs = new URLSearchParams({ for: this.requireId(), sinceSeq: String(sinceSeq), limit: String(limit) });

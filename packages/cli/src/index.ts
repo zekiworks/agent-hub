@@ -9,7 +9,7 @@ import { runTicketed } from "./run";
 
 const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR] --humans carol,uma
                        [--https-port 7843 --tls-cert FILE --tls-key FILE] [--gpudash URL] [--forget-offline-days 15]
-                       [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL] [--ext NAME=URL[,launcher=LABEL|,box=complete|recipient|needs]]…
+                       [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL] [--task-ext URL] [--ext NAME=URL[,launcher=LABEL|,box=complete|recipient|needs]]…
                        [--brand-name NAME [--brand-logo FILE] [--brand-icon FILE]]
        agent-bus invite HUMAN [--data-dir DIR] [--url http://localhost:7800]
        agent-bus agents [--data-dir DIR]
@@ -66,6 +66,7 @@ serve:
   --tls-key     PEM private key for --https-port
   --gpudash     gpudash's URL (e.g. http://127.0.0.1:3420): the resource schedule reads what runs on each GPU
   --stt-url     Speech-to-text service (packages/stt, e.g. http://127.0.0.1:7810): voice messages get their text
+  --task-ext    Task extension service (packages/task-ext, normally http://127.0.0.1:7834)
   --ext         A web page shown in the website's Workspace (repeatable), served at /ext/NAME/ to signed-in people only.
                 NAME=URL: a tab of the project @@NAME and of agent NAME's DM (e.g. compactor=http://127.0.0.1:8899);
                 NAME=URL,launcher=LABEL: a global item opened from the top bar (e.g. gpudash=http://127.0.0.1:3420,launcher=GPUs);
@@ -139,6 +140,9 @@ function parseServeArgs(args: string[]): BusServerOptions {
         break;
       case "--tts-url":
         options.ttsUrl = value;
+        break;
+      case "--task-ext":
+        options.taskExtension = value;
         break;
       case "--ext": {
         const eq = value.indexOf("=");

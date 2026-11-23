@@ -25,6 +25,7 @@ import {
   toolInputSchema,
   type MessageBusToolParams,
 } from "../../client/src/tool";
+import { runTaskTool, TASK_TOOL_DESCRIPTION, TASK_TOOL_NAME, taskToolInputSchema, type TaskToolParams } from "../../client/src/task-tool";
 import type { ReceiptEvent } from "../../protocol/src/types";
 
 export { TOOL_NAME, type MessageBusToolParams };
@@ -226,6 +227,17 @@ export default function messageBus(pi: MessageBusApi): void {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (!tool) throw new Error(`This session is not on the message bus: ${offBus}.`);
       return { content: [{ type: "text", text: await tool.run(params, ctx.cwd) }], details: {} };
+    },
+  });
+
+  pi.registerTool({
+    name: TASK_TOOL_NAME,
+    label: "Tasks",
+    description: TASK_TOOL_DESCRIPTION,
+    parameters: taskToolInputSchema(),
+    async execute(_toolCallId, params) {
+      if (!connection) throw new Error(`This session is not on the message bus: ${offBus}.`);
+      return { content: [{ type: "text", text: await runTaskTool(connection, params as unknown as TaskToolParams) }], details: {} };
     },
   });
 }

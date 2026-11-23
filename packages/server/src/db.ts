@@ -16,6 +16,7 @@ import {
   type ForwardedMessage,
   type Message,
   type MessageForward,
+  type Receipt,
   type NotifyLevel,
   type ParticipantKind,
   type PinnedMessage,
@@ -26,7 +27,7 @@ import {
   type Checklist,
   type ChecklistItem,
   type Task,
-  type Receipt,
+  type MessageExtensions,
   type SharedFile,
   type StatsResponse,
 } from "@agent-bus/protocol";
@@ -100,11 +101,10 @@ export interface NewMessage {
   quoteText?: string;
   /** Human messages while authentication is on: written from a signed-in session (true) or not (false). */
   verified?: boolean;
-  /** The agents it wakes (Message.wake); absent: the old rule. */
+  /** Agent ids whose harness should start a turn for this message. */
   wake?: string[];
-  /** Makes it a task (Message.task). */
-  task?: Task;
-  /** Until when it is held for offline recipients. */
+  /** State attached by extensions. */
+  ext?: MessageExtensions;
   expiresAt: number;
   /** A copy of the message it forwards (Message.forwarded; Can #12470). */
   forwarded?: ForwardedMessage;
@@ -176,7 +176,9 @@ interface MessageRow {
   from_session: number | null;
   expires_at: number | null;
   wake_json?: string | null;
+  /** Legacy task column is read once into ext_json, then ignored. */
   task_json?: string | null;
+  ext_json?: string | null;
   edited_at?: number | null;
   deleted_at?: number | null;
   forwarded_json?: string | null;
@@ -438,6 +440,8 @@ function partOf(quote: Quote | undefined, part: string | null): Quote | undefine
 }
 
 function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefined, forwards: MessageForward[] = []): Message {
+  const ext = row.ext_json ? (JSON.parse(row.ext_json) as MessageExtensions) : undefined;
+  const task = ext?.task?.data as Task | undefined;
   return {
     seq: row.seq,
     id: row.id,
@@ -452,7 +456,8 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
     ...(row.verified === null || row.verified === undefined ? {} : { verified: row.verified === 1 }),
     ...(row.from_session === null || row.from_session === undefined ? {} : { fromSession: row.from_session }),
     ...(row.wake_json ? { wake: JSON.parse(row.wake_json) as string[] } : {}),
-    ...(row.task_json ? { task: JSON.parse(row.task_json) as Task } : {}),
+    ...(task ? { task } : {}),
+    ...(ext ? { ext } : {}),
     expiresAt: expiresAt(row),
     ...(row.edited_at ? { editedAt: row.edited_at } : {}),
     ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
@@ -460,7 +465,6 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
     ...(forwards.length > 0 ? { forwards } : {}),
   };
 }
-
 /** A stored forwarded copy (Can #12470), its files checked as in files_json. */
 function parseForwarded(json: string): ForwardedMessage {
   const f = JSON.parse(json) as ForwardedMessage;
@@ -509,11 +513,32 @@ export class BusDatabase {
     // Databases created before sessions lack the columns (null: no session chosen / the agent had one session).
     // Databases created before wake lists lack the column (null: the old rule).
     if (!messageColumns.some((c) => c.name === "wake_json")) this.db.exec("ALTER TABLE messages ADD COLUMN wake_json TEXT");
-    // Databases created before tasks lack the column (null: an ordinary message).
-    if (!messageColumns.some((c) => c.name === "task_json")) this.db.exec("ALTER TABLE messages ADD COLUMN task_json TEXT");
-    // "chore" meant the same as "task" and is gone (Can #12827): stored ones become tasks.
-    this.db.exec(`UPDATE messages SET task_json = json_set(task_json, '$.type', 'task') WHERE json_extract(task_json, '$.type') = 'chore'`);
-    // Databases created before editing and deleting one's messages lack the columns (Ümit #10890; null: never).
+    // Extension display state. Existing built-in tasks move into the task extension's annotation once.
+    if (!messageColumns.some((c) => c.name === "ext_json")) this.db.exec("ALTER TABLE messages ADD COLUMN ext_json TEXT");
+    if (messageColumns.some((c) => c.name === "task_json")) {
+      const legacy = this.db
+        .query<{ seq: number; from_id: string; task_json: string }, []>("SELECT seq, from_id, task_json FROM messages WHERE task_json IS NOT NULL AND ext_json IS NULL")
+        .all();
+      const update = this.db.query("UPDATE messages SET ext_json = ?2 WHERE seq = ?1");
+      this.db.transaction(() => {
+        for (const row of legacy) {
+          const task = JSON.parse(row.task_json) as Task;
+          if (task.type === ("chore" as Task["type"])) task.type = "task";
+          const live = task.assignees.filter((a) => a.state === "open" || a.state === "accepted");
+          const allowed: Record<string, string[]> = Object.fromEntries(
+            live.map((a) => [a.id, a.state === "open" ? ["accept", "done", "reject", "read"] : ["progress", "done", "reject", "read"]])
+          );
+          if (live.length > 0) allowed[row.from_id] = ["cancel"];
+          const annotation = {
+            label: `Task · ${live.length > 0 ? "open" : "closed"} · ${task.assignees.map((a) => `@${a.id}`).join(", ")}`,
+            state: live.length > 0 ? "open" : "closed",
+            allowed,
+            data: task,
+          };
+          update.run(row.seq, JSON.stringify({ task: annotation }));
+        }
+      })();
+    }
     if (!messageColumns.some((c) => c.name === "edited_at")) this.db.exec("ALTER TABLE messages ADD COLUMN edited_at INTEGER");
     if (!messageColumns.some((c) => c.name === "deleted_at")) this.db.exec("ALTER TABLE messages ADD COLUMN deleted_at INTEGER");
     // Databases created before forwarding lack the column (Can #12470; null: not a forwarded copy).
@@ -1551,7 +1576,7 @@ export class BusDatabase {
     return this.db.transaction((): Message => {
       const result = this.db
         .query(
-          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json, task_json, forwarded_json, quote_text)
+          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json, ext_json, forwarded_json, quote_text)
            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`
         )
         .run(
@@ -1567,7 +1592,7 @@ export class BusDatabase {
           input.fromSession ?? null,
           input.expiresAt,
           input.wake ? JSON.stringify(input.wake) : null,
-          input.task ? JSON.stringify(input.task) : null,
+          input.ext ? JSON.stringify(input.ext) : null,
           input.forwarded ? JSON.stringify(input.forwarded) : null,
           input.quoteText ?? null
         );
@@ -1596,48 +1621,28 @@ export class BusDatabase {
         ...(input.verified === undefined ? {} : { verified: input.verified }),
         ...(input.fromSession === undefined ? {} : { fromSession: input.fromSession }),
         ...(input.wake ? { wake: input.wake } : {}),
-        ...(input.task ? { task: input.task } : {}),
+        ...(input.ext?.task?.data ? { task: input.ext.task.data as Task } : {}),
+        ...(input.ext ? { ext: input.ext } : {}),
         ...(input.forwarded ? { forwarded: input.forwarded } : {}),
         expiresAt: input.expiresAt,
       };
     })();
   }
 
-  /** Replaces a task's state (the message text never changes). */
-  setTask(seq: number, task: Task): void {
-    this.db.query("UPDATE messages SET task_json = ?2 WHERE seq = ?1 AND task_json IS NOT NULL").run(seq, JSON.stringify(task));
+  /** Replaces one extension's annotation and returns the updated message. */
+  setExtension(seq: number, name: string, annotation: MessageExtensions[string]): Message | null {
+    this.db
+      .query("UPDATE messages SET ext_json = json_set(COALESCE(ext_json, '{}'), ?2, json(?3)) WHERE seq = ?1")
+      .run(seq, `$.${name}`, JSON.stringify(annotation));
+    return this.getMessage(seq);
   }
 
-  /**
-   * Tasks, newest first: `box` "mine" for those assigned to `id`, "assigned" for those it wrote; `openOnly` keeps those
-   * with an assignee (of `id`'s, for mine) still open or accepted.
-   */
-  tasksOf(id: string, box: "mine" | "assigned", openOnly: boolean, limit: number): Message[] {
-    const live = `EXISTS (SELECT 1 FROM json_each(m.task_json, '$.assignees') a
-      WHERE json_extract(a.value, '$.state') IN ('open', 'accepted')${box === "mine" ? " AND json_extract(a.value, '$.id') = ?1" : ""})`;
-    const whose =
-      box === "mine"
-        ? "EXISTS (SELECT 1 FROM json_each(m.task_json, '$.assignees') a WHERE json_extract(a.value, '$.id') = ?1)"
-        : "m.from_id = ?1";
+  /** Messages carrying one extension's annotation, oldest first (startup reconciliation/migration). */
+  extensionMessages(name: string): Message[] {
     const rows = this.db
-      .query<MessageRow, [string, number]>(
-        `SELECT m.* FROM messages m WHERE m.task_json IS NOT NULL AND ${whose}${openOnly ? ` AND ${live}` : ""} ORDER BY m.seq DESC LIMIT ?2`
-      )
-      .all(id, limit);
+      .query<MessageRow, [string]>("SELECT * FROM messages WHERE json_type(ext_json, ?1) = 'object' ORDER BY seq")
+      .all(`$.${name}`);
     return this.withReceipts(rows);
-  }
-
-  /** Tasks open or accepted for `id`, and how many of those it has not read. */
-  openTaskCounts(id: string): { open: number; unread: number } {
-    const row = this.db
-      .query<{ open: number; unread: number }, [string]>(
-        `SELECT COUNT(*) AS open, SUM(json_extract(a.value, '$.readAt') IS NULL) AS unread
-         FROM messages m, json_each(m.task_json, '$.assignees') a
-         WHERE m.task_json IS NOT NULL AND json_extract(a.value, '$.id') = ?1
-           AND json_extract(a.value, '$.state') IN ('open', 'accepted')`
-      )
-      .get(id);
-    return { open: row?.open ?? 0, unread: row?.unread ?? 0 };
   }
 
   /** Who wrote the latest message of `conversationId` not written by `notFrom` (a person's message answers it). */

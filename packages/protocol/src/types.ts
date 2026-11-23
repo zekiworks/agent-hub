@@ -211,6 +211,18 @@ export interface Task {
   assignees: TaskAssignee[];
 }
 
+/** Small display state an extension attaches to a message. The extension owns `data`; the bus enforces `allowed`. */
+export interface ExtensionAnnotation {
+  label: string;
+  state: string;
+  /** Participant id → actions that participant may run now. */
+  allowed: Record<string, string[]>;
+  data: unknown;
+}
+
+/** Extension name → that extension's annotation on this message. */
+export type MessageExtensions = Record<string, ExtensionAnnotation>;
+
 export interface Message {
   /** Global, monotonic. */
   seq: number;
@@ -232,6 +244,8 @@ export interface Message {
   fromSession?: number;
   /** Set when the message is a task (Task): the inbox of each assignee lists it. */
   task?: Task;
+  /** State attached by extensions. The bus stores and publishes it but does not interpret extension-specific `data`. */
+  ext?: MessageExtensions;
   /**
    * The agents it wakes (starts a turn for); the others take it in at their next turn (Can, 15 Nov). A person's message
    * wakes, in a DM, its agent; elsewhere the agent it answers (the replied-to message's author, else the previous
@@ -270,6 +284,14 @@ export interface Message {
    * conversation get; the copies never point back.
    */
   forwards?: MessageForward[];
+}
+
+/** The task extension's task data on `message.ext.task`, if this is a task message. */
+export function taskOf(message: Message): Task | undefined {
+  const data = message.ext?.task?.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
+  const task = data as Partial<Task>;
+  return (task.type === "task" || task.type === "approval") && Array.isArray(task.assignees) ? (task as Task) : undefined;
 }
 
 /** POST /api/messages/:seq/edit: its writer changes the text. */
@@ -514,6 +536,8 @@ export interface StateResponse {
   agentTabs?: Record<string, string>;
   /** The bus books GPUs (`serve --gpudash URL`): the website offers GPU booking under Tools. */
   gpuBooking?: true;
+  /** Slash commands supplied by configured extensions. */
+  commands?: ExtensionCommand[];
   /** The signed-in person's own bookmarks (Can #11065), newest first; only people have them. */
   bookmarks?: Bookmark[];
   /** The signed-in person's own tasks (Can #12197): messages they took as a task for themselves. */
@@ -738,6 +762,19 @@ export interface ReadResponse {
  * `name`: created, open, if new; joined if open), "@all". In a group DM or project, a message that is exactly
  * "exit" makes the writer leave instead.
  */
+/** One slash command the website gets from an extension manifest. */
+export interface ExtensionCommand {
+  extension: string;
+  name: string;
+  help: string;
+  usage: string;
+}
+
+/** A command proposal is reviewed in the composer, then consumed once by POST /api/messages. */
+export interface ExtensionCommandResponse {
+  proposal: { id: string; text: string; label: string };
+}
+
 export interface PostMessageRequest {
   from: string;
   to?: string;
@@ -756,10 +793,12 @@ export interface PostMessageRequest {
   /** How long to hold it for recipients that are offline, in hours (default 1, at most 168). */
   holdHours?: number;
   /**
-   * Makes the message a task. `assignees`: members who are to do it (default: those the text @mentions, else the other
-   * member of a DM). Assigned agents are woken. Approvals can only be assigned to people.
+   * Legacy agent task creation. The bus maps it through the task extension; new extension-native tools use a command
+   * proposal directly.
    */
   task?: { type?: TaskType; assignees?: string[] };
+  /** Short-lived extension proposal returned by POST /api/ext/:name/command. */
+  proposal?: string;
   /**
    * Agents only: the agents of the conversation this message wakes besides the one it replies to, who always is
    * (Message.wake); `[]`: only that one. Left out: the old rule, for tools from before wake lists. People's lists are
