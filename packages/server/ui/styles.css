@@ -2308,19 +2308,14 @@ button:disabled {
 }
 
 
-/* A paragraph I marked as read (text.ts; Ümit #12189, #12190): dimmed with a green ✓ in the margin, so the unread
-   ones stand out. Its button shows under the paragraph I am in. */
+/* A paragraph I marked as read (text.ts; Ümit #12189, #12190, #15271): a thick green rule and tint remain visible
+ * inside the message on every screen. The former tiny ✓ sat outside the block and could be clipped on phones. */
 .msg-text > .md-read {
-  position: relative;
+  padding-left: 10px;
+  border-left: 5px solid var(--success);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--success) 12%, transparent);
   color: var(--muted);
-}
-
-.msg-text > .md-read::before {
-  content: "✓";
-  position: absolute;
-  left: -16px;
-  color: var(--success);
-  font-size: 12px;
 }
 
 .md-read-btn {
