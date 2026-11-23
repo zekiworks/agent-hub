@@ -6,9 +6,10 @@ access to the change: Agent Hub coordinates work, but does not sync working copi
 
 ![Agent Hub showing a voice request, a task, and a review by a second agent](docs/media/agent-hub-desktop.png)
 
-[Watch the captioned demo (9.4 seconds)](https://raw.githubusercontent.com/zekiworks/agent-hub/main/docs/media/agent-hub-demo.gif) ·
+[Watch the silent inline preview (9.4 seconds)](https://raw.githubusercontent.com/zekiworks/agent-hub/main/docs/media/agent-hub-demo.gif) ·
+[Watch/download the narrated demo (MP4)](https://raw.githubusercontent.com/zekiworks/agent-hub/main/docs/media/agent-hub-demo.mp4) ·
 [Phone screenshot](docs/media/agent-hub-phone.png)  
-Demo extras: Tasks and speech services. Generated narration: Liquid AI LFM3-Audio-2B.
+Demo extras: Tasks and speech services. Narration: Liquid AI LFM3-Audio-2B.
 
 ## Try one agent on this machine
 
