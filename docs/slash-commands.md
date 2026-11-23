@@ -15,7 +15,7 @@ For the short, plain-language view of how `/task` interacts with the website, bu
 |---|---|---|---|
 | Command | `/task` in the box's `/` menu, its arguments checked as typed | the website, from the manifest | the extension, on Enter |
 | Annotation | "Task · open · @webapp" under a message, with buttons (Accept, Done, Cancel) | the website, from data the bus stores | the extension, on each button |
-| Panel | a "Tasks" tab in the Workspace: my open tasks, assigned by me | the extension's own page (`--ext` frame) | the extension |
+| Panel | task lists inside the existing ✉ Inbox: For me, Assigned by me | the extension's own page, mounted by the website | the extension |
 | Notices | "Task #13900 done by @webapp" as a reply under the task | the bus, as a message from `@task` | the extension |
 
 The bus never knows what a task is. It knows commands, annotations on messages, panels and who may do what; the
@@ -116,11 +116,12 @@ sequenceDiagram
    asks for it. It calls the extension signed, and stores the returned annotation on the message. Then it publishes
    the change (every open page redraws it) and posts the returned `notice`, if any, as `@task`, a reply to the
    message, with `wake` as the extension asks.
-7. **The panel.** `--ext task=URL` makes the Tasks tab (global: one per person, like Inbox).
-   - The page is the extension's own, framed as today. It reads the extension's state through the extension's own
-     API, with the caller id the bus puts in the frame URL (signed, the gpudash key way).
-   - It asks the website for anything that acts as the person (`agent-bus:compose`, `agent-bus:action` → the confirm
-     dialog). It never acts itself.
+7. **The Inbox panel.** The current ✉ Inbox stays the one human entry point. The website keeps its built-in sections
+   ("Waiting for your answer" and personal "Task for me") and mounts the extension's page in the `inbox.tasks` slot
+   for For me / Assigned by me. The page reads extension state through its own API using the signed viewer id in its
+   frame URL. It reports open/unread counts to the parent so the existing red/yellow Inbox badge still works. Anything
+   that acts as the person goes through the parent website (`agent-bus:open`, `agent-bus:action`); the page never acts
+   itself.
 
 ## What the bus adds (all generic, none of it about tasks)
 
@@ -144,11 +145,12 @@ sequenceDiagram
 - **Annotation:** `label`, `state`, `allowed` per participant, and `data` `{kind, by, assignees with their states,
   poke}`; actions accept, progress, done, reject (reason), cancel (the author; Can's "cancel"), approve/deny
   (people, passkey).
-- **Panel:** "Tasks": For me / Assigned by me, open first, each linking to its message.
+- **Inbox panel:** the existing ✉ Inbox mounts For me / Assigned by me from the extension; there is no second Tasks tab.
 - **Agents:** pokes (below) instead of the "N open tasks" line in every delivery, if Can agrees (#13865).
 - **Moving today's tasks:** the bus's tasks (39 tasks, 49 approvals, 12 open) are copied into the extension once, and
   `message.task` becomes `message.ext.task`. The old routes (`/api/tasks`, op=accept/done/…) answer through the
-  extension until no harness uses them, then go. The ✉ Inbox becomes the Tasks panel.
+  extension until no harness uses them, then go. The existing ✉ Inbox keeps its launcher, tab, other built-in sections
+  and red/yellow badge; only its task lists move to the extension panel.
 - **What stays in the bus:** nothing about tasks. The approval's passkey check is the bus's `verified` flag, which
   any extension can require.
 
@@ -238,7 +240,7 @@ Agents get each command as a tool call with typed arguments, not as text to type
 - **task-ext:** sets `done` and answers `{annotation (done), notice:{text:"Done by @webapp.", wake:[]}}`.
 - **Bus:** stores the annotation, publishes the change, and posts the notice as `@task`, a reply to #13900. It wakes
   nobody (Ümit is a person; her page marks it unread, as any reply).
-- **Ümit's page:** the line under #13900 says "Task · done ✓ · @webapp", and the Tasks panel moves it to "done".
+- **Ümit's page:** the line under #13900 says "Task · done ✓ · @webapp", and its Inbox task card moves to "done".
 
 **Other endings**
 - **Rejected:** `task {op:"mutate", action:"reject", message_id, reason}`. The notice is "Rejected by @webapp: not today", and it wakes the
@@ -255,10 +257,11 @@ Agents get each command as a tool call with typed arguments, not as text to type
 
 **Reminders:** pokes (next section) instead of the "N open tasks" line, if Can agrees.
 
-**The panel**
-- **Website:** Ümit opens Tasks in the Workspace. The website frames `<task-ext>/panel?who=umit&sig=…`, a link
-  signed by the bus, valid for a day.
-- **Panel page:** reads `GET /api/mine?who=umit&sig=…` from task-ext itself and lists For me / Assigned by me.
+**The Inbox panel**
+- **Website:** Ümit opens the existing ✉ Inbox. Its built-in sections stay, and the website frames
+  `<task-ext>/panel?who=umit&sig=…` in the `inbox.tasks` slot. The bus signs that viewer link.
+- **Panel page:** reads `GET /api/mine?who=umit&sig=…` from task-ext and lists For me / Assigned by me. It reports
+  open/unread counts to the parent for the existing Inbox badge.
   - A click on a task asks the website to open #13900 (`agent-bus:open`).
   - Its Cancel asks the website for the confirm dialog (`agent-bus:action`). The page never calls the action itself.
 
@@ -281,7 +284,7 @@ timer, the policy and the record.
 - **Policy:**
   - Defaults in task-ext's config: first poke 4 h after the last activity, then 1 day, at most 3 pokes, none between
     23:00 and 07:00 bariton time.
-  - The assigner can set one per task: `/task @webapp fix the tests --poke 2h`, or the Tasks panel's "Poke after …".
+  - The assigner can set one per task: `/task @webapp fix the tests --poke 2h`, or the Inbox card's "Poke after …".
   - `--poke off` turns them off.
 - **Answering a poke:**
   - Any action resets the timer, and so does `task {op:"mutate", action:"progress", message_id, note, eta?}`.
@@ -292,7 +295,7 @@ timer, the policy and the record.
   - If the agent is working (its status says so), the poke waits for its next idle moment, so it never interrupts a
     turn.
   - If the agent is offline, the poke waits until it is back; it is not queued as many deliveries.
-- **Cost:** each poke of an agent is a paid turn. The maximum is 3 per task, and the Tasks panel shows the pokes
+- **Cost:** each poke of an agent is a paid turn. The maximum is 3 per task, and the Inbox task card shows the pokes
   sent, so someone can switch them off for a noisy task.
 - **Instead of today's reminder line:** pokes make the "N open tasks" line in every delivery unnecessary. That line
   costs tokens on every message, and stale tasks never go away from it. Pokes are aimed at one task and stop when it

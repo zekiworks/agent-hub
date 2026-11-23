@@ -20,7 +20,7 @@ The message number is the task number. For example, task `#13900` is message `#1
 
 ## The four parts
 
-1. **Website** — shows `/task`, checks the typed arguments, shows task buttons, and shows the Tasks panel.
+1. **Website** — shows `/task`, checks the typed arguments, shows task buttons, and keeps tasks in the existing Inbox.
 2. **Bus** — checks identity and access, stores the message and its task annotation, wakes agents, and sends live updates.
 3. **Task extension** — owns task rules and task state. It decides which actions are allowed and keeps task history.
 4. **Agent plugin** — gives agents a typed `task` tool. It sends tool calls to the bus, never to the extension directly.
@@ -43,7 +43,7 @@ The bus reads `GET /bus-extension.json` from that URL. The manifest says:
 - it needs one or more conversation members and some text;
 - task messages have actions such as Accept, Progress, Done, Reject, and Cancel;
 - agents get one typed `task` tool;
-- the extension has a Tasks panel;
+- the extension supplies the task section inside the existing Inbox;
 - the extension wants message events.
 
 The bus sends the safe parts of this manifest to the website and agent plugins. The secret never goes to a browser or an agent.
@@ -146,6 +146,25 @@ The bus stores the new annotation and publishes a live message update. If there 
 
 The bus is the only path to an action. The website, panel, and agent plugin never call the extension action endpoint directly.
 
+## Current agent API and cutover
+
+Today agents use task operations inside the single `message-bus` tool:
+
+| Need | Current call |
+|---|---|
+| Create | `op=write`, `reply`, or `send` with `task="task"` and `assignees=[…]` |
+| List tasks for me | `op=tasks` |
+| List tasks I assigned | `op=tasks box="assigned"` |
+| Include closed tasks | `op=tasks scope="all"` |
+| Change a task | `op=accept`, `done`, `reject`, or `withdraw` with `message_id` |
+
+These calls use `GET /api/tasks` and `POST /api/tasks/:seq/:action`. The human Inbox reads and changes the same task
+records through those routes.
+
+The extension replaces the task-specific tool operations with the manifest-provided `task` tool below. Every harness
+must move in the same cutover. The old tool operations and `/api/tasks` routes are then removed; they are not a second
+permanent interface.
+
 ## Agent interaction
 
 At session start, the agent plugin reads the extension tool definitions from the bus. It registers one `task` tool with two operations:
@@ -157,19 +176,21 @@ An agent's `create` call is already an explicit send, so the bus posts a valid p
 
 Agent deliveries include the task label and only the actions allowed for that agent. The model does not need to guess what it may do.
 
-## Tasks panel
+## Existing Inbox
 
-The extension owns the Tasks panel page and its task list. The website opens it in the Workspace.
+Human tasks already live in the **✉ Inbox**. This design keeps that surface. It does not add a Tasks button or a
+second Workspace tab.
 
-The bus gives the panel a short-lived, signed viewer identity. The panel uses that identity only to read the viewer's task list from the extension.
+The website keeps the Inbox shell and its other built-in sections, such as **Waiting for your answer** and personal
+**Task for me** items. The task extension's manifest places its panel in the `inbox.tasks` slot. The website mounts
+that page where the current **For me** and **Assigned by me** task lists appear.
 
-When the panel needs to act as the person, it asks the parent website to do it. For example:
+The bus gives the task page a short-lived, signed viewer identity. The page uses it only to read that person's task
+list from the extension. It reports its open and unread counts to the parent website, which keeps the existing Inbox
+badge: red for unread and yellow for open.
 
-- open message `#13900`;
-- show a Cancel confirmation;
-- run a task action.
-
-The panel has no bus session token and no extension secret.
+When the task page needs to act as the person, it asks the parent website to open the message, show a confirmation,
+or run a task action. The page has no bus session token and no extension secret.
 
 ## Data ownership
 
@@ -210,8 +231,8 @@ The extension's database is the source of truth for task behavior. The annotatio
 | `POST /commands/task` | Validate a task request and return a proposal |
 | `POST /actions/:action` | Apply Accept, Progress, Done, Reject, or Cancel |
 | `POST /events` | Receive posted, replied, and deleted message events |
-| `GET /panel` | Render the Tasks Workspace page |
-| `GET /api/mine` | Return tasks for the signed panel viewer |
+| `GET /panel` | Render For me and Assigned by me inside the existing Inbox |
+| `GET /api/mine` | Return tasks and open/unread counts for the signed Inbox viewer |
 
 All mutating endpoints accept only signed bus requests.
 
@@ -223,7 +244,7 @@ The first version includes:
 - Accept, Progress, Done, Reject, and Cancel;
 - one task annotation under the message;
 - one typed agent tool;
-- For me and Assigned by me lists in the panel;
+- For me and Assigned by me lists in the existing Inbox;
 - notices as replies to the task message.
 
 Reminders and `/approval` use the same system but are not needed to prove `/task` end to end.

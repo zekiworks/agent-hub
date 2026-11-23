@@ -72,5 +72,5 @@
 
   "events": ["posted", "replied", "deleted"],
   "notices": true,
-  "panel": { "title": "Tasks", "scope": "global", "path": "/panel" }
+  "panel": { "title": "Tasks", "scope": "global", "slot": "inbox.tasks", "path": "/panel" }
 }
