@@ -2308,28 +2308,12 @@ button:disabled {
 }
 
 
-/* A paragraph I marked as read (text.ts; Ümit #12189, #12190, #15271, #15296): only a thick green rule inside the
- * message. No tint; the former tiny ✓ outside the block could be clipped on phones. */
+/* A message I marked as seen: only a thick green rule inside each text block. */
 .msg-text > .md-read {
   padding-left: 10px;
   border-left: 5px solid var(--success);
   border-radius: 3px;
   color: var(--muted);
-}
-
-.md-read-btn {
-  display: block;
-  min-height: 32px;
-  margin-top: 2px;
-  padding: 0 6px;
-  font-size: 13px;
-  touch-action: manipulation;
-}
-
-@media (max-width: 640px) {
-  .md-read-btn {
-    min-height: 44px;
-  }
 }
 
 .msg-mentions-me:hover {
@@ -2438,6 +2422,12 @@ button:disabled {
 .msg-copy-btn.copy-failed {
   border-color: var(--error);
   color: var(--error);
+}
+
+.msg-seen-btn.marked-seen {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 18%, var(--panel-raised));
+  color: var(--success);
 }
 
 /* The buttons ⋯ holds on a phone (render.ts; Ümit #14570). A computer shows them in the row, with Reply third. */

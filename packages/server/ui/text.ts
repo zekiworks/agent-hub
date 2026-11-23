@@ -5,6 +5,7 @@ import { dom, holdInView, showInView } from "./dom";
 import { errorText } from "./format";
 import { hooks } from "./hooks";
 import { h } from "./html";
+import { setIcon } from "./icons";
 import { conversationTitle, state } from "./state";
 import { noteAttention } from "./attention";
 
@@ -130,19 +131,12 @@ export function textBlocks(li: HTMLElement): HTMLElement[] {
   return [...(li.querySelector(":scope > .msg-text")?.children ?? [])] as HTMLElement[];
 }
 
-/**
- * Draws the whole-message selection frame. The paragraph tapped may still get its independent local read marker.
- */
+/** Draws the whole-message selection frame. */
 export function markSelected(li: HTMLElement): void {
   li.classList.add("msg-selected");
-  const blocks = textBlocks(li);
-  const target = state.selectedPart !== undefined ? blocks[state.selectedPart] : blocks.length === 1 ? blocks[0] : undefined;
-  if (target && !target.querySelector(":scope > .md-read-btn")) {
-    target.append(readButton(Number(li.dataset.seq), blocks.indexOf(target), target));
-  }
 }
 
-// ---- Paragraphs I marked as seen (Ümit #12189, #12190, #15415): green rule plus explicit Seen · undo ----
+// ---- Messages I marked as seen (Can #15838): green rules plus an open-envelope action button ----
 
 const READ_PARTS_KEY = "agent-bus.readParts";
 /** "me:seq:paragraph"; the newest kept last, at most READ_PARTS_MAX. This browser only. */
@@ -159,40 +153,51 @@ let readSet = new Set(readParts);
 
 const partKey = (seq: number, index: number): string => `${state.me}:${seq}:${index}`;
 
-function setPartRead(seq: number, index: number, read: boolean): void {
-  const key = partKey(seq, index);
-  readParts = readParts.filter((k) => k !== key);
-  if (read) readParts.push(key);
+function setMessageRead(seq: number, count: number, read: boolean): void {
+  const prefix = `${state.me}:${seq}:`;
+  readParts = readParts.filter((key) => !key.startsWith(prefix));
+  if (read) {
+    for (let index = 0; index < count; index += 1) readParts.push(partKey(seq, index));
+  }
   readParts = readParts.slice(-READ_PARTS_MAX);
   readSet = new Set(readParts);
   localStorage.setItem(READ_PARTS_KEY, JSON.stringify(readParts));
 }
 
-/** Restores every paragraph's explicit Mark as seen / Seen · undo control and the green rule for marked ones. */
-export function markReadParts(li: HTMLElement, seq: number): void {
-  textBlocks(li).forEach((block, i) => {
-    block.classList.toggle("md-read", readSet.has(partKey(seq, i)));
-    if (!block.querySelector(":scope > .md-read-btn")) block.append(readButton(seq, i, block));
-  });
+function drawSeenButton(li: HTMLElement, seq: number): void {
+  const button = li.querySelector<HTMLButtonElement>(".msg-seen-btn");
+  if (!button) return;
+  const blocks = textBlocks(li);
+  const seen = blocks.length > 0 && blocks.every((_, index) => readSet.has(partKey(seq, index)));
+  button.classList.toggle("marked-seen", seen);
+  button.title = seen ? "Undo seen for this message" : "Mark this message as seen";
+  button.setAttribute("aria-label", button.title);
+  button.setAttribute("aria-pressed", String(seen));
 }
 
-function readButton(seq: number, index: number, block: HTMLElement): HTMLButtonElement {
-  const button = h("button", "link-btn md-read-btn");
+/** Restores this browser's green rules and the action button's state. */
+export function markReadParts(li: HTMLElement, seq: number): void {
+  textBlocks(li).forEach((block, index) => block.classList.toggle("md-read", readSet.has(partKey(seq, index))));
+  drawSeenButton(li, seq);
+}
+
+/** Open-envelope action: mark every text block in a message as seen, or undo them together. */
+export function seenButton(seq: number): HTMLButtonElement {
+  const button = h("button", "msg-action-btn msg-seen-btn");
   button.type = "button";
-  const draw = () => {
-    const read = readSet.has(partKey(seq, index));
-    button.textContent = read ? "✓ Seen · undo" : "✓ Mark as seen";
-    button.setAttribute("aria-pressed", String(read));
-    block.classList.toggle("md-read", read);
-    // Every paragraph keeps its explicit control; no preliminary paragraph tap is required (Ümit #15415).
-  };
+  setIcon(button, "mail-open");
+  button.title = "Mark this message as seen";
+  button.setAttribute("aria-label", button.title);
+  button.setAttribute("aria-pressed", "false");
   button.addEventListener("click", () => {
-    const read = !readSet.has(partKey(seq, index));
-    setPartRead(seq, index, read);
-    if (read) noteAttention(seq, "marked-read");
-    draw();
+    const li = button.closest<HTMLElement>(".msg");
+    if (!li) return;
+    const blocks = textBlocks(li);
+    const seen = blocks.length > 0 && blocks.every((_, index) => readSet.has(partKey(seq, index)));
+    setMessageRead(seq, blocks.length, !seen);
+    if (!seen) noteAttention(seq, "marked-read");
+    markReadParts(li, seq);
   });
-  draw();
   return button;
 }
 
