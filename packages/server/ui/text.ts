@@ -5,7 +5,7 @@ import { dom, holdInView, showInView } from "./dom";
 import { errorText } from "./format";
 import { hooks } from "./hooks";
 import { h } from "./html";
-import { setIcon } from "./icons";
+import { icon, setIcon } from "./icons";
 import { conversationTitle, state } from "./state";
 import { noteAttention } from "./attention";
 
@@ -169,8 +169,12 @@ function drawSeenButton(li: HTMLElement, seq: number): void {
   if (!button) return;
   const blocks = textBlocks(li);
   const seen = blocks.length > 0 && blocks.every((_, index) => readSet.has(partKey(seq, index)));
+  const iconName = seen ? "mail" : "mail-open";
+  const oldIcon = button.querySelector<SVGSVGElement>(".icon");
+  if (oldIcon && !oldIcon.classList.contains(`icon-${iconName}`)) oldIcon.replaceWith(icon(iconName));
+  button.querySelector<HTMLElement>(".msg-extra-label")?.replaceChildren(seen ? "Unseen" : "Seen");
   button.classList.toggle("marked-seen", seen);
-  button.title = seen ? "Undo seen for this message" : "Mark this message as seen";
+  button.title = seen ? "Mark this message as unseen" : "Mark this message as seen";
   button.setAttribute("aria-label", button.title);
   button.setAttribute("aria-pressed", String(seen));
 }

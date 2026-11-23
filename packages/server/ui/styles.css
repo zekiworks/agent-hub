@@ -2316,6 +2316,11 @@ button:disabled {
   color: var(--muted);
 }
 
+/* Keep outside list markers to the right of the green rule. */
+.msg-text > .md-list.md-read {
+  padding-left: calc(1.5em + 10px);
+}
+
 .msg-mentions-me:hover {
   background: rgba(240, 178, 50, 0.13);
 }
