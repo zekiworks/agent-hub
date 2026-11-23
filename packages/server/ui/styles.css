@@ -2440,16 +2440,13 @@ button:disabled {
   color: var(--error);
 }
 
-/* The buttons ⋯ holds on a phone (render.ts; Ümit #14570). A computer shows them in the row, Reply last. */
+/* The buttons ⋯ holds on a phone (render.ts; Ümit #14570). A computer shows them in the row, with Reply third. */
 .msg-actions-extra {
   display: contents;
 }
 .msg-overflow-btn,
 .msg-extra-label {
   display: none;
-}
-.msg-actions .msg-reply-btn {
-  order: 1;
 }
 
 @media (max-width: 640px) {
