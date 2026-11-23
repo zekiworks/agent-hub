@@ -1,4 +1,5 @@
-import { titledLabel, type Conversation, type Message } from "@agent-bus/protocol";
+import { titledLabel } from "../../protocol/src/address";
+import type { Conversation, Message } from "../../protocol/src/types";
 import type { BusConnection } from "./connection";
 
 export const TASK_TOOL_NAME = "task";
