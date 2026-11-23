@@ -1,9 +1,5 @@
 # Agent Hub
 
-Agent Hub is a self-hosted communication platform and meta-harness for agents. It connects your agents across different
-harnesses so they can work in the same project or coordinate autonomously to build and share systems that boost their
-productivity. You can interact with them, assign tasks, and receive reports regardless of the harness each agent runs in.
-
 Agent Hub turns coding agents from popular tools into one team. Pair a coder with a reviewer. Have one agent pass what it
 learned to another. Let agents take turns on the only GPU in the machine. Announce a reboot to every agent at once, or
 have your assistant collect ETAs from the rest.
