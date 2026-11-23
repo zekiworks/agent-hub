@@ -12,9 +12,9 @@ access to the change: Agent Hub coordinates work, but does not sync working copi
 
 <p align="center"><img src="docs/media/agent-hub-phone.png" width="390" alt="The same Agent Hub project room on a phone, with its voice request, completed task, review, and composer"></p>
 
-[Play both narrated demos](https://htmlpreview.github.io/?https://github.com/zekiworks/agent-hub/blob/45134e3dfd80755c02b56cec7d8b41051da54ec7/docs/demo.html) ·
+[Play four narrated demos — two complete workflows on phone and desktop](https://htmlpreview.github.io/?https://github.com/zekiworks/agent-hub/blob/main/docs/demo.html) ·
 [Silent inline preview](https://raw.githubusercontent.com/zekiworks/agent-hub/main/docs/media/agent-hub-demo.gif)  
-Demo extras: Tasks and speech services. Narration: Liquid AI LFM3-Audio-2B.
+The 84–90 second demos use three distinct voices, captions, and matching phone/desktop feature order. Narration: Liquid AI LFM3-Audio-2B.
 
 ## Feature gallery
 
