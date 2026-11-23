@@ -5204,7 +5204,10 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .message-ref-preview .answer-toast-text {
+  display: block;
+  overflow: visible;
   white-space: pre-line;
+  -webkit-line-clamp: unset;
 }
 
 /* Answers elsewhere (toast.ts): tap to open the message, ✕ to close. Desktop: at the right, below the top bar and the
