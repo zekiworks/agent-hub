@@ -175,7 +175,7 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   makeHandle(toast, activate);
   const dismiss = h("button", "answer-toast-close", "✕");
   dismiss.type = "button";
-  dismiss.title = "Close, leaving it unread (✓ Read marks it read)";
+  dismiss.title = "Close, leaving it unseen (✓ Seen marks it seen)";
   dismiss.setAttribute("aria-label", "Close this notification");
   head.append(dismiss);
   const open = h("button", "answer-toast-open");
@@ -249,18 +249,22 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   voice.addEventListener("click", () => startVoiceReply({ kind: "conversation", id: conversation.id }, message));
   const listen = speakButton(message);
   listen.classList.add("answer-toast-speak");
-  // ✓ Read (Ümit #13983, #15088): says "seen it" without opening the conversation. The full-size phone action and
-  // stopped propagation below keep a near-edge tap from becoming the banner's open gesture.
-  const read = h("button", "link-btn answer-toast-reply answer-toast-read");
-  read.type = "button";
-  setIcon(read, "check", "Read");
-  read.title = "I've read it: close this and mark its conversation read without opening it";
-  read.addEventListener("click", () => {
+  // ✓ Seen (Ümit #13983, #15088, #15316): mark it without opening its conversation. Green confirmation remains long
+  // enough to be perceived, then the transient banner closes. Full-size phone action prevents near-edge open gestures.
+  const seen = h("button", "link-btn answer-toast-reply answer-toast-seen-btn");
+  seen.type = "button";
+  setIcon(seen, "check", "Seen");
+  seen.title = "I've seen it: mark its conversation seen without opening it";
+  seen.addEventListener("click", () => {
+    if (seen.disabled) return;
+    seen.disabled = true;
+    toast.classList.add("answer-toast-seen");
+    setIcon(seen, "check", "Seen ✓");
     markRead(conversation.id);
     if (message.fromKind === "agent") noteAttention(message.seq, "banner-read");
-    if (!holdsReply(toast)) toast.remove();
+    if (!holdsReply(toast)) setTimeout(() => toast.remove(), 700);
   });
-  row.prepend(read, reply, voice, listen, take, copy);
+  row.prepend(seen, reply, voice, listen, take, copy);
   for (const button of row.querySelectorAll("button")) tapOnTouchEnd(button);
   toast.append(row);
   place(savedPosition());

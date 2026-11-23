@@ -5174,6 +5174,14 @@ ul.md-list ul.md-list { list-style: circle; }
   pointer-events: auto;
 }
 
+/* ✓ Seen: confirm the action before the transient banner closes (toast.ts; Ümit #15316). */
+.answer-toast.answer-toast-seen {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 22%, var(--panel-raised));
+  transition: border-color 120ms ease, background 120ms ease;
+  pointer-events: none;
+}
+
 /* Its conversation was opened: it stays while the unread messages flash, then fades out as they settle (toast.ts). */
 .answer-toast-leaving {
   animation: answer-leave 1.6s ease-in forwards;
@@ -5191,7 +5199,7 @@ ul.md-list ul.md-list { list-style: circle; }
   }
 }
 
-/* Under the text: explicit Read without navigation, Reply, Task for me, and More/Less (toast.ts). Wrapping and
+/* Under the text: explicit Seen without navigation, Reply, Task for me, and More/Less (toast.ts). Wrapping and
  * full-size phone targets keep a tap between crowded actions from landing on the banner and opening it (Ümit #15088). */
 .answer-toast-row {
   display: flex;
@@ -5214,7 +5222,7 @@ ul.md-list ul.md-list { list-style: circle; }
 
 @media (max-width: 640px) {
   .answer-toast-more,
-  .answer-toast-read,
+  .answer-toast-seen-btn,
   .answer-toast-reply,
   .answer-toast-speak {
     min-height: 44px;
