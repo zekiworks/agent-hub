@@ -25,7 +25,6 @@ import { PULSE_MS } from "./toast";
 import { noteAttention } from "./attention";
 import { inlinedFiles, markInlined, placeInlined } from "./inline";
 import { displayed, markThreadRead, newReplies, type Threads } from "./threads";
-import { startVoiceReply } from "./voice";
 
 export function renderAll(): void {
   renderSidebar();
@@ -394,20 +393,9 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   // On a phone the row shows Copy, ☆, Reply and ⋯; ⋯ opens the rest as a second row, each with its name (Ümit #14570:
   // eight look-alike icons in a row could not be told apart or even counted). A computer shows them all, as before.
   const extra = h("div", "msg-actions-extra");
-  // Beside Listen, the other way round: answer it by voice, as a banner's Voice does (Ümit #14600).
-  let voiceReply: HTMLButtonElement | undefined;
-  if (state.me && !deleted) {
-    voiceReply = h("button", "msg-action-btn msg-voice-reply-btn");
-    setIcon(voiceReply, "mic");
-    voiceReply.type = "button";
-    voiceReply.title = "Reply to it by voice: recording starts at once";
-    voiceReply.setAttribute("aria-label", `Reply to message #${message.seq} by voice`);
-    voiceReply.addEventListener("click", () => startVoiceReply({ kind: "conversation", id: message.conversationId }, message));
-  }
   const named: Array<[HTMLElement | undefined, string]> = [
     [speak, "Listen"],
     [read, "Read"],
-    [voiceReply, "Voice reply"],
     [forward, "Forward"],
     [copyId, `Copy #${message.seq}`],
     [ownTask, "Task for me"],
