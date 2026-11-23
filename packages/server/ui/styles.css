@@ -4808,9 +4808,6 @@ ul.md-list ul.md-list { list-style: circle; }
     font-size: 20px;
   }
 
-  .msg-reply-label {
-    display: none;
-  }
 }
 
 /* ---- Sign-in page (auth.html) and verified marks (experimental) ---- */

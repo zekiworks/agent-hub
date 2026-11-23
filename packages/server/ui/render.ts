@@ -381,7 +381,6 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   const changes = changeButtons(message);
   const replyBtn = h("button", "msg-action-btn msg-reply-btn");
   setIcon(replyBtn, "reply");
-  replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";
   replyBtn.title = "Reply to the whole message (quotes it); click again to cancel";
   replyBtn.setAttribute("aria-label", "Reply to whole message");
@@ -389,26 +388,26 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     const same = state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq;
     setReplyTo(same ? undefined : message);
   });
-  // On a phone the row shows Copy, ☆, Reply and ⋯; ⋯ opens the rest as a second row, each with its name (Ümit #14570:
-  // eight look-alike icons in a row could not be told apart or even counted). A computer shows them all, as before.
+  // Phones keep the first three requested actions in the first row and put the rest behind ⋯. Computers show the
+  // same order in one row: Copy, Task, Read/Unread, Read aloud, Star, Pin, Forward, Reply, then writer controls.
   const extra = h("div", "msg-actions-extra");
-  const named: Array<[HTMLElement | undefined, string]> = [
-    [speak, "Listen"],
-    [read, "Read"],
-    [forward, "Forward"],
-    [ownTask, "Task for me"],
+  const named: Array<[HTMLElement | undefined, string | undefined]> = [
+    [speak, "Read aloud"],
+    [bookmark, bookmark?.classList.contains("bookmarked") ? "Unstar" : "Star"],
     [pin, pin?.classList.contains("pinned") ? "Unpin" : "Pin"],
+    [forward, "Forward"],
+    [!deleted ? replyBtn : undefined, undefined],
     [changes[0], "Edit"],
     [changes[1], "Delete"],
   ];
   for (const [button, name] of named) {
     if (!button) continue;
-    button.append(h("span", "msg-extra-label", name));
+    if (name) button.append(h("span", "msg-extra-label", name));
     extra.append(button);
   }
   const overflow = h("button", "msg-action-btn msg-overflow-btn", "⋯");
   overflow.type = "button";
-  overflow.title = "More: listen, forward, task, pin…";
+  overflow.title = "More: read aloud, star, pin, forward, reply…";
   overflow.setAttribute("aria-label", `More buttons for message #${message.seq}`);
   overflow.setAttribute("aria-expanded", "false");
   overflow.addEventListener("click", (event) => {
@@ -417,8 +416,8 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     overflow.setAttribute("aria-expanded", String(open));
   });
   if (copy) actions.append(copy);
-  if (bookmark) actions.append(bookmark);
-  if (!deleted) actions.append(replyBtn);
+  if (ownTask) actions.append(ownTask);
+  if (read) actions.append(read);
   if (extra.childElementCount > 0) actions.append(overflow, extra);
   li.addEventListener("mouseenter", () => {
     pointedMessage = li;
