@@ -5,13 +5,23 @@
 #
 #   packages/ask-ext/eval/run-gpu.sh glide GPU_INDEX [run.ts flags…]   # fastino/GLiDE-2B, transformers, bf16, port 9964
 #   packages/ask-ext/eval/run-gpu.sh d1 GPU_INDEX [run.ts flags…]      # LiquidAI d1-2B (D1_QUANT, default BF16 as the hub runs it), llama.cpp CUDA, port 9965
+#   packages/ask-ext/eval/run-gpu.sh omni GPU_INDEX [run.ts flags…]    # Remek/basal-omni-2.0-mini-preview, basal 2.8, bf16 two-way, port 9966
 #
-# Needs: ~/.agent-bus/ask-eval/glide-venv and ~/.agent-bus/models/GLiDE-2B (glide); ~/.agent-bus/ask-eval/llama.cpp-cuda
-# and ~/.agent-bus/models/d1-2B-<D1_QUANT>.gguf (d1). Writes ~/.agent-bus/ask-eval/results-<glide|d1>-gpu.jsonl (+ .meta.json),
-# the server's log next to it, and prints the server's peak GPU memory.
+# Needs the existing GLiDE and d1 setup described below. Omni needs ~/.agent-bus/ask-eval/basal-venv with basal 2.8:
+#   uv venv --python 3.12 ~/.agent-bus/ask-eval/basal-venv
+#   uv pip install --python ~/.agent-bus/ask-eval/basal-venv/bin/python torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu128
+#   uv pip install --python ~/.agent-bus/ask-eval/basal-venv/bin/python 'basal[media] @ https://github.com/rkinas/basal/archive/refs/tags/v2.8.0.tar.gz'
+# GLiDE needs ~/.agent-bus/ask-eval/glide-venv and ~/.agent-bus/models/GLiDE-2B. d1 needs
+# ~/.agent-bus/ask-eval/llama.cpp-cuda and ~/.agent-bus/models/d1-2B-<D1_QUANT>.gguf. Writes
+# ~/.agent-bus/ask-eval/results-<glide|d1|omni>-gpu.jsonl (+ .meta.json), the server log next to it, and prints peak GPU memory.
+#
+# 2026-11-23 schema smoke before the exact GPU run: the maker's experimental Q6_K decision GGUF, read one-way on the
+# bariton CPU, got 17/17 routing fixtures right at 0.5 (413 ms median); live d1-2B BF16 got 16/17 (42 ms). This proves
+# the request/response integration, not the candidate ranking: the released Omni checkpoint reads two-way and the
+# frozen 160-message ranking still needs sender labels. Do not substitute the GGUF's uncalibrated probabilities.
 set -euo pipefail
 
-which="${1:?glide or d1}"
+which="${1:?glide, d1, or omni}"
 gpu="${2:?the index of the booked GPU}"
 shift 2
 eval_dir="${ASK_EVAL_DIR:-$HOME/.agent-bus/ask-eval}"
@@ -38,8 +48,17 @@ case "$which" in
     "$eval_dir/llama.cpp-cuda/build/bin/llama-server" -m "$models/d1-2B-$quant.gguf" --host 127.0.0.1 --port "$port" \
       -ngl 99 -b 8192 -ub 8192 -c 8192 -t 4 --no-webui >"$eval_dir/d1-gpu-server.log" 2>&1 &
     ;;
+  omni)
+    port=9966
+    model=basal-omni-2.0-mini-preview
+    hardware="bariton GPU $gpu ($gpu_name): basal 2.8.0 fast bf16, two-way reading"
+    basal="$eval_dir/basal-venv/bin/basal-serve"
+    [[ -x "$basal" ]] || { echo "no $basal; install the Omni prerequisites shown at the top of this script" >&2; exit 2; }
+    "$basal" --model Remek/basal-omni-2.0-mini-preview --name "$model" --mode fast --port "$port" \
+      >"$eval_dir/omni-gpu-server.log" 2>&1 &
+    ;;
   *)
-    echo "usage: $0 glide|d1 GPU_INDEX [run.ts flags…]" >&2
+    echo "usage: $0 glide|d1|omni GPU_INDEX [run.ts flags…]" >&2
     exit 2
     ;;
 esac
