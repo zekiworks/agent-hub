@@ -136,7 +136,7 @@ export function markSelected(li: HTMLElement): void {
   li.classList.add("msg-selected");
 }
 
-// ---- Messages I marked as seen (Can #15838): green rules plus an open-envelope action button ----
+// ---- Messages I marked as read (Can #15842): green rules plus an envelope action button ----
 
 const READ_PARTS_KEY = "agent-bus.readParts";
 /** "me:seq:paragraph"; the newest kept last, at most READ_PARTS_MAX. This browser only. */
@@ -164,42 +164,42 @@ function setMessageRead(seq: number, count: number, read: boolean): void {
   localStorage.setItem(READ_PARTS_KEY, JSON.stringify(readParts));
 }
 
-function drawSeenButton(li: HTMLElement, seq: number): void {
-  const button = li.querySelector<HTMLButtonElement>(".msg-seen-btn");
+function drawReadButton(li: HTMLElement, seq: number): void {
+  const button = li.querySelector<HTMLButtonElement>(".msg-read-btn");
   if (!button) return;
   const blocks = textBlocks(li);
-  const seen = blocks.length > 0 && blocks.every((_, index) => readSet.has(partKey(seq, index)));
-  const iconName = seen ? "mail" : "mail-open";
+  const read = blocks.length > 0 && blocks.every((_, index) => readSet.has(partKey(seq, index)));
+  const iconName = read ? "mail" : "mail-open";
   const oldIcon = button.querySelector<SVGSVGElement>(".icon");
   if (oldIcon && !oldIcon.classList.contains(`icon-${iconName}`)) oldIcon.replaceWith(icon(iconName));
-  button.querySelector<HTMLElement>(".msg-extra-label")?.replaceChildren(seen ? "Unseen" : "Seen");
-  button.classList.toggle("marked-seen", seen);
-  button.title = seen ? "Mark this message as unseen" : "Mark this message as seen";
+  button.querySelector<HTMLElement>(".msg-extra-label")?.replaceChildren(read ? "Unread" : "Read");
+  button.classList.toggle("marked-read", read);
+  button.title = read ? "Mark this message as unread" : "Mark this message as read";
   button.setAttribute("aria-label", button.title);
-  button.setAttribute("aria-pressed", String(seen));
+  button.setAttribute("aria-pressed", String(read));
 }
 
 /** Restores this browser's green rules and the action button's state. */
 export function markReadParts(li: HTMLElement, seq: number): void {
   textBlocks(li).forEach((block, index) => block.classList.toggle("md-read", readSet.has(partKey(seq, index))));
-  drawSeenButton(li, seq);
+  drawReadButton(li, seq);
 }
 
-/** Open-envelope action: mark every text block in a message as seen, or undo them together. */
-export function seenButton(seq: number): HTMLButtonElement {
-  const button = h("button", "msg-action-btn msg-seen-btn");
+/** Envelope action: mark every text block in a message as read, or unread together. */
+export function readButton(seq: number): HTMLButtonElement {
+  const button = h("button", "msg-action-btn msg-read-btn");
   button.type = "button";
   setIcon(button, "mail-open");
-  button.title = "Mark this message as seen";
+  button.title = "Mark this message as read";
   button.setAttribute("aria-label", button.title);
   button.setAttribute("aria-pressed", "false");
   button.addEventListener("click", () => {
     const li = button.closest<HTMLElement>(".msg");
     if (!li) return;
     const blocks = textBlocks(li);
-    const seen = blocks.length > 0 && blocks.every((_, index) => readSet.has(partKey(seq, index)));
-    setMessageRead(seq, blocks.length, !seen);
-    if (!seen) noteAttention(seq, "marked-read");
+    const read = blocks.length > 0 && blocks.every((_, index) => readSet.has(partKey(seq, index)));
+    setMessageRead(seq, blocks.length, !read);
+    if (!read) noteAttention(seq, "marked-read");
     markReadParts(li, seq);
   });
   return button;

@@ -20,7 +20,7 @@ import { isPinned, setMessagePinned } from "./pins";
 import { bookmarkButton, isBookmarked } from "./bookmarks";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, projectColor, state } from "./state";
-import { conversationLink, flashMessage, markReadParts, markSelected, mentionNodes, mentionsMe, seenButton, selectMessage, shownMessage, textBlocks } from "./text";
+import { conversationLink, flashMessage, markReadParts, markSelected, mentionNodes, mentionsMe, readButton, selectMessage, shownMessage, textBlocks } from "./text";
 import { PULSE_MS } from "./toast";
 import { noteAttention } from "./attention";
 import { inlinedFiles, markInlined, placeInlined } from "./inline";
@@ -368,7 +368,7 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   const actions = h("div", "msg-actions");
   const deleted = !!message.deletedAt;
   const speak = message.text && !deleted ? speakButton(message) : undefined;
-  const seen = message.text && !deleted ? seenButton(message.seq) : undefined;
+  const read = message.text && !deleted ? readButton(message.seq) : undefined;
   const copy = message.text && !deleted ? copyButton(message) : undefined;
   // ↪ shows it to someone else (Can #12470).
   const forward = state.me && !deleted ? forwardButton(message) : undefined;
@@ -406,7 +406,7 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   }
   const named: Array<[HTMLElement | undefined, string]> = [
     [speak, "Listen"],
-    [seen, "Seen"],
+    [read, "Read"],
     [voiceReply, "Voice reply"],
     [forward, "Forward"],
     [copyId, `Copy #${message.seq}`],

@@ -2429,7 +2429,7 @@ button:disabled {
   color: var(--error);
 }
 
-.msg-seen-btn.marked-seen {
+.msg-read-btn.marked-read {
   border-color: var(--success);
   background: color-mix(in srgb, var(--success) 18%, var(--panel-raised));
   color: var(--success);
