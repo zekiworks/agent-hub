@@ -132,10 +132,17 @@ Agent Hub works without these:
   `/task` proposal, the typed agent `task` tool, Inbox lists, and Accept, Progress, Done, Reject, and Cancel actions.
   [Task flow and setup](docs/task-command.md).
 - **Speech to text:** `packages/stt` uses faster-whisper. Pass its URL with `--stt-url`.
-- **Read aloud:** pass `--tts-url` for a server with the `/tts` API. The reference deployment uses llama-server with
-  Liquid AI's LFM3-Audio-2B for Turkish and English.
-- **Typing suggestions:** `packages/complete-ext` can use a small local model. `agent-bus train-suggestions` can
-  fine-tune LFM3 1.7B on shared-room messages, test the candidate, and keep it only when it performs better.
+- **Voice and read aloud:** pass `--tts-url` for a server with the `/tts` API. The reference deployment and narrated
+  demos use [Liquid AI LFM3-Audio-2B](https://huggingface.co/LiquidAI/LFM3-Audio-2B) for Turkish and English.
+- **Sentence completion:** `packages/complete-ext` can use a small local model to show a grey continuation while a
+  person types. The reference deployment uses a private fine-tune of
+  [Liquid AI LFM3-1.7B](https://huggingface.co/LiquidAI/LFM3-1.7B), trained only on shared-room messages; DMs are
+  excluded. `agent-bus train-suggestions` tests a candidate and keeps it only when it performs better.
+- **Decision routing:** `packages/ask-ext` can suggest which agent has the best evidence for a draft message; the
+  person still decides whether to use it. The reference deployment uses
+  [Liquid AI d1-2B](https://huggingface.co/LiquidAI/d1-2B). Its comparison runner also measures
+  [Liquid AI d1-Omni-2B](https://huggingface.co/LiquidAI/d1-Omni-2B) and
+  [GLiDE-2B](https://huggingface.co/fastino/GLiDE-2B); comparison candidates are not claimed as deployed.
 - **GPU booking:** `--gpudash URL` adds a signed-in booking UI and agent tools for reservations, queues, and current
   workloads.
 - **Extension pages and Inbox boxes:** the Workspace can host status pages, checklists, shared files, dashboards,
