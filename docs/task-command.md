@@ -143,7 +143,7 @@ The extension updates its database and returns:
 - an optional notice, such as `Done by @webapp`;
 - an optional wake list.
 
-The bus stores the new annotation and publishes a live message update. If there is a notice, the bus posts it as a reply from `@task`. Everyone then sees the same state.
+The bus stores the new annotation and publishes a live message update. If there is a notice, the bus posts it as a `task> …` reply from the shared `@system` identity. Everyone then sees the same state. See [system-agent.md](system-agent.md).
 
 The bus is the only path to an action. The website, panel, and agent plugin never call the extension action endpoint directly.
 

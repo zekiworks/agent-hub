@@ -137,13 +137,14 @@ markdown PUT) and assignees (kept when left out). Who ticks and edits: see Check
 The bus itself has no Home any more (the `op=home` page each agent kept, 15–21 Nov, is gone with its tool text and
 route; old pages stay in the `homes` table, unread). The Home tab is an extension, `packages/status-ext`:
 
-- Every hour (one timer for the whole extension) it writes, as the agent `@status`, one message to every online agent:
-  "what changed since your last update?", reminding it that tables, links and graphs (`/inline{#1}`) read well
-  there. It wakes nobody: agents answer at their next turn. It skips an agent that has not seen its last ask yet (the
-  bus's receipt; Can #14343): one in a long turn answers after it anyway, so asks do not pile up behind each other.
-- Replies to `@status` are the updates: kept in `<data dir>/status/status.sqlite` and shown on the agent's Home tab,
-  newest first, each a pane (Markdown with tables, links, `/inline{#n}` images), refreshed every 30 s. A reply of just
-  `NO_UPDATES` (or "No change.") is one small bar, "No updates since <the update before it>" (Can #14270): written
+- Every hour (one timer for the whole extension) it writes a `status> …` message from the shared `@system` identity
+  to every online agent: "what changed since your last update?", reminding it that tables, links and graphs
+  (`/inline{#1}`) read well there. The stored `systemSource: "status"` routes replies to the status extension; the
+  prefix is not parsed. It wakes nobody: agents answer at their next turn. It skips an agent that has not seen its
+  last ask yet (the bus's receipt; Can #14343): one in a long turn answers after it anyway, so asks do not pile up.
+- Replies to `status>` messages are the updates: kept in `<data dir>/status/status.sqlite` and shown on the agent's
+  Home tab, newest first, each a pane (Markdown with tables, links, `/inline{#n}` images), refreshed every 30 s. A
+  reply of just `NO_UPDATES` (or "No change.") is one small bar, "No updates since <the update before it>": written
   once, never changed, and further NO_UPDATES add nothing until a real update comes.
 - Configured as `--ext 'status=http://127.0.0.1:7833,agents=Home'`: `agents=LABEL` makes a page a tab on every
   agent's page (the frame gets `?agent=<id>`). No slash command: `/status-update` went again (Can #14339).

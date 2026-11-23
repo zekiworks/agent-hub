@@ -5,6 +5,8 @@ import {
   conversationLabel,
   mentionedIds,
   RESOURCES_AGENT_ID,
+  SYSTEM_AGENT_ID,
+  SYSTEM_SOURCE_AGENT_IDS,
   titledLabel,
   type Bookmark,
   type OwnTask,
@@ -29,6 +31,7 @@ const MAX_HOLD_HOURS = 168;
 /** @resources notices wait longer: a holder offline for an hour still needs to hear that its hold expired. */
 const NOTICE_HOLD_MS = 24 * 3600_000;
 
+const SYSTEM_SOURCES = new Set<string>(SYSTEM_SOURCE_AGENT_IDS);
 /** `text` without a leading "<id>:" / "@<id> –" naming the writer itself (any case, `:`, `-` or `–`). */
 export function withoutOwnName(text: string, id: string): string {
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -165,7 +168,9 @@ async function writeMessage(ctx: BusContext, req: Request, body: Record<string, 
 
   if (body.text !== undefined && typeof body.text !== "string") throw new HttpError(400, "text must be a string");
   // The bus shows every message's sender; agents that start with their own name ("logic: …") only repeat it.
+  const systemSource = writer.kind === "agent" && writer.id === "status" ? writer.id : undefined;
   let text = writer.kind === "agent" ? withoutOwnName(body.text ?? "", writer.id) : (body.text ?? "");
+  if (systemSource && !text.startsWith(`${systemSource}> `)) text = `${systemSource}> ${text}`;
   if (text.length > MAX_TEXT_LENGTH) {
     throw new HttpError(400, `text is longer than ${MAX_TEXT_LENGTH} characters`);
   }
@@ -188,9 +193,14 @@ async function writeMessage(ctx: BusContext, req: Request, body: Record<string, 
   let conversation: Conversation;
   if (hasTo) {
     if (typeof body.to !== "string") throw new HttpError(400, "to must be an address string");
+    if (body.to.trim().toLowerCase() === `@${SYSTEM_AGENT_ID}`) {
+      throw new HttpError(400, "Reply to a system message or use its feature tool; @system does not accept new DMs");
+    }
     const parsed = ctx.knownAddress(body.to);
     sessions = parsed.sessions;
-    conversation = conversationFor(ctx, writer, parsed, now);
+    const addressWriter = systemSource ? hub.knownParticipant(SYSTEM_AGENT_ID) : writer;
+    if (!addressWriter) throw new Error("@system participant is missing");
+    conversation = conversationFor(ctx, addressWriter, parsed, now);
   } else {
     if (typeof body.conversationId !== "string") throw new HttpError(400, "conversationId must be a string");
     const existing = db.getConversation(body.conversationId);
@@ -259,8 +269,9 @@ async function writeMessage(ctx: BusContext, req: Request, body: Record<string, 
   // A reply to a message one session of an agent wrote goes back to that session.
   if (replyToSeq !== undefined) {
     const original = db.getMessage(replyToSeq);
-    if (original?.fromSession !== undefined && original.from !== writer.id && !sessions.has(original.from)) {
-      sessions.set(original.from, original.fromSession);
+    const originalWriter = original?.systemSource ?? original?.from;
+    if (original?.fromSession !== undefined && originalWriter && originalWriter !== writer.id && !sessions.has(originalWriter)) {
+      sessions.set(originalWriter, original.fromSession);
     }
   }
   if (body.toSession !== undefined && body.toSession !== null) {
@@ -303,13 +314,20 @@ async function writeMessage(ctx: BusContext, req: Request, body: Record<string, 
   }
   // Every agent of the conversation (for @all, every agent): the online ones get it now, the offline ones when they are
   // back, until it expires. Only those on the wake list get a turn for it.
-  const recipients = recipientsFor(ctx, conversation, writer.id).map((p) => p.id);
+  const replySource = replyToSeq === undefined ? undefined : db.getMessage(replyToSeq)?.systemSource;
+  const latestSource = conversation.members.includes(SYSTEM_AGENT_ID)
+    ? db.lastAuthorBesides(conversation.id, writer.id)
+    : undefined;
+  const routedSource = replySource ?? (latestSource && SYSTEM_SOURCES.has(latestSource) ? latestSource : undefined);
+  const recipients = recipientsFor(ctx, conversation, systemSource ? SYSTEM_AGENT_ID : writer.id)
+    .map((participant) => participant.id)
+    .map((id) => (id === SYSTEM_AGENT_ID && routedSource ? routedSource : id));
   const listed = wakeList(ctx, writer, body.wake, conversation, recipients, text, replyToSeq, newcomers);
   const assigned = extension?.wake.filter((id) => recipients.includes(id)) ?? [];
   const wake = assigned.length > 0 ? [...new Set([...(listed ?? []), ...assigned])] : listed;
   const message = db.insertMessage({
     conversationId: conversation.id,
-    from: writer.id,
+    from: systemSource ? SYSTEM_AGENT_ID : writer.id,
     fromKind: writer.kind,
     text,
     files,
@@ -323,6 +341,7 @@ async function writeMessage(ctx: BusContext, req: Request, body: Record<string, 
     ...(verified === undefined ? {} : { verified }),
     ...(wake ? { wake } : {}),
     ...(extension ? { ext: extension.ext } : {}),
+    ...(systemSource ? { systemSource } : {}),
     ...(forwarded ? { forwarded } : {}),
   });
   if (writer.kind === "human") db.touchParticipant(writer.id, now);
@@ -381,7 +400,8 @@ function wakeList(
       `wake names agents of this conversation; ${outside.map((id) => `@${id}`).join(", ")} ${outside.length > 1 ? "are" : "is"} not one (or a person, or you). Nothing was sent.`
     );
   }
-  const repliedTo = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq)?.from : undefined;
+  const replied = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq) : undefined;
+  const repliedTo = replied?.systemSource ?? replied?.from;
   return repliedTo && recipients.includes(repliedTo) && !wake.includes(repliedTo) ? [repliedTo, ...wake] : wake;
 }
 
@@ -406,10 +426,11 @@ function answeredInChain(ctx: BusContext, replyToSeq: number, writer: string): s
   const first = ctx.db.getMessage(replyToSeq);
   let m = first;
   for (let steps = 0; m && steps < 50; steps++) {
-    if (!ctx.hub.isHuman(m.from) && m.from !== writer) return m.from;
+    const author = m.systemSource ?? m.from;
+    if (!ctx.hub.isHuman(author) && author !== writer) return author;
     m = m.quote ? ctx.db.getMessage(m.quote.seq) : null;
   }
-  return first?.from;
+  return first?.systemSource ?? first?.from;
 }
 
 /** An agent @mentions an agent its wake list leaves out: said, since the mention alone wakes nobody. */
@@ -443,25 +464,26 @@ function unreadableRefs(ctx: BusContext, text: string, conversation: Conversatio
   return warnings;
 }
 
-/** A notice from @resources to one holder, in their own conversation with it (an agent's turn starts, as for a DM). */
+/** A `resources>` notice from @system to one holder, routed in the existing @resources DM. */
 export function postResourcesNotice(ctx: BusContext, holder: string, text: string): void {
   const { db } = ctx;
   const recipient = db.getParticipant(holder);
   if (!recipient) return;
   const writer = db.ensureBuiltInAgent(RESOURCES_AGENT_ID, "bus");
   const now = Date.now();
-  const conversation = db.dmOf(writer.id, holder, now);
-  const recipients = recipientsFor(ctx, conversation, writer.id).map((p) => p.id);
+  const conversation = db.dmOf(SYSTEM_AGENT_ID, holder, now);
+  const recipients = recipientsFor(ctx, conversation, SYSTEM_AGENT_ID).map((p) => p.id);
   const message = db.insertMessage({
     conversationId: conversation.id,
-    from: writer.id,
+    from: SYSTEM_AGENT_ID,
     fromKind: "agent",
-    text,
+    text: text.startsWith("resources> ") ? text : `resources> ${text}`,
     files: [],
     createdAt: now,
     recipients,
     expiresAt: now + NOTICE_HOLD_MS,
     wake: recipients, // the holder must act on it (wake lists, Can 15 Nov)
+    systemSource: RESOURCES_AGENT_ID,
   });
   ctx.hub.publishMessage(message, db.getConversation(conversation.id) ?? conversation);
 }
@@ -517,7 +539,8 @@ export async function getMessageReceipts(
   const own = current ? ctx.db.getConversation(current.conversationId) : null;
   if (!current || !own) throw new HttpError(404, `Unknown message ${seq}`);
   // Numbers are sequential, so saying it exists gives nothing away; saying why spares people a dead end (Can, 15 Nov).
-  if (!mayRead(ctx, own, { ...reader, all: reader.all || url.searchParams.get("scope") === "all" })) {
+  const sourceOwns = reader.kind === "agent" && current.systemSource === reader.id;
+  if (!sourceOwns && !mayRead(ctx, own, { ...reader, all: reader.all || url.searchParams.get("scope") === "all" })) {
     throw new HttpError(403, `#${seq} is in a conversation you are not in`);
   }
   const withConversation = (message: Message): { message: Message; conversation: Conversation } => {

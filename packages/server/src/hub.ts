@@ -3,6 +3,8 @@
 import {
   replyAddress,
   shouldWake,
+  SYSTEM_AGENT_ID,
+  SYSTEM_SOURCE_AGENT_IDS,
   type AgentServerFrame,
   type AgentSession,
   type AgentStatus,
@@ -18,6 +20,8 @@ import {
 } from "@agent-bus/protocol";
 import { readable } from "./conversations";
 import type { BusDatabase, ParticipantRecord } from "./db";
+
+const HIDDEN_SYSTEM_SOURCES = new Set<string>(SYSTEM_SOURCE_AGENT_IDS);
 
 /** How long a session keeps its number after its last connection closed (a reconnect after a short drop). */
 const SESSION_HOLD_MS = 60_000;
@@ -271,6 +275,10 @@ export class Hub {
       lastSeenAt: record.lastSeenAt,
       settings: record.settings,
     };
+    if (record.id === SYSTEM_AGENT_ID) {
+      participant.online = true;
+      participant.connections = 1;
+    }
     if (connectionError !== undefined) participant.connectionError = connectionError;
     if (record.harness !== null) participant.harness = record.harness;
     if (record.path !== null) participant.path = record.path;
@@ -288,6 +296,7 @@ export class Hub {
   /** Agents and configured humans; online first, then by id. */
   listParticipants(): Participant[] {
     return this.knownRecords()
+      .filter((record) => !HIDDEN_SYSTEM_SOURCES.has(record.id))
       .map((record) => this.toParticipant(record))
       .sort((a, b) => Number(b.online) - Number(a.online) || a.id.localeCompare(b.id));
   }

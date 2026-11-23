@@ -1,6 +1,6 @@
 // What the route and socket modules share: the store, the configured humans, human authentication, the approved
 // agent tokens, the live state (`Hub`), and the identity checks every request makes.
-import { parseAddress, RESOURCES_AGENT_ID, type ParsedAddress } from "@agent-bus/protocol";
+import { parseAddress, RESOURCES_AGENT_ID, SYSTEM_AGENT_ID, type ParsedAddress } from "@agent-bus/protocol";
 import type { AgentTokens } from "./agent-tokens";
 import type { HumanAuth } from "./auth";
 import type { BusDatabase } from "./db";
@@ -79,7 +79,7 @@ export class BusContext {
       if (signedIn !== writer.id) throw new HttpError(403, `You are signed in as ${signedIn}, not ${writer.id}`);
       return true;
     }
-    if (writer.id === RESOURCES_AGENT_ID) throw new HttpError(403, "@resources is the bus's own notices; nobody writes as it");
+    if (writer.id === RESOURCES_AGENT_ID || writer.id === SYSTEM_AGENT_ID) throw new HttpError(403, `@${writer.id} is the bus's own notices; nobody writes as it`);
     const reader = this.requireReader(req);
     if (reader.kind !== "agent") throw new HttpError(403, `Signed in as a person; @${writer.id} is an agent`);
     const bound = this.db.agentTokenHash(writer.id);

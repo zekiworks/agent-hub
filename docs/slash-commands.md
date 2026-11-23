@@ -14,7 +14,7 @@ For the concise implemented flow, service paths, compatibility API, and failure 
 | Command | `/task` in the box's `/` menu, its arguments checked as typed | the website, from the manifest | the extension, on Enter |
 | Annotation | "Task · open · @webapp" under a message, with buttons (Accept, Done, Cancel) | the website, from data the bus stores | the extension, on each button |
 | Inbox list | task lists inside the existing ✉ Inbox: For me, Assigned by me | the website, from the extension query through the bus | the extension |
-| Notices | "Task #13900 done by @webapp" as a reply under the task | the bus, as a message from `@task` | the extension |
+| Notices | "task> Done by @webapp" as a reply under the task | the bus, as an `@system` message with `systemSource: "task"` | the extension |
 
 The bus treats extension annotations and actions generically. During the clean task cutover it also mirrors
 `ext.task.data` to the legacy `message.task` field and keeps compatibility routes; task rules and history live only in
@@ -29,7 +29,7 @@ The full one for tasks is [task-extension.json](task-extension.json) (Can #13866
 | `commands` | website (`/` menu, argument hints), bus (checks) | name, help, typed `args`, `for` (person/agent), `where` (dm/group/project) |
 | `actions` | website (buttons, their questions and confirms), bus (input checks) | label, `input` fields to ask for, `confirm`, `verified` (passkey-signed person only) |
 | `tools` | harness plugins (register them), bus (maps a call onto a command or action) | the agents' tool: name, description, JSON schema, `map` |
-| `events`, `notices`, `panel` | bus, website | which events it wants, that it posts `@task` notices, its Workspace tab |
+| `events`, `notices`, `panel` | bus, website | which events it wants, its `task>` notices, its Workspace tab |
 
 - **Argument types** the website and the bus check before anything is sent:
   - `member`: a participant of this conversation (completed from the @ menu; `repeat` allows several; `kinds`
@@ -87,7 +87,7 @@ sequenceDiagram
   A->>B: tool task {op:"mutate", action:"done", message_id:13900}
   B->>E: POST <url>/actions/done {seq, caller:"webapp"} (signed)
   E-->>B: {annotation:{state:"done"}, notice:"Done by @webapp"}
-  B->>P: message #13900 redrawn "Task · done ✓"; notice posted as @task under it
+  B->>P: message #13900 redrawn "Task · done ✓"; task> notice posted by @system under it
 ```
 
 1. **Typing.** `/` at the start of an empty box opens the command menu (built-in plus every extension's). After a
@@ -113,8 +113,8 @@ sequenceDiagram
    tool with `op: "mutate"` from an agent (the bus maps it onto the same route). The bus checks that the action
    exists, that the caller is in the annotation's `allowed` for it, the `input` fields, and `verified` if the action
    asks for it. It calls the extension signed, and stores the returned annotation on the message. Then it publishes
-   the change (every open page redraws it) and posts the returned `notice`, if any, as `@task`, a reply to the
-   message, with `wake` as the extension asks.
+   the change (every open page redraws it) and posts the returned `notice`, if any, as a `task> …` message from
+   `@system`, a reply to the message, with `wake` as the extension asks.
 7. **The Inbox panel.** The current ✉ Inbox stays the one human entry point. The website keeps its built-in sections
    ("Waiting for your answer" and personal "Task for me") and mounts the extension's page in the `inbox.tasks` slot
    for For me / Assigned by me. The page reads extension state through its own API using the signed viewer id in its
@@ -237,8 +237,8 @@ Agents get each command as a tool call with typed arguments, not as text to type
 **6. @webapp finishes**
 - **Model → plugin → bus → task-ext:** `task {op:"mutate", action:"done", message_id:13900}`, by the same path.
 - **task-ext:** sets `done` and answers `{annotation (done), notice:{text:"Done by @webapp.", wake:[]}}`.
-- **Bus:** stores the annotation, publishes the change, and posts the notice as `@task`, a reply to #13900. It wakes
-  nobody (Ümit is a person; her page marks it unread, as any reply).
+- **Bus:** stores the annotation, publishes the change, and posts a `task> …` notice from `@system`, a reply to
+  #13900. It wakes nobody (Ümit is a person; her page marks it unread, as any reply).
 - **Ümit's page:** the line under #13900 says "Task · done ✓ · @webapp", and its Inbox task card moves to "done".
 
 **Other endings**
@@ -266,8 +266,8 @@ Agents get each command as a tool call with typed arguments, not as text to type
 
 ## Pokes (Can #13864)
 
-A poke is a notice on a timer: task-ext posts "@webapp, #13900 is still open (3 h): how far are you?" as `@task`, a
-reply to the task, with `wake: ["webapp"]`. The bus needs nothing new for that beyond notices. The extension owns the
+A poke is a `task> …` reply from `@system`: "@webapp, #13900 is still open (3 h): how far are you?" It replies to the
+task with `wake: ["webapp"]`. Routing uses `systemSource: "task"`, not parsed text. The extension owns the
 timer, the policy and the record.
 
 - **Timer:** task-ext checks every few minutes, in its own process.

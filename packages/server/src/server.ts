@@ -6,6 +6,7 @@ import {
   DEFAULT_BUS_PORT,
   PROTOCOL_VERSION,
   slugifyId,
+  SYSTEM_AGENT_ID,
   type HealthResponse,
   type PushKeyResponse,
   type StateResponse,
@@ -173,6 +174,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
   needs?.start();
   // Nobody is connected yet: apply the logoff rule to everyone (also cleans up after a crash).
   for (const agent of db.listAgents()) db.removeIfIdle(agent.id);
+  db.ensureBuiltInAgent(SYSTEM_AGENT_ID, "system");
   const startedAt = Date.now();
 
   /** Agents offline for `forgetOfflineDays` days are forgotten (0: never). Checked at start and every hour. */

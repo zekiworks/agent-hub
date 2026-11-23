@@ -246,6 +246,8 @@ export interface Message {
   task?: Task;
   /** State attached by extensions. The bus stores and publishes it but does not interpret extension-specific `data`. */
   ext?: MessageExtensions;
+  /** Logical producer when this notice is displayed as from the shared @system identity (for example `status`). */
+  systemSource?: string;
   /**
    * The agents it wakes (starts a turn for); the others take it in at their next turn (Can, 15 Nov). A person's message
    * wakes, in a DM, its agent; elsewhere the agent it answers (the replied-to message's author, else the previous

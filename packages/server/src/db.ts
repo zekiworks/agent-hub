@@ -8,6 +8,7 @@ import {
   qualifiedAgentId,
   QUOTE_TEXT_CHARS,
   slugifyId,
+  SYSTEM_AGENT_ID,
   type AgentIdentity,
   type AgentSettings,
   type Conversation,
@@ -105,6 +106,8 @@ export interface NewMessage {
   wake?: string[];
   /** State attached by extensions. */
   ext?: MessageExtensions;
+  /** Logical producer displayed through the shared @system identity. */
+  systemSource?: string;
   expiresAt: number;
   /** A copy of the message it forwards (Message.forwarded; Can #12470). */
   forwarded?: ForwardedMessage;
@@ -179,6 +182,7 @@ interface MessageRow {
   /** Legacy task column is read once into ext_json, then ignored. */
   task_json?: string | null;
   ext_json?: string | null;
+  system_source?: string | null;
   edited_at?: number | null;
   deleted_at?: number | null;
   forwarded_json?: string | null;
@@ -458,6 +462,7 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
     ...(row.wake_json ? { wake: JSON.parse(row.wake_json) as string[] } : {}),
     ...(task ? { task } : {}),
     ...(ext ? { ext } : {}),
+    ...(row.system_source ? { systemSource: row.system_source } : {}),
     expiresAt: expiresAt(row),
     ...(row.edited_at ? { editedAt: row.edited_at } : {}),
     ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
@@ -539,6 +544,19 @@ export class BusDatabase {
         }
       })();
     }
+    // Synthetic notice writers now share one visible @system identity. The source remains structured for routing.
+    if (!messageColumns.some((c) => c.name === "system_source")) this.db.exec("ALTER TABLE messages ADD COLUMN system_source TEXT");
+    this.db.transaction(() => {
+      this.db
+        .query("UPDATE messages SET from_id = ?1, system_source = 'task', text = CASE WHEN text LIKE 'task> %' THEN text ELSE 'task> ' || text END WHERE from_id = 'task'")
+        .run(SYSTEM_AGENT_ID);
+      this.db
+        .query("UPDATE messages SET from_id = ?1, system_source = 'status', text = CASE WHEN text LIKE 'status> %' THEN text ELSE 'status> ' || text END WHERE from_id = 'status'")
+        .run(SYSTEM_AGENT_ID);
+      this.db
+        .query("UPDATE messages SET from_id = ?1, system_source = 'resources', text = CASE WHEN text LIKE 'resources> %' THEN text ELSE 'resources> ' || text END WHERE from_id = 'resources'")
+        .run(SYSTEM_AGENT_ID);
+    })();
     if (!messageColumns.some((c) => c.name === "edited_at")) this.db.exec("ALTER TABLE messages ADD COLUMN edited_at INTEGER");
     if (!messageColumns.some((c) => c.name === "deleted_at")) this.db.exec("ALTER TABLE messages ADD COLUMN deleted_at INTEGER");
     // Databases created before forwarding lack the column (Can #12470; null: not a forwarded copy).
@@ -1576,8 +1594,8 @@ export class BusDatabase {
     return this.db.transaction((): Message => {
       const result = this.db
         .query(
-          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json, ext_json, forwarded_json, quote_text)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`
+          `INSERT INTO messages (id, conversation_id, from_id, from_kind, text, files_json, created_at, reply_to_seq, verified, from_session, expires_at, wake_json, ext_json, forwarded_json, quote_text, system_source)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`
         )
         .run(
           id,
@@ -1594,7 +1612,8 @@ export class BusDatabase {
           input.wake ? JSON.stringify(input.wake) : null,
           input.ext ? JSON.stringify(input.ext) : null,
           input.forwarded ? JSON.stringify(input.forwarded) : null,
-          input.quoteText ?? null
+          input.quoteText ?? null,
+          input.systemSource ?? null
         );
       const seq = Number(result.lastInsertRowid);
       const addReceipt = this.db.query("INSERT INTO receipts (seq, recipient, delivered_at, session) VALUES (?1, ?2, NULL, ?3)");
@@ -1623,6 +1642,7 @@ export class BusDatabase {
         ...(input.wake ? { wake: input.wake } : {}),
         ...(input.ext?.task?.data ? { task: input.ext.task.data as Task } : {}),
         ...(input.ext ? { ext: input.ext } : {}),
+        ...(input.systemSource ? { systemSource: input.systemSource } : {}),
         ...(input.forwarded ? { forwarded: input.forwarded } : {}),
         expiresAt: input.expiresAt,
       };
@@ -1648,19 +1668,19 @@ export class BusDatabase {
   /** Who wrote the latest message of `conversationId` not written by `notFrom` (a person's message answers it). */
   lastAuthorBesides(conversationId: string, notFrom: string): string | undefined {
     return this.db
-      .query<{ from_id: string }, [string, string]>(
-        "SELECT from_id FROM messages WHERE conversation_id = ?1 AND from_id != ?2 ORDER BY seq DESC LIMIT 1"
+      .query<{ author: string }, [string, string]>(
+        "SELECT COALESCE(system_source, from_id) AS author FROM messages WHERE conversation_id = ?1 AND COALESCE(system_source, from_id) != ?2 ORDER BY seq DESC LIMIT 1"
       )
-      .get(conversationId, notFrom)?.from_id;
+      .get(conversationId, notFrom)?.author;
   }
 
   /** Who wrote the latest agent message of `conversationId` not written by `notFrom`. */
   lastAgentAuthorBesides(conversationId: string, notFrom: string): string | undefined {
     return this.db
-      .query<{ from_id: string }, [string, string]>(
-        "SELECT from_id FROM messages WHERE conversation_id = ?1 AND from_id != ?2 AND from_kind = 'agent' ORDER BY seq DESC LIMIT 1"
+      .query<{ author: string }, [string, string]>(
+        "SELECT COALESCE(system_source, from_id) AS author FROM messages WHERE conversation_id = ?1 AND COALESCE(system_source, from_id) != ?2 AND from_kind = 'agent' ORDER BY seq DESC LIMIT 1"
       )
-      .get(conversationId, notFrom)?.from_id;
+      .get(conversationId, notFrom)?.author;
   }
 
   /** Quotes for the given message seqs (one query). */

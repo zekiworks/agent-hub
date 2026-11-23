@@ -5,9 +5,9 @@
 //   STATUS_PORT=7833 BUS_URL=http://127.0.0.1:7800 bun run packages/status-ext/src/server.ts
 //   agent-bus serve … --ext 'status=http://127.0.0.1:7833,agents=Home'
 //
-// On the bus it is the agent @status (it joins by name with this machine's agent token); its DMs with each agent hold
-// the asks and the updates. It keeps them in <data dir>/status/status.sqlite. It listens on 127.0.0.1 only: the bus
-// forwards the Home page to signed-in people (GET only).
+// On the bus it keeps the hidden compatibility identity @status: that socket receives replies in its existing DMs.
+// Its outgoing asks are stored and displayed as `@system` messages with structured source `status` and text prefix
+// `status>`. Updates stay in <data dir>/status/status.sqlite. The page listens on 127.0.0.1 only.
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -48,7 +48,7 @@ async function bus<T>(route: string, init: RequestInit = {}): Promise<T> {
 /** The agents to ask: every agent connected to the bus now, but this one. */
 async function agents(): Promise<string[]> {
   const s = await bus<StateResponse>(`/api/state?as=${ID}`);
-  return s.participants.filter((p) => p.kind === "agent" && p.id !== ID && p.id !== "resources" && p.online).map((p) => p.id);
+  return s.participants.filter((p) => p.kind === "agent" && p.id !== ID && p.id !== "resources" && p.id !== "system" && p.online).map((p) => p.id);
 }
 
 function lastUpdate(agent: string): number | undefined {
@@ -136,7 +136,7 @@ function keep(message: Message): void {
   );
 }
 
-/** On the bus as @status: deliveries are agents' updates; each is acknowledged. */
+/** Hidden compatibility socket @status: deliveries are agents' replies to @system status asks; each is acknowledged. */
 function connect(): void {
   const ws = new WebSocket(`${BUS.replace(/^http/, "ws")}/ws/agent?${new URLSearchParams({ token: TOKEN, host: "bariton", name: ID })}`);
   ws.addEventListener("message", (event) => {

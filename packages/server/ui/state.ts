@@ -1,8 +1,9 @@
 // The page's shared mutable state (one object, read and written by every module) and the queries over it.
-import { ALL_CONVERSATION_ID, type Bookmark, type BoxRole, type Conversation, type ExtensionCommand, type Message, type OwnTask, type Participant } from "@agent-bus/protocol";
+import { ALL_CONVERSATION_ID, SYSTEM_AGENT_ID, SYSTEM_SOURCE_AGENT_IDS, type Bookmark, type BoxRole, type Conversation, type ExtensionCommand, type Message, type OwnTask, type Participant } from "@agent-bus/protocol";
 import { nameList, sortedUnique } from "./format";
 
 export const UNREAD_ONLY_KEY = "agent-bus.unreadOnly";
+const SYSTEM_SOURCES = new Set<string>(SYSTEM_SOURCE_AGENT_IDS);
 /** Show offline agents and the conversations with them (off by default, to keep the list to who is working now). */
 export const INCLUDE_OFFLINE_KEY = "agent-bus.includeOffline";
 
@@ -277,7 +278,8 @@ export function conversationTitle(conv: Conversation): string {
   if (conv.kind === "project" && conv.title) return conv.title; // the name people gave it (#10623)
   if (conv.kind === "project" && conv.name) return conversationAddress(conv) ?? conv.name;
   const others = conv.members.filter((id) => id !== state.me);
-  return nameList(others.length > 0 ? others : conv.members);
+  const visible = [...new Set((others.length > 0 ? others : conv.members).map((id) => (SYSTEM_SOURCES.has(id) ? SYSTEM_AGENT_ID : id)))];
+  return nameList(visible);
 }
 
 /** A project's or room's address ("@@name", "#name"); undefined for everything else. */

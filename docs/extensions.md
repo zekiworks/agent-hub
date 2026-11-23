@@ -91,14 +91,14 @@ but never perform one: the page has no credentials and learns only who is lookin
 
 ### Notices from an extension
 
-An extension may write messages as itself (`@gpus`), a built-in participant like `@resources` today: it posts with
-its secret, the bus's wake rules apply, and replies to it are forwarded to `POST <url>/replies`. This is how "your
-hold ends in 30 min" reaches an agent.
+An extension notice is displayed through the shared `@system` participant with a source prefix such as `task>`,
+`status>`, or `resources>`. The stored `systemSource` routes replies and actions; the bus never parses the prefix.
+See [system-agent.md](system-agent.md). The bus's normal access, receipt, and wake rules still apply.
 
 ## GPU booking as the first extension
 
 The schedule (packages/server/src/resources.ts, about 800 lines: holds, queue, expiry, reclaim, idle checks,
-`@resources` notices) and the GPU ops of the agents' tool move behind this contract:
+`resources>` notices from `@system`) and the GPU ops of the agents' tool move behind this contract:
 
 - **In-process first.** The schedule stays in the bus process as a built-in extension module that implements the same
   contract (manifest, actions, notices) without the HTTP hop; it can move to its own service later without changing

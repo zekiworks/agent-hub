@@ -137,6 +137,29 @@ function state(as?: string): Promise<StateResponse> {
   return getJson<StateResponse>(bus, "/api/state", as);
 }
 
+test("status, task and resources share the visible system identity while replies route to the source", async () => {
+  const status = await joinAgent({ host: "h1", name: "status" });
+  const alpha = await joinPath("/tmp/x/alpha");
+  const ask = await send({ from: status.id, to: `@${alpha.id}`, text: "Update?", wake: [] });
+  expect(ask.message).toMatchObject({ from: "system", systemSource: "status", text: "status> Update?" });
+  expect(ask.conversation.members.sort()).toEqual([alpha.id, "system"].sort());
+  expect((await busFetch(bus, `/api/messages/${ask.message.seq}?as=${status.id}`)).status).toBe(200);
+  expect(ask.message.receipts.map((receipt) => receipt.to)).toEqual([alpha.id]);
+  expect((await alpha.client.take("deliver")).message).toMatchObject({
+    from: "system",
+    systemSource: "status",
+    text: "status> Update?",
+  });
+  const participants = (await state("carol")).participants;
+  expect(participants.find((participant) => participant.id === "system")).toMatchObject({ online: true, harness: "system" });
+  expect(participants.some((participant) => ["status", "task", "resources"].includes(participant.id))).toBe(false);
+
+  const answer = await send({ from: alpha.id, conversationId: ask.conversation.id, text: "Done", wake: [] });
+  expect(answer.message.receipts.map((receipt) => receipt.to)).toEqual([status.id]);
+  expect((await status.client.take("deliver")).message).toMatchObject({ from: alpha.id, text: "Done" });
+  expect((await post({ from: "carol", to: "@system", text: "hello" })).status).toBe(400);
+});
+
 /** A viewer signed in at upgrade with a human's session. */
 async function connectViewer(): Promise<Client> {
   const viewer = await Client.connect(wsUrl("/ws/viewer"), identity(bus, "carol"));

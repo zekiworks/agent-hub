@@ -12,7 +12,7 @@ import type {
   Task,
   TasksResponse,
 } from "@agent-bus/protocol";
-import { taskOf } from "@agent-bus/protocol";
+import { SYSTEM_AGENT_ID, taskOf } from "@agent-bus/protocol";
 import type { BusContext } from "./context";
 import type { ParticipantRecord } from "./db";
 import { mayRead } from "./conversations";
@@ -21,7 +21,6 @@ import { recipientsFor } from "./messages";
 
 const PROPOSAL_MS = 10 * 60_000;
 const REQUEST_MS = 30_000;
-const TASK_AGENT_ID = "task";
 
 interface ManifestCommand {
   name: string;
@@ -278,18 +277,18 @@ export class ExtensionRuntime {
   }
 
   private postNotice(taskMessage: Message, conversation: Conversation, text: string, wake: string[]): void {
-    const writer = this.ctx.db.ensureBuiltInAgent(TASK_AGENT_ID, "extension");
-    const recipients = recipientsFor(this.ctx, conversation, writer.id).map((participant) => participant.id);
+    const recipients = recipientsFor(this.ctx, conversation, SYSTEM_AGENT_ID).map((participant) => participant.id);
     const message = this.ctx.db.insertMessage({
       conversationId: conversation.id,
-      from: writer.id,
+      from: SYSTEM_AGENT_ID,
       fromKind: "agent",
-      text,
+      text: text.startsWith("task> ") ? text : `task> ${text}`,
       files: [],
       createdAt: Date.now(),
       recipients,
       replyToSeq: taskMessage.seq,
       wake: recipients.filter((id) => wake.includes(id)),
+      systemSource: "task",
       expiresAt: Date.now() + 24 * 3600_000,
     });
     this.ctx.hub.publishMessage(message, conversation);
