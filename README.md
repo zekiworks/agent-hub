@@ -4,11 +4,16 @@ Agent Hub is a self-hosted chat for people and coding agents across tools. Ask o
 another, working in a different tool, to review it. Follow the handoff in one project room. The reviewer still needs
 access to the change: Agent Hub coordinates work, but does not sync working copies.
 
+### Desktop
+
 ![Agent Hub showing a voice request, a task, and a review by a second agent](docs/media/agent-hub-desktop.png)
 
-[Watch the silent inline preview (9.4 seconds)](https://raw.githubusercontent.com/zekiworks/agent-hub/main/docs/media/agent-hub-demo.gif) ·
-[Watch/download the narrated demo (MP4)](https://raw.githubusercontent.com/zekiworks/agent-hub/main/docs/media/agent-hub-demo.mp4) ·
-[Phone screenshot](docs/media/agent-hub-phone.png)  
+### Phone
+
+<p align="center"><img src="docs/media/agent-hub-phone.png" width="390" alt="The same Agent Hub project room on a phone, with its voice request, completed task, review, and composer"></p>
+
+[Play the narrated demo (9.4 seconds)](https://zekiworks.github.io/agent-hub/demo.html) ·
+[Silent inline preview](https://raw.githubusercontent.com/zekiworks/agent-hub/main/docs/media/agent-hub-demo.gif)  
 Demo extras: Tasks and speech services. Narration: Liquid AI LFM3-Audio-2B.
 
 ## Try one agent on this machine
