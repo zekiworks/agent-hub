@@ -115,19 +115,13 @@ function onScreen(el: HTMLElement): boolean {
 }
 
 /**
- * Lights message `seq` as the one I am in, always with one frame around the whole message (Ümit #15125). `part` only
- * places the local "Mark as seen" control beside the paragraph tapped; Reply and Copy remain whole-message actions.
+ * Lights message `seq` as the one I am in, always with one frame around the whole message (Ümit #15125).
+ * Paragraph Seen controls are independent and always visible; `part` remembers which paragraph was tapped.
  */
 export function selectMessage(seq: number | undefined, part?: number): void {
   state.selectedSeq = seq;
   state.selectedPart = seq === undefined ? undefined : part;
-  for (const li of dom.messageList.querySelectorAll<HTMLElement>(".msg-selected")) {
-    li.classList.remove("msg-selected");
-    // Seen paragraphs keep their explicit ✓ Seen · undo control; only an unmarked selection control goes away.
-    for (const button of li.querySelectorAll(".md-read-btn")) {
-      if (!button.parentElement?.classList.contains("md-read")) button.remove();
-    }
-  }
+  for (const li of dom.messageList.querySelectorAll<HTMLElement>(".msg-selected")) li.classList.remove("msg-selected");
   const li = seq === undefined ? null : dom.messageList.querySelector<HTMLElement>(`.msg[data-seq="${seq}"]`);
   if (li) markSelected(li);
 }
@@ -175,12 +169,11 @@ function setPartRead(seq: number, index: number, read: boolean): void {
   localStorage.setItem(READ_PARTS_KEY, JSON.stringify(readParts));
 }
 
-/** Restores the green rule and persistent Seen · undo control for marked paragraphs at every drawing. */
+/** Restores every paragraph's explicit Mark as seen / Seen · undo control and the green rule for marked ones. */
 export function markReadParts(li: HTMLElement, seq: number): void {
   textBlocks(li).forEach((block, i) => {
-    const read = readSet.has(partKey(seq, i));
-    block.classList.toggle("md-read", read);
-    if (read && !block.querySelector(":scope > .md-read-btn")) block.append(readButton(seq, i, block));
+    block.classList.toggle("md-read", readSet.has(partKey(seq, i)));
+    if (!block.querySelector(":scope > .md-read-btn")) block.append(readButton(seq, i, block));
   });
 }
 
@@ -192,11 +185,7 @@ function readButton(seq: number, index: number, block: HTMLElement): HTMLButtonE
     button.textContent = read ? "✓ Seen · undo" : "✓ Mark as seen";
     button.setAttribute("aria-pressed", String(read));
     block.classList.toggle("md-read", read);
-    const li = block.closest<HTMLElement>(".msg");
-    const selected =
-      state.selectedSeq === seq &&
-      (state.selectedPart === index || (state.selectedPart === undefined && !!li && textBlocks(li).length === 1));
-    if (!read && !selected) button.remove();
+    // Every paragraph keeps its explicit control; no preliminary paragraph tap is required (Ümit #15415).
   };
   button.addEventListener("click", () => {
     const read = !readSet.has(partKey(seq, index));
