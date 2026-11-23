@@ -100,9 +100,10 @@ SCHEMA = {
         "makes the message a task (its #number is the task id); its agents are woken. Approvals go to people. Assigned to "
         "you: op=accept, op=done, op=reject (`reason`) with `message_id`; op=withdraw takes back one you assigned; "
         "op=tasks lists yours (box=\"assigned\" for those you assigned; scope=\"all\" includes closed ones). "
-        "Your Home: op=home (`message` = the whole markdown; without `message` it returns the current text, so you can "
-        "prepend) publishes the Home tab of your project @@<your id> (`to` for another project you are in). Newest "
-        "first: what you finished, what you work on, blockers, links to messages (#1234). "
+        "Your Home is now a stream of update panes: op=home with `message` publishes it as the newest pane through "
+        "@status (equivalent to replying to the hourly status ask). `to` may be omitted or your own \"@@<id>\"; an agent "
+        "cannot publish another agent's Home. Without `message`, op=home explains how the stream works. Put newest first: "
+        "what you finished, what you work on, blockers, links to messages (#1234). "
         "Checklist (same as packages/client/src/tool.ts; the one place to track what people ask of you; it shows pinned "
         "in the conversation, ticks come back from people): op=checklist with `to` (\"@@project\", \"#room\") or "
         "`message_id` (that message's conversation) returns the conversation's checklist: its version and items (id, "
@@ -122,7 +123,7 @@ SCHEMA = {
                    "description": "reply/write/send a message, set a setting, read: inbox, show, history, search, or the conversation's checklist"},
             "message_id": {"type": "integer", "description": "a message's #number (reply, show, history)"},
             "to": {"type": "string", "description": "\"@all\", \"@id\", \"@{id1,id2}\" (\"@{@@project,id1,id2}\" for the group under that project) or \"@@project\" (write/send, history)"},
-            "message": {"type": "string", "description": "message text (reply/write; optional caption for send)"},
+            "message": {"type": "string", "description": "message text (reply/write; Home update for home; optional caption for send)"},
             "files": {"type": "array", "items": {"type": "string"},
                       "description": "absolute file paths (optional for reply and write)"},
             "key": {"type": "string", "description": "setting name (set)"},
@@ -476,10 +477,6 @@ class BusClient:
         body = {"from": self.my_id(), "key": key, "value": value}
         return self._request("POST", "/api/settings", json.dumps(body).encode())
 
-    def put_home(self, conversation_id: str, text: str) -> dict:
-        """Replaces a project's Home (PUT /api/conversations/:id/home), as BusConnection.putHome."""
-        body = {"from": self.my_id(), "text": text}
-        return self._request("PUT", f"/api/conversations/{urllib.parse.quote(conversation_id)}/home", json.dumps(body).encode())
 
     def checklist_post(self, conversation_id: str, action: str, body: dict) -> dict:
         """POST /api/conversations/:id/checklist/{edit,tick}, as BusConnection.editChecklist and tickChecklist."""
@@ -874,18 +871,16 @@ def register(ctx: Any) -> None:
             return project
 
         if op == "home":
-            target = (args.get("to") or f"@@{me}").strip()
-            project = named_project(target)
+            target = (args.get("to") or f"@@{me}").strip().lower()
+            mine = f"@@{me}"
+            if target != mine:
+                raise ValueError(f"Home is per agent: @{me} may publish only {mine}, not {target}.")
             if args.get("message") is None:
-                try:
-                    home = client.get(f"/api/conversations/{project['id']}/home", {"as": me})
-                except RuntimeError as err:
-                    if "no Home yet" in str(err):
-                        return f"{target} has no Home yet; publish one with op=home message=<markdown>. (you are @{me})"
-                    raise
-                return f"Home of {target} (by @{home['owner']}):\n\n{home['text']}\n (you are @{me})"
-            home = client.put_home(project["id"], args["message"])
-            return f"Published the Home of {target}: {len(home['text'])} chars; it shows in its Home tab. (you are @{me})"
+                return (f"Home is now a newest-first stream of updates, not one replaceable document. "
+                        f"Publish a pane with op=home message=<markdown>, or reply to @status's hourly ask. "
+                        f"Open {mine}'s Home tab to read it. (you are @{me})")
+            update = client.write({"to": "@status"}, args["message"], [])
+            return sent(f"Published a Home update for {mine} through @status", update)
         if op == "checklist":
             # Same as packages/client/src/tool.ts op=checklist (Ümit #12364, codex-ui #12379).
             if args.get("message_id") is not None:
