@@ -2308,13 +2308,12 @@ button:disabled {
 }
 
 
-/* A paragraph I marked as read (text.ts; Ümit #12189, #12190, #15271): a thick green rule and tint remain visible
- * inside the message on every screen. The former tiny ✓ sat outside the block and could be clipped on phones. */
+/* A paragraph I marked as read (text.ts; Ümit #12189, #12190, #15271, #15296): only a thick green rule inside the
+ * message. No tint; the former tiny ✓ outside the block could be clipped on phones. */
 .msg-text > .md-read {
   padding-left: 10px;
   border-left: 5px solid var(--success);
   border-radius: 3px;
-  background: color-mix(in srgb, var(--success) 12%, transparent);
   color: var(--muted);
 }
 
@@ -2322,8 +2321,15 @@ button:disabled {
   display: block;
   min-height: 32px;
   margin-top: 2px;
-  padding: 0;
+  padding: 0 6px;
   font-size: 13px;
+  touch-action: manipulation;
+}
+
+@media (max-width: 640px) {
+  .md-read-btn {
+    min-height: 44px;
+  }
 }
 
 .msg-mentions-me:hover {

@@ -116,7 +116,7 @@ function onScreen(el: HTMLElement): boolean {
 
 /**
  * Lights message `seq` as the one I am in, always with one frame around the whole message (Ümit #15125). `part` only
- * places the local "Mark as read" control beside the paragraph tapped; Reply and Copy remain whole-message actions.
+ * places the local "Mark as seen" control beside the paragraph tapped; Reply and Copy remain whole-message actions.
  */
 export function selectMessage(seq: number | undefined, part?: number): void {
   state.selectedSeq = seq;
@@ -180,7 +180,7 @@ function readButton(seq: number, index: number, block: HTMLElement): HTMLButtonE
   button.type = "button";
   const draw = () => {
     const read = readSet.has(partKey(seq, index));
-    button.textContent = read ? "✓ Read · undo" : "✓ Mark as read";
+    button.textContent = read ? "✓ Seen · undo" : "✓ Mark as seen";
     button.setAttribute("aria-pressed", String(read));
     block.classList.toggle("md-read", read);
   };
