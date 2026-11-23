@@ -6,6 +6,9 @@ annotation that this is a task"). Nothing here is built. It extends the extensio
 [extensions.md](extensions.md) (manifest, signed calls, notices) with three things: **commands**, **message
 annotations** and **panels**. With those, tasks leave the bus core and become an ordinary extension.
 
+For the short, plain-language view of how `/task` interacts with the website, bus, extension service and agents, see
+[task-command.md](task-command.md). This document is the detailed protocol reference.
+
 ## What an extension can do
 
 | Piece | What the person sees | Who renders it | Who decides |
