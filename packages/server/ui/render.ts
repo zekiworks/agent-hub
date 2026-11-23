@@ -692,16 +692,11 @@ function messageNumberButton(message: Message): HTMLButtonElement {
   button.setAttribute("aria-label", title);
   button.addEventListener("click", async () => {
     const copied = await copyText(value);
-    button.textContent = `${copied ? "✓" : "✕"} ${value}`;
-    button.classList.toggle("copy-confirmed", copied);
-    button.classList.toggle("copy-failed", !copied);
     button.title = copied ? `Copied ${value}` : `${value} was not copied`;
     button.setAttribute("aria-label", button.title);
     announce(copied ? `Copied ${value}` : "Not copied automatically: the message number is selected below");
     if (!copied) manualCopy(button.closest(".msg"), value);
     setTimeout(() => {
-      button.textContent = value;
-      button.classList.remove("copy-confirmed", "copy-failed");
       button.title = title;
       button.setAttribute("aria-label", title);
     }, 1500);
