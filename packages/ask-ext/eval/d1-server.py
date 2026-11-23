@@ -35,7 +35,7 @@ class Handler(BaseHTTPRequestHandler):
             if request.get("images"):
                 raise ValueError("this text routing comparison does not accept images")
             with self.server.lock:
-                out = self.server.model.system_one(request.get("state"), questions)
+                out = self.server.model.system_one(request.get("state"), questions, None)
             self.send_json(
                 HTTPStatus.OK,
                 {"model": self.server.name, "answers": out["answers"], "usage": out["usage"]},
