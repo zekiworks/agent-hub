@@ -3,7 +3,7 @@
 // ✓ finishes it (approves an approval), ✕ rejects it, "On it" accepts it, ↩ answers it with a quote. Each step is
 // posted in the conversation as a reply to the task by the bus.
 // "Waiting for your answer" (Ümit #14881) comes first under "For me" when the bus has a needs box: agents' messages a
-// decision model (d1-2B, GLiDE-2B) marked as needing you, until you write in that conversation or say "Not needed".
+// decision model (d1-2B, GLiDE-2B) marked as needing you, until you write there, mark it read, or say "Not needed".
 import type { Conversation, Message, NeedsResponse, OwnTask, Task, TasksResponse } from "@agent-bus/protocol";
 import { api, postJson } from "./api";
 import { setReplyTo } from "./composer";
@@ -203,11 +203,11 @@ function modelMarks(verdicts: NeedsResponse["items"][number]["verdicts"]): HTMLE
   return line;
 }
 
-/** "Not needed": the message leaves the list for good. */
-async function dismissWaiting(seq: number, note: HTMLElement): Promise<void> {
+/** Takes a message off "Waiting for your answer"; "read" is neutral, "not-needed" trains the models' usefulness. */
+async function dismissWaiting(seq: number, reason: "read" | "not-needed", note: HTMLElement): Promise<void> {
   note.textContent = "…";
   try {
-    await postJson("/api/needs/dismiss", { from: state.me, seq });
+    await postJson("/api/needs/dismiss", { from: state.me, seq, reason });
     if (waiting) waiting = { ...waiting, items: waiting.items.filter((item) => item.message.seq !== seq) };
     renderButton();
     refreshPane("inbox");
@@ -226,6 +226,12 @@ function renderWaiting(root: HTMLElement): boolean {
     const conversation = byId.get(message.conversationId);
     const card = h("li", "inbox-item needs-item");
     card.dataset.seq = String(message.seq);
+    const note = h("span", "inbox-note");
+    const close = h("button", "needs-read", "✕");
+    close.type = "button";
+    close.title = "Read: remove this from your Inbox without opening it";
+    close.setAttribute("aria-label", `Read and remove message #${message.seq} from your Inbox`);
+    close.addEventListener("click", () => void dismissWaiting(message.seq, "read", note));
     const head = h("div", "inbox-head");
     head.append(modelMarks(verdicts), ...mentionNodes(` #${message.seq} from @${message.from}`));
     if (conversation) head.append(h("span", "inbox-where", ` in ${conversationTitle(state.conversations.get(conversation.id) ?? conversation)}`));
@@ -233,7 +239,6 @@ function renderWaiting(root: HTMLElement): boolean {
     const text = h("div", "inbox-text");
     text.append(...inline(message.text.length > 600 ? `${message.text.slice(0, 599)}…` : message.text));
     const actions = h("div", "inbox-actions");
-    const note = h("span", "inbox-note");
     const button = (label: string, title: string, run: () => void) => {
       const b = h("button", "btn inbox-btn", label);
       b.type = "button";
@@ -246,9 +251,11 @@ function renderWaiting(root: HTMLElement): boolean {
       void hooks.showMessage(message.seq);
     });
     button("↩", "Reply to it in its conversation (quotes it); it leaves this list once you write there", () => replyTo(message));
-    button("Not needed", "Take it off this list: it does not need your answer", () => void dismissWaiting(message.seq, note));
+    button("Not needed", "Take it off this list and teach the decision models that it did not need your answer", () =>
+      void dismissWaiting(message.seq, "not-needed", note)
+    );
     actions.append(note);
-    card.append(head, text, actions);
+    card.append(close, head, text, actions);
     list.append(card);
   }
   root.append(list);

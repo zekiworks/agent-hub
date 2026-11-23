@@ -96,6 +96,7 @@ export const dom = {
   wsReset: el<HTMLButtonElement>("ws-reset"),
   replyBar: el<HTMLDivElement>("reply-bar"),
   replyBarText: el<HTMLSpanElement>("reply-bar-text"),
+  replyToggle: el<HTMLButtonElement>("reply-toggle"),
   replyCancel: el<HTMLButtonElement>("reply-cancel"),
   nobodyBar: el<HTMLDivElement>("nobody-bar"),
   holdBar: el<HTMLDivElement>("hold-bar"),

@@ -171,9 +171,9 @@ test("a message carol answered (she wrote after it there) or dismissed leaves th
   await until(() => frames.some((f) => JSON.parse(f).type === "needs"));
   expect((await waitingFor(b, "carol")).items.map((i) => i.message.seq)).toEqual([dm.message.seq]);
 
-  expect((await postJson(b, "/api/needs/dismiss", { from: "carol", seq: dm.message.seq })).status).toBe(200);
+  expect((await postJson(b, "/api/needs/dismiss", { from: "carol", seq: dm.message.seq, reason: "read" })).status).toBe(200);
   expect((await waitingFor(b, "carol")).items).toEqual([]);
-  expect(records().at(-1)).toMatchObject({ person: "carol", seq: dm.message.seq, dismissed: true });
+  expect(records().at(-1)).toMatchObject({ person: "carol", seq: dm.message.seq, dismissed: true, reason: "read" });
   // Not someone else's, nor a message the person may not read.
   expect((await postJson(b, "/api/needs/dismiss", { from: "uma", seq: dm.message.seq })).status).toBe(404);
   expect(first.message.seq).toBeLessThan(dm.message.seq);

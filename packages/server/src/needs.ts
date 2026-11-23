@@ -100,11 +100,13 @@ export class NeedsJudge {
     return { items, conversations: [...conversations.values()] };
   }
 
-  /** POST /api/needs/dismiss {from, seq}: "Not needed"; it leaves the list for good. */
+  /** POST /api/needs/dismiss {from, seq, reason}: read or "Not needed"; either leaves the list for good. */
   async dismiss(person: string, req: Request): Promise<{ ok: true }> {
     const body = await readJsonObject(req);
     if (body.from !== undefined && body.from !== person) throw new HttpError(403, `You are signed in as ${person}, not ${String(body.from)}`);
     if (typeof body.seq !== "number") throw new HttpError(400, "Give seq, the message's number");
+    const reason = body.reason ?? "not-needed";
+    if (reason !== "read" && reason !== "not-needed") throw new HttpError(400, "reason must be read or not-needed");
     const message = this.ctx.db.getMessage(body.seq);
     const conversation = message && this.ctx.db.getConversation(message.conversationId);
     if (!message || !conversation || !mayRead(this.ctx, conversation, { id: person, kind: "human" })) {
@@ -112,7 +114,7 @@ export class NeedsJudge {
     }
     const at = this.now();
     if (this.ctx.db.dismissNeeds(person, message.seq, at)) {
-      this.record({ seq: message.seq, person, dismissed: true, at: new Date(at).toISOString() });
+      this.record({ seq: message.seq, person, dismissed: true, reason, at: new Date(at).toISOString() });
       this.ctx.hub.needsChanged(person);
     }
     return { ok: true };

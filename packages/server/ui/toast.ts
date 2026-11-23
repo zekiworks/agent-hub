@@ -187,7 +187,10 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   open.addEventListener("click", (event) => {
     if (event.detail === 0) activate();
   });
-  dismiss.addEventListener("click", () => toast.remove());
+  dismiss.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toast.remove();
+  });
   toast.append(head, open);
   box.append(toast);
   const row = h("div", "answer-toast-row");
@@ -246,12 +249,12 @@ export function showAnswer(message: Message, conversation: Conversation): void {
   voice.addEventListener("click", () => startVoiceReply({ kind: "conversation", id: conversation.id }, message));
   const listen = speakButton(message);
   listen.classList.add("answer-toast-speak");
-  // ✓ Read (Ümit #13983): one tap says "seen it" and the banner goes, its conversation read; not "unimportant", the
-  // message stays where it is (and ✕ still only closes, leaving it unread).
+  // ✓ Read (Ümit #13983, #15088): says "seen it" without opening the conversation. The full-size phone action and
+  // stopped propagation below keep a near-edge tap from becoming the banner's open gesture.
   const read = h("button", "link-btn answer-toast-reply answer-toast-read");
   read.type = "button";
   setIcon(read, "check", "Read");
-  read.title = "I've read it: close this and mark its conversation read (the message stays where it is)";
+  read.title = "I've read it: close this and mark its conversation read without opening it";
   read.addEventListener("click", () => {
     markRead(conversation.id);
     if (message.fromKind === "agent") noteAttention(message.seq, "banner-read");
@@ -271,11 +274,14 @@ export function showAnswer(message: Message, conversation: Conversation): void {
  */
 function tapOnTouchEnd(button: HTMLButtonElement): void {
   let start: { x: number; y: number } | undefined;
+  button.addEventListener("click", (event) => event.stopPropagation());
   button.addEventListener("touchstart", (event) => {
+    event.stopPropagation();
     const t = event.touches[0];
     start = event.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : undefined;
   }, { passive: true });
   button.addEventListener("touchend", (event) => {
+    event.stopPropagation();
     const t = event.changedTouches[0];
     const was = start;
     start = undefined;

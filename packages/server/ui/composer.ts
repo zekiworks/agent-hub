@@ -199,23 +199,16 @@ export function setReplyTo(message: Message | undefined, part?: string): void {
 }
 
 /**
- * The reply bar shows one line; a tap on it opens the whole message it answers, to read while writing, and closes it
- * again (Ümit #14607: replying on the phone she could not see what she was answering).
+ * The reply bar stays one line. An explicit Show/Hide button opens the whole quote; the text itself is inert so an
+ * accidental tap while reaching the message box cannot cover the original message (Ümit #15105).
  */
 function setReplyExpanded(on: boolean): void {
   dom.replyBar.classList.toggle("expanded", on);
-  dom.replyBarText.setAttribute("aria-expanded", String(on));
-  dom.replyBarText.title = on ? "Tap to show one line again" : "Tap to see the whole message";
+  dom.replyToggle.setAttribute("aria-expanded", String(on));
+  dom.replyToggle.textContent = on ? "Hide ▴" : "Show ▾";
+  dom.replyToggle.title = on ? "Hide the quoted message" : "Show the whole quoted message";
 }
-const toggleReply = () => setReplyExpanded(!dom.replyBar.classList.contains("expanded"));
-dom.replyBar.addEventListener("click", (event) => {
-  if (!(event.target as Element).closest("#reply-cancel")) toggleReply();
-});
-dom.replyBarText.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" && event.key !== " ") return;
-  event.preventDefault();
-  toggleReply();
-});
+dom.replyToggle.addEventListener("click", () => setReplyExpanded(!dom.replyBar.classList.contains("expanded")));
 
 /**
  * ↩ on a checklist item (Ümit #11598): the item shows above the message box like a reply, and goes in front of the
