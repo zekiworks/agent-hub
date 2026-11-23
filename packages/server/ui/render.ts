@@ -384,18 +384,11 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   setIcon(replyBtn, "reply");
   replyBtn.append(h("span", "msg-reply-label", "Reply"));
   replyBtn.type = "button";
-  replyBtn.title = "Reply to this message, or to the paragraph framed in it (quotes it); click again to cancel";
+  replyBtn.title = "Reply to the whole message (quotes it); click again to cancel";
+  replyBtn.setAttribute("aria-label", "Reply to whole message");
   replyBtn.addEventListener("click", () => {
-    // The paragraph I'm in, if one is framed in a message of several: the reply answers (and quotes) only that
-    // (Ümit #13981: she could frame the paragraph but the reply still quoted the message's beginning).
-    const blocks = textBlocks(li);
-    const framed = state.selectedSeq === message.seq && state.selectedPart !== undefined && blocks.length > 1 ? blocks[state.selectedPart] : undefined;
-    // Its words only: the framed paragraph carries the "✓ Mark as read" button.
-    const words = framed?.cloneNode(true) as HTMLElement | undefined;
-    for (const button of words?.querySelectorAll("button") ?? []) button.remove();
-    const part = words?.textContent?.replace(/\s+/g, " ").trim() || undefined;
-    const same = state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq && state.replyPart === part;
-    setReplyTo(same ? undefined : message, part);
+    const same = state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq;
+    setReplyTo(same ? undefined : message);
   });
   // On a phone the row shows Copy, ☆, Reply and ⋯; ⋯ opens the rest as a second row, each with its name (Ümit #14570:
   // eight look-alike icons in a row could not be told apart or even counted). A computer shows them all, as before.
@@ -682,15 +675,22 @@ function renderQuote(quote: Quote): HTMLButtonElement {
   return el;
 }
 
-/** Message text as markdown (see markdown.ts), with @mentions highlighted outside code. */
-/**
- * ⧉: the whole message's text to the clipboard, as shown (without markdown signs); single sentences people select
- * themselves.
- */
+/** ⧉ copies the whole message as shown (without Markdown signs or controls), matching the whole-message frame and Reply. */
 function copyButton(message: Message): HTMLButtonElement {
   return copier("copy", "Copy the whole message", () => {
     const shown = actionsOwner(message)?.querySelector<HTMLElement>(".msg-text");
-    return shown?.innerText.trim() || message.text;
+    if (!shown) return message.text;
+    const clean = shown.cloneNode(true) as HTMLElement;
+    for (const button of clean.querySelectorAll("button")) button.remove();
+    // `innerText` preserves rendered paragraph/list/code line breaks only while connected; keep the clone off-screen.
+    clean.setAttribute("aria-hidden", "true");
+    Object.assign(clean.style, { position: "fixed", left: "-10000px", top: "0", width: `${shown.clientWidth}px`, pointerEvents: "none" });
+    document.body.append(clean);
+    try {
+      return clean.innerText.trim() || message.text;
+    } finally {
+      clean.remove();
+    }
   });
 }
 

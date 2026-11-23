@@ -115,15 +115,14 @@ function onScreen(el: HTMLElement): boolean {
 }
 
 /**
- * Lights message `seq` as the one I am in (Ümit #11622), or none; it stays lit through redraws (render.ts). `part`: the
- * paragraph clicked in a message of several, lit alone (Ümit #11855: a frame round the whole message was too big).
+ * Lights message `seq` as the one I am in, always with one frame around the whole message (Ümit #15125). `part` only
+ * places the local "Mark as read" control beside the paragraph tapped; Reply and Copy remain whole-message actions.
  */
 export function selectMessage(seq: number | undefined, part?: number): void {
   state.selectedSeq = seq;
   state.selectedPart = seq === undefined ? undefined : part;
   for (const li of dom.messageList.querySelectorAll<HTMLElement>(".msg-selected")) {
-    li.classList.remove("msg-selected", "msg-selected-part");
-    for (const block of li.querySelectorAll(".md-selected")) block.classList.remove("md-selected");
+    li.classList.remove("msg-selected");
     for (const button of li.querySelectorAll(".md-read-btn")) button.remove();
   }
   const li = seq === undefined ? null : dom.messageList.querySelector<HTMLElement>(`.msg[data-seq="${seq}"]`);
@@ -136,16 +135,12 @@ export function textBlocks(li: HTMLElement): HTMLElement[] {
 }
 
 /**
- * Draws the selection on `li`, the selected message: the clicked paragraph, or the whole message. The paragraph I am in
- * (or the only one) gets a "Mark as read" button (Ümit #12189).
+ * Draws the whole-message selection frame. The paragraph tapped may still get its independent local read marker.
  */
 export function markSelected(li: HTMLElement): void {
   li.classList.add("msg-selected");
   const blocks = textBlocks(li);
-  const part = state.selectedPart !== undefined && blocks.length > 1 ? blocks[state.selectedPart] : undefined;
-  li.classList.toggle("msg-selected-part", !!part);
-  part?.classList.add("md-selected");
-  const target = part ?? (blocks.length === 1 ? blocks[0] : undefined);
+  const target = state.selectedPart !== undefined ? blocks[state.selectedPart] : blocks.length === 1 ? blocks[0] : undefined;
   if (target) target.append(readButton(Number(li.dataset.seq), blocks.indexOf(target), target));
 }
 
