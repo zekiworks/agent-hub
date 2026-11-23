@@ -123,7 +123,10 @@ export function selectMessage(seq: number | undefined, part?: number): void {
   state.selectedPart = seq === undefined ? undefined : part;
   for (const li of dom.messageList.querySelectorAll<HTMLElement>(".msg-selected")) {
     li.classList.remove("msg-selected");
-    for (const button of li.querySelectorAll(".md-read-btn")) button.remove();
+    // Seen paragraphs keep their explicit ✓ Seen · undo control; only an unmarked selection control goes away.
+    for (const button of li.querySelectorAll(".md-read-btn")) {
+      if (!button.parentElement?.classList.contains("md-read")) button.remove();
+    }
   }
   const li = seq === undefined ? null : dom.messageList.querySelector<HTMLElement>(`.msg[data-seq="${seq}"]`);
   if (li) markSelected(li);
@@ -141,10 +144,12 @@ export function markSelected(li: HTMLElement): void {
   li.classList.add("msg-selected");
   const blocks = textBlocks(li);
   const target = state.selectedPart !== undefined ? blocks[state.selectedPart] : blocks.length === 1 ? blocks[0] : undefined;
-  if (target) target.append(readButton(Number(li.dataset.seq), blocks.indexOf(target), target));
+  if (target && !target.querySelector(":scope > .md-read-btn")) {
+    target.append(readButton(Number(li.dataset.seq), blocks.indexOf(target), target));
+  }
 }
 
-// ---- Paragraphs I marked as read (Ümit #12189, #12190): read ones dim, so what is left to read stands out ----
+// ---- Paragraphs I marked as seen (Ümit #12189, #12190, #15415): green rule plus explicit Seen · undo ----
 
 const READ_PARTS_KEY = "agent-bus.readParts";
 /** "me:seq:paragraph"; the newest kept last, at most READ_PARTS_MAX. This browser only. */
@@ -170,9 +175,13 @@ function setPartRead(seq: number, index: number, read: boolean): void {
   localStorage.setItem(READ_PARTS_KEY, JSON.stringify(readParts));
 }
 
-/** Dims the paragraphs of message `seq` I marked as read (render.ts, at every drawing). */
+/** Restores the green rule and persistent Seen · undo control for marked paragraphs at every drawing. */
 export function markReadParts(li: HTMLElement, seq: number): void {
-  textBlocks(li).forEach((block, i) => block.classList.toggle("md-read", readSet.has(partKey(seq, i))));
+  textBlocks(li).forEach((block, i) => {
+    const read = readSet.has(partKey(seq, i));
+    block.classList.toggle("md-read", read);
+    if (read && !block.querySelector(":scope > .md-read-btn")) block.append(readButton(seq, i, block));
+  });
 }
 
 function readButton(seq: number, index: number, block: HTMLElement): HTMLButtonElement {
@@ -183,6 +192,11 @@ function readButton(seq: number, index: number, block: HTMLElement): HTMLButtonE
     button.textContent = read ? "✓ Seen · undo" : "✓ Mark as seen";
     button.setAttribute("aria-pressed", String(read));
     block.classList.toggle("md-read", read);
+    const li = block.closest<HTMLElement>(".msg");
+    const selected =
+      state.selectedSeq === seq &&
+      (state.selectedPart === index || (state.selectedPart === undefined && !!li && textBlocks(li).length === 1));
+    if (!read && !selected) button.remove();
   };
   button.addEventListener("click", () => {
     const read = !readSet.has(partKey(seq, index));
