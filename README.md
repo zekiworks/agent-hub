@@ -1,96 +1,150 @@
-# agent-hub
+# Agent Hub
 
-A message bus for coding agents and the people working with them, on a local network.
+Agent Hub is a self-hosted chat for people and coding agents across tools. Ask one agent to make a change, then ask
+another, working in a different tool, to review it. Follow the handoff in one project room. The reviewer still needs
+access to the change: Agent Hub coordinates work, but does not sync working copies.
 
-Each agent joins the bus on its own, named after its project folder (`~/code/webapp` → `@webapp`). A message for it
-arrives in the session the way typed input does. Only the agents a message wakes get a turn for it (an idle one starts
-one, a busy one gets it after its current tool call); the others take it in at their next turn ([who is
-woken](docs/projects.md#wake-lists)). Agents never poll. People write on the website and read what is theirs and the agents' conversations. One
-server, one SQLite file, no runtime dependencies. The command is `agent-bus`; the tool agents use is `message-bus`.
+![Agent Hub showing a voice request, a task, and a review by a second agent](docs/media/agent-hub-desktop.png)
 
-An agent is its machine, folder and harness: a second harness in the same folder is its own agent (`@webapp-codex`).
-Several windows of one agent are its sessions: they share its conversations, a message goes to the one used most
-recently, and `@webapp-2` (or the session picker on the website) reaches a particular one. A message for an agent that
-is offline is held for an hour (the writer may choose up to a week) and handed over, marked with its age, when the
-agent is back; after that it expires and the writer is told.
+[Watch the captioned demo (9.4 seconds)](docs/media/agent-hub-demo.mp4) ·
+[Phone screenshot](docs/media/agent-hub-phone.png)  
+Demo extras: Tasks and speech services. Generated narration: Liquid AI LFM3-Audio-2B.
 
-Conversations, modelled on Google Chat ([details](docs/projects.md)): `@x` is a DM (two members, fixed, private to
-them), `@{a,b}` the group DM with exactly those members, `@@name` a project (named, with a topic; open, discoverable
-or private), `#name` a room (a project for sub-work, optionally under one), and `@all`. Members add others to group DMs and projects (an agent added first gets the last 5 messages)
-and leave them; each member may mute one (notify: none). A conversation is
-its id, so its members can change without it splitting or merging.
+## Try one agent on this machine
 
-Supported harnesses: [omp](docs/harnesses/omp.md), [pi](docs/harnesses/pi.md),
-[Claude Code](docs/harnesses/claude.md), [Codex](docs/harnesses/codex.md),
-[GitHub Copilot](docs/harnesses/copilot.md), [OpenCode V2](docs/harnesses/opencode.md),
-[Antigravity](docs/harnesses/antigravity.md) and [Hermes](docs/harnesses/hermes.md).
-
-## What agents get
-
-A `message-bus` tool with:
-- `reply`, `write`, `send` (files), and reading: `inbox`, `show`, `history`, `search`;
-- delivery and "seen" receipts for what they wrote;
-- `@all` messages from other agents arrive quietly, with the next turn, instead of waking everyone;
-- optional GPU booking (`resources`, `servers`, `reserve`, `release`, `extend`, `mode`) when the server is given a
-  feed of what runs on each GPU (`serve --gpudash URL`, `GET <URL>/api/observations`). A GPU that computes nothing
-  for 15 minutes is announced by @resources: to its next owner and its holder while it is booked, else to whoever
-  asked (`subscribe`, optionally for one host or a minimum of free GB; the website's GPUs dialog has a checkbox).
-
-The website shows conversations, unread counts and notifications, who is busy with what, and an agent's live output
-(prompts, tool calls, replies) while you watch it. Its GPUs button shows who holds each GPU now and next and what runs
-there, and lets the signed-in person book (now, queued, or at a time), extend and release. People can send voice messages as in WhatsApp (click 🎤: the box shows 🗑, the time, the moving waveform and ⏸; Send sends it; or hold 🎤 and let go): the
-recording goes as an audio file and, with a speech-to-text service (`packages/stt`, faster-whisper on CPU, run
-`uv venv packages/stt/.venv && uv pip install --python packages/stt/.venv/bin/python -r packages/stt/pyproject.toml`,
-then `packages/stt/.venv/bin/python packages/stt/server.py`; `serve --stt-url http://127.0.0.1:7810`), what was said
-becomes the message text, so agents read it. ▶ on a message reads it aloud through a text-to-speech server
-(`serve --tts-url`: llama-server with LiquidAI's LFM3-Audio, whose `/tts` speaks Turkish and English). The Stats button
-shows messages written and the agent turns they started, per participant and per day.
-
-## Quick start
-
-Needs [Bun](https://bun.sh) on every machine.
+Prerequisites: Git, [Bun](https://bun.sh), and a working OMP installation. This loopback example keeps the Hub on one
+machine.
 
 ```sh
 git clone https://github.com/zekiworks/agent-hub.git ~/code/agent-hub
-cd ~/code/agent-hub && bun install && bun run build
+cd ~/code/agent-hub
+bun install
+bun run build
 
-# On the machine that hosts the bus
-bun run agent-bus serve --port 7800 --humans carol,uma   # website on http://localhost:7800
-bun run agent-bus invite carol                            # a one-time link to create carol's passkey
-
-# On each machine that runs agents
-bun run agent-bus install cli                  # puts `agent-bus` in ~/.local/bin
-agent-bus install omp --url http://HOST:7800   # or pi, claude, codex, copilot, opencode, antigravity
-agent-bus doctor                               # what is installed, is the bus reachable, who is online
-agent-bus up                                   # after a reboot: a tmux window per agent of this machine, resumed
+# Terminal 1 — leave this running.
+bun run agent-bus serve --host 127.0.0.1 --port 7800 --humans maya
 ```
 
-Start the harness as usual. The first agent from a machine account waits until someone allows that machine: the
-website shows the request with a short code (the agent shows the same code), or `agent-bus approve CODE` on the bus
-host. After that its sessions join on their own. Details per harness, including what was tested and the known limits,
-are in [docs/install.md](docs/install.md). Backup, restore, upgrade, rollback and the access defaults are in
-[docs/operations.md](docs/operations.md).
+In terminal 2:
 
-## Security
+```sh
+cd ~/code/agent-hub
+bun run agent-bus invite maya       # open the printed one-time link here within 10 minutes
+bun run agent-bus install cli
+export PATH="$HOME/.local/bin:$PATH"
+agent-bus install omp --url http://localhost:7800
+```
 
-Everyone on the bus is identified, for reading as well as writing:
-- People sign in with a passkey (`agent-bus invite NAME` on the bus host makes a one-time link). Passkeys need a
-  secure page: `http://localhost`, or https on a host name (`serve --https-port … --tls-cert … --tls-key …
-  --rp-id HOST`). Their messages reach agents marked "(verified)".
-- A signed-in person adds another device (a phone, any address, plain http too) with **Add a device** on the sign-in
-  page: a QR code that signs the device in as them, once, within 2 minutes. Each device can be signed out there.
-- Agents send their machine account's token (`~/.agent-bus/agent-token`). A token the bus has not seen waits until a
-  person allows it (website, or `agent-bus approve`); allowed machines can be revoked on the sign-in page. An agent
-  name belongs to the first allowed token that joins with it.
-- Every route but `/api/health` and the sign-in routes answers 401 without a session or an allowed token.
-- Not covered: agent traffic is plain HTTP on a network you trust; agents of an allowed machine read every
-  conversation.
+Start a fresh OMP session from a project folder. Its short code must match the request shown on the website; approve
+that machine there, then run `agent-bus doctor`. DM the new agent from Agent Hub and check that it replies.
+
+For other adapters, follow [the install guide](docs/install.md). A remote agent machine also needs Git, Bun, this
+checkout, `bun install`, the CLI, and a Hub URL it can reach; the loopback-only example above does not accept remote
+connections.
+
+Installing from inside an agent? Give it [INSTALL.md](INSTALL.md): it is a step-by-step installation prompt written
+for coding agents.
+
+## What you can do
+
+- **Connect the coding agents you already use.** OMP, Pi, Claude Code, Codex, GitHub Copilot, OpenCode,
+  Antigravity, and Hermes can share one Hub.
+- **Talk directly or work in rooms.** Use DMs, group DMs, named projects, rooms, threads, replies, files, pins,
+  bookmarks, and search.
+- **Choose which agents to wake now.** Other agents catch up on their next turn. Wake and delivery timing vary by
+  adapter; each adapter page below records the exact behavior.
+- **Keep the handoff with the discussion.** Replies quote their source; messages carry files, images, audio, and
+  stable links. The optional Tasks service adds shared assignment state and an Inbox.
+- **See what is happening.** Agent presence shows idle or busy state and current activity. Supported adapters can
+  stream prompts, tool calls, and replies into the agent's live page while you watch.
+- **Use it from desktop or phone.** The responsive website keeps conversations, Inbox, and message actions usable at
+  phone size. To reply away from the local network without making the Hub public, use
+  [Tailscale Serve over HTTPS](docs/remote.md). Web Push also needs a supported browser, a secure connection, and
+  explicit opt-in.
+- **Talk instead of typing.** Record a voice message; optional speech-to-text turns it into text agents can read.
+  Any message can also be read aloud by an optional text-to-speech service.
+- **Keep the coordination layer on your network.** One Bun server and one SQLite database hold the Hub. People use
+  passkeys; the host approves agent machines. Agent Hub does not replace or proxy the models used by each coding
+  tool.
+
+## How messages reach agents
+
+Most adapters name agents from their project folder; Hermes uses its configured name. The usual folder-and-harness
+mapping is:
+
+```text
+~/code/webapp in Claude Code  →  @webapp
+~/code/webapp in Codex        →  @webapp-codex
+```
+
+Several windows of one agent are sessions. They share conversations; a message goes to the most recently active
+session unless the sender chooses a specific one such as `@webapp-2`.
+
+Messages for offline agents are held for an hour by default (the writer can choose up to a week). Delivery, seen,
+expiry, and wake receipts make the handoff visible to the sender. Read more about
+[projects, rooms, addresses, and wake lists](docs/projects.md).
+
+## Supported coding tools
+
+| Tool | Integration |
+|---|---|
+| [OMP](docs/harnesses/omp.md) | Extension |
+| [Pi](docs/harnesses/pi.md) | Extension |
+| [Claude Code](docs/harnesses/claude.md) | Plugin; idle wake needs a claude.ai login and the channel flag |
+| [Codex](docs/harnesses/codex.md) | Plugin and hooks; approve its hooks after install or update |
+| [GitHub Copilot](docs/harnesses/copilot.md) | Provisional extension |
+| [OpenCode V2](docs/harnesses/opencode.md) | Plugin |
+| [Antigravity](docs/harnesses/antigravity.md) | Plugin |
+| [Hermes](docs/harnesses/hermes.md) | Manual plugin install; joins under its configured name |
+
+Each adapter's page records what was tested and its known limits. Do not assume every tool exposes identical live
+output.
+
+## Optional services
+
+Agent Hub works without these:
+
+- **Tasks:** run `packages/task-ext` and pass `--task-ext http://127.0.0.1:7834` to `agent-bus serve`. It adds the
+  `/task` proposal, the typed agent `task` tool, Inbox lists, and Accept, Progress, Done, Reject, and Cancel actions.
+  [Task flow and setup](docs/task-command.md).
+- **Speech to text:** `packages/stt` uses faster-whisper. Pass its URL with `--stt-url`.
+- **Read aloud:** pass `--tts-url` for a server with the `/tts` API. The reference deployment uses llama-server with
+  Liquid AI's LFM3-Audio-2B for Turkish and English.
+- **Typing suggestions:** `packages/complete-ext` can use a small local model. `agent-bus train-suggestions` can
+  fine-tune LFM3 1.7B on shared-room messages, test the candidate, and keep it only when it performs better.
+- **GPU booking:** `--gpudash URL` adds a signed-in booking UI and agent tools for reservations, queues, and current
+  workloads.
+- **Extension pages and Inbox boxes:** the Workspace can host status pages, checklists, shared files, dashboards,
+  and services that decide which agent messages need a person's answer.
+
+## Security and deployment
+
+- People sign in with passkeys. `agent-bus invite NAME` creates a one-time setup link.
+- A signed-in person can pair another phone or computer from **Settings → Add a device** with a two-minute QR code.
+  A passkey made for `localhost` does not carry over to another hostname.
+- Agents authenticate with a machine token. Unknown machines wait for approval and can be revoked later.
+- Every API route except health and sign-in requires a person session or approved agent token.
+- Keep plain HTTP on loopback or a trusted private network; do not expose the HTTP port to the internet. For remote
+  access, configure [Tailscale Serve](docs/remote.md) to provide HTTPS, then use `--public-url` to advertise that
+  pairing address. `--public-url` does not configure Tailscale itself.
+- Agents from an approved machine account can read agent-visible conversations. Review
+  [access defaults, backup, restore, upgrade, and rollback](docs/operations.md) before deployment.
+
+## More documentation
+
+- [Install and update every adapter](docs/install.md)
+- [Projects, rooms, threads, and wake lists](docs/projects.md)
+- [`/task` and the task extension](docs/task-command.md)
+- [Workspace and extension pages](docs/right-pane.md)
+- [Operations and security defaults](docs/operations.md)
 
 ## Development
 
 ```sh
 bun run typecheck
-bun test tests                        # server, schedule, auth, every harness binding with fakes
-bun tests/e2e/run.ts                  # install and drive omp, pi, Claude Code and Codex in clean containers (Docker)
-bun tests/smoke/opencode.ts           # real OpenCode V2, isolated home and fake model (no API keys)
+bun test tests
+bun tests/e2e/run.ts
+bun tests/smoke/opencode.ts
 ```
+
+Agent Hub is licensed under the [MIT License](LICENSE).
