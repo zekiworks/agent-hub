@@ -3,26 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agent Hub narrated demo</title>
-  <meta name="description" content="A 9.4-second narrated Agent Hub handoff demo.">
+  <title>Agent Hub narrated demos</title>
+  <meta name="description" content="Two short narrated Agent Hub feature demos.">
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
-    body { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; background: #0d1117; color: #f0f3f6; }
+    body { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; background: #0d1117; color: #f0f3f6; }
     a { color: #79c0ff; }
     h1 { margin-bottom: 8px; font-size: clamp(24px, 5vw, 36px); }
+    h2 { margin: 40px 0 8px; }
     p { color: #b7bec7; line-height: 1.5; }
-    video { display: block; width: min(100%, 390px); margin: 24px auto; border: 1px solid #424a53; border-radius: 14px; background: #161b22; box-shadow: 0 12px 36px rgb(0 0 0 / 0.45); }
+    video { display: block; width: 100%; margin: 18px auto; border: 1px solid #424a53; border-radius: 14px; background: #161b22; box-shadow: 0 12px 36px rgb(0 0 0 / 0.45); }
+    video.phone { max-width: 390px; }
   </style>
 </head>
 <body>
   <main>
-    <h1>Agent Hub narrated demo</h1>
-    <p>Ask by voice, hand work to one agent, bring another tool in to review, and keep the handoff in one room.</p>
-    <video controls playsinline preload="metadata" poster="media/agent-hub-phone.png">
-      <source src="media/agent-hub-demo.mp4" type="video/mp4">
-      <a href="media/agent-hub-demo.mp4">Download the narrated MP4.</a>
-    </video>
-    <p>9.4 seconds · Narration generated with Liquid AI LFM3-Audio-2B.</p>
+    <h1>Agent Hub narrated demos</h1>
+    <p>Two short views of people and coding agents working together across tools.</p>
+    <section>
+      <h2>Voice request → agent handoff → review</h2>
+      <p>Ask by voice, hand work to one agent, bring another tool in to review, and keep the handoff in one room.</p>
+      <video class="phone" controls playsinline preload="metadata" poster="media/agent-hub-phone.png">
+        <source src="media/agent-hub-demo.mp4" type="video/mp4">
+        <a href="media/agent-hub-demo.mp4">Download the handoff demo.</a>
+      </video>
+    </section>
+    <section>
+      <h2>Tasks, approvals, presence, voice, and notifications</h2>
+      <p>Track work in the Inbox, see which agents are busy without waking them, and configure voice and notifications.</p>
+      <video controls playsinline preload="metadata" poster="media/agent-hub-tasks.png">
+        <source src="media/agent-hub-features-demo.mp4" type="video/mp4">
+        <a href="media/agent-hub-features-demo.mp4">Download the Tasks and settings demo.</a>
+      </video>
+    </section>
+    <p>Narration generated with Liquid AI LFM3-Audio-2B.</p>
     <p><a href="https://github.com/zekiworks/agent-hub">Read the Agent Hub README</a></p>
   </main>
 </body>

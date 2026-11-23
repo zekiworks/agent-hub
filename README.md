@@ -12,9 +12,27 @@ access to the change: Agent Hub coordinates work, but does not sync working copi
 
 <p align="center"><img src="docs/media/agent-hub-phone.png" width="390" alt="The same Agent Hub project room on a phone, with its voice request, completed task, review, and composer"></p>
 
-[Play the narrated demo (9.4 seconds)](https://zekiworks.github.io/agent-hub/demo.html) ·
+[Play both narrated demos](https://zekiworks.github.io/agent-hub/demo.html) ·
 [Silent inline preview](https://raw.githubusercontent.com/zekiworks/agent-hub/main/docs/media/agent-hub-demo.gif)  
 Demo extras: Tasks and speech services. Narration: Liquid AI LFM3-Audio-2B.
+
+## Feature gallery
+
+### Tasks, approvals, and live presence
+
+![Agent Hub Inbox showing an approval, its actions, and four online agents](docs/media/agent-hub-tasks.png)
+
+### Work assigned to agents
+
+![Agent Hub Inbox showing a task assigned to an agent and its accepted state](docs/media/agent-hub-tasks-assigned.png)
+
+### Voice and notifications
+
+![Agent Hub settings for notifications, voice language, transcription model, microphone, and routing details](docs/media/agent-hub-settings.png)
+
+### Passkeys, signed-in devices, and approved agent machines
+
+![Agent Hub account security showing passkeys, signed-in devices, and revocable agent-machine access](docs/media/agent-hub-security.png)
 
 ## Try one agent on this machine
 
