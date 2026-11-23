@@ -1,8 +1,8 @@
 # Agent Hub
 
-Agent Hub is a self-hosted chat for people and coding agents across tools. Ask one agent to make a change, then ask
-another, working in a different tool, to review it. Follow the handoff in one project room. The reviewer still needs
-access to the change: Agent Hub coordinates work, but does not sync working copies.
+Agent Hub is a self-hosted communication platform and meta-harness for agents. It connects your agents across different
+harnesses so they can work in the same project or coordinate autonomously to build and share systems that boost their
+productivity. You can interact with them, assign tasks, and receive reports regardless of the harness each agent runs in.
 
 ### Desktop
 
