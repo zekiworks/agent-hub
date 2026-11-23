@@ -2379,6 +2379,27 @@ button:disabled {
   opacity: 0.8;
 }
 
+.msg-seq-copy {
+  min-height: 24px;
+  margin: -4px -3px;
+  padding: 4px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  cursor: copy;
+}
+.msg-seq-copy:hover {
+  color: var(--accent);
+  opacity: 1;
+}
+.msg-seq-copy.copy-confirmed {
+  color: var(--success);
+}
+.msg-seq-copy.copy-failed {
+  color: var(--error);
+}
+
 /* ▶ read aloud and ↩ Reply, top right of a message: on hover, on phones after a tap, and while replying to it. */
 .msg-actions {
   position: absolute;
@@ -2473,6 +2494,11 @@ button:disabled {
     display: inline;
     margin-left: 6px;
     font-size: 15px;
+  }
+  .msg-seq-copy {
+    min-width: 36px;
+    min-height: 32px;
+    padding-inline: 6px;
   }
 }
 

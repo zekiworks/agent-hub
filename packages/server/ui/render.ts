@@ -354,7 +354,7 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   const time = h("time", "msg-time", timeFormat.format(message.createdAt));
   time.dateTime = new Date(message.createdAt).toISOString();
   time.title = fullFormat.format(message.createdAt);
-  head.append(h("span", "msg-seq", `#${message.seq}`), time);
+  head.append(messageNumberButton(message), time);
   // Changed by its writer (Ümit #10890): said quietly, the time in the tooltip.
   if (message.editedAt && !message.deletedAt) {
     const edited = h("span", "msg-edited", "edited");
@@ -371,7 +371,6 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   const copy = message.text && !deleted ? copyButton(message) : undefined;
   // ↪ shows it to someone else (Can #12470).
   const forward = state.me && !deleted ? forwardButton(message) : undefined;
-  const copyId = copyIdButton(message);
   // ☆ saves it in my own bookmarks, ★ drops it (Can #11065); a deleted one keeps its ★ so it can still be dropped here.
   const bookmark = !deleted || isBookmarked(message.seq) ? bookmarkButton(message) : undefined;
   // Take it as a task for myself, into my inbox (Can #12197); people only.
@@ -397,7 +396,6 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     [speak, "Listen"],
     [read, "Read"],
     [forward, "Forward"],
-    [copyId, `Copy #${message.seq}`],
     [ownTask, "Task for me"],
     [pin, pin?.classList.contains("pinned") ? "Unpin" : "Pin"],
     [changes[0], "Edit"],
@@ -684,9 +682,31 @@ function copyButton(message: Message): HTMLButtonElement {
   }, "Copy");
 }
 
-/** "#10228" to the clipboard (Can, #10228): the number stays easy to share while it is drawn quietly. */
-function copyIdButton(message: Message): HTMLButtonElement {
-  return copier("hash", `Copy the message's number (#${message.seq})`, () => `#${message.seq}`);
+/** The quiet `#10228` in a message header copies itself when clicked (Can #15864). */
+function messageNumberButton(message: Message): HTMLButtonElement {
+  const value = `#${message.seq}`;
+  const title = `Copy the message number ${value}`;
+  const button = h("button", "msg-seq msg-seq-copy", value);
+  button.type = "button";
+  button.title = title;
+  button.setAttribute("aria-label", title);
+  button.addEventListener("click", async () => {
+    const copied = await copyText(value);
+    button.textContent = `${copied ? "✓" : "✕"} ${value}`;
+    button.classList.toggle("copy-confirmed", copied);
+    button.classList.toggle("copy-failed", !copied);
+    button.title = copied ? `Copied ${value}` : `${value} was not copied`;
+    button.setAttribute("aria-label", button.title);
+    announce(copied ? `Copied ${value}` : "Not copied automatically: the message number is selected below");
+    if (!copied) manualCopy(button.closest(".msg"), value);
+    setTimeout(() => {
+      button.textContent = value;
+      button.classList.remove("copy-confirmed", "copy-failed");
+      button.title = title;
+      button.setAttribute("aria-label", title);
+    }, 1500);
+  });
+  return button;
 }
 
 /** 📌 on a message: pinned (filled, "Unpin") or not; the header's pin and the Pinned list follow (#10757). */
