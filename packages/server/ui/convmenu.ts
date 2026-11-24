@@ -152,22 +152,21 @@ function openNameMenu(): void {
     });
     menu.append(b);
   };
-  // The phone header stays one quiet row: its secondary controls live under the name instead of crowding the room
-  // title (Ümit #15991). Their original buttons still own the behavior and availability.
+  // The gear remains the direct way to add people and agents or change room settings (Ümit #16151). Less frequent
+  // destinations stay under the room name, with labels that say what opens.
   if (PHONE.matches) {
-    item("Search messages", () => dom.convSearchBtn.click());
-    item("Members and details", () => dom.detailsBtn.click());
-    if (!dom.convSettingsBtn.hidden) item("Conversation settings", () => dom.convSettingsBtn.click());
-    if (!dom.checklistBtn.hidden) item("Pinned items", () => dom.checklistBtn.click());
-    if (!dom.paneBtn.hidden) item("Workspace", () => dom.paneBtn.click());
+    item("Search messages in this room", () => dom.convSearchBtn.click());
+    item("People and agents", () => dom.detailsBtn.click());
+    if (!dom.checklistBtn.hidden) item("Pinned messages and checklist", () => dom.checklistBtn.click());
+    if (!dom.paneBtn.hidden) item("Open conversation tools", () => dom.paneBtn.click());
   }
   if (isTab(conv.id)) {
     const i = state.tabs.indexOf(conv.id);
-    item("‹ Move tab left", () => moveTab(conv.id, -1), i <= 0);
-    item("Move tab right ›", () => moveTab(conv.id, 1), i >= state.tabs.length - 1);
-    item("Unpin tab", () => void setTab(conv.id, false));
+    item("Move this tab left", () => moveTab(conv.id, -1), i <= 0);
+    item("Move this tab right", () => moveTab(conv.id, 1), i >= state.tabs.length - 1);
+    item("Remove from top tabs", () => void setTab(conv.id, false));
   } else {
-    item("Pin as tab", () => void setTab(conv.id, true));
+    item("Keep in top tabs", () => void setTab(conv.id, true));
   }
   const r = dom.convMenuBtn.getBoundingClientRect();
   menu.style.top = `${Math.round(r.bottom + 4)}px`;

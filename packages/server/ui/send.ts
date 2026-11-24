@@ -163,40 +163,39 @@ dom.composer.addEventListener("submit", (event) => {
   void send();
 });
 
-// Tapping Send keeps the input focused: the keyboard stays up and nothing moves before the tap lands. Safari sends no
-// click after a pointerdown kept from the focus, so Send took several taps (Ümit #13345): such a tap sends on
-// pointerup, and a click that still follows (Chrome) does not send twice. Pointer capture keeps that pointerup attached
-// to Send if iOS adjusts the visual viewport under the finger during the press (Ümit #15089).
-let sendPressed = false;
-let sentOnPointerUp = false;
-dom.sendBtn.addEventListener("pointerdown", (event) => {
-  sentOnPointerUp = false;
-  sendPressed = PHONE.matches && document.activeElement === dom.input;
-  if (sendPressed) {
+// iPhone Safari sometimes consumes the synthetic click when the focused textarea keeps the keyboard open, especially
+// after a pasted screenshot changes the composer. Use its native touch lifecycle: keep focus on touchstart, then submit
+// exactly once on touchend if the finger is still over Send (Ümit #13345, #15089, #16153). Mouse/keyboard use the form.
+const TOUCH = window.matchMedia("(hover: none) and (pointer: coarse)");
+let touchingSend = false;
+dom.sendBtn.addEventListener(
+  "touchstart",
+  (event) => {
+    if (!TOUCH.matches || document.activeElement !== dom.input) return;
+    touchingSend = true;
     event.preventDefault();
-    dom.sendBtn.setPointerCapture(event.pointerId);
-  }
-});
-dom.sendBtn.addEventListener("pointercancel", () => (sendPressed = false));
-dom.sendBtn.addEventListener("pointerup", () => {
-  if (!sendPressed) return;
-  sendPressed = false;
-  sentOnPointerUp = true;
-  if (!dom.sendBtn.disabled) dom.composer.requestSubmit(dom.sendBtn);
-});
-dom.sendBtn.addEventListener("click", (event) => {
-  if (!sentOnPointerUp) return;
-  sentOnPointerUp = false;
-  event.preventDefault();
-});
+  },
+  { passive: false }
+);
+dom.sendBtn.addEventListener("touchcancel", () => (touchingSend = false));
+dom.sendBtn.addEventListener(
+  "touchend",
+  (event) => {
+    if (!touchingSend) return;
+    touchingSend = false;
+    event.preventDefault();
+    const touch = event.changedTouches[0];
+    const rect = dom.sendBtn.getBoundingClientRect();
+    const inside = !!touch && touch.clientX >= rect.left && touch.clientX <= rect.right && touch.clientY >= rect.top && touch.clientY <= rect.bottom;
+    if (inside && !dom.sendBtn.disabled) dom.composer.requestSubmit(dom.sendBtn);
+  },
+  { passive: false }
+);
 
 /**
- * Enter sends; Shift+Enter is a new line. While an input method or the system holds unfinished text, Enter belongs to
- * it (choosing a candidate must never send, codex-ui #11646): the next Enter sends. On a touch screen the keyboard's
- * return key makes a new line and only ➤ sends, as in the phone's own messaging apps: return sent half-written
- * messages, and a running voice recording, without Ümit touching ➤ (#13021, #13045, #13046, #13047).
+ * Enter sends; Shift+Enter starts a new line. A system input method keeps Enter while composing. Touch keyboards use
+ * Return for a new line and the visible Send button, as in phone messaging apps.
  */
-const TOUCH = window.matchMedia("(hover: none) and (pointer: coarse)");
 dom.input.addEventListener("keydown", (event) => {
   if (state.mention.open && handleMentionKey(event)) return;
   if (event.key === "Escape" && (state.replyTo || state.itemReply)) {

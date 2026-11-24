@@ -4593,10 +4593,9 @@ ul.md-list ul.md-list { list-style: circle; }
     color: var(--accent);
   }
 
-  /* The room name is the single phone entry point. Search, settings, details, pins and Workspace remain in its menu,
-     instead of competing with the name in the header (Ümit #15991). */
+  /* Keep one familiar gear beside the room name for adding people or agents and changing settings (Ümit #16151).
+     Search, details, pins and Workspace stay in the name menu instead of competing with the title. */
   .conv-bar .conv-search-btn,
-  .conv-bar .conv-settings-btn,
   .conv-bar .details-btn,
   .conv-bar .checklist-btn,
   .conv-bar .ws-open-btn,
