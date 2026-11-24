@@ -2396,7 +2396,8 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 6px;
+  column-gap: 6px;
+  row-gap: 0;
   opacity: 0;
   pointer-events: none;
 }
@@ -2446,24 +2447,61 @@ button:disabled {
   color: var(--success);
 }
 
-/* Three icon-only actions plus More on every screen; More opens the remaining icon-only actions as a second row
-   (Ümit #14570, #15935). Titles and aria-labels carry their names. */
+/* Three icon-only actions plus More on every screen. More grows a vertical column in the message instead of adding
+   another horizontal row; the column gives one small bounce after it has extended (Can #16050). */
 .msg-overflow-btn {
   display: inline-block;
 }
 .msg-actions-extra {
-  display: none;
+  display: grid;
   flex: 0 0 100%;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  grid-template-rows: 0fr;
+  justify-items: end;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 90ms ease-out;
+}
+.msg-actions-extra-column {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 4px;
+  overflow: hidden;
 }
 .msg-actions-open .msg-actions-extra {
-  display: flex;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+.msg-actions-open .msg-actions-extra-column {
+  padding-top: 4px;
+  animation: msg-actions-bounce 220ms ease-out;
 }
 .msg-actions-extra .msg-action-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+}
+@keyframes msg-actions-bounce {
+  0%,
+  64%,
+  100% {
+    transform: translateY(0);
+  }
+  82% {
+    transform: translateY(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg-actions-extra {
+    transition: none;
+  }
+  .msg-actions-open .msg-actions-extra-column {
+    animation: none;
+  }
 }
 .msg-extra-label {
   display: none;
@@ -4811,7 +4849,8 @@ ul.md-list ul.md-list { list-style: circle; }
     display: none;
     flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 4px;
+    column-gap: 4px;
+    row-gap: 0;
     margin-top: 6px;
   }
 

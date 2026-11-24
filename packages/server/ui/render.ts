@@ -391,10 +391,12 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   // Every screen keeps only three icon actions (Copy, Task, Reply) and More. The rest stay icon-only behind More
   // (Ümit #15935); titles and accessible names explain them without widening or moving the row.
   const extra = h("div", "msg-actions-extra");
+  const extraColumn = h("div", "msg-actions-extra-column");
   const extraButtons = [read, speak, bookmark, pin, forward, changes[0], changes[1]];
   for (const button of extraButtons) {
-    if (button) extra.append(button);
+    if (button) extraColumn.append(button);
   }
+  extra.append(extraColumn);
   const overflow = h("button", "msg-action-btn msg-overflow-btn", "⋯");
   overflow.type = "button";
   overflow.title = "More message actions";
@@ -404,11 +406,22 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     event.stopPropagation();
     const open = actions.classList.toggle("msg-actions-open");
     overflow.setAttribute("aria-expanded", String(open));
+    if (!open) return;
+    const reveal = () => {
+      extra.removeEventListener("animationend", reveal);
+      extra.removeEventListener("animationcancel", reveal);
+      if (!actions.classList.contains("msg-actions-open")) return;
+      revealActions(actions);
+      keepActionsInView(li);
+    };
+    extra.addEventListener("animationend", reveal);
+    extra.addEventListener("animationcancel", reveal);
+    requestAnimationFrame(() => revealActions(actions));
   });
   if (copy) actions.append(copy);
   if (ownTask) actions.append(ownTask);
   if (!deleted) actions.append(replyBtn);
-  if (extra.childElementCount > 0) actions.append(overflow, extra);
+  if (extraColumn.childElementCount > 0) actions.append(overflow, extra);
   li.addEventListener("mouseenter", () => {
     pointedMessage = li;
     keepActionsInView(li);
