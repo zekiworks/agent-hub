@@ -140,6 +140,7 @@ export const dom = {
   convSearchBtn: el<HTMLButtonElement>("conv-search-btn"),
   searchReturn: el<HTMLButtonElement>("search-return"),
   tabRow: el<HTMLElement>("tab-row"),
+  renameAgentsBtn: el<HTMLButtonElement>("rename-agents-btn"),
   toolsBtn: el<HTMLButtonElement>("tools-btn"),
   toolsMenu: el<HTMLDivElement>("tools-menu"),
   launchers: el<HTMLSpanElement>("launchers"),

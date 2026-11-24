@@ -1,6 +1,7 @@
 // Tools (#10101): occasional utilities (Go to message, Stats, GPU booking) in one top-bar menu instead of a row of
 // controls. Items keep their own handlers (app.ts, stats.ts, gpus.ts); this only opens and closes the menu.
 import { dom } from "./dom";
+import { openAgentNamesSetting } from "./settings";
 
 function setOpen(on: boolean): void {
   dom.toolsMenu.hidden = !on;
@@ -11,6 +12,8 @@ dom.toolsBtn.addEventListener("click", (event) => {
   event.stopPropagation();
   setOpen(dom.toolsMenu.hidden);
 });
+
+dom.renameAgentsBtn.addEventListener("click", openAgentNamesSetting);
 // Choosing an item, clicking elsewhere or Esc closes it.
 dom.toolsMenu.addEventListener("click", () => setOpen(false));
 document.addEventListener("click", () => setOpen(false));
