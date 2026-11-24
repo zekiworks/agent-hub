@@ -68,13 +68,13 @@ export function updateComposerState(): void {
 }
 
 /**
- * Height the user gave the message box with its grip (px), or undefined: it grows with its text. Kept per browser. The
- * Expand button that also did this went (Ümit #13153: two controls for one thing); a "max" kept from it reads as none.
+ * Height dragged for the room currently open, or undefined: it grows with its text. It deliberately does not persist
+ * or follow the person to another room (Ümit #15889); every room opens at the same automatic baseline.
  */
-const COMPOSER_HEIGHT_KEY = "agent-bus.composerHeight";
 const COMPOSER_MIN = 40;
 const COMPOSER_AUTO_MAX = 240;
-let composerHeight: number | undefined = Number(localStorage.getItem(COMPOSER_HEIGHT_KEY)) || undefined;
+localStorage.removeItem("agent-bus.composerHeight"); // Remove the old cross-room preference.
+let composerHeight: number | undefined;
 
 /**
  * Tallest the text may be dragged: the whole box (its 📎 🎤 row and grip included) at most 70% of the chat, leaving room
@@ -99,15 +99,18 @@ export function autosize(): void {
 
 function setComposerHeight(height: number | undefined): void {
   composerHeight = height;
-  if (height === undefined) localStorage.removeItem(COMPOSER_HEIGHT_KEY);
-  else localStorage.setItem(COMPOSER_HEIGHT_KEY, String(height));
   autosize();
   dom.composerGrip.setAttribute("aria-valuenow", String(dom.input.offsetHeight));
 }
 
-/** A remembered drag must not leave an empty phone composer covering the conversation when the person returns to it. */
+/** Returns the box to the automatic baseline; a draft may then grow it only as its text needs. */
+export function resetComposerHeight(): void {
+  setComposerHeight(undefined);
+}
+
+/** A drag must not leave an empty phone composer covering the conversation when the person returns to it. */
 export function resetEmptyPhoneComposer(): void {
-  if (PHONE.matches && dom.input.value.length === 0 && composerHeight !== undefined) setComposerHeight(undefined);
+  if (PHONE.matches && dom.input.value.length === 0 && composerHeight !== undefined) resetComposerHeight();
 }
 setIcon(dom.attachBtn, "paperclip");
 
