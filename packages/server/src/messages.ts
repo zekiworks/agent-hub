@@ -372,18 +372,25 @@ function wakeList(
   replyToSeq: number | undefined,
   newcomers: readonly string[]
 ): string[] | undefined {
+  const replied = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq) : undefined;
+  const repliedAuthor = replied?.systemSource ?? replied?.from;
+  // A self-reply continues the turn that the original message started: wake the same agent(s), for people and agents
+  // alike (Can #16531). This is stored on the original message, so unrelated later writers cannot change the route.
+  const selfReplyWake =
+    repliedAuthor === writer.id ? (replied?.wake ?? []).filter((id) => id !== writer.id && recipients.includes(id)) : [];
+  const includeSelfReplyWake = (ids: string[]): string[] => [...new Set([...selfReplyWake, ...ids])];
   if (writer.kind === "human") {
-    if (conversation.kind === "dm") return recipients;
+    if (conversation.kind === "dm") return includeSelfReplyWake(recipients);
     const answered = replyToSeq !== undefined ? answeredInChain(ctx, replyToSeq, writer.id) : answeredBy(ctx, conversation.id, writer.id);
-    if (answered === undefined) return recipients; // a conversation started with them: they are meant
+    if (answered === undefined) return includeSelfReplyWake(recipients); // a conversation started with them: they are meant
     // "@all" in a person's text wakes every agent of the conversation (Can, 15 Nov).
-    if (mentionedIds(text).includes(ALL_CONVERSATION_ID)) return recipients;
+    if (mentionedIds(text).includes(ALL_CONVERSATION_ID)) return includeSelfReplyWake(recipients);
     const named = mentionedParticipants(ctx, text);
     const mentioned = recipients.filter((id) => named.includes(id));
     const withAnswered = mentioned.length === 0 || mentioned.some((id) => newcomers.includes(id));
-    return recipients.filter((id) => mentioned.includes(id) || (withAnswered && id === answered));
+    return includeSelfReplyWake(recipients.filter((id) => mentioned.includes(id) || (withAnswered && id === answered)));
   }
-  if (given === undefined || given === null) return undefined;
+  if (given === undefined || given === null) return selfReplyWake.length > 0 ? selfReplyWake : undefined;
   if (!Array.isArray(given) || !given.every((id) => typeof id === "string")) throw new HttpError(400, "wake must be a list of agent ids");
   const wake = [
     ...new Set(
@@ -400,9 +407,8 @@ function wakeList(
       `wake names agents of this conversation; ${outside.map((id) => `@${id}`).join(", ")} ${outside.length > 1 ? "are" : "is"} not one (or a person, or you). Nothing was sent.`
     );
   }
-  const replied = replyToSeq !== undefined ? ctx.db.getMessage(replyToSeq) : undefined;
-  const repliedTo = replied?.systemSource ?? replied?.from;
-  return repliedTo && recipients.includes(repliedTo) && !wake.includes(repliedTo) ? [repliedTo, ...wake] : wake;
+  const repliedTo = repliedAuthor;
+  return includeSelfReplyWake(repliedTo && recipients.includes(repliedTo) && !wake.includes(repliedTo) ? [repliedTo, ...wake] : wake);
 }
 
 /**

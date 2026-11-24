@@ -433,6 +433,26 @@ describe("delivery", () => {
     expect(again.message.wake).toEqual([alpha.id]);
   });
 
+  test("an entity replying to itself wakes the agents woken by its original message (Can #16531)", async () => {
+    const alpha = await joinPath("/tmp/x/alpha");
+    const beta = await joinPath("/tmp/x/beta");
+    const group = await send({ from: "carol", to: "@{alpha,beta}", text: "plan" });
+    await alpha.client.take("deliver");
+    await beta.client.take("deliver");
+
+    await send({ from: beta.id, conversationId: group.conversation.id, text: "ready", wake: [] });
+    await alpha.client.take("deliver");
+    const question = await send({ from: "carol", conversationId: group.conversation.id, text: "one more question" });
+    expect(question.message.wake).toEqual([beta.id]);
+    const personSelfReply = await send({ from: "carol", replyToSeq: question.message.seq, text: "with one detail" });
+    expect(personSelfReply.message.wake).toEqual([beta.id]);
+
+    const handoff = await send({ from: alpha.id, conversationId: group.conversation.id, text: "beta should continue", wake: [beta.id] });
+    await beta.client.take("deliver");
+    const agentSelfReply = await send({ from: alpha.id, replyToSeq: handoff.message.seq, text: "one more detail", wake: [] });
+    expect(agentSelfReply.message.wake).toEqual([beta.id]);
+  });
+
   test("a person calling in an agent new to the conversation also wakes the one it answers; a mention reaching nobody wakes that one", async () => {
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
