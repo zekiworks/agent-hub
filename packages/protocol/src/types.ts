@@ -1037,13 +1037,14 @@ export interface BoxNeedsResponse {
 }
 
 /**
- * GET /api/needs?from=<person> (Ümit #14881): the person's "Waiting for your answer": agents' messages of the last 7
- * days that at least one model marked as needing them, which they have not answered (no later message of theirs in
- * the conversation) or dismissed (POST /api/needs/dismiss {from, seq}); newest first, each with every model's verdict.
+ * GET /api/needs?from=<person> (Ümit #14881, #16206): judged agents' messages of the last 7 days which the person has
+ * not answered or rated. `items` are messages at least one model marked as needing them; `candidates` are messages
+ * every model said could wait, exposed so human feedback also measures false negatives.
  */
 export interface NeedsResponse {
   items: Array<{ message: Message; verdicts: Record<string, NeedsVerdict> }>;
-  /** The conversations of the messages. */
+  candidates: Array<{ message: Message; verdicts: Record<string, NeedsVerdict> }>;
+  /** The conversations of both lists. */
   conversations: Conversation[];
 }
 

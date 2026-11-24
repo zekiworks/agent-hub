@@ -83,40 +83,55 @@ export class NeedsJudge {
     if (added) void this.drain();
   }
 
-  /** GET /api/needs?from=: the signed-in person's own list (empty for a person not listed). */
+  /** GET /api/needs?from=: selected messages and rejected candidates awaiting the signed-in person's feedback. */
   list(person: string): NeedsResponse {
-    if (!this.people().includes(person)) return { items: [], conversations: [] };
+    if (!this.people().includes(person)) return { items: [], candidates: [], conversations: [] };
     this.backfill(person);
     const reader = { id: person, kind: "human" as const };
     const conversations = new Map<string, Conversation>();
-    const items: NeedsResponse["items"] = [];
-    for (const { seq, verdicts } of this.ctx.db.openNeeds(person, this.now() - LIST_DAYS * DAY_MS, LIST_MAX)) {
-      const message = this.ctx.db.getMessage(seq);
-      const conversation = message && (conversations.get(message.conversationId) ?? this.ctx.db.getConversation(message.conversationId));
-      if (!message || !conversation || !mayRead(this.ctx, conversation, reader)) continue;
-      conversations.set(conversation.id, conversation);
-      items.push({ message, verdicts });
-    }
-    return { items, conversations: [...conversations.values()] };
+    const collect = (rows: ReturnType<BusContext["db"]["openNeeds"]>) => {
+      const result: NeedsResponse["items"] = [];
+      for (const { seq, verdicts } of rows) {
+        const message = this.ctx.db.getMessage(seq);
+        const conversation = message && (conversations.get(message.conversationId) ?? this.ctx.db.getConversation(message.conversationId));
+        if (!message || !conversation || !mayRead(this.ctx, conversation, reader)) continue;
+        conversations.set(conversation.id, conversation);
+        result.push({ message, verdicts });
+      }
+      return result;
+    };
+    const since = this.now() - LIST_DAYS * DAY_MS;
+    const items = collect(this.ctx.db.openNeeds(person, since, LIST_MAX));
+    const candidates = collect(this.ctx.db.needsCandidates(person, since, LIST_MAX));
+    return { items, candidates, conversations: [...conversations.values()] };
   }
 
-  /** POST /api/needs/dismiss {from, seq, reason}: read or "Not needed"; either leaves the list for good. */
+  /** POST /api/needs/dismiss: record labels, or remove one/many neutrally with reason "read". */
   async dismiss(person: string, req: Request): Promise<{ ok: true }> {
     const body = await readJsonObject(req);
     if (body.from !== undefined && body.from !== person) throw new HttpError(403, `You are signed in as ${person}, not ${String(body.from)}`);
-    if (typeof body.seq !== "number") throw new HttpError(400, "Give seq, the message's number");
+    const seqs =
+      typeof body.seq === "number"
+        ? [body.seq]
+        : Array.isArray(body.seqs) && body.seqs.every((seq) => typeof seq === "number" && Number.isSafeInteger(seq))
+          ? [...new Set(body.seqs)]
+          : [];
+    if (seqs.length === 0 || seqs.length > LIST_MAX * 2) throw new HttpError(400, "Give seq or up to 200 seqs");
     const reason = body.reason ?? "not-needed";
-    if (reason !== "read" && reason !== "not-needed") throw new HttpError(400, "reason must be read or not-needed");
-    const message = this.ctx.db.getMessage(body.seq);
-    const conversation = message && this.ctx.db.getConversation(message.conversationId);
-    if (!message || !conversation || !mayRead(this.ctx, conversation, { id: person, kind: "human" })) {
-      throw new HttpError(404, `No message #${body.seq} for you`);
+    if (reason !== "read" && reason !== "needed" && reason !== "not-needed") {
+      throw new HttpError(400, "reason must be read, needed, or not-needed");
+    }
+    for (const seq of seqs) {
+      const message = this.ctx.db.getMessage(seq);
+      const conversation = message && this.ctx.db.getConversation(message.conversationId);
+      if (!message || !conversation || !mayRead(this.ctx, conversation, { id: person, kind: "human" })) {
+        throw new HttpError(404, `No message #${seq} for you`);
+      }
     }
     const at = this.now();
-    if (this.ctx.db.dismissNeeds(person, message.seq, at)) {
-      this.record({ seq: message.seq, person, dismissed: true, reason, at: new Date(at).toISOString() });
-      this.ctx.hub.needsChanged(person);
-    }
+    const changed = this.ctx.db.dismissNeedsMany(person, seqs, at);
+    for (const seq of changed) this.record({ seq, person, dismissed: true, reason, at: new Date(at).toISOString() });
+    if (changed.length > 0) this.ctx.hub.needsChanged(person);
     return { ok: true };
   }
 

@@ -1113,32 +1113,47 @@ export class BusDatabase {
   }
 
   /**
-   * `person`'s "Waiting for your answer" (Ümit #14881): messages since `since` that a model marked as needing them, not
-   * deleted, not dismissed, with no later message of theirs in the conversation; newest first, each with its verdicts.
+   * Judged messages awaiting human feedback: selected=true is "Waiting for your answer"; false supplies rejected
+   * candidates so usefulness labels also catch model false negatives (Ümit #16206).
    */
-  openNeeds(person: string, since: number, limit: number): Array<{ seq: number; verdicts: Record<string, { needs: boolean; p: number }> }> {
+  private needsMessages(
+    person: string,
+    since: number,
+    limit: number,
+    selected: boolean
+  ): Array<{ seq: number; verdicts: Record<string, { needs: boolean; p: number }> }> {
     const seqs = this.db
       .query<{ seq: number }, [string, number, number]>(
         `SELECT DISTINCT m.seq FROM needs_verdicts v JOIN messages m ON m.seq = v.seq
-         WHERE v.person = ?1 AND v.needs = 1 AND m.created_at >= ?2 AND m.deleted_at IS NULL
+         WHERE v.person = ?1 AND m.created_at >= ?2 AND m.deleted_at IS NULL
+           AND ${selected ? "EXISTS" : "NOT EXISTS"}
+               (SELECT 1 FROM needs_verdicts picked WHERE picked.person = ?1 AND picked.seq = m.seq AND picked.needs = 1)
            AND NOT EXISTS (SELECT 1 FROM needs_dismissed d WHERE d.person = ?1 AND d.seq = m.seq)
            AND NOT EXISTS (SELECT 1 FROM messages r WHERE r.conversation_id = m.conversation_id AND r.seq > m.seq
                            AND r.from_id = ?1 AND r.deleted_at IS NULL)
          ORDER BY m.seq DESC LIMIT ?3`
       )
       .all(person, since, limit)
-      .map((r) => r.seq);
+      .map((row) => row.seq);
     const verdicts = new Map(seqs.map((seq) => [seq, {} as Record<string, { needs: boolean; p: number }>]));
     const rows = this.db
       .query<{ seq: number; model: string; needs: number; p: number }, [string, number]>(
         "SELECT seq, model, needs, p FROM needs_verdicts WHERE person = ?1 AND seq >= ?2"
       )
       .all(person, seqs.at(-1) ?? Number.MAX_SAFE_INTEGER);
-    for (const r of rows) {
-      const of = verdicts.get(r.seq);
-      if (of) of[r.model] = { needs: r.needs === 1, p: r.p };
+    for (const row of rows) {
+      const values = verdicts.get(row.seq);
+      if (values) values[row.model] = { needs: row.needs === 1, p: row.p };
     }
     return seqs.map((seq) => ({ seq, verdicts: verdicts.get(seq)! }));
+  }
+
+  openNeeds(person: string, since: number, limit: number): Array<{ seq: number; verdicts: Record<string, { needs: boolean; p: number }> }> {
+    return this.needsMessages(person, since, limit, true);
+  }
+
+  needsCandidates(person: string, since: number, limit: number): Array<{ seq: number; verdicts: Record<string, { needs: boolean; p: number }> }> {
+    return this.needsMessages(person, since, limit, false);
   }
 
   /** Whether a message before `beforeSeq` in `conversationId`, since `since`, was marked as needing `person`. */
@@ -1153,9 +1168,14 @@ export class BusDatabase {
     );
   }
 
-  /** `person` said message `seq` was not needed; false when they had already. */
+  /** Marks judged messages handled in one transaction; returns only newly marked sequence numbers. */
+  dismissNeedsMany(person: string, seqs: readonly number[], at = Date.now()): number[] {
+    const insert = this.db.query("INSERT OR IGNORE INTO needs_dismissed (person, seq, at) VALUES (?1, ?2, ?3)");
+    return this.db.transaction(() => seqs.filter((seq) => insert.run(person, seq, at).changes > 0))();
+  }
+
   dismissNeeds(person: string, seq: number, at = Date.now()): boolean {
-    return this.db.query("INSERT OR IGNORE INTO needs_dismissed (person, seq, at) VALUES (?1, ?2, ?3)").run(person, seq, at).changes > 0;
+    return this.dismissNeedsMany(person, [seq], at).length > 0;
   }
 
   private toConversation(row: ConversationRow, members: MemberRow[], pins: string[], pinned: PinnedMessage[] = [], lastFrom?: string): Conversation {

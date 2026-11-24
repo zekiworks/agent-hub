@@ -151,7 +151,7 @@ test("only listed people: nobody else's messages are judged, and their list is e
   expect((await busFetch(b, "/api/needs?from=carol")).status).toBe(403);
 });
 
-test("a message carol answered (she wrote after it there) or dismissed leaves the list; one no model marked never shows", async () => {
+test("selected and rejected messages accept positive or negative human labels; answered messages leave both lists", async () => {
   const b = start();
   const id = await room(b);
   const first = await send(b, { from: "webapp", conversationId: id, text: "Shall I merge the fix?", wake: [] });
@@ -159,8 +159,14 @@ test("a message carol answered (she wrote after it there) or dismissed leaves th
   const dm = await send(b, { from: "webapp", to: "@carol", text: "Which port do you want?" });
   await until(() => asked.length === 3);
   await until(async () => (await waitingFor(b, "carol")).items.length === 2);
-  // Newest first; the update ("Merged and deployed.") was judged but no model marked it.
-  expect((await waitingFor(b, "carol")).items.map((i) => i.message.text)).toEqual(["Which port do you want?", "Shall I merge the fix?"]);
+  const initial = await waitingFor(b, "carol");
+  expect(initial.items.map((item) => item.message.text)).toEqual(["Which port do you want?", "Shall I merge the fix?"]);
+  expect(initial.candidates.map((item) => item.message.text)).toEqual(["Merged and deployed."]);
+
+  const rejected = initial.candidates[0]!.message.seq;
+  expect((await postJson(b, "/api/needs/dismiss", { from: "carol", seq: rejected, reason: "not-needed" })).status).toBe(200);
+  expect((await waitingFor(b, "carol")).candidates).toEqual([]);
+  expect(records().at(-1)).toMatchObject({ person: "carol", seq: rejected, dismissed: true, reason: "not-needed" });
 
   const viewer = viewerSocket(b, "carol");
   sockets.push(viewer);
@@ -168,13 +174,12 @@ test("a message carol answered (she wrote after it there) or dismissed leaves th
   viewer.addEventListener("message", (event) => frames.push(String(event.data)));
   await new Promise((resolve) => viewer.addEventListener("open", resolve, { once: true }));
   await send(b, { from: "carol", conversationId: id, text: "Yes, go ahead." });
-  await until(() => frames.some((f) => JSON.parse(f).type === "needs"));
-  expect((await waitingFor(b, "carol")).items.map((i) => i.message.seq)).toEqual([dm.message.seq]);
+  await until(() => frames.some((frame) => JSON.parse(frame).type === "needs"));
+  expect((await waitingFor(b, "carol")).items.map((item) => item.message.seq)).toEqual([dm.message.seq]);
 
-  expect((await postJson(b, "/api/needs/dismiss", { from: "carol", seq: dm.message.seq, reason: "read" })).status).toBe(200);
+  expect((await postJson(b, "/api/needs/dismiss", { from: "carol", seq: dm.message.seq, reason: "needed" })).status).toBe(200);
   expect((await waitingFor(b, "carol")).items).toEqual([]);
-  expect(records().at(-1)).toMatchObject({ person: "carol", seq: dm.message.seq, dismissed: true, reason: "read" });
-  // Not someone else's, nor a message the person may not read.
+  expect(records().at(-1)).toMatchObject({ person: "carol", seq: dm.message.seq, dismissed: true, reason: "needed" });
   expect((await postJson(b, "/api/needs/dismiss", { from: "uma", seq: dm.message.seq })).status).toBe(404);
   expect(first.message.seq).toBeLessThan(dm.message.seq);
 });

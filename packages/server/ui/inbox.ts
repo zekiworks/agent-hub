@@ -187,28 +187,32 @@ function renderOwnTasks(root: HTMLElement): boolean {
   return true;
 }
 
-// ---- Waiting for your answer (Ümit #14881): agents' messages a decision model marked as needing you ----
+// ---- Message decisions (Ümit #14881, #16204, #16206): model verdicts plus explicit human labels ----
 
-/** "d1-2B ✓ · GLiDE ✓": the models that picked the message; each one's probability in the title. */
+/** Aggregate model vote: ✓, ✓✓, or ✕. Names and probabilities stay in the tooltip, not beside the icons (#16210). */
 function modelMarks(verdicts: NeedsResponse["items"][number]["verdicts"]): HTMLElement {
-  const line = h("span", "needs-models");
   const entries = Object.entries(verdicts);
-  entries
-    .filter(([, v]) => v.needs)
-    .forEach(([model], i) => {
-      if (i > 0) line.append(" · ");
-      line.append(h("span", "needs-model", `${MODEL_NAMES[model] ?? model} ✓`));
-    });
-  line.title = entries.map(([model, v]) => `${MODEL_NAMES[model] ?? model}: ${v.needs ? "needs you" : "can wait"} (${Math.round(v.p * 100)}%)`).join(" · ");
-  return line;
+  const selected = entries.filter(([, verdict]) => verdict.needs).length;
+  const mark = h("span", `needs-model ${selected > 0 ? "yes" : "no"}`, selected > 0 ? "✓".repeat(selected) : "✕");
+  mark.title = entries
+    .map(([model, verdict]) => `${MODEL_NAMES[model] ?? model}: ${verdict.needs ? "needs you" : "can wait"} (${Math.round(verdict.p * 100)}%)`)
+    .join(" · ");
+  mark.setAttribute("aria-label", selected > 0 ? `${selected} decision model${selected === 1 ? "" : "s"} chose this message` : "No decision model chose this message");
+  return mark;
 }
 
-/** Takes a message off "Waiting for your answer"; "read" is neutral, "not-needed" trains the models' usefulness. */
-async function dismissWaiting(seq: number, reason: "read" | "not-needed", note: HTMLElement): Promise<void> {
+/** Records a positive/negative training label, or removes neutrally with reason "read". */
+async function dismissWaiting(seq: number, reason: "read" | "needed" | "not-needed", note: HTMLElement): Promise<void> {
   note.textContent = "…";
   try {
     await postJson("/api/needs/dismiss", { from: state.me, seq, reason });
-    if (waiting) waiting = { ...waiting, items: waiting.items.filter((item) => item.message.seq !== seq) };
+    if (waiting) {
+      waiting = {
+        ...waiting,
+        items: waiting.items.filter((item) => item.message.seq !== seq),
+        candidates: waiting.candidates.filter((item) => item.message.seq !== seq),
+      };
+    }
     renderButton();
     refreshPane("inbox");
   } catch (error) {
@@ -216,49 +220,94 @@ async function dismissWaiting(seq: number, reason: "read" | "not-needed", note: 
   }
 }
 
-/** "Waiting for your answer" first under "For me", newest first. False when nothing waits. */
-function renderWaiting(root: HTMLElement): boolean {
-  if (!waiting || waiting.items.length === 0) return false;
-  root.append(h("h3", "inbox-section", "Waiting for your answer"));
+function openWaiting(seq: number): void {
+  leaveForMessage();
+  void hooks.showMessage(seq);
+}
+
+function waitingCard(item: NeedsResponse["items"][number], byId: Map<string, Conversation>): HTMLLIElement {
+  const { message, verdicts } = item;
+  const conversation = byId.get(message.conversationId);
+  const card = h("li", "inbox-item needs-item");
+  card.dataset.seq = String(message.seq);
+  card.tabIndex = 0;
+  card.title = `Open message #${message.seq}`;
+  card.addEventListener("click", (event) => {
+    if ((event.target as Element).closest("button, a, input")) return;
+    openWaiting(message.seq);
+  });
+  card.addEventListener("keydown", (event) => {
+    if (event.target !== card || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    openWaiting(message.seq);
+  });
+  const note = h("span", "inbox-note");
+  const close = h("button", "needs-read", "×");
+  close.type = "button";
+  close.title = "Remove without rating the decision models";
+  close.setAttribute("aria-label", `Remove message #${message.seq} without a training label`);
+  close.addEventListener("click", () => void dismissWaiting(message.seq, "read", note));
+  const head = h("div", "inbox-head");
+  head.append(modelMarks(verdicts), ...mentionNodes(` #${message.seq} from @${message.from}`));
+  if (conversation) head.append(h("span", "inbox-where", ` in ${conversationTitle(state.conversations.get(conversation.id) ?? conversation)}`));
+  head.append(h("span", "inbox-when", ` · ${relativeTime(message.createdAt)}`));
+  const text = h("div", "inbox-text");
+  text.append(...inline(message.text.length > 600 ? `${message.text.slice(0, 599)}…` : message.text));
+  const actions = h("div", "inbox-actions needs-actions");
+  const button = (label: string, className: string, title: string, run: () => void) => {
+    const value = h("button", `btn inbox-btn ${className}`, label);
+    value.type = "button";
+    value.title = title;
+    value.setAttribute("aria-label", title);
+    value.addEventListener("click", run);
+    actions.append(value);
+  };
+  button("✓", "needs-rating-needed", "Needed my answer — positive training label", () =>
+    void dismissWaiting(message.seq, "needed", note)
+  );
+  button("✕", "needs-rating-not-needed", "Did not need my answer — negative training label", () =>
+    void dismissWaiting(message.seq, "not-needed", note)
+  );
+  button("↩", "", "Reply in its conversation", () => replyTo(message));
+  actions.append(note);
+  card.append(close, head, text, actions);
+  return card;
+}
+
+function renderNeedsList(root: HTMLElement, title: string, items: NeedsResponse["items"], byId: Map<string, Conversation>): void {
+  root.append(h("h3", "inbox-section", title));
   const list = h("ul", "inbox-list needs-list");
-  const byId = new Map(waiting.conversations.map((c) => [c.id, c]));
-  for (const { message, verdicts } of waiting.items) {
-    const conversation = byId.get(message.conversationId);
-    const card = h("li", "inbox-item needs-item");
-    card.dataset.seq = String(message.seq);
-    const note = h("span", "inbox-note");
-    const close = h("button", "needs-read", "✕");
-    close.type = "button";
-    close.title = "Read: remove this from your Inbox without opening it";
-    close.setAttribute("aria-label", `Read and remove message #${message.seq} from your Inbox`);
-    close.addEventListener("click", () => void dismissWaiting(message.seq, "read", note));
-    const head = h("div", "inbox-head");
-    head.append(modelMarks(verdicts), ...mentionNodes(` #${message.seq} from @${message.from}`));
-    if (conversation) head.append(h("span", "inbox-where", ` in ${conversationTitle(state.conversations.get(conversation.id) ?? conversation)}`));
-    head.append(h("span", "inbox-when", ` · ${relativeTime(message.createdAt)}`));
-    const text = h("div", "inbox-text");
-    text.append(...inline(message.text.length > 600 ? `${message.text.slice(0, 599)}…` : message.text));
-    const actions = h("div", "inbox-actions");
-    const button = (label: string, title: string, run: () => void) => {
-      const b = h("button", "btn inbox-btn", label);
-      b.type = "button";
-      b.title = title;
-      b.addEventListener("click", run);
-      actions.append(b);
-    };
-    button("Open", "Go to the message in its conversation", () => {
-      leaveForMessage();
-      void hooks.showMessage(message.seq);
-    });
-    button("↩", "Reply to it in its conversation (quotes it); it leaves this list once you write there", () => replyTo(message));
-    button("Not needed", "Take it off this list and teach the decision models that it did not need your answer", () =>
-      void dismissWaiting(message.seq, "not-needed", note)
-    );
-    actions.append(note);
-    card.append(close, head, text, actions);
-    list.append(card);
-  }
+  for (const item of items) list.append(waitingCard(item, byId));
   root.append(list);
+}
+
+async function clearWaiting(button: HTMLButtonElement): Promise<void> {
+  if (!waiting) return;
+  const seqs = [...waiting.items, ...waiting.candidates].map((item) => item.message.seq);
+  if (seqs.length === 0) return;
+  button.disabled = true;
+  try {
+    await postJson("/api/needs/dismiss", { from: state.me, seqs, reason: "read" });
+    waiting = { ...waiting, items: [], candidates: [] };
+    renderButton();
+    refreshPane("inbox");
+  } catch (error) {
+    button.disabled = false;
+    button.title = `Not removed: ${errorText(error)}`;
+  }
+}
+
+/** Model-selected messages first; rejected candidates below prevent one-sided fine-tuning data. */
+function renderWaiting(root: HTMLElement): boolean {
+  if (!waiting || (waiting.items.length === 0 && waiting.candidates.length === 0)) return false;
+  const clear = h("button", "link-btn needs-clear", "Remove all");
+  clear.type = "button";
+  clear.title = "Remove all message decisions without giving the models training labels";
+  clear.addEventListener("click", () => void clearWaiting(clear));
+  root.append(clear);
+  const byId = new Map(waiting.conversations.map((conversation) => [conversation.id, conversation]));
+  if (waiting.items.length > 0) renderNeedsList(root, "Waiting for your answer", waiting.items, byId);
+  if (waiting.candidates.length > 0) renderNeedsList(root, "Help train message choices", waiting.candidates, byId);
   return true;
 }
 

@@ -1110,12 +1110,18 @@ button:disabled {
   font-size: 12px;
 }
 
-/* "Waiting for your answer" (inbox.ts; Ümit #14881): model marks and an X to say "read" without opening (#15106). */
+/* Decision candidates (inbox.ts; Ümit #16204, #16206): the whole card opens the source; actions sit under its text. */
 .needs-item {
   position: relative;
   box-shadow: inset 3px 0 0 var(--accent);
   padding-right: 40px;
   padding-left: 8px;
+  cursor: pointer;
+}
+
+.needs-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .needs-read {
@@ -1152,20 +1158,45 @@ button:disabled {
   }
 }
 
-.needs-models {
-  margin-right: 4px;
-  color: var(--text);
+.needs-model {
+  display: inline-block;
+  min-width: 28px;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  text-align: center;
+  font-weight: 700;
   cursor: help;
 }
 
-.needs-model {
-  display: inline-block;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: rgb(184 166 220 / 0.22);
-  color: var(--text);
-  font-weight: 600;
-  white-space: nowrap;
+.needs-model.yes {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.needs-model.no {
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+  color: var(--error);
+}
+
+.needs-actions {
+  margin-top: 6px;
+}
+
+.needs-rating-needed {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.needs-rating-not-needed {
+  color: var(--error);
+  font-weight: 700;
+}
+
+.needs-clear {
+  float: right;
+  margin-top: 6px;
+  font-size: 12px;
 }
 
 .task-label {
