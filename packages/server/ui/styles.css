@@ -2445,7 +2445,18 @@ button:disabled {
   color: var(--success);
 }
 
-/* The buttons ⋯ holds on a phone (render.ts; Ümit #14570). A computer shows them in the row, with Reply third. */
+/* On a computer all actions share one ordered row. A phone keeps Copy, Task and Reply before More; the named remainder
+   opens as a second row (render.ts; Ümit #14570, #15918). */
+.msg-copy-btn { order: 1; }
+.msg-owntask-btn { order: 2; }
+.msg-read-btn { order: 3; }
+.msg-speak-btn { order: 4; }
+.msg-bookmark-btn { order: 5; }
+.msg-pin-btn { order: 6; }
+.msg-forward-btn { order: 7; }
+.msg-reply-btn { order: 8; }
+.msg-edit-btn { order: 9; }
+.msg-delete-btn { order: 10; }
 .msg-actions-extra {
   display: contents;
 }
@@ -2455,13 +2466,14 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
+  .msg-reply-btn { order: 3; }
   .msg-overflow-btn {
     display: inline-block;
-    order: 2;
+    order: 4;
   }
   .msg-actions-extra {
     display: none;
-    order: 3;
+    order: 5;
     flex-basis: 100%;
     flex-wrap: wrap;
     justify-content: flex-end;

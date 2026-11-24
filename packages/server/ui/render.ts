@@ -388,15 +388,15 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     const same = state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq;
     setReplyTo(same ? undefined : message);
   });
-  // Phones keep the first three requested actions in the first row and put the rest behind ⋯. Computers show the
-  // same order in one row: Copy, Task, Read/Unread, Read aloud, Star, Pin, Forward, Reply, then writer controls.
+  // A phone keeps Copy, Task and Reply in the first row: the envelope was an unexplained Read/Unread control there
+  // (Ümit #15918). More names that control and the remaining actions. Desktop CSS keeps Can's requested full order.
   const extra = h("div", "msg-actions-extra");
   const named: Array<[HTMLElement | undefined, string | undefined]> = [
+    [read, read?.classList.contains("marked-read") ? "Unread" : "Read"],
     [speak, "Read aloud"],
     [bookmark, bookmark?.classList.contains("bookmarked") ? "Unstar" : "Star"],
     [pin, pin?.classList.contains("pinned") ? "Unpin" : "Pin"],
     [forward, "Forward"],
-    [!deleted ? replyBtn : undefined, undefined],
     [changes[0], "Edit"],
     [changes[1], "Delete"],
   ];
@@ -407,7 +407,7 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   }
   const overflow = h("button", "msg-action-btn msg-overflow-btn", "⋯");
   overflow.type = "button";
-  overflow.title = "More: read aloud, star, pin, forward, reply…";
+  overflow.title = "More: read, read aloud, star, pin, forward…";
   overflow.setAttribute("aria-label", `More buttons for message #${message.seq}`);
   overflow.setAttribute("aria-expanded", "false");
   overflow.addEventListener("click", (event) => {
@@ -417,7 +417,7 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   });
   if (copy) actions.append(copy);
   if (ownTask) actions.append(ownTask);
-  if (read) actions.append(read);
+  if (!deleted) actions.append(replyBtn);
   if (extra.childElementCount > 0) actions.append(overflow, extra);
   li.addEventListener("mouseenter", () => {
     pointedMessage = li;
