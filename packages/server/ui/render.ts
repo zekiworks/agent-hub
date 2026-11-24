@@ -407,16 +407,20 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     const open = actions.classList.toggle("msg-actions-open");
     overflow.setAttribute("aria-expanded", String(open));
     if (!open) return;
-    const reveal = () => {
-      extra.removeEventListener("animationend", reveal);
-      extra.removeEventListener("animationcancel", reveal);
+    const keepVisible = () => {
       if (!actions.classList.contains("msg-actions-open")) return;
       revealActions(actions);
       keepActionsInView(li);
     };
-    extra.addEventListener("animationend", reveal);
-    extra.addEventListener("animationcancel", reveal);
-    requestAnimationFrame(() => revealActions(actions));
+    const afterOpen = (after: TransitionEvent) => {
+      if (after.propertyName !== "grid-template-rows") return;
+      extra.removeEventListener("transitionend", afterOpen);
+      extra.removeEventListener("transitioncancel", afterOpen);
+      keepVisible();
+    };
+    extra.addEventListener("transitionend", afterOpen);
+    extra.addEventListener("transitioncancel", afterOpen);
+    requestAnimationFrame(keepVisible);
   });
   if (copy) actions.append(copy);
   if (ownTask) actions.append(ownTask);

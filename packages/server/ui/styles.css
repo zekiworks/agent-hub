@@ -2447,8 +2447,8 @@ button:disabled {
   color: var(--success);
 }
 
-/* Three icon-only actions plus More on every screen. More grows a vertical column in the message instead of adding
-   another horizontal row; the column gives one small bounce after it has extended (Can #16050). */
+/* Three icon-only actions plus More on every screen. More grows a vertical column with one short height/opacity
+   transition and no simulated bounce (Can #16055). */
 .msg-overflow-btn {
   display: inline-block;
 }
@@ -2478,32 +2478,15 @@ button:disabled {
 }
 .msg-actions-open .msg-actions-extra-column {
   padding-top: 4px;
-  animation: msg-actions-bounce 480ms ease-in-out;
 }
 .msg-actions-extra .msg-action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-@keyframes msg-actions-bounce {
-  0%,
-  38%,
-  100% {
-    transform: translateY(0);
-  }
-  68% {
-    transform: translateY(3px);
-  }
-  85% {
-    transform: translateY(-1px);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   .msg-actions-extra {
     transition: none;
-  }
-  .msg-actions-open .msg-actions-extra-column {
-    animation: none;
   }
 }
 .msg-extra-label {
