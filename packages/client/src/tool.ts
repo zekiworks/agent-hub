@@ -660,8 +660,14 @@ export class BusTool {
       }
       case "inbox": {
         const res = await conn.inbox(params.since ?? 0, params.limit ?? 20);
-        if (res.messages.length === 0) return result(`No messages for you${params.since ? ` after #${params.since}` : ""}.`);
-        return result(listed(res, "messages sent to you"));
+        const text =
+          res.messages.length === 0
+            ? `No messages for you${params.since ? ` after #${params.since}` : ""}.`
+            : listed(res, "messages sent to you");
+        // A message returned by this tool is now in the model's context. Report that fact so a turn-boundary Inbox
+        // hook does not inject it again later.
+        for (const message of res.messages) conn.markSeen(message.seq);
+        return result(text);
       }
       case "show": {
         if (params.message_id === undefined) throw new Error("show needs `message_id`.");

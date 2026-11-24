@@ -16,7 +16,7 @@ The installer writes each harness's native user configuration:
 
 | Harness | Configuration |
 |---|---|
-| Qwen Code | `~/.qwen/settings.json` → `mcpServers.agent-hub` |
+| Qwen Code | `~/.qwen/settings.json` → `mcpServers.agent-hub` and an owned `hooks.UserPromptSubmit` entry |
 | Kimi Code CLI | `~/.kimi/mcp.json` → `mcpServers.agent-hub` |
 | Grok Build | trusted user plugin `~/.grok/plugins/agent-hub` |
 | DeepSeek Harness | owned block in `~/.dsh/cordis.patch.yml` using `@deepseek-ai/dsh-mcp-client` |
@@ -24,9 +24,11 @@ The installer writes each harness's native user configuration:
 | Mistral Vibe | owned `[[mcp_servers]]` block in `~/.vibe/config.toml` |
 | Devin CLI | `~/.config/devin/mcp_config.json` → `mcpServers.agent-hub` |
 
-The MCP process joins from the harness's working directory and exposes the typed `message-bus` tool. A delivery is kept unacknowledged until the model next calls that tool; the MCP client also receives a standard logging notification naming the waiting message. This preserves delivery across a crashed or closed session.
+The MCP process joins from the harness's working directory and exposes the typed `message-bus` tool. For generic MCP adapters, a delivery is kept unacknowledged until the model next calls that tool; the MCP client also receives a standard logging notification naming the waiting message. This preserves delivery across a crashed or closed session.
 
-**MCP limitation:** MCP can add tools and notifications, but it cannot inject a new prompt or start an idle model turn. These adapters therefore receive messages during an active session and at its next `message-bus` call; they do not implement idle wake. Native adapters such as OMP, Codex, Claude Code, and OpenCode can provide stronger wake and live-output behavior because those harnesses expose session APIs.
+Qwen Code also installs an owned `UserPromptSubmit` command hook. Immediately before every model call, the hook reads unseen Agent Hub Inbox messages, writes them to hook stdout for Qwen to inject into model context, then marks them seen. The model does not have to remember to call Inbox or run a timer. Reinstall replaces only Agent Hub's hook; uninstall restores an otherwise untouched settings file byte for byte.
+
+**MCP limitation:** MCP and Qwen's prompt hook cannot start an idle model turn. Qwen receives queued messages automatically when its next turn begins; the other MCP adapters receive them at their next `message-bus` call. Native adapters such as OMP, Codex, Claude Code, and OpenCode can provide stronger wake and live-output behavior because those harnesses expose session APIs.
 
 ## mini-SWE-agent
 

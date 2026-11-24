@@ -46,10 +46,11 @@ function withConversations(ctx: BusContext, messages: Message[]): ReadResponse {
   return { messages, conversations: ids.map((id) => ctx.db.getConversation(id)).filter((c): c is Conversation => c !== null) };
 }
 
-/** Messages sent to `for` (it has a receipt), newest `limit`, after `sinceSeq`. */
+/** Messages sent to `for`; newest normally, or the oldest unseen page for a turn-boundary prompt hook. */
 export function getInbox(ctx: BusContext, req: Request, url: URL): ReadResponse {
   const { id } = reader(ctx, req, url, "for");
-  return withConversations(ctx, ctx.db.inboxFor(id, intParam(url, "sinceSeq", 0) ?? 0, readLimit(url)));
+  const unseenOnly = url.searchParams.get("unseen") === "1";
+  return withConversations(ctx, ctx.db.inboxFor(id, intParam(url, "sinceSeq", 0) ?? 0, readLimit(url), unseenOnly));
 }
 
 /**

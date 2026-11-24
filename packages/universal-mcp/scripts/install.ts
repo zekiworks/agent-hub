@@ -46,6 +46,7 @@ const targetDir = (name: UniversalAdapterName, opts: InstallOptions): string =>
 const manifest = (target: string): string => path.join(target, "package.json");
 const ownedName = (name: UniversalAdapterName): string => `@agent-bus/${name}-mcp`;
 const serverFile = (target: string): string => path.join(target, "server.mjs");
+const qwenHookFile = (target: string): string => path.join(target, "qwen-hook.mjs");
 const configFile = (target: string): string => path.join(target, "config.json");
 const jsonSnapshotFile = (target: string): string => path.join(target, "config-snapshot.json");
 
@@ -76,6 +77,42 @@ function managedEntry(value: unknown): boolean {
   return Array.isArray(args) && args.includes("--managed-by") && args.includes("agent-bus");
 }
 
+function managedQwenHook(value: unknown): boolean {
+  const hooks = object(value).hooks;
+  return Array.isArray(hooks) && hooks.some(managedEntry);
+}
+
+/** Removes only Agent Hub's UserPromptSubmit definition; returns whether one was present. */
+function removeManagedQwenHooks(config: Record<string, unknown>): boolean {
+  const hooks = object(config.hooks);
+  const definitions = hooks.UserPromptSubmit;
+  if (!Array.isArray(definitions)) return false;
+  const kept = definitions.filter((definition) => !managedQwenHook(definition));
+  if (kept.length === definitions.length) return false;
+  if (kept.length > 0) hooks.UserPromptSubmit = kept;
+  else delete hooks.UserPromptSubmit;
+  if (Object.keys(hooks).length > 0) config.hooks = hooks;
+  else delete config.hooks;
+  return true;
+}
+
+function addQwenHook(config: Record<string, unknown>, target: string, url: string): void {
+  removeManagedQwenHooks(config);
+  const hooks = object(config.hooks);
+  const definitions = Array.isArray(hooks.UserPromptSubmit) ? hooks.UserPromptSubmit : [];
+  definitions.push({
+    hooks: [{
+      type: "command",
+      command: jsRuntime(),
+      args: [qwenHookFile(target), "--url", url, "--managed-by", "agent-bus"],
+      timeout: 15,
+      statusMessage: "Checking Agent Hub Inbox",
+    }],
+  });
+  hooks.UserPromptSubmit = definitions;
+  config.hooks = hooks;
+}
+
 const jsonText = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
 function readJsonSnapshot(target: string): JsonConfigSnapshot | undefined {
@@ -104,15 +141,17 @@ function setJsonEntry(
   if (servers["agent-hub"] !== undefined && !managedEntry(servers["agent-hub"])) {
     throw new Error(`${file} already has an agent-hub MCP server not written by Agent Hub; not replacing it`);
   }
+  const hadManagedEntry = managedEntry(servers["agent-hub"]);
+  const hadManagedHook = name === "qwen" && removeManagedQwenHooks(config);
   let originalExists = existed;
   let original = before;
   if (previous && before === previous.installed) {
     originalExists = previous.originalExists;
     original = previous.original;
-  } else if (managedEntry(servers["agent-hub"])) {
+  } else if (hadManagedEntry || hadManagedHook) {
     // An orphaned or edited prior install has no exact usable snapshot. Preserve its current user settings, but not
-    // the stale Agent Hub entry that this install replaces.
-    delete servers["agent-hub"];
+    // stale Agent Hub entries that this install replaces.
+    if (hadManagedEntry) delete servers["agent-hub"];
     config[definition.key!] = servers;
     original = jsonText(config);
   }
@@ -121,6 +160,7 @@ function setJsonEntry(
   if (definition.muse) Object.assign(entry, { transport: "stdio", enabled: true, mode: "optional" });
   servers["agent-hub"] = entry;
   config[definition.key!] = servers;
+  if (name === "qwen") addQwenHook(config, target, url);
   writeJson(file, config);
   writeJson(jsonSnapshotFile(target), { originalExists, original, installed: readFileSync(file, "utf8") });
 }
@@ -136,8 +176,10 @@ function removeJsonEntry(definition: Definition, snapshot?: JsonConfigSnapshot):
   }
   const config = readJson(file);
   const servers = object(config[definition.key!]);
-  if (!managedEntry(servers["agent-hub"])) return;
-  delete servers["agent-hub"];
+  const hadManagedEntry = managedEntry(servers["agent-hub"]);
+  const hadManagedHook = definition.command === "qwen" && removeManagedQwenHooks(config);
+  if (!hadManagedEntry && !hadManagedHook) return;
+  if (hadManagedEntry) delete servers["agent-hub"];
   config[definition.key!] = servers;
   writeJson(file, config);
 }
@@ -245,7 +287,13 @@ export async function installUniversal(name: UniversalAdapterName, opts: Install
   const url = installBusUrl(configFile(target), opts.url);
   removeOwnedDir(target, manifest(target), ownedName(name), "plugin");
   mkdirSync(target, { recursive: true });
-  await bundleForNode(root, target, definition.kind === "mini" ? [["src/one-shot.ts", "one-shot"]] : [["src/server.ts", "server"]]);
+  const entries: Array<[string, string]> =
+    definition.kind === "mini"
+      ? [["src/one-shot.ts", "one-shot"]]
+      : name === "qwen"
+        ? [["src/server.ts", "server"], ["src/qwen-hook.ts", "qwen-hook"]]
+        : [["src/server.ts", "server"]];
+  await bundleForNode(root, target, entries);
   writeJson(manifest(target), { name: ownedName(name), version: "0.2.0", private: true });
   writeJson(configFile(target), { busUrl: url, harness: name });
   writeMetadata(target, "message-bus", `${definition.title} bridge for Agent Hub.`);
@@ -275,6 +323,9 @@ export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions
   if (installed && definition.kind === "json") {
     const servers = object(readJson(definition.config!)[definition.key!]);
     if (!managedEntry(servers["agent-hub"])) notes.push(`MCP entry missing from ${definition.config}`);
+    if (name === "qwen" && !removeManagedQwenHooks(readJson(definition.config!))) {
+      notes.push(`Inbox hook missing from ${definition.config}`);
+    }
   }
   if (installed && definition.kind === "mini" && !isOwnedFile(path.join(os.homedir(), ".local", "bin", "agent-bus-mini"))) {
     notes.push("agent-bus-mini launcher is missing; install again");

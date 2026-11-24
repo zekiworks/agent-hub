@@ -337,9 +337,10 @@ export class BusConnection {
     });
   }
 
-  /** Messages sent to this agent (newest `limit`, after `sinceSeq`). Reads only: no turns for anyone. */
-  inbox(sinceSeq: number, limit: number): Promise<ReadResponse> {
+  /** Messages sent to this agent (newest normally; oldest unseen when a prompt hook must drain every page). */
+  inbox(sinceSeq: number, limit: number, unseenOnly = false): Promise<ReadResponse> {
     const qs = new URLSearchParams({ for: this.requireId(), sinceSeq: String(sinceSeq), limit: String(limit) });
+    if (unseenOnly) qs.set("unseen", "1");
     return this.request<ReadResponse>(`/api/inbox?${qs}`, { method: "GET" });
   }
 

@@ -1827,15 +1827,29 @@ export class BusDatabase {
     return this.withReceipts(rows.reverse());
   }
 
-  /** Ascending; the newest `limit` messages sent to `agentId` (it has a receipt for them) with `seq > sinceSeq`. */
-  inboxFor(agentId: string, sinceSeq: number, limit: number): Message[] {
-    const rows = this.db
-      .query<MessageRow, [string, number, number]>(
-        `SELECT m.* FROM messages m JOIN receipts r ON r.seq = m.seq AND r.recipient = ?1
-         WHERE m.seq > ?2 ORDER BY m.seq DESC LIMIT ?3`
-      )
-      .all(agentId, sinceSeq, limit);
-    return this.withReceipts(rows.reverse());
+  /**
+   * Messages sent to `agentId` (it has a receipt for them) with `seq > sinceSeq`.
+   * Normal Inbox reads return the newest page; a prompt hook asks for the oldest unseen page so a backlog over the
+   * page limit drains instead of stranding its older messages.
+   */
+  inboxFor(agentId: string, sinceSeq: number, limit: number, unseenOnly = false): Message[] {
+    const rows = unseenOnly
+      ? this.db
+          .query<MessageRow, [string, number, number, number]>(
+            `SELECT m.* FROM messages m JOIN receipts r ON r.seq = m.seq AND r.recipient = ?1
+             WHERE m.seq > ?2 AND r.seen_at IS NULL
+               AND (r.delivered_at IS NOT NULL OR COALESCE(m.expires_at, m.created_at + ${DEFAULT_HOLD_MS}) > ?4)
+             ORDER BY m.seq ASC LIMIT ?3`
+          )
+          .all(agentId, sinceSeq, limit, Date.now())
+      : this.db
+          .query<MessageRow, [string, number, number]>(
+            `SELECT m.* FROM messages m JOIN receipts r ON r.seq = m.seq AND r.recipient = ?1
+             WHERE m.seq > ?2 ORDER BY m.seq DESC LIMIT ?3`
+          )
+          .all(agentId, sinceSeq, limit)
+          .reverse();
+    return this.withReceipts(rows);
   }
 
   /**

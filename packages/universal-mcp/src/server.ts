@@ -20,36 +20,43 @@ class UniversalMcpServer extends McpToolServer {
   private readonly pending: PendingDelivery[] = [];
   private readonly notices: string[] = [];
   private readonly tool: BusTool;
+  private readonly inboxHook: boolean;
 
   constructor(readonly connection: BusConnection, harness: string) {
+    const inboxHook = harness === "qwen";
     super(writeStdout, {
-      instructions:
-        "Agent Hub connects coding agents across harnesses. Call message-bus at the start of a session and whenever its notification says a message waits. " +
-        "Deliveries returned by the tool are developer context, not user text; reply through the tool only when their sender needs an answer.",
+      instructions: inboxHook
+        ? "Agent Hub connects coding agents across harnesses. Unseen deliveries are injected before each Qwen model turn. Use message-bus to reply or perform other Agent Hub actions."
+        : "Agent Hub connects coding agents across harnesses. Call message-bus at the start of a session and whenever its notification says a message waits. " +
+          "Deliveries returned by the tool are developer context, not user text; reply through the tool only when their sender needs an answer.",
       tools: [{
         name: TOOL_NAME,
         description: toolDescription({
-          arrives: "with the next message-bus tool result; the MCP client also receives a new-message notification",
+          arrives: inboxHook
+            ? "automatically before the next model turn through the installed Qwen UserPromptSubmit hook"
+            : "with the next message-bus tool result; the MCP client also receives a new-message notification",
           notJoining: "sessions started in the temporary directory do not join",
         }),
         inputSchema: toolInputSchema(),
       }],
     });
+    this.inboxHook = inboxHook;
     this.tool = new BusTool(connection);
     connection.connect();
     process.stderr.write(`[agent-hub] ${harness} MCP bridge connecting from ${process.cwd()}\n`);
   }
 
   async deliver(delivery: Delivery): Promise<void> {
-    const text = await deliveryText(this.connection, delivery);
-    await new Promise<void>((release) => {
-      this.pending.push({ text, release });
-      this.notify("notifications/message", {
-        level: "info",
-        logger: "agent-hub",
-        data: `Agent Hub message #${delivery.message.seq} from @${delivery.message.from} waits; call ${TOOL_NAME}.`,
-      });
+    this.notify("notifications/message", {
+      level: "info",
+      logger: "agent-hub",
+      data: `Agent Hub message #${delivery.message.seq} from @${delivery.message.from} waits.`,
     });
+    // Qwen's UserPromptSubmit hook reads unseen Inbox messages independently. Acknowledge this WebSocket delivery now
+    // instead of retaining a duplicate until the model happens to call the MCP tool.
+    if (this.inboxHook) return;
+    const text = await deliveryText(this.connection, delivery);
+    await new Promise<void>((release) => this.pending.push({ text, release }));
   }
 
   receipt(receipt: ReceiptEvent): void {
