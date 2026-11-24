@@ -1,7 +1,7 @@
 // The menu behind a conversation's name (Can #11463): its tab (pin, move; Can #11480) for every conversation, and for a
 // group DM or project also members and adding people, my notifications there, leaving, turning a group DM into a
 // project, a project's topic, visibility and name, archiving (POST /api/conversations/:id/…).
-import type { Conversation, ConversationResponse, NotifyLevel, ProjectVisibility } from "@agent-bus/protocol";
+import type { Conversation, ConversationResponse, NotifyLevel, Participant, ProjectVisibility } from "@agent-bus/protocol";
 import { postJson } from "./api";
 import { closeWindowButton } from "./dialogs";
 import { dom, PHONE } from "./dom";
@@ -27,6 +27,30 @@ const VISIBILITY: Array<[ProjectVisibility, string]> = [
 
 function current(): Conversation | undefined {
   return state.view.kind === "conversation" ? state.conversations.get(state.view.id) : undefined;
+}
+
+/** The one agent in a direct conversation; renaming is a UI label, never a new participant/address. */
+function directAgent(conv: Conversation): Participant | undefined {
+  if (conv.kind !== "dm") return undefined;
+  const others = conv.members.filter((id) => id !== state.me);
+  if (others.length !== 1) return undefined;
+  return state.participants.find((participant) => participant.id === others[0] && participant.kind === "agent");
+}
+
+async function renameAgent(agent: Participant): Promise<void> {
+  const value = prompt(
+    `Name Agent Hub shows for @${agent.id} (leave blank to show its address):`,
+    agent.settings.displayName ?? ""
+  );
+  if (value === null) return;
+  try {
+    await postJson(`/api/participants/${encodeURIComponent(agent.id)}/display-name`, { value });
+    await loadState();
+    renderSidebar();
+    renderAll();
+  } catch (error) {
+    alert(errorText(error));
+  }
 }
 
 /**
@@ -152,6 +176,8 @@ function openNameMenu(): void {
     });
     menu.append(b);
   };
+  const agent = directAgent(conv);
+  if (agent) item("Rename agent…", () => void renameAgent(agent));
   // The gear remains the direct way to add people and agents or change room settings (Ümit #16151). Less frequent
   // destinations stay under the room name, with labels that say what opens.
   if (PHONE.matches) {

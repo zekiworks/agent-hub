@@ -49,7 +49,6 @@ function render(): void {
     head,
     notificationsSetting(),
     decisionModelsSetting(me?.settings.needsInbox),
-    agentNamesSetting(),
     voiceLanguageSetting(me?.settings.voiceLanguage),
     h("h3", "", "Voice messages in English are written by"),
     select,
@@ -111,37 +110,6 @@ function decisionModelsSetting(current: boolean | undefined): HTMLElement | stri
   return section;
 }
 
-/** Friendly labels for the people looking at Agent Hub; stable @addresses keep integrations and history intact. */
-function agentNamesSetting(): HTMLElement {
-  const details = h("details", "settings-agent-names");
-  details.append(h("summary", "", "Agent display names"));
-  const hint = h("p", "dialog-hint", "Change what Agent Hub shows. Stable @addresses, mentions and delivery do not change.");
-  const list = h("div", "settings-agent-name-list");
-  for (const agent of state.participants.filter((participant) => participant.kind === "agent")) {
-    const row = h("label", "settings-agent-name");
-    const address = h("span", "", `@${agent.id}`);
-    const input = h("input");
-    input.type = "text";
-    input.maxLength = 40;
-    input.placeholder = agent.id;
-    input.value = agent.settings.displayName ?? "";
-    const note = h("span", "settings-agent-name-note");
-    const save = h("button", "link-btn", "Save");
-    save.type = "button";
-    save.addEventListener("click", async () => {
-      try {
-        await postJson(`/api/participants/${encodeURIComponent(agent.id)}/display-name`, { value: input.value });
-        note.textContent = input.value.trim() ? "Saved." : "Using address.";
-      } catch (error) {
-        note.textContent = errorText(error);
-      }
-    });
-    row.append(address, input, save, note);
-    list.append(row);
-  }
-  details.append(hint, list);
-  return details;
-}
 
 /** The language of my voice messages (codex-ui #10803): only mine change; the bus's rule is the default. */
 function voiceLanguageSetting(current: AgentSettings["voiceLanguage"]): HTMLElement {
