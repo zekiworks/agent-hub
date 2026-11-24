@@ -136,7 +136,9 @@ export class NeedsJudge {
   }
 
   private people(): string[] {
-    return listedPeople(this.peopleFile).filter((id) => this.ctx.hub.isHuman(id));
+    return listedPeople(this.peopleFile).filter(
+      (id) => this.ctx.hub.isHuman(id) && this.ctx.db.getParticipant(id)?.settings.needsInbox !== false
+    );
   }
 
   /** An agent's message concerns a person in their conversations; in #all, only when it names them. */

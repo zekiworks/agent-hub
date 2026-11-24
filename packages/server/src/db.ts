@@ -375,7 +375,14 @@ function parseSettings(json: string): AgentSettings {
   const displayName = typeof parsed.displayName === "string" && parsed.displayName.trim() && parsed.displayName.trim().length <= 40 ? parsed.displayName.trim() : undefined;
   const englishSpeech = parsed.englishSpeech === "whisper" || parsed.englishSpeech === "liquid" ? parsed.englishSpeech : undefined;
   const voiceLanguage = parsed.voiceLanguage === "en" || parsed.voiceLanguage === "tr" || parsed.voiceLanguage === "auto" ? parsed.voiceLanguage : undefined;
-  return { all, ...(displayName ? { displayName } : {}), ...(englishSpeech ? { englishSpeech } : {}), ...(voiceLanguage ? { voiceLanguage } : {}) };
+  const needsInbox = typeof parsed.needsInbox === "boolean" ? parsed.needsInbox : undefined;
+  return {
+    all,
+    ...(displayName ? { displayName } : {}),
+    ...(englishSpeech ? { englishSpeech } : {}),
+    ...(voiceLanguage ? { voiceLanguage } : {}),
+    ...(needsInbox !== undefined ? { needsInbox } : {}),
+  };
 }
 
 function parseFiles(json: string): FileRef[] {

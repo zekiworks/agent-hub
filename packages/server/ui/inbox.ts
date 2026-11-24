@@ -189,16 +189,27 @@ function renderOwnTasks(root: HTMLElement): boolean {
 
 // ---- Message decisions (Ümit #14881, #16204, #16206): model verdicts plus explicit human labels ----
 
-/** Aggregate model vote: ✓, ✓✓, or ✕. Names and probabilities stay in the tooltip, not beside the icons (#16210). */
+/** Aggregate vote: ✓, ✓✓, or ✕. A tap shows each model's name and percentage (#16210, #16328). */
 function modelMarks(verdicts: NeedsResponse["items"][number]["verdicts"]): HTMLElement {
   const entries = Object.entries(verdicts);
   const selected = entries.filter(([, verdict]) => verdict.needs).length;
-  const mark = h("span", `needs-model ${selected > 0 ? "yes" : "no"}`, selected > 0 ? "✓".repeat(selected) : "✕");
-  mark.title = entries
-    .map(([model, verdict]) => `${MODEL_NAMES[model] ?? model}: ${verdict.needs ? "needs you" : "can wait"} (${Math.round(verdict.p * 100)}%)`)
+  const wrap = h("span", "needs-model-wrap");
+  const mark = h("button", `needs-model ${selected > 0 ? "yes" : "no"}`, selected > 0 ? "✓".repeat(selected) : "✕");
+  mark.type = "button";
+  const details = entries
+    .map(([model, verdict]) => `${MODEL_NAMES[model] ?? model} ${Math.round(verdict.p * 100)}%`)
     .join(" · ");
-  mark.setAttribute("aria-label", selected > 0 ? `${selected} decision model${selected === 1 ? "" : "s"} chose this message` : "No decision model chose this message");
-  return mark;
+  mark.title = details;
+  mark.setAttribute("aria-label", `${selected > 0 ? `${selected} decision model${selected === 1 ? "" : "s"} chose this message` : "No decision model chose this message"}. Show model percentages.`);
+  mark.setAttribute("aria-expanded", "false");
+  const detail = h("span", "needs-model-detail", details);
+  detail.hidden = true;
+  mark.addEventListener("click", () => {
+    detail.hidden = !detail.hidden;
+    mark.setAttribute("aria-expanded", String(!detail.hidden));
+  });
+  wrap.append(mark, detail);
+  return wrap;
 }
 
 /** Records a positive/negative training label, or removes neutrally with reason "read". */

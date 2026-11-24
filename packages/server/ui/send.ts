@@ -19,7 +19,6 @@ import { closeMention, handleMentionKey, updateMention } from "./mentions";
 import { navigate, viewHash } from "./routing";
 import { currentDirectAgent, state, type ItemReply, type View } from "./state";
 import { draftReplaced } from "./suggest";
-import { askSent } from "./ask";
 import { noteAttention } from "./attention";
 import { clearProposal, proposalId } from "./commands";
 import { threadTail } from "./threads";
@@ -134,7 +133,6 @@ async function send(): Promise<void> {
       }
     }
     await postToView(view, text, fileIds, chosen);
-    if (view.kind === "conversation") askSent(view.id, text, !!(chosen.reply || chosen.item));
     // Clear what was sent, from the conversation it was sent in: another one opened meanwhile keeps its draft, and
     // text typed after Send stays (codex-ui #11711).
     const stillThere = place() === sentFrom;

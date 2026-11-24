@@ -29,6 +29,8 @@ export interface AgentSettings {
    * guess. Only this person's voice messages change.
    */
   voiceLanguage?: "en" | "tr" | "auto";
+  /** People: whether decision models judge their Inbox messages and offer usefulness feedback. Absent means on. */
+  needsInbox?: boolean;
 }
 
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = { all: "quiet" };

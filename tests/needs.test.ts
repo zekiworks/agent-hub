@@ -184,6 +184,22 @@ test("selected and rejected messages accept positive or negative human labels; a
   expect(first.message.seq).toBeLessThan(dm.message.seq);
 });
 
+test("a person can turn Inbox decision-model judging off and back on", async () => {
+  const b = start();
+  const id = await room(b);
+  expect((await postJson(b, "/api/settings", { from: "carol", key: "needsInbox", value: false })).status).toBe(200);
+  await send(b, { from: "webapp", conversationId: id, text: "Should this stay unjudged?", wake: [] });
+  await Bun.sleep(100);
+  expect(asked).toEqual([]);
+  expect(await waitingFor(b, "carol")).toMatchObject({ items: [], candidates: [] });
+
+  expect((await postJson(b, "/api/settings", { from: "carol", key: "needsInbox", value: true })).status).toBe(200);
+  await send(b, { from: "webapp", conversationId: id, text: "Should this be judged?", wake: [] });
+  await until(() => asked.length === 1);
+  await until(async () => (await waitingFor(b, "carol")).items.length === 1);
+  expect((await waitingFor(b, "carol")).items[0]!.message.text).toBe("Should this be judged?");
+});
+
 test("a failing box is harmless: messages still go; a model's error keeps the other's verdict", async () => {
   const b = start();
   const id = await room(b);

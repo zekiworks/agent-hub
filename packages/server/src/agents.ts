@@ -295,18 +295,23 @@ export async function postSetting(ctx: BusContext, req: Request): Promise<{ part
   if (!participant) throw new HttpError(400, "from must be a participant id; settings are per participant");
   ctx.checkWriter(req, participant);
   if (participant.kind === "human") {
-    // People's settings: who writes their English voice messages, and the language of their voice messages.
+    // People's settings: voice transcription and whether the Inbox decision-model add-on concerns them.
     let settings: AgentSettings;
+    let needsChanged = false;
     if (body.key === "englishSpeech" && (body.value === "whisper" || body.value === "liquid")) {
       settings = { ...participant.settings, englishSpeech: body.value };
     } else if (body.key === "voiceLanguage" && (body.value === "en" || body.value === "tr" || body.value === "auto" || body.value === "default")) {
       const { voiceLanguage: _, ...rest } = participant.settings;
       settings = body.value === "default" ? rest : { ...rest, voiceLanguage: body.value };
+    } else if (body.key === "needsInbox" && typeof body.value === "boolean") {
+      settings = { ...participant.settings, needsInbox: body.value };
+      needsChanged = true;
     } else {
-      throw new HttpError(400, 'People\'s settings: englishSpeech ("whisper" or "liquid"), voiceLanguage ("en", "tr", "auto" or "default")');
+      throw new HttpError(400, 'People settings: englishSpeech, voiceLanguage, or boolean needsInbox');
     }
     ctx.db.setSettings(participant.id, settings);
     ctx.hub.broadcastParticipants();
+    if (needsChanged) ctx.hub.needsChanged(participant.id);
     return { participant: ctx.hub.toParticipant({ ...participant, settings }) };
   }
   if (body.key !== "all") {

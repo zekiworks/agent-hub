@@ -29,7 +29,6 @@ import "./files";
 import "./column";
 import "./settings";
 import "./suggest";
-import "./ask";
 import "./stats";
 import "./tools";
 import "./search";

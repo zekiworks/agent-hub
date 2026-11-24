@@ -20,11 +20,12 @@ import { isPinned, setMessagePinned } from "./pins";
 import { bookmarkButton, isBookmarked } from "./bookmarks";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, participantDisplayName, projectColor, state } from "./state";
-import { conversationLink, flashMessage, markReadParts, markSelected, mentionNodes, mentionsMe, readButton, selectMessage, shownMessage, textBlocks } from "./text";
+import { conversationLink, flashMessage, markReadParts, markSelected, mentionNodes, mentionsMe, selectMessage, shownMessage, textBlocks } from "./text";
 import { PULSE_MS } from "./toast";
 import { noteAttention } from "./attention";
 import { inlinedFiles, markInlined, placeInlined } from "./inline";
 import { displayed, markThreadRead, newReplies, type Threads } from "./threads";
+import { startVoiceReply } from "./voice";
 
 export function renderAll(): void {
   renderSidebar();
@@ -370,7 +371,6 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   const actions = h("div", "msg-actions");
   const deleted = !!message.deletedAt;
   const speak = message.text && !deleted ? speakButton(message) : undefined;
-  const read = message.text && !deleted ? readButton(message.seq) : undefined;
   const copy = message.text && !deleted ? copyButton(message) : undefined;
   // ↪ shows it to someone else (Can #12470).
   const forward = state.me && !deleted ? forwardButton(message) : undefined;
@@ -391,11 +391,19 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     const same = state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq;
     setReplyTo(same ? undefined : message);
   });
-  // Every screen keeps only three icon actions (Copy, Task, Reply) and More. The rest stay icon-only behind More
-  // (Ümit #15935); titles and accessible names explain them without widening or moving the row.
+  const voiceReply = !deleted && state.me ? h("button", "msg-action-btn msg-voice-reply-btn") : undefined;
+  if (voiceReply) {
+    setIcon(voiceReply, "mic");
+    voiceReply.type = "button";
+    voiceReply.title = "Record a voice reply";
+    voiceReply.setAttribute("aria-label", `Record a voice reply to message #${message.seq}`);
+    voiceReply.addEventListener("click", () => startVoiceReply({ kind: "conversation", id: message.conversationId }, message));
+  }
+  // Keep Copy and Reply visible. Task replaces the old envelope action inside More; the microphone sits immediately
+  // below Forward everywhere (Ümit #16328, #16329). Titles and accessible names explain every icon.
   const extra = h("div", "msg-actions-extra");
   const extraColumn = h("div", "msg-actions-extra-column");
-  const extraButtons = [read, speak, bookmark, pin, forward, changes[0], changes[1]];
+  const extraButtons = [ownTask, speak, bookmark, pin, forward, voiceReply, changes[0], changes[1]];
   for (const button of extraButtons) {
     if (button) extraColumn.append(button);
   }
@@ -426,7 +434,6 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     requestAnimationFrame(keepVisible);
   });
   if (copy) actions.append(copy);
-  if (ownTask) actions.append(ownTask);
   if (!deleted) actions.append(replyBtn);
   if (extraColumn.childElementCount > 0) actions.append(overflow, extra);
   li.addEventListener("mouseenter", () => {
