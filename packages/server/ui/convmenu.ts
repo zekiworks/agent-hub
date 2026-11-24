@@ -152,6 +152,15 @@ function openNameMenu(): void {
     });
     menu.append(b);
   };
+  // The phone header stays one quiet row: its secondary controls live under the name instead of crowding the room
+  // title (Ümit #15991). Their original buttons still own the behavior and availability.
+  if (PHONE.matches) {
+    item("Search messages", () => dom.convSearchBtn.click());
+    item("Members and details", () => dom.detailsBtn.click());
+    if (!dom.convSettingsBtn.hidden) item("Conversation settings", () => dom.convSettingsBtn.click());
+    if (!dom.checklistBtn.hidden) item("Pinned items", () => dom.checklistBtn.click());
+    if (!dom.paneBtn.hidden) item("Workspace", () => dom.paneBtn.click());
+  }
   if (isTab(conv.id)) {
     const i = state.tabs.indexOf(conv.id);
     item("‹ Move tab left", () => moveTab(conv.id, -1), i <= 0);

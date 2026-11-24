@@ -321,10 +321,10 @@ function pastedName(file: File, index: number): File {
   return new File([file], `pasted-${stamp}${index > 0 ? `-${index + 1}` : ""}.${ext}`, { type: file.type });
 }
 
-// Safari's floating writing suggestions covered the right side of the phone composer and could not be dismissed
-// (#15934), so index.html keeps them off. The ordinary keyboard bar and spelling corrections remain. With a mouse,
-// automatic correction stays off; misspellings keep the browser's red line and right-click corrections.
-if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) dom.input.setAttribute("autocorrect", "off");
+// Safari's writing and autocorrection bubbles covered the right side of the phone composer, including Send
+// (Ümit #15934, #15992). Keep both native overlays off; the keyboard's prediction bar and Agent Hub's dismissible
+// local suggestion remain available.
+dom.input.setAttribute("autocorrect", "off");
 
 // Ctrl/⌘+V of an image (a screenshot) or of copied files attaches them; text pastes as usual. When the clipboard holds
 // text as well (copied from Notes, Mail or a web page, which also carry a picture of it), the text is what was meant:

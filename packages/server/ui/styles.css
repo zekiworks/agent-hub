@@ -4539,17 +4539,15 @@ ul.md-list ul.md-list { list-style: circle; }
     color: var(--accent);
   }
 
-  /* Search stays at the right of the first row. The centred bar below the header folds and unfolds it from the same
-     place, instead of closing with one arrow and reopening from somewhere else (Ümit #15936). */
-  .conv-bar .conv-search-btn {
-    display: grid;
-    flex: none;
-    order: 1;
-    min-width: 44px;
-    min-height: 44px;
-    margin-left: auto;
-    place-items: center;
-    font-size: 20px;
+  /* The room name is the single phone entry point. Search, settings, details, pins and Workspace remain in its menu,
+     instead of competing with the name in the header (Ümit #15991). */
+  .conv-bar .conv-search-btn,
+  .conv-bar .conv-settings-btn,
+  .conv-bar .details-btn,
+  .conv-bar .checklist-btn,
+  .conv-bar .ws-open-btn,
+  .conv-parent {
+    display: none !important;
   }
   .conv-bar .fold-btn {
     display: flex;
