@@ -3,8 +3,7 @@
 // change of the draft asks it for the next words, one request at a time (the newest draft goes next). An answer
 // shows as long as it still fits what is typed: typing the suggested letters keeps showing the rest, typing something
 // else hides it. The words show in grey after the cursor; Tab takes them, Escape drops them. Phones have no Tab:
-// there a chip with the whole word, in the row of buttons, takes them on a tap. Not Enter: Enter sends, and Safari's grey completion taking Enter
-// is why it was turned off (Ümit #11651). Phones too, once ticked in Settings (Ümit #13228).
+// there a chip takes the words on a tap and a neighbouring × drops them (Ümit #15934). Not Enter: Enter sends.
 import type { BoxResponse } from "@agent-bus/protocol";
 import { api } from "./api";
 import { dom } from "./dom";
@@ -33,13 +32,17 @@ const ghost = h("div", "composer-ghost");
 ghost.setAttribute("aria-hidden", "true");
 dom.input.before(ghost);
 /**
- * The phones' way to take them: a chip in the row of buttons under the text, in the room that row has anyway, so
- * the box keeps its size and place when it comes and goes (Ümit #13025: under the text it moved the box).
+ * The phones' way to take or dismiss them: a word chip and × in the tools row, so the box keeps its size and place.
  */
 const chip = h("button", "suggest-chip");
 chip.type = "button";
 chip.hidden = true;
-(dom.composer.querySelector(".composer-tools .tools-spacer") ?? dom.input).before(chip);
+const dismiss = h("button", "icon-btn suggest-dismiss", "×");
+dismiss.type = "button";
+dismiss.hidden = true;
+dismiss.title = "Dismiss the typing suggestion";
+dismiss.setAttribute("aria-label", "Dismiss the typing suggestion");
+(dom.composer.querySelector(".composer-tools .tools-spacer") ?? dom.input).before(chip, dismiss);
 
 /** The latest answer: the draft it was for, and that draft followed by its words. Shown while the box's text runs
  * from the draft into the words (so an answer for an earlier, shorter text never shows after a send or a deletion). */
@@ -56,6 +59,7 @@ function hide(): void {
   shown = undefined;
   ghost.replaceChildren();
   chip.hidden = true;
+  dismiss.hidden = true;
 }
 
 /** Forgets everything: what is shown, the answer kept, the request on its way. */
@@ -114,8 +118,11 @@ function show(text: string): void {
   chip.textContent = (typedPart + text).trim();
   chip.title = "Tap to add";
   chip.setAttribute("aria-label", `Add: ${chip.textContent}`);
-  chip.hidden = !window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  const phone = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  chip.hidden = !phone;
+  dismiss.hidden = !phone;
 }
+
 
 /**
  * Shows what is ahead of the typed text: the rest of the word being typed (word lists), and the model's latest
@@ -276,10 +283,12 @@ document.addEventListener("selectionchange", () => {
   if (document.activeElement === dom.input && shown && !atEnd()) hide();
 });
 dom.input.addEventListener("scroll", () => (ghost.scrollTop = dom.input.scrollTop));
-// A finger on the chip: the box may lose the focus before the tap's click arrives (Safari on the iPhone), and the blur
-// must not drop the words the tap is about to take (Ümit #13174: tapping the chip did nothing).
+// A finger on either suggestion control must not make the box lose focus before the tap arrives.
 let chipPressed = false;
-dom.input.addEventListener("blur", () => setTimeout(() => !chipPressed && document.activeElement !== chip && hide(), 0));
+let dismissPressed = false;
+dom.input.addEventListener("blur", () =>
+  setTimeout(() => !chipPressed && !dismissPressed && document.activeElement !== chip && document.activeElement !== dismiss && hide(), 0)
+);
 // A tap on the chip must not take the focus (the keyboard would drop): pointerdown keeps it in the box. Safari then
 // sends no click at all, so the words are taken on pointerup (Ümit #13338, #13343: tapping did nothing); a click
 // that does come after it (Chrome) is not a second take, and a click without one (keyboard) takes.
@@ -313,16 +322,48 @@ chip.addEventListener("touchend", (event) => {
   tookOnPointerUp = true;
   take();
 });
+let dismissedOnPointerUp = false;
+const dismissNow = (): void => reset();
+dismiss.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  dismissPressed = true;
+  dismissedOnPointerUp = false;
+});
+dismiss.addEventListener("pointercancel", () => (dismissPressed = false));
+dismiss.addEventListener("pointerup", () => {
+  if (!dismissPressed) return;
+  dismissPressed = false;
+  dismissedOnPointerUp = true;
+  dismissNow();
+});
+dismiss.addEventListener("click", () => {
+  if (dismissedOnPointerUp) {
+    dismissedOnPointerUp = false;
+    return;
+  }
+  dismissNow();
+});
+dismiss.addEventListener("touchstart", (event) => event.preventDefault(), { passive: false });
+dismiss.addEventListener("touchend", (event) => {
+  event.preventDefault();
+  dismissPressed = false;
+  dismissedOnPointerUp = true;
+  dismissNow();
+});
 // A tap on the grey words themselves takes them (Ümit #13730: "when I tap on a suggestion" nothing happened; the grey
 // words lie under the box, so a tap there only moved the cursor). Only a short tap, not one that scrolls or selects.
 let boxTouch: { x: number; y: number } | undefined;
-dom.input.addEventListener("touchstart", (event) => {
-  const t = event.touches[0];
-  boxTouch = shown && event.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : undefined;
-}, { passive: true });
+dom.input.addEventListener(
+  "touchstart",
+  (event) => {
+    const t = event.touches[0];
+    boxTouch = shown && event.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : undefined;
+  },
+  { passive: true }
+);
 dom.input.addEventListener("touchend", (event) => {
-  const t = event.changedTouches[0];
   const was = boxTouch;
+  const t = event.changedTouches[0];
   boxTouch = undefined;
   if (!was || !t || !shown || Math.hypot(t.clientX - was.x, t.clientY - was.y) > 10) return;
   const words = ghost.querySelector(".ghost-words");

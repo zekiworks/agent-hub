@@ -388,26 +388,16 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     const same = state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq;
     setReplyTo(same ? undefined : message);
   });
-  // A phone keeps Copy, Task and Reply in the first row: the envelope was an unexplained Read/Unread control there
-  // (Ümit #15918). More names that control and the remaining actions. Desktop CSS keeps Can's requested full order.
+  // Every screen keeps only three icon actions (Copy, Task, Reply) and More. The rest stay icon-only behind More
+  // (Ümit #15935); titles and accessible names explain them without widening or moving the row.
   const extra = h("div", "msg-actions-extra");
-  const named: Array<[HTMLElement | undefined, string | undefined]> = [
-    [read, read?.classList.contains("marked-read") ? "Unread" : "Read"],
-    [speak, "Read aloud"],
-    [bookmark, bookmark?.classList.contains("bookmarked") ? "Unstar" : "Star"],
-    [pin, pin?.classList.contains("pinned") ? "Unpin" : "Pin"],
-    [forward, "Forward"],
-    [changes[0], "Edit"],
-    [changes[1], "Delete"],
-  ];
-  for (const [button, name] of named) {
-    if (!button) continue;
-    if (name) button.append(h("span", "msg-extra-label", name));
-    extra.append(button);
+  const extraButtons = [read, speak, bookmark, pin, forward, changes[0], changes[1]];
+  for (const button of extraButtons) {
+    if (button) extra.append(button);
   }
   const overflow = h("button", "msg-action-btn msg-overflow-btn", "⋯");
   overflow.type = "button";
-  overflow.title = "More: read, read aloud, star, pin, forward…";
+  overflow.title = "More message actions";
   overflow.setAttribute("aria-label", `More buttons for message #${message.seq}`);
   overflow.setAttribute("aria-expanded", "false");
   overflow.addEventListener("click", (event) => {

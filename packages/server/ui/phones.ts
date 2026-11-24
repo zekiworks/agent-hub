@@ -108,10 +108,10 @@ function setFolded(on: boolean): void {
   const fromBottom = s.scrollHeight - s.scrollTop - s.clientHeight;
   document.documentElement.classList.toggle("header-folded", on);
   s.scrollTop = s.scrollHeight - s.clientHeight - fromBottom;
-  dom.foldBtn.textContent = on ? "⌄" : "⌃";
+  dom.foldBtn.textContent = "";
   dom.foldBtn.setAttribute("aria-expanded", String(!on));
   dom.foldBtn.setAttribute("aria-label", on ? "Show controls" : "Hide controls");
-  dom.foldBtn.title = on ? "Show the tabs and the room's buttons" : "Hide the tabs and the room's buttons";
+  dom.foldBtn.title = on ? "Show the tabs and room controls" : "Hide the tabs and room controls";
   if (on) localStorage.setItem(FOLD_KEY, "1");
   else localStorage.removeItem(FOLD_KEY);
 }

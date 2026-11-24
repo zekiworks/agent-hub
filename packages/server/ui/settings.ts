@@ -296,8 +296,9 @@ function suggestionSetting(): HTMLElement {
       "p",
       "dialog-hint",
       "As you type, the rest of the word appears in grey after the cursor: Tab adds it, → (or Ctrl+→) one word at a " +
-        "time (on a phone, tap the word in the row of buttons). Escape drops it, and typing other letters makes it go. Enter still " +
-        "sends what you typed. Words come from English and Turkish word lists (Turkish also typed without ç ğ ı ö ş ü) " +
+        "time (on a phone, tap the word in the row of buttons, or × to dismiss it). Escape drops it, and typing other " +
+        "letters makes it go. Enter still sends what you typed. Words come from English and Turkish word lists (Turkish " +
+        "also typed without ç ğ ı ö ş ü) " +
         `and from the conversation itself, inside this page.${model} Only this browser.`
     )
   );
