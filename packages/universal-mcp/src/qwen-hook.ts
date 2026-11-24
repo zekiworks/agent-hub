@@ -28,9 +28,9 @@ async function main(): Promise<void> {
     onLog: (line) => process.stderr.write(`[agent-hub] ${line}\n`),
   });
   connection.connect();
-  const timer = setTimeout(joined, 8_000);
+  // Qwen owns the command deadline. This hook waits only for the join event: it never polls Agent Hub or schedules a
+  // background timer between turns.
   await ready;
-  clearTimeout(timer);
   if (!connection.id) throw new Error("Agent Hub did not accept the Qwen Inbox hook connection");
 
   const inbox = await connection.inbox(0, 100, true);
@@ -54,7 +54,6 @@ async function main(): Promise<void> {
     connection.markSeen(message.seq);
   }
   if (injected.length > 0) process.stdout.write(`${injected.join("\n\n")}\n`);
-  await new Promise((resolve) => setTimeout(resolve, 25));
   connection.close();
 }
 
