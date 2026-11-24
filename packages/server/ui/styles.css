@@ -2460,8 +2460,8 @@ button:disabled {
   opacity: 0;
   pointer-events: none;
   transition:
-    grid-template-rows 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 90ms ease-out;
+    grid-template-rows 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 120ms ease-out;
 }
 .msg-actions-extra-column {
   min-height: 0;
@@ -2478,7 +2478,7 @@ button:disabled {
 }
 .msg-actions-open .msg-actions-extra-column {
   padding-top: 4px;
-  animation: msg-actions-bounce 220ms ease-out;
+  animation: msg-actions-bounce 480ms ease-in-out;
 }
 .msg-actions-extra .msg-action-btn {
   display: inline-flex;
@@ -2487,12 +2487,15 @@ button:disabled {
 }
 @keyframes msg-actions-bounce {
   0%,
-  64%,
+  38%,
   100% {
     transform: translateY(0);
   }
-  82% {
+  68% {
     transform: translateY(3px);
+  }
+  85% {
+    transform: translateY(-1px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
