@@ -2,5 +2,8 @@
   "name": "@agent-bus/universal-mcp",
   "version": "0.2.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@qwen-code/sdk": "0.1.35"
+  }
 }
