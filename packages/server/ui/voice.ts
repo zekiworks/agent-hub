@@ -28,6 +28,9 @@ const MIME_TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/
 const WAVE_STEP_MS = 60;
 const WAVE_BAR_PX = 3;
 const WAVE_GAP_PX = 2;
+/** iPhone Safari records from the native touch lifecycle; its pointer release can disappear behind the mic prompt. */
+const PHONE_TOUCH = window.matchMedia("(hover: none) and (pointer: coarse)");
+
 
 /** This browser's microphone (a MediaDeviceInfo deviceId; none: the browser's default; Can #13887). */
 const MIC_KEY = "agent-bus.microphone";
@@ -491,9 +494,7 @@ async function send(file: File, duration: number, view: View, chosen: Chosen): P
   }
 }
 
-dom.voiceBtn.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0) return;
-  event.preventDefault(); // no text selection or long-press menu on phones
+function beginVoicePress(): void {
   // 🎤 again during a click-started recording sends it.
   if (recording && state.voiceLatched) return void stop(false);
   // 🎤 again while the microphone is still starting cancels it.
@@ -502,17 +503,11 @@ dom.voiceBtn.addEventListener("pointerdown", (event) => {
     hideStatus();
     return;
   }
-  // A pointer the browser no longer counts as down can't be captured; the recording starts anyway.
-  try {
-    dom.voiceBtn.setPointerCapture(event.pointerId);
-  } catch {
-    // the window listeners below still hear the release
-  }
   held = true;
   void start();
-});
+}
 
-dom.voiceBtn.addEventListener("pointerup", (event) => {
+function releaseVoicePress(clientX: number, clientY: number): void {
   held = false;
   if (!recording || state.voiceLatched) return;
   // A short press was a click: keep recording until Send. So is a hold let go before anyone spoke: sending it sent
@@ -524,14 +519,51 @@ dom.voiceBtn.addEventListener("pointerup", (event) => {
   }
   const box = dom.voiceBtn.getBoundingClientRect();
   const away =
-    event.clientX < box.left - CANCEL_DISTANCE_PX ||
-    event.clientX > box.right + CANCEL_DISTANCE_PX ||
-    event.clientY < box.top - CANCEL_DISTANCE_PX ||
-    event.clientY > box.bottom + CANCEL_DISTANCE_PX;
+    clientX < box.left - CANCEL_DISTANCE_PX ||
+    clientX > box.right + CANCEL_DISTANCE_PX ||
+    clientY < box.top - CANCEL_DISTANCE_PX ||
+    clientY > box.bottom + CANCEL_DISTANCE_PX;
   void stop(away);
-  // Not silently: a recording thrown away looks like one that failed to send (Ümit, 16 Nov).
   if (away) showStatus("Recording discarded: your finger let go away from 🎤. Tap 🎤 once, then ➤, to send without holding.");
+}
+
+dom.voiceBtn.addEventListener("pointerdown", (event) => {
+  if (PHONE_TOUCH.matches || event.button !== 0) return;
+  event.preventDefault();
+  try {
+    dom.voiceBtn.setPointerCapture(event.pointerId);
+  } catch {
+    // the window listener below still hears the release
+  }
+  beginVoicePress();
 });
+
+dom.voiceBtn.addEventListener("pointerup", (event) => {
+  if (PHONE_TOUCH.matches) return;
+  releaseVoicePress(event.clientX, event.clientY);
+});
+
+// Native touch events are the dependable user gesture on iPhone Safari, especially when its microphone permission
+// sheet takes pointer capture away from the page (Ümit #16238, #16239).
+dom.voiceBtn.addEventListener(
+  "touchstart",
+  (event) => {
+    if (!PHONE_TOUCH.matches) return;
+    event.preventDefault();
+    beginVoicePress();
+  },
+  { passive: false }
+);
+dom.voiceBtn.addEventListener(
+  "touchend",
+  (event) => {
+    if (!PHONE_TOUCH.matches) return;
+    event.preventDefault();
+    const touch = event.changedTouches[0];
+    releaseVoicePress(touch?.clientX ?? 0, touch?.clientY ?? 0);
+  },
+  { passive: false }
+);
 
 // The phone took the touch away (a permission prompt, the microphone's dialog in a Home Screen app, a swipe): the
 // recording goes on as if 🎤 had been tapped, so ➤ sends it and 🗑 drops it. Throwing it away lost what she said
