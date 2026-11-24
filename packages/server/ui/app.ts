@@ -166,7 +166,7 @@ window.addEventListener("hashchange", () => {
   applyView(parseHash());
 });
 
-// "#…" in the top bar: go to a message by its number.
+// "Go to message #…" in Tools: open a message by its number.
 dom.gotoBtn.addEventListener("click", () => {
   const answer = prompt("Go to message number:");
   const seq = Number((answer ?? "").trim().replace(/^#/, ""));

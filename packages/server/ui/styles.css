@@ -4451,16 +4451,13 @@ ul.md-list ul.md-list { list-style: circle; }
     display: none;
   }
 
-  /* The phone's top bar (codex-ui #10248: three busy rows): brand, then Settings, Tools, GPUs, notifications, ✉ ☆ and the
-     account under it. "#…" (also …/#/m/1234) stays on wider screens only. */
+  /* The phone's top bar (codex-ui #10248: three busy rows): brand, then Settings, Tools, GPUs, notifications, ✉ ☆ and
+     the account under it. Occasional controls, including Go to message, stay inside Tools. */
   .topbar {
     flex-wrap: wrap;
     gap: 8px 14px;
   }
 
-  #goto-btn {
-    display: none;
-  }
 
   .app.phone-list {
     grid-template-rows: auto minmax(0, 1fr);

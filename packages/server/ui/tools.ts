@@ -1,5 +1,5 @@
-// Tools (#10101): occasional utilities (Stats, GPU booking) in one top-bar menu instead of a row of links. Its items
-// keep their own handlers (stats.ts, gpus.ts); this only opens and closes the menu.
+// Tools (#10101): occasional utilities (Go to message, Stats, GPU booking) in one top-bar menu instead of a row of
+// controls. Items keep their own handlers (app.ts, stats.ts, gpus.ts); this only opens and closes the menu.
 import { dom } from "./dom";
 
 function setOpen(on: boolean): void {
