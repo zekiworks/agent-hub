@@ -5709,3 +5709,46 @@ ul.md-list ul.md-list { list-style: circle; }
     flex-basis: auto;
   }
 }
+
+/* Phone landscape is reading mode (Can #16469): no navigation, Workspace chrome or writing controls—only the
+   conversation's messages. The height gate keeps landscape tablets and short desktop windows in their normal layout. */
+@media (orientation: landscape) and (max-height: 640px) and (hover: none) and (pointer: coarse) {
+  .app,
+  .app.with-pane,
+  .app.phone-list {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "main";
+  }
+
+  .topbar,
+  .sidebar,
+  .pane,
+  .tab-row,
+  .conv-header,
+  .composer,
+  .chat-resize,
+  .working-line,
+  .ws-head {
+    display: none !important;
+  }
+
+  .main,
+  .app.with-pane .main,
+  .app.phone-list .main {
+    display: flex !important;
+    grid-area: main;
+  }
+
+  .chat,
+  .app.with-pane .chat {
+    max-width: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+}
