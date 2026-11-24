@@ -419,6 +419,7 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     const open = actions.classList.toggle("msg-actions-open");
     overflow.setAttribute("aria-expanded", String(open));
     if (!open) return;
+    bounceActionColumn(extraColumn);
     const keepVisible = () => {
       if (!actions.classList.contains("msg-actions-open")) return;
       revealActions(actions);
@@ -537,6 +538,37 @@ function pulseAt(message: Message): number | undefined {
   if (elapsed < PULSE_MS) return elapsed;
   pulse = undefined;
   return undefined;
+}
+
+/**
+ * More opens like one physical drop (Can #16377): every button starts at the first button's row, moves downward at
+ * the same constant speed, then returns at half that speed. The bottom button overshoots by one button height; each
+ * button above overshoots half as far as the one below it. Their different distances therefore finish naturally,
+ * without a fixed stagger or spring easing.
+ */
+function bounceActionColumn(column: HTMLElement): void {
+  const buttons = [...column.querySelectorAll<HTMLElement>(":scope > .msg-action-btn")];
+  for (const button of buttons) button.getAnimations().forEach((animation) => animation.cancel());
+  if (buttons.length === 0 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const firstTop = buttons[0]!.offsetTop;
+  const bottomHeight = buttons.at(-1)!.getBoundingClientRect().height;
+  const downSpeed = 0.8; // CSS pixels per millisecond; return speed is exactly half.
+  const last = buttons.length - 1;
+  buttons.forEach((button, index) => {
+    const startDistance = Math.max(0, button.offsetTop - firstTop);
+    const overshoot = bottomHeight / 2 ** (last - index);
+    const downMs = (startDistance + overshoot) / downSpeed;
+    const backMs = overshoot / (downSpeed / 2);
+    const duration = downMs + backMs;
+    button.animate(
+      [
+        { transform: `translateY(${-startDistance}px)`, offset: 0 },
+        { transform: `translateY(${overshoot}px)`, offset: downMs / duration },
+        { transform: "translateY(0)", offset: 1 },
+      ],
+      { duration, easing: "linear" }
+    );
+  });
 }
 
 /**

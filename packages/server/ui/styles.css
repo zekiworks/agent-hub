@@ -2487,8 +2487,8 @@ button:disabled {
   color: var(--success);
 }
 
-/* Three icon-only actions plus More on every screen. More grows a vertical column with one short height/opacity
-   transition and no simulated bounce (Can #16055). */
+/* Three icon-only actions plus More on every screen. More grows a vertical column, then render.ts drops each button
+   at constant speed through a geometric overshoot and returns it at half-speed (Can #16377). */
 .msg-overflow-btn {
   display: inline-block;
 }
@@ -2518,6 +2518,7 @@ button:disabled {
 }
 .msg-actions-open .msg-actions-extra-column {
   padding-top: 4px;
+  overflow: visible;
 }
 .msg-actions-extra .msg-action-btn {
   display: inline-flex;
