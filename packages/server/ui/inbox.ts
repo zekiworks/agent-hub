@@ -414,7 +414,12 @@ registerExtension({
       });
       bar.append(b);
     }
-    const closed = h("label", "inbox-closed");
+    root.append(bar);
+    // This filters tasks only, not "Waiting for your answer". Keep it beside the task lists instead of the Inbox
+    // close button, where "closed too" looked like another way to close the pane (Ümit #16125, #16126).
+    const answers = box === "mine" && renderWaiting(root);
+    const completed = h("label", "inbox-closed");
+    completed.title = "Include completed, rejected and withdrawn tasks; messages waiting for your answer are unchanged";
     const check = h("input");
     check.type = "checkbox";
     check.checked = showClosed;
@@ -422,11 +427,9 @@ registerExtension({
       showClosed = check.checked;
       void refreshInbox();
     });
-    closed.append(check, " closed too");
-    bar.append(closed);
-    root.append(bar);
-    // Under "For me": the messages waiting for my answer, then my own tasks, then those others gave me.
-    const answers = box === "mine" && renderWaiting(root);
+    completed.append(check, " Show completed tasks");
+    root.append(completed);
+    // Under "For me": my own tasks, then those others gave me.
     const own = box === "mine" && renderOwnTasks(root);
     if (!data) root.append(h("p", "check-note", "Loading…"));
     else if (data.messages.length === 0) {
