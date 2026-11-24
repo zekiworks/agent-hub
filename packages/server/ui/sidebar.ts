@@ -38,7 +38,6 @@ const SIDEBAR_HIDDEN_KEY = "agent-bus.sidebar-hidden";
 /** Desktop navigation can yield the full window to the conversation; phones already show one screen at a time. */
 function setSidebarHidden(hidden: boolean): void {
   dom.app.classList.toggle("sidebar-hidden", hidden);
-  dom.sidebarBtn.textContent = hidden ? "›" : "‹";
   dom.sidebarBtn.title = hidden ? "Show navigation" : "Hide navigation";
   dom.sidebarBtn.setAttribute("aria-label", dom.sidebarBtn.title);
   dom.sidebarBtn.setAttribute("aria-pressed", String(hidden));

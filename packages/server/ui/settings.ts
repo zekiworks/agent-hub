@@ -114,7 +114,7 @@ function decisionModelsSetting(current: boolean | undefined): HTMLElement | stri
 /** Friendly labels for the people looking at Agent Hub; stable @addresses keep integrations and history intact. */
 function agentNamesSetting(): HTMLElement {
   const details = h("details", "settings-agent-names");
-  details.append(h("summary", "", "Rename agents"));
+  details.append(h("summary", "", "Agent display names"));
   const hint = h("p", "dialog-hint", "Change what Agent Hub shows. Stable @addresses, mentions and delivery do not change.");
   const list = h("div", "settings-agent-name-list");
   for (const agent of state.participants.filter((participant) => participant.kind === "agent")) {
@@ -376,14 +376,6 @@ function suggestionSetting(): HTMLElement {
 }
 
 
-/** Tools → Rename agents: open the exact Settings section instead of making people hunt through the dialog. */
-export function openAgentNamesSetting(): void {
-  render();
-  const details = dom.settingsDialog.querySelector<HTMLDetailsElement>(".settings-agent-names");
-  if (details) details.open = true;
-  dom.settingsDialog.showModal();
-  requestAnimationFrame(() => details?.querySelector<HTMLInputElement>("input")?.focus());
-}
 
 dom.settingsBtn.addEventListener("click", () => {
   render();

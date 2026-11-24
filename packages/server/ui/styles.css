@@ -74,21 +74,23 @@ button:disabled {
 /* ---- Layout ---- */
 
 .app {
+  --sidebar-width: 220px;
   height: 100vh;
   /* Phones: the visible height, which shrinks when the on-screen keyboard opens. */
   height: 100dvh;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     "top top"
     "side main";
+  transition: grid-template-columns 180ms ease-out;
 }
 
 /* With the Workspace open (pane.ts), it takes its own width (~420 px, or what it was dragged to: --ws-width, #10103)
    and the conversation the rest. */
 .app.with-pane {
-  grid-template-columns: 220px minmax(0, 1fr) var(--ws-width, 420px);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--ws-width, 420px);
   grid-template-areas:
     "top top top"
     "side main doc";
@@ -98,21 +100,22 @@ button:disabled {
    (Ümit #16432). Phones already switch between the list and one conversation, so this does not affect them. */
 @media (min-width: 641px) {
   .app.sidebar-hidden {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "top"
-      "main";
+    grid-template-columns: 0 minmax(0, 1fr);
   }
 
   .app.sidebar-hidden.with-pane {
-    grid-template-columns: minmax(0, 1fr) var(--ws-width, 420px);
-    grid-template-areas:
-      "top top"
-      "main doc";
+    grid-template-columns: 0 minmax(0, 1fr) var(--ws-width, 420px);
   }
 
   .app.sidebar-hidden .sidebar {
-    display: none;
+    transform: translateX(-100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+
+  .app.sidebar-hidden .sidebar-btn svg {
+    transform: scaleX(-1);
   }
 }
 
@@ -1279,6 +1282,26 @@ button:disabled {
   border-bottom: 1px solid #000;
 }
 
+.sidebar-topbar {
+  width: calc(var(--sidebar-width) - 16px);
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: end;
+}
+
+.sidebar-topbar .brand {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.sidebar-topbar .link-status {
+  grid-column: 1;
+  grid-row: 2;
+}
+
 /* Opened from the Home Screen (no Safari bar), the top row sat right under the iPhone's clock and its rows were packed
    (Ümit #13996, #14006): room above it and between its rows there, for the list's top bar and a conversation's tab
    row alike. */
@@ -1358,19 +1381,37 @@ button:disabled {
 
 .sidebar {
   grid-area: side;
+  width: var(--sidebar-width);
+  min-width: 0;
   overflow-y: auto;
   background: var(--sidebar);
   color: var(--sidebar-text);
   padding: 8px 8px 16px;
+  transition:
+    transform 180ms ease-out,
+    opacity 120ms ease-out;
 }
 
 .sidebar-btn {
-  flex: none;
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: end;
   width: 36px;
   min-height: 36px;
   padding: 0;
-  font-size: 24px;
-  line-height: 1;
+}
+
+.sidebar-btn svg {
+  transition: transform 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app,
+  .sidebar,
+  .sidebar-btn,
+  .sidebar-btn svg {
+    transition: none;
+  }
 }
 
 .side-section + .side-section {
@@ -4460,7 +4501,7 @@ ul.md-list ul.md-list { list-style: circle; }
 
 @media (max-width: 900px) {
   .app {
-    grid-template-columns: 196px minmax(0, 1fr);
+    --sidebar-width: 196px;
   }
 }
 
@@ -4469,7 +4510,7 @@ ul.md-list ul.md-list { list-style: circle; }
    conversation). Phones keep one screen at a time (below). */
 @media (min-width: 641px) and (max-width: 1100px) {
   .app.with-pane {
-    grid-template-columns: 196px minmax(0, 1fr);
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) var(--ws-height, 45vh);
     grid-template-areas:
       "top top"
@@ -4531,6 +4572,10 @@ ul.md-list ul.md-list { list-style: circle; }
   .app:not(.phone-list) .topbar,
   .app:not(.phone-list) .sidebar {
     display: none;
+  }
+
+  .sidebar-topbar {
+    display: contents;
   }
 
   .sidebar-btn {
