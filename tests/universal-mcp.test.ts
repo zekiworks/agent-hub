@@ -28,9 +28,9 @@ async function runHook(home: string, cwd: string): Promise<string> {
   const settings = JSON.parse(readFileSync(join(home, ".qwen", "settings.json"), "utf8"));
   const command = settings.hooks.UserPromptSubmit
     .flatMap((definition: { hooks?: unknown[] }) => definition.hooks ?? [])
-    .find((hook: { args?: unknown[] }) => hook.args?.includes("agent-bus"));
+    .find((hook: { command?: string }) => hook.command?.endsWith(" --managed-by agent-bus"));
   if (!command) throw new Error("Installed Qwen hook is missing");
-  const child = Bun.spawn([command.command, ...command.args], {
+  const child = Bun.spawn(["/bin/sh", "-c", command.command], {
     cwd,
     env: { ...process.env, HOME: home, AGENT_BUS_JOIN_FROM_TMP: "1" },
     stdin: "pipe",
@@ -90,7 +90,7 @@ describe("universal MCP adapter configuration", () => {
     await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only");
     const first = JSON.parse(readFileSync(settings, "utf8"));
     expect(first.hooks.UserPromptSubmit).toHaveLength(2);
-    expect(first.hooks.UserPromptSubmit[1].hooks[0].args).toContain("agent-bus");
+    expect(first.hooks.UserPromptSubmit[1].hooks[0].command).toEndWith(" --managed-by agent-bus");
     expect(existsSync(join(root, ".agent-bus", "adapters", "qwen", "qwen-hook.mjs"))).toBe(true);
     await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only");
     const second = JSON.parse(readFileSync(settings, "utf8"));

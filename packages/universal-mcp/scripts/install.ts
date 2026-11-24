@@ -77,10 +77,18 @@ function managedEntry(value: unknown): boolean {
   return Array.isArray(args) && args.includes("--managed-by") && args.includes("agent-bus");
 }
 
+const QWEN_HOOK_MARKER = "--managed-by agent-bus";
+
+/** Agent Hub's hook: the shell-form command it writes, or the exec form (`args`) installed before 24 Nov. */
 function managedQwenHook(value: unknown): boolean {
   const hooks = object(value).hooks;
-  return Array.isArray(hooks) && hooks.some(managedEntry);
+  return Array.isArray(hooks) && hooks.some((hook) => {
+    const command = object(hook).command;
+    return managedEntry(hook) || (typeof command === "string" && command.endsWith(` ${QWEN_HOOK_MARKER}`));
+  });
 }
+
+const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 
 /** Removes only Agent Hub's UserPromptSubmit definition; returns whether one was present. */
 function removeManagedQwenHooks(config: Record<string, unknown>): boolean {
@@ -103,8 +111,8 @@ function addQwenHook(config: Record<string, unknown>, target: string, url: strin
   definitions.push({
     hooks: [{
       type: "command",
-      command: jsRuntime(),
-      args: [qwenHookFile(target), "--url", url, "--managed-by", "agent-bus"],
+      // Shell form: Qwen Code 0.28 ignores `args` (exec form exists only in the 1.0 previews), and both run this.
+      command: [jsRuntime(), qwenHookFile(target), "--url", url].map(shellQuote).join(" ") + ` ${QWEN_HOOK_MARKER}`,
       timeout: 15,
       statusMessage: "Checking Agent Hub Inbox",
     }],

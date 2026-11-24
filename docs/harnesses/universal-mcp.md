@@ -28,7 +28,9 @@ The MCP process joins from the harness's working directory and exposes the typed
 
 Qwen Code also installs an owned `UserPromptSubmit` command hook. Immediately before every model call, the hook reads unseen Agent Hub Inbox messages, writes them to hook stdout for Qwen to inject into model context, then marks them seen. The model does not have to remember to call Inbox or run a timer. Reinstall replaces only Agent Hub's hook; uninstall restores an otherwise untouched settings file byte for byte.
 
-**MCP limitation:** MCP and Qwen's prompt hook cannot start an idle model turn. Qwen receives queued messages automatically when its next turn begins; the other MCP adapters receive them at their next `message-bus` call. Native adapters such as OMP, Codex, Claude Code, and OpenCode can provide stronger wake and live-output behavior because those harnesses expose session APIs.
+**Qwen idle wake:** a message that wakes the agent starts a turn in the running Qwen TUI, also when it sits idle. Qwen gives every process it starts its cross-session messaging socket and a child token (`QWEN_CODE_MESSAGING_SOCKET`, `QWEN_CODE_MESSAGING_TOKEN`); the MCP bridge sends the delivery there with `@qwen-code/sdk/peer`, and Qwen runs it as soon as the session is idle, with no controller token and no per-message review. This needs a Qwen Code with cross-session messaging (verified with 0.28.4) and `agents.crossSessionMessaging` not turned off; `--bare`, `--safe-mode` and an `agents.crossSessionInbound` of `hold` or `refuse` prevent it. The 1.0 previews (verified with 1.0.0-preview.2) do not give their processes a socket, so there the message waits for the next turn's hook.
+
+**MCP limitation:** generic MCP cannot start an idle model turn. The other MCP adapters receive messages at their next `message-bus` call. Native adapters such as OMP, Codex, Claude Code, and OpenCode provide wake and live output through their own session APIs.
 
 ## mini-SWE-agent
 

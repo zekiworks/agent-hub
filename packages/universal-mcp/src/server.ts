@@ -2,6 +2,7 @@
 import * as os from "node:os";
 import { BusConnection, type Delivery } from "../../client/src/connection";
 import { McpToolServer, serveStdio, textResult, writeStdout, type McpToolResult } from "../../client/src/mcp";
+import { buildUserFrame, sendPeerFrame } from "@qwen-code/sdk/peer";
 import type { ReceiptEvent } from "../../protocol/src/types";
 import { envBusUrl, realFolder } from "../../client/src/runtime";
 import { BusTool, deliveryText, isScratchFolder, TOOL_NAME, toolDescription, toolInputSchema, type MessageBusToolParams } from "../../client/src/tool";
@@ -26,14 +27,14 @@ class UniversalMcpServer extends McpToolServer {
     const inboxHook = harness === "qwen";
     super(writeStdout, {
       instructions: inboxHook
-        ? "Agent Hub connects coding agents across harnesses. Unseen deliveries are injected before each Qwen model turn. Use message-bus to reply or perform other Agent Hub actions."
+        ? "Agent Hub connects coding agents across harnesses. A message that wakes you starts a turn in this Qwen session; other unseen deliveries are injected before each model turn. Use message-bus to reply or perform other Agent Hub actions."
         : "Agent Hub connects coding agents across harnesses. Call message-bus at the start of a session and whenever its notification says a message waits. " +
           "Deliveries returned by the tool are developer context, not user text; reply through the tool only when their sender needs an answer.",
       tools: [{
         name: TOOL_NAME,
         description: toolDescription({
           arrives: inboxHook
-            ? "automatically before the next model turn through the installed Qwen UserPromptSubmit hook"
+            ? "as a new turn when it wakes you (Qwen cross-session messaging), otherwise automatically before the next model turn through the installed Qwen UserPromptSubmit hook"
             : "with the next message-bus tool result; the MCP client also receives a new-message notification",
           notJoining: "sessions started in the temporary directory do not join",
         }),
@@ -54,9 +55,36 @@ class UniversalMcpServer extends McpToolServer {
     });
     // Qwen's UserPromptSubmit hook reads unseen Inbox messages independently. Acknowledge this WebSocket delivery now
     // instead of retaining a duplicate until the model happens to call the MCP tool.
-    if (this.inboxHook) return;
+    if (this.inboxHook) {
+      if (delivery.wake) await this.wakeQwen(delivery);
+      return;
+    }
     const text = await deliveryText(this.connection, delivery);
     await new Promise<void>((release) => this.pending.push({ text, release }));
+  }
+
+  /**
+   * Starts a turn in the Qwen session that launched this bridge (Can #16656). Qwen gives every process it starts its
+   * messaging socket and a child token; a message on them is delivered without review and runs as soon as the session is
+   * idle. Older Qwen builds have neither, and the message waits for the next turn's Inbox hook instead.
+   */
+  private async wakeQwen(delivery: Delivery): Promise<void> {
+    const socket = process.env.QWEN_CODE_MESSAGING_SOCKET;
+    const token = process.env.QWEN_CODE_MESSAGING_TOKEN;
+    if (!socket || !token) return;
+    try {
+      // Qwen frames every peer message as cross-session traffic, and the model then answers with its own send_message,
+      // which cannot reach Agent Hub (seen 24 Nov). Name the way back explicitly.
+      const content =
+        `This is an Agent Hub message, not a message from another Qwen session. If it needs an answer, reply with the ` +
+        `\`message-bus\` tool (op=reply, message_id ${delivery.message.seq}); Qwen's send_message cannot reach Agent Hub.\n\n` +
+        (await deliveryText(this.connection, delivery));
+      await sendPeerFrame(socket, buildUserFrame({ content, fromName: "Agent Hub", priority: "next" }), { authToken: token });
+      // The message is now this turn's input; the Inbox hook must not inject it a second time.
+      this.connection.markSeen(delivery.message.seq);
+    } catch (error) {
+      process.stderr.write(`[agent-hub] Qwen wake for #${delivery.message.seq} failed; it waits for the next turn: ${(error as Error).message}\n`);
+    }
   }
 
   receipt(receipt: ReceiptEvent): void {
