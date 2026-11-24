@@ -74,7 +74,7 @@ button:disabled {
 /* ---- Layout ---- */
 
 .app {
-  --sidebar-width: 220px;
+  --sidebar-width: 280px;
   height: 100vh;
   /* Phones: the visible height, which shrinks when the on-screen keyboard opens. */
   height: 100dvh;
@@ -1399,6 +1399,16 @@ button:disabled {
   width: 36px;
   min-height: 36px;
   padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sidebar-text);
+  cursor: pointer;
+}
+
+.sidebar-btn:hover,
+.sidebar-btn:focus-visible {
+  background: var(--sidebar-hover);
 }
 
 .sidebar-btn svg {
@@ -4501,7 +4511,7 @@ ul.md-list ul.md-list { list-style: circle; }
 
 @media (max-width: 900px) {
   .app {
-    --sidebar-width: 196px;
+    --sidebar-width: 220px;
   }
 }
 
