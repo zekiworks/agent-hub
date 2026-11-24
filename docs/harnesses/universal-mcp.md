@@ -10,7 +10,7 @@ Agent Hub has shared adapters for coding tools that expose a standard **stdio MC
 - Mistral Vibe: `agent-bus install vibe`
 - Devin CLI: `agent-bus install devin`
 
-Pass `--url http://BUS:7800` when the bus is on another machine. Installing again updates the adapter without changing unrelated MCP servers. `agent-bus uninstall HARNESS` removes only entries and files marked as Agent Hub-owned.
+Pass `--url http://BUS:7800` when the bus is on another machine. Installing again updates the adapter without changing unrelated MCP servers. `agent-bus uninstall HARNESS` removes only entries and files marked as Agent Hub-owned. JSON adapters snapshot the exact pre-install configuration: uninstall restores those bytes when the file was otherwise untouched; if it changed meanwhile, uninstall removes only the managed entry and keeps the new settings.
 
 The installer writes each harness's native user configuration:
 

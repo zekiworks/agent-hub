@@ -47,6 +47,13 @@ const manifest = (target: string): string => path.join(target, "package.json");
 const ownedName = (name: UniversalAdapterName): string => `@agent-bus/${name}-mcp`;
 const serverFile = (target: string): string => path.join(target, "server.mjs");
 const configFile = (target: string): string => path.join(target, "config.json");
+const jsonSnapshotFile = (target: string): string => path.join(target, "config-snapshot.json");
+
+interface JsonConfigSnapshot {
+  originalExists: boolean;
+  original: string;
+  installed: string;
+}
 const argsFor = (name: UniversalAdapterName, target: string, url: string): string[] => [
   serverFile(target), "--harness", name, "--url", url, "--managed-by", "agent-bus",
 ];
@@ -69,12 +76,45 @@ function managedEntry(value: unknown): boolean {
   return Array.isArray(args) && args.includes("--managed-by") && args.includes("agent-bus");
 }
 
-function setJsonEntry(name: UniversalAdapterName, definition: Definition, target: string, url: string): void {
+const jsonText = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+function readJsonSnapshot(target: string): JsonConfigSnapshot | undefined {
+  try {
+    const value = JSON.parse(readFileSync(jsonSnapshotFile(target), "utf8")) as Partial<JsonConfigSnapshot>;
+    return typeof value.originalExists === "boolean" && typeof value.original === "string" && typeof value.installed === "string"
+      ? value as JsonConfigSnapshot
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function setJsonEntry(
+  name: UniversalAdapterName,
+  definition: Definition,
+  target: string,
+  url: string,
+  previous?: JsonConfigSnapshot
+): void {
   const file = definition.config!;
+  const existed = existsSync(file);
+  const before = existed ? readFileSync(file, "utf8") : "";
   const config = readJson(file);
   const servers = object(config[definition.key!]);
   if (servers["agent-hub"] !== undefined && !managedEntry(servers["agent-hub"])) {
     throw new Error(`${file} already has an agent-hub MCP server not written by Agent Hub; not replacing it`);
+  }
+  let originalExists = existed;
+  let original = before;
+  if (previous && before === previous.installed) {
+    originalExists = previous.originalExists;
+    original = previous.original;
+  } else if (managedEntry(servers["agent-hub"])) {
+    // An orphaned or edited prior install has no exact usable snapshot. Preserve its current user settings, but not
+    // the stale Agent Hub entry that this install replaces.
+    delete servers["agent-hub"];
+    config[definition.key!] = servers;
+    original = jsonText(config);
   }
   const entry: Record<string, unknown> = { command: jsRuntime(), args: argsFor(name, target, url) };
   mkdirSync(path.dirname(file), { recursive: true });
@@ -82,11 +122,18 @@ function setJsonEntry(name: UniversalAdapterName, definition: Definition, target
   servers["agent-hub"] = entry;
   config[definition.key!] = servers;
   writeJson(file, config);
+  writeJson(jsonSnapshotFile(target), { originalExists, original, installed: readFileSync(file, "utf8") });
 }
 
-function removeJsonEntry(definition: Definition): void {
+function removeJsonEntry(definition: Definition, snapshot?: JsonConfigSnapshot): void {
   const file = definition.config!;
   if (!existsSync(file)) return;
+  const current = readFileSync(file, "utf8");
+  if (snapshot && current === snapshot.installed) {
+    if (snapshot.originalExists) writeFileSync(file, snapshot.original);
+    else rmSync(file);
+    return;
+  }
   const config = readJson(file);
   const servers = object(config[definition.key!]);
   if (!managedEntry(servers["agent-hub"])) return;
@@ -191,6 +238,10 @@ function uninstallMini(): void {
 export async function installUniversal(name: UniversalAdapterName, opts: InstallOptions): Promise<void> {
   const definition = DEFINITIONS[name];
   const target = targetDir(name, opts);
+  const previous =
+    manifestName(manifest(target)) === ownedName(name) && definition.kind === "json"
+      ? readJsonSnapshot(target)
+      : undefined;
   const url = installBusUrl(configFile(target), opts.url);
   removeOwnedDir(target, manifest(target), ownedName(name), "plugin");
   mkdirSync(target, { recursive: true });
@@ -198,7 +249,7 @@ export async function installUniversal(name: UniversalAdapterName, opts: Install
   writeJson(manifest(target), { name: ownedName(name), version: "0.2.0", private: true });
   writeJson(configFile(target), { busUrl: url, harness: name });
   writeMetadata(target, "message-bus", `${definition.title} bridge for Agent Hub.`);
-  if (definition.kind === "json") setJsonEntry(name, definition, target, url);
+  if (definition.kind === "json") setJsonEntry(name, definition, target, url, previous);
   else if (definition.kind === "mini") installMini(target, url, opts.force);
   else configureText(name, definition, target, url);
   console.log(`Installed ${definition.title} Agent Hub adapter in ${target} (bus ${url}).`);
@@ -206,10 +257,12 @@ export async function installUniversal(name: UniversalAdapterName, opts: Install
 
 export async function uninstallUniversal(name: UniversalAdapterName, opts: InstallOptions): Promise<void> {
   const definition = DEFINITIONS[name];
-  if (definition.kind === "json") removeJsonEntry(definition);
+  const target = targetDir(name, opts);
+  const owned = manifestName(manifest(target)) === ownedName(name);
+  if (definition.kind === "json") removeJsonEntry(definition, owned ? readJsonSnapshot(target) : undefined);
   else if (definition.kind === "mini") uninstallMini();
   else unconfigureText(name, definition);
-  removeOwnedDir(targetDir(name, opts), manifest(targetDir(name, opts)), ownedName(name), "plugin");
+  removeOwnedDir(target, manifest(target), ownedName(name), "plugin");
   console.log(`Removed ${definition.title} Agent Hub adapter.`);
 }
 
