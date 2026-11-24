@@ -4594,6 +4594,10 @@ ul.md-list ul.md-list { list-style: circle; }
     display: none;
   }
 
+  .app.phone-list .sidebar {
+    width: 100%;
+  }
+
   /* The phone's top bar (codex-ui #10248: three busy rows): brand, then Settings, Tools, GPUs, notifications, ✉ ☆ and
      the account under it. Occasional controls, including Go to message, stay inside Tools. */
   .topbar {
