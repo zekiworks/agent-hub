@@ -20,7 +20,7 @@ import { isPinned, setMessagePinned } from "./pins";
 import { bookmarkButton, isBookmarked } from "./bookmarks";
 import { renderSpeaking, speakButton } from "./speak";
 import { conversationAddress, conversationTitle, participantDisplayName, projectColor, state } from "./state";
-import { conversationLink, flashMessage, markReadParts, markSelected, mentionNodes, mentionsMe, selectMessage, shownMessage, textBlocks } from "./text";
+import { conversationLink, flashMessage, markReadParts, markSelected, mentionNodes, mentionsMe, readButton, selectMessage, shownMessage, textBlocks } from "./text";
 import { PULSE_MS } from "./toast";
 import { noteAttention } from "./attention";
 import { inlinedFiles, markInlined, placeInlined } from "./inline";
@@ -371,6 +371,7 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   const actions = h("div", "msg-actions");
   const deleted = !!message.deletedAt;
   const speak = message.text && !deleted ? speakButton(message) : undefined;
+  const read = message.text && !deleted ? readButton(message.seq) : undefined;
   const copy = message.text && !deleted ? copyButton(message) : undefined;
   // ↪ shows it to someone else (Can #12470).
   const forward = state.me && !deleted ? forwardButton(message) : undefined;
@@ -399,11 +400,11 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     voiceReply.setAttribute("aria-label", `Record a voice reply to message #${message.seq}`);
     voiceReply.addEventListener("click", () => startVoiceReply({ kind: "conversation", id: message.conversationId }, message));
   }
-  // Keep Copy and Reply visible. Task replaces the old envelope action inside More; the microphone sits immediately
-  // below Forward everywhere (Ümit #16328, #16329). Titles and accessible names explain every icon.
+  // Visible row: Copy, Mark read/seen, Reply. In More, Forward is first and Task occupies Forward's old position
+  // immediately above voice reply (Can #16356).
   const extra = h("div", "msg-actions-extra");
   const extraColumn = h("div", "msg-actions-extra-column");
-  const extraButtons = [ownTask, speak, bookmark, pin, forward, voiceReply, changes[0], changes[1]];
+  const extraButtons = [forward, speak, bookmark, pin, ownTask, voiceReply, changes[0], changes[1]];
   for (const button of extraButtons) {
     if (button) extraColumn.append(button);
   }
@@ -434,6 +435,7 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     requestAnimationFrame(keepVisible);
   });
   if (copy) actions.append(copy);
+  if (read) actions.append(read);
   if (!deleted) actions.append(replyBtn);
   if (extraColumn.childElementCount > 0) actions.append(overflow, extra);
   li.addEventListener("mouseenter", () => {
