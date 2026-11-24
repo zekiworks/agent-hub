@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Message, Participant, PostMessageResponse, ViewerServerFrame } from "@agent-bus/protocol";
 import type { BusServerHandle } from "@agent-bus/server";
+import { Reopen } from "../packages/codex-plugin/src/reopen";
 import { McpServer } from "../packages/codex-plugin/src/server";
 import { CodexSession, HOOK_TOOL, type HookInput } from "../packages/codex-plugin/src/session";
 import { getJson, postJson, startBus, viewerSocket } from "./helpers";
@@ -104,7 +105,7 @@ test("the Codex MCP server exposes the tool and reports an off-bus task", async 
   const init = out.find((m) => m.id === 1)?.result as { instructions: string };
   expect(init.instructions).toContain("Message-bus deliveries");
   const tools = (out.find((m) => m.id === 2)?.result as { tools: Array<{ name: string }> }).tools;
-  expect(tools.map((tool) => tool.name)).toEqual(["message-bus", HOOK_TOOL]);
+  expect(tools.map((tool) => tool.name)).toEqual(["message-bus", "task", HOOK_TOOL]);
   const call = out.find((m) => m.id === 3)?.result as { isError: boolean; content: Array<{ text: string }> };
   expect(call.isError).toBe(true);
   expect(call.content[0]?.text).toContain("not on the message bus (started in the temp directory)");
@@ -224,4 +225,60 @@ test("tool discovery stays offline; a restarted task's MCP hook recovers a queue
   hook(3);
   await until(() => replies.length === 3);
   expect(JSON.parse(replies[2]!).result.structuredContent).toEqual({});
+});
+
+test("a finished helper cannot take an unnumbered DM from its idle user chat", async () => {
+  const oldHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = dataDir;
+  const project = folder("alpha");
+  const sessions = path.join(dataDir, "sessions");
+  mkdirSync(sessions);
+  const wakes: string[] = [];
+  const receivers: CodexSession[] = [];
+  function client() {
+    const answers: string[] = [];
+    const mcp = new McpServer((line) => answers.push(line), () => {
+      const receiver = new CodexSession(project, bus.url, undefined, async (id) => { wakes.push(id); });
+      receivers.push(receiver);
+      return receiver;
+    }, new Reopen(project, bus.url, () => {}));
+    return async (name: string, args: object) => {
+      const id = answers.length + 1;
+      mcp.handleLine(JSON.stringify({ id, method: "tools/call", params: { name, arguments: args } }));
+      return JSON.parse(await until(() => answers[id - 1])).result;
+    };
+  }
+  const user = client(), helper = client(), second = client();
+  function thread(id: string, source: object | string) {
+    const transcript = path.join(sessions, `rollout-test-${id}.jsonl`);
+    writeFileSync(transcript, JSON.stringify({ type: "session_meta", payload: { id, cwd: project, source } }) + "\n");
+    return { session_id: id, transcript_path: transcript };
+  }
+  const root = thread(crypto.randomUUID(), "cli");
+  const child = thread(crypto.randomUUID(), { subagent: { thread_spawn: { parent_thread_id: root.session_id } } });
+  try {
+    await user(HOOK_TOOL, { event: "SessionStart", ...root });
+    expect((await participant("alpha"))?.online).toBe(true);
+    await helper(HOOK_TOOL, { event: "SessionStart", session_id: child.session_id, transcript_path: null });
+    expect((await helper("message-bus", { op: "inbox" })).isError).toBe(true);
+    await helper(HOOK_TOOL, { event: "PreToolUse", ...child });
+    await helper(HOOK_TOOL, { event: "Stop", ...child });
+    expect((await helper("message-bus", { op: "inbox" })).isError).toBe(true);
+    expect(receivers).toHaveLength(1);
+    const { message: dm } = await post({ from: "carol", to: "@alpha", text: "plain DM after the helper finished" });
+    await until(() => wakes.length > 0);
+    expect(wakes).toEqual([root.session_id]);
+    const delivered = await user(HOOK_TOOL, { event: "UserPromptSubmit", ...root });
+    expect(delivered.structuredContent.hookSpecificOutput.additionalContext).toContain(dm.text);
+    await until(() => seenBy(dm.seq));
+    const reply = await user("message-bus", { op: "reply", message_id: dm.seq, message: "main chat received it" });
+    expect(reply.content[0].text).toContain(`Replied to #${dm.seq}`);
+    expect((await user(HOOK_TOOL, { event: "Stop", ...root })).structuredContent).toEqual({});
+    await second(HOOK_TOOL, { event: "SessionStart", ...thread(crypto.randomUUID(), "cli") });
+    expect(receivers).toHaveLength(2);
+  } finally {
+    for (const receiver of receivers) receiver.close();
+    if (oldHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = oldHome;
+  }
 });

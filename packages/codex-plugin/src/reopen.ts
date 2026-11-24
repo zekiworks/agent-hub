@@ -5,9 +5,12 @@ import { execFile, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   chmodSync,
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
+  readSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -45,7 +48,32 @@ export interface Binding {
 const registryDir = (): string => path.join(codexHome(), "message-bus-bindings");
 const bindingFile = (folder: string, id: string): string => path.join(registryDir(), `${shortHash(folder)}-${id}.json`);
 
-// The transcript comes from the trusted root hook (or an explicit, verified upgrade seed).
+// Codex runs an MCP server for each spawned helper too. Only the rollout header
+// identifies that case reliably, including when the hook omits agent_id.
+function userThread(file: string, id: string): boolean {
+  const fd = openSync(file, "r");
+  try {
+    const chunk = Buffer.allocUnsafe(16 * 1024);
+    const parts: Buffer[] = [];
+    for (;;) {
+      const n = readSync(fd, chunk, 0, chunk.length, null);
+      if (!n) return false; // The first hook can precede the completed header. Retry on the next one.
+      const end = chunk.subarray(0, n).indexOf(10);
+      if (end < 0) {
+        parts.push(Buffer.from(chunk.subarray(0, n)));
+        continue;
+      }
+      parts.push(chunk.subarray(0, end));
+      const { type, payload } = JSON.parse(Buffer.concat(parts).toString("utf8"));
+      return type === "session_meta" && payload?.id === id &&
+        payload.thread_source !== "subagent" && payload.source !== "subagent" &&
+        !(payload.source && typeof payload.source === "object" && "subagent" in payload.source);
+    }
+  } finally {
+    closeSync(fd);
+  }
+}
+
 export function bindingFor(folder: string, id: unknown, transcript: unknown): Binding | undefined {
   if (typeof id !== "string" || !isThreadId(id) || typeof transcript !== "string") return undefined;
   try {
@@ -54,7 +82,7 @@ export function bindingFor(folder: string, id: unknown, transcript: unknown): Bi
       !file.startsWith(realpathSync(path.join(codexHome(), "sessions")) + path.sep) ||
       !path.basename(file).startsWith("rollout-") ||
       !file.endsWith(`-${id}.jsonl`) ||
-      !statSync(file).isFile()
+      !statSync(file).isFile() || !userThread(file, id)
     ) {
       return undefined;
     }
@@ -181,8 +209,7 @@ async function ensureWorker(binding: Binding, url: string, parent: number): Prom
 // process can launch it, but cannot consume messages on behalf of a different chat.
 export class Reopen {
   private readonly boot: Promise<{ id: string; socket: string } | undefined>;
-  private confirmed?: string;
-  private saved?: string;
+  private confirmed?: Binding;
   private route?: Promise<string | undefined>;
   private lostRoute = false;
 
@@ -230,25 +257,28 @@ export class Reopen {
   /** The result of the call from this chat's presence worker, or undefined when this server handles it itself. */
   async call(name: string, args: Record<string, unknown>): Promise<McpToolResult | undefined> {
     if (name === HOOK_TOOL) {
-      if (!HOOK_EVENTS.includes(args.event as HookEvent)) return undefined;
+      if (!HOOK_EVENTS.includes(args.event as HookEvent)) throw new Error("Unknown lifecycle event");
       const id = args.session_id;
-      // Another chat's hook, or a subagent's before the root hook confirmed the chat: nothing to add.
-      if (this.confirmed && this.confirmed !== id) return { ...textResult("{}"), structuredContent: {} };
-      if (args.agent_id && !this.confirmed) return { ...textResult("{}"), structuredContent: {} };
-      if (typeof id !== "string" || !isThreadId(id)) return undefined;
-      this.confirmed = id;
-      const binding = this.saved !== id ? bindingFor(this.folder, id, args.transcript_path) : undefined;
-      if (binding && this.saved !== id) {
+      if (args.agent_id || (this.confirmed && this.confirmed.id !== id)) {
+        return { ...textResult("{}"), structuredContent: {} };
+      }
+      if (!this.confirmed) {
+        const binding = bindingFor(this.folder, id, args.transcript_path);
+        if (!binding) return { ...textResult("{}"), structuredContent: {} };
+        this.confirmed = binding;
         try {
           remember(binding);
-          this.saved = id;
         } catch (err) {
           this.log(`could not save chat binding: ${err}`);
         }
-        this.route ??= this.boot.then((cold) => (!this.lostRoute && cold?.id === id ? cold.socket : this.open(binding)));
       }
+      const binding = this.confirmed;
+      this.route ??= this.boot.then((cold) => (!this.lostRoute && cold?.id === binding.id ? cold.socket : this.open(binding)));
     }
-    if (!this.confirmed || !this.route) return undefined;
+    if (!this.confirmed) {
+      return { ...textResult("The message bus is available after a user chat supplies its session metadata."), isError: true };
+    }
+    if (!this.route) return undefined;
     const socket = await this.route;
     if (!socket) return undefined;
     // Do not repeat a tool call on ambiguous transport failure: it may already have sent a message.
@@ -256,7 +286,6 @@ export class Reopen {
       return await rpc(socket, { name, args });
     } catch (err) {
       this.route = undefined;
-      this.saved = undefined;
       this.lostRoute = true;
       return { ...textResult(`Presence connection lost; check the result before retrying: ${err}`), isError: true };
     }

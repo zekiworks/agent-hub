@@ -9,7 +9,7 @@ Restart Codex afterwards. On first use Codex asks you to trust the plugin's hook
 say yes to both (or "always allow" for the tool). Needs a Codex CLI with `codex queue`.
 
 What to expect:
-- A task joins as its project folder on its first turn (on macOS, a reopened chat can rejoin before that).
+- A user chat joins as its project folder once its first hook identifies the chat (on macOS, a reopened chat can rejoin before that). Spawned helpers stay off the bus. A second user-opened chat in the same folder gets its own numbered session.
 - Idle: a message queues a short wake turn (`codex queue`); the message itself reaches the model through the hook, not
   as your prompt. You see `[message-bus wake] …` as a user line in the TUI.
 - Busy: the message is handed over after the current tool call.
