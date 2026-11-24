@@ -494,7 +494,11 @@ async function send(file: File, duration: number, view: View, chosen: Chosen): P
   }
 }
 
+/** Suppresses the synthetic click after a touch/pointer press; click remains the universal tap/keyboard fallback. */
+let lastVoicePressAt = Number.NEGATIVE_INFINITY;
+
 function beginVoicePress(): void {
+  lastVoicePressAt = performance.now();
   // 🎤 again during a click-started recording sends it.
   if (recording && state.voiceLatched) return void stop(false);
   // 🎤 again while the microphone is still starting cancels it.
@@ -508,6 +512,7 @@ function beginVoicePress(): void {
 }
 
 function releaseVoicePress(clientX: number, clientY: number): void {
+  lastVoicePressAt = performance.now();
   held = false;
   if (!recording || state.voiceLatched) return;
   // A short press was a click: keep recording until Send. So is a hold let go before anyone spoke: sending it sent
@@ -564,6 +569,15 @@ dom.voiceBtn.addEventListener(
   },
   { passive: false }
 );
+// Safari can synthesize only a click for a quick tap after browser chrome, the keyboard, or an accessibility gesture
+// consumed the pointer/touch sequence. Keep click as a fallback without starting twice after a normal touch (#16271).
+dom.voiceBtn.addEventListener("click", () => {
+  if (performance.now() - lastVoicePressAt < 700) return;
+  held = false;
+  beginVoicePress();
+  held = false;
+});
+
 
 // The phone took the touch away (a permission prompt, the microphone's dialog in a Home Screen app, a swipe): the
 // recording goes on as if 🎤 had been tapped, so ➤ sends it and 🗑 drops it. Throwing it away lost what she said
