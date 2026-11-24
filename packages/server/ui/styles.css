@@ -4467,8 +4467,8 @@ ul.md-list ul.md-list { list-style: circle; }
     padding: 4px 8px;
   }
 
-  /* Two rows (Ümit #10735, 360 px): ← name ⓘ, then the pin and Workspace at the right (Can #11463), so the name keeps
-   * the width it needs. */
+  /* First row: ←, a title that yields its width, and Search. The title used to reserve a large basis, so long room
+     names pushed Search onto its own empty-looking row (Ümit #15966). Secondary controls wrap below when unfolded. */
   .conv-bar {
     display: flex;
     flex-wrap: wrap;
@@ -4479,7 +4479,8 @@ ul.md-list ul.md-list { list-style: circle; }
 
   .conv-title-wrap {
     order: 1;
-    flex: 1 1 calc(100% - 120px);
+    flex: 1 1 0;
+    min-width: 0;
     font-size: 17px;
   }
 
