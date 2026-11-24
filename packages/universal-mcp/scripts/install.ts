@@ -116,7 +116,9 @@ function configureText(name: UniversalAdapterName, definition: Definition, targe
   }
   if (definition.kind === "deepseek") {
     const file = path.join(os.homedir(), ".dsh", "cordis.patch.yml");
-    block(file, "# agent-bus:deepseek begin", "# agent-bus:deepseek end", `- id: agent-hub-mcp\n  name: '@deepseek-ai/dsh-mcp-client'\n  config:\n    serverName: agent-hub\n    transport: stdio\n    command: ${command}\n    args: [${args}]`);
+    // A new DSH profile may contain only `[]`; appending a patch item after that is invalid YAML.
+    if (existsSync(file) && readFileSync(file, "utf8").trim() === "[]") writeFileSync(file, "");
+    block(file, "# agent-bus:deepseek begin", "# agent-bus:deepseek end", `- insert:\n    - id: agent-hub-mcp\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: agent-hub\n        transport: stdio\n        command: ${command}\n        args: [${args}]`);
     return;
   }
   const file = path.join(os.homedir(), ".vibe", "config.toml");
