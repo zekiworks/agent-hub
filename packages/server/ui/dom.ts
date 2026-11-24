@@ -115,6 +115,7 @@ export const dom = {
   voicePause: el<HTMLButtonElement>("voice-pause"),
   inputWrap: el<HTMLDivElement>("composer-input-wrap"),
   settingsBtn: el<HTMLButtonElement>("settings-btn"),
+  sidebarBtn: el<HTMLButtonElement>("sidebar-btn"),
   settingsDialog: el<HTMLDialogElement>("settings-dialog"),
   convMenuBtn: el<HTMLButtonElement>("conv-menu-btn"),
   convDialog: el<HTMLDialogElement>("conv-dialog"),

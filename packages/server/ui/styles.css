@@ -78,7 +78,7 @@ button:disabled {
   /* Phones: the visible height, which shrinks when the on-screen keyboard opens. */
   height: 100dvh;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     "top top"
@@ -88,10 +88,32 @@ button:disabled {
 /* With the Workspace open (pane.ts), it takes its own width (~420 px, or what it was dragged to: --ws-width, #10103)
    and the conversation the rest. */
 .app.with-pane {
-  grid-template-columns: 280px minmax(0, 1fr) var(--ws-width, 420px);
+  grid-template-columns: 220px minmax(0, 1fr) var(--ws-width, 420px);
   grid-template-areas:
     "top top top"
     "side main doc";
+}
+
+/* Desktop: the navigation is narrower by default and can disappear while keeping its reveal button in the top bar
+   (Ümit #16432). Phones already switch between the list and one conversation, so this does not affect them. */
+@media (min-width: 641px) {
+  .app.sidebar-hidden {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "main";
+  }
+
+  .app.sidebar-hidden.with-pane {
+    grid-template-columns: minmax(0, 1fr) var(--ws-width, 420px);
+    grid-template-areas:
+      "top top"
+      "main doc";
+  }
+
+  .app.sidebar-hidden .sidebar {
+    display: none;
+  }
 }
 
 /* The Workspace: its label, a title bar (‹ › history, what it shows, ✕), an entity's tabs, then the body. */
@@ -1340,6 +1362,15 @@ button:disabled {
   background: var(--sidebar);
   color: var(--sidebar-text);
   padding: 8px 8px 16px;
+}
+
+.sidebar-btn {
+  flex: none;
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  font-size: 24px;
+  line-height: 1;
 }
 
 .side-section + .side-section {
@@ -4429,7 +4460,7 @@ ul.md-list ul.md-list { list-style: circle; }
 
 @media (max-width: 900px) {
   .app {
-    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-columns: 196px minmax(0, 1fr);
   }
 }
 
@@ -4438,7 +4469,7 @@ ul.md-list ul.md-list { list-style: circle; }
    conversation). Phones keep one screen at a time (below). */
 @media (min-width: 641px) and (max-width: 1100px) {
   .app.with-pane {
-    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-columns: 196px minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) var(--ws-height, 45vh);
     grid-template-areas:
       "top top"
@@ -4499,6 +4530,10 @@ ul.md-list ul.md-list { list-style: circle; }
 
   .app:not(.phone-list) .topbar,
   .app:not(.phone-list) .sidebar {
+    display: none;
+  }
+
+  .sidebar-btn {
     display: none;
   }
 

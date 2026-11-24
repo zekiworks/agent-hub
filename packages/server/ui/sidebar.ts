@@ -33,6 +33,24 @@ import {
 
 /** How long an agent that went offline stays in the agent list (dimmed) when offline agents are hidden. */
 const RECENTLY_SEEN_MS = 2 * 60_000;
+const SIDEBAR_HIDDEN_KEY = "agent-bus.sidebar-hidden";
+
+/** Desktop navigation can yield the full window to the conversation; phones already show one screen at a time. */
+function setSidebarHidden(hidden: boolean): void {
+  dom.app.classList.toggle("sidebar-hidden", hidden);
+  dom.sidebarBtn.textContent = hidden ? "›" : "‹";
+  dom.sidebarBtn.title = hidden ? "Show navigation" : "Hide navigation";
+  dom.sidebarBtn.setAttribute("aria-label", dom.sidebarBtn.title);
+  dom.sidebarBtn.setAttribute("aria-pressed", String(hidden));
+}
+
+setSidebarHidden(localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "1");
+dom.sidebarBtn.addEventListener("click", () => {
+  const hidden = !dom.app.classList.contains("sidebar-hidden");
+  localStorage.setItem(SIDEBAR_HIDDEN_KEY, hidden ? "1" : "0");
+  setSidebarHidden(hidden);
+});
+
 
 /**
  * "zeki is working ···" under the messages, like Discord's typing line: the open conversation's agents that report
