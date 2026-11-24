@@ -229,13 +229,17 @@ for (const dialog of [dom.settingsDialog, dom.convDialog, dom.statsDialog, dom.g
 
 function handleFrame(frame: ViewerServerFrame): void {
   switch (frame.type) {
-    case "participants":
+    case "participants": {
+      const labels = new Map(state.participants.map((participant) => [participant.id, participant.settings.displayName]));
+      const namesChanged = frame.participants.some((participant) => labels.get(participant.id) !== participant.settings.displayName);
       state.participants = frame.participants;
-      renderSidebar();
+      if (namesChanged) renderAll();
+      else renderSidebar();
       if (state.mention.open) updateMention();
       // Who is offline changes the "kept for" choice under the box.
       updateComposerState();
       break;
+    }
     case "message":
       receive(frame.message, frame.conversation);
       if (frame.message.task) void refreshInbox();

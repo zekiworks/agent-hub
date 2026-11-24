@@ -3229,6 +3229,39 @@ ul.md-list ul.md-list { list-style: circle; }
   cursor: pointer;
 }
 
+.settings-agent-names {
+  margin-bottom: 16px;
+}
+
+.settings-agent-names > summary {
+  min-height: 44px;
+  padding-block: 11px;
+  cursor: pointer;
+}
+
+.settings-agent-name-list {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-agent-name {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(120px, 2fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-agent-name input {
+  min-width: 0;
+}
+
+.settings-agent-name-note {
+  grid-column: 2 / -1;
+  min-height: 1em;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .msg-receipts.receipts-pending {
   color: var(--warning);
 }

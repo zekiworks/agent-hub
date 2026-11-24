@@ -325,6 +325,21 @@ export async function postSetting(ctx: BusContext, req: Request): Promise<{ part
   return { participant: ctx.hub.toParticipant({ ...participant, settings }) };
 }
 
+/** POST /api/participants/:id/display-name: a signed-in person's UI label; the stable address never changes. */
+export async function postDisplayName(ctx: BusContext, req: Request, id: string): Promise<{ participant: Participant }> {
+  ctx.requireHuman(req);
+  const participant = ctx.db.getParticipant(id.trim().toLowerCase());
+  if (!participant || participant.kind !== "agent") throw new HttpError(404, `Unknown agent "${id}"`);
+  const body = await readJsonObject(req);
+  const value = typeof body.value === "string" ? body.value.trim() : "";
+  if (value.length > 40) throw new HttpError(400, "An agent display name may be at most 40 characters");
+  const { displayName: _, ...rest } = participant.settings;
+  const settings: AgentSettings = value ? { ...rest, displayName: value } : rest;
+  ctx.db.setSettings(participant.id, settings);
+  ctx.hub.broadcastParticipants();
+  return { participant: ctx.hub.toParticipant({ ...participant, settings }) };
+}
+
 /** Forgets agents offline for more than `days` days (0: never): their participant record and pending receipts. */
 export function forgetOfflineAgents(ctx: BusContext, days: number): void {
   if (days <= 0) return;

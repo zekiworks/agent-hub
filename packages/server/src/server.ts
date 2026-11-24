@@ -12,7 +12,7 @@ import {
   type StateResponse,
 } from "@agent-bus/protocol";
 import { AgentTokens } from "./agent-tokens";
-import { forgetOfflineAgents, handleAgentTokens, postSetting, socketHandlers } from "./agents";
+import { forgetOfflineAgents, handleAgentTokens, postDisplayName, postSetting, socketHandlers } from "./agents";
 import { HumanAuth } from "./auth";
 import { handleAuth } from "./auth-routes";
 import { BusContext, tokenHash } from "./context";
@@ -343,6 +343,10 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       const file = path.join(dataDir, "box-reports.jsonl");
       if (method === "POST" && boxReportMatch[2] === "report") return json(await postBoxReport(ctx, req, boxReportMatch[1], options.boxes ?? {}, person, file));
       if (method === "GET" && boxReportMatch[2] === "usage") return json(getBoxUsage(boxReportMatch[1], options.boxes ?? {}, person, file));
+    }
+    const displayNameMatch = /^\/api\/participants\/([^/]+)\/display-name$/.exec(pathname);
+    if (method === "POST" && displayNameMatch?.[1]) {
+      return json(await postDisplayName(ctx, req, decodeURIComponent(displayNameMatch[1])));
     }
     if (method === "POST" && pathname === "/api/settings") return json(await postSetting(ctx, req));
     if (method === "POST" && pathname === "/api/attention") {

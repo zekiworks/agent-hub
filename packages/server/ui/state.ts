@@ -277,7 +277,12 @@ export function conversationTitle(conv: Conversation): string {
   if (conv.kind === "project" && conv.name) return conversationAddress(conv) ?? conv.name;
   const others = conv.members.filter((id) => id !== state.me);
   const visible = [...new Set((others.length > 0 ? others : conv.members).map((id) => (SYSTEM_SOURCES.has(id) ? SYSTEM_AGENT_ID : id)))];
-  return nameList(visible);
+  return nameList(visible.map(participantDisplayName));
+}
+
+/** A human-chosen UI label. Mentions, direct-message routing and delivery continue to use the stable participant id. */
+export function participantDisplayName(id: string): string {
+  return state.participants.find((participant) => participant.id === id)?.settings.displayName || id;
 }
 
 /** A project's or room's address ("@@name", "#name"); undefined for everything else. */

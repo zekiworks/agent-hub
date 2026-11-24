@@ -19,7 +19,7 @@ import { renderPane } from "./pane";
 import { isPinned, setMessagePinned } from "./pins";
 import { bookmarkButton, isBookmarked } from "./bookmarks";
 import { renderSpeaking, speakButton } from "./speak";
-import { conversationAddress, conversationTitle, projectColor, state } from "./state";
+import { conversationAddress, conversationTitle, participantDisplayName, projectColor, state } from "./state";
 import { conversationLink, flashMessage, markReadParts, markSelected, mentionNodes, mentionsMe, readButton, selectMessage, shownMessage, textBlocks } from "./text";
 import { PULSE_MS } from "./toast";
 import { noteAttention } from "./attention";
@@ -51,12 +51,13 @@ export function renderHeader(): void {
   dom.convParent.hidden = true;
   dom.convSettingsBtn.hidden = true;
   if (view.kind === "draft") {
-    const title = view.project !== undefined ? `@@${view.project}` : nameList(view.to);
-    setConvTitle(title, view.project !== undefined ? title : `You and ${nameList(view.to)}`);
+    const displayNames = nameList(view.to.map(participantDisplayName));
+    const title = view.project !== undefined ? `@@${view.project}` : displayNames;
+    setConvTitle(title, view.project !== undefined ? title : `You and ${view.to.map((id) => `@${id}`).join(", ")}`);
     dom.convSubtitle.textContent =
       view.project !== undefined
         ? `New project "${view.project}", open: anyone can find and join it — created when you send the first message.`
-        : `New conversation between you and ${nameList(view.to)} — created when you send the first message.`;
+        : `New conversation between you and ${displayNames} — created when you send the first message.`;
     setTitleBase(`${title} · ${BRAND}`);
     return;
   }
@@ -336,9 +337,11 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   if (state.replyTo?.conversationId === message.conversationId && state.replyTo.seq === message.seq) li.classList.add("msg-replying");
 
   const head = h("div", "msg-head");
-  const sender = h("button", "msg-sender", senderLabel(message));
+  const address = senderLabel(message);
+  const displayName = participantDisplayName(message.from);
+  const sender = h("button", "msg-sender", `${displayName}${address.slice(message.from.length)}`);
   sender.type = "button";
-  sender.title = human ? "Human" : "Agent — click to open a direct conversation";
+  sender.title = `${human ? "Human" : "Agent — click to open a direct conversation"}\nAddress: @${address}`;
   if (!human) sender.addEventListener("click", () => navigate({ kind: "draft", to: [message.from] }));
   head.append(sender, h("span", `kind-tag ${human ? "kind-human" : "kind-agent"}`, human ? "human" : "agent"));
   // Human messages written while the bus checks who humans are: signed in with a passkey, or not.

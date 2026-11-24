@@ -565,7 +565,8 @@ function renderAgentList(): void {
       const unknown = agent.online && !agent.status;
       const dot = h("span", `dot ${busy ? "dot-busy" : unknown ? "dot-unknown" : agent.online ? "dot-on" : "dot-off"}`);
       const text = h("span", "side-item-text");
-      const name = h("span", "side-item-title", agent.id);
+      const displayName = agent.settings.displayName || agent.id;
+      const name = h("span", "side-item-title", displayName);
       if (agent.connections > 1 && agent.online) name.append(h("span", "conn-count", ` ×${agent.connections}`));
       if (agent.connectionError) {
         const err = h("span", "agent-err", "ERR");
@@ -581,7 +582,7 @@ function renderAgentList(): void {
       const unread = dm ? (state.unread.get(dm.id) ?? 0) : 0;
       if (unread > 0) button.append(h("span", "badge", unread > 99 ? "99+" : String(unread)));
       const tip = [
-        agent.id,
+        displayName === agent.id ? `@${agent.id}` : `${displayName}\naddress: @${agent.id}`,
         agent.harness ? `harness: ${agent.harness}` : "",
         agent.path ? `path: ${agent.path}` : "",
         agent.host ? `host: ${agent.host}` : "",

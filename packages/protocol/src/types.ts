@@ -14,6 +14,11 @@ export interface AgentSettings {
    */
   all: "wake" | "quiet";
   /**
+   * Optional human-chosen label shown in Agent Hub. The stable participant id remains the address used by mentions,
+   * deliveries and integrations.
+   */
+  displayName?: string;
+  /**
    * People: who writes their English voice messages as text. "whisper" (default) for every language; "liquid": LFM3-
    * Audio for what Whisper judges English (as good, faster; Whisper keeps every other language).
    */
