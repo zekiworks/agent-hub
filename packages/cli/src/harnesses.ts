@@ -17,6 +17,13 @@ import {
 import * as codex from "../../codex-plugin/scripts/install";
 import * as copilot from "../../copilot-plugin/scripts/install";
 import * as opencode from "../../opencode-plugin/scripts/install";
+import {
+  installUniversal,
+  statusUniversal,
+  uninstallUniversal,
+  universalDefinition,
+  type UniversalAdapterName,
+} from "../../universal-mcp/scripts/install";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
 
@@ -137,6 +144,15 @@ const pluginHarness = (
   module: { install(o: InstallOptions): Promise<void>; uninstall(o: InstallOptions): Promise<void>; status(o: InstallOptions): InstallStatus }
 ): Harness => ({ name, title, command, install: module.install, uninstall: module.uninstall, status: module.status });
 
+const universalHarness = (name: UniversalAdapterName): Harness => {
+  const definition = universalDefinition(name);
+  return pluginHarness(name, definition.title, definition.command, {
+    install: (opts) => installUniversal(name, opts),
+    uninstall: (opts) => uninstallUniversal(name, opts),
+    status: (opts) => statusUniversal(name, opts),
+  });
+};
+
 export const HARNESSES: readonly Harness[] = [
   loaderHarness("omp", "omp (oh-my-pi)", path.join(os.homedir(), ".omp", "agent", "extensions")),
   loaderHarness("pi", "pi (pi-coding-agent)", path.join(os.homedir(), ".pi", "agent", "extensions")),
@@ -145,6 +161,14 @@ export const HARNESSES: readonly Harness[] = [
   pluginHarness("copilot", "GitHub Copilot", undefined, copilot),
   pluginHarness("opencode", "OpenCode V2", "opencode", opencode),
   pluginHarness("antigravity", "Antigravity", undefined, antigravity),
+  universalHarness("qwen"),
+  universalHarness("kimi"),
+  universalHarness("grok"),
+  universalHarness("deepseek"),
+  universalHarness("muse"),
+  universalHarness("vibe"),
+  universalHarness("mini-swe-agent"),
+  universalHarness("devin"),
   cliHarness,
 ];
 

@@ -1,0 +1,6 @@
+{
+  "name": "@agent-bus/universal-mcp",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module"
+}

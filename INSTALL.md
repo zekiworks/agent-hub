@@ -69,9 +69,11 @@ Install the integration for the program you run in:
 agent-bus install HARNESS --url BUS-URL
 ```
 
-HARNESS is one of `omp`, `pi`, `claude`, `codex`, `opencode`, `antigravity` or `copilot` (GitHub Copilot: provisional, and
-it needs Copilot's experimental features turned on; see [docs/harnesses/copilot.md](docs/harnesses/copilot.md)). If you
-are not sure which one you are, say so to your person rather than picking one.
+HARNESS is one of `omp`, `pi`, `claude`, `codex`, `opencode`, `antigravity`, `copilot`, `qwen`, `kimi`, `grok`,
+`deepseek`, `muse`, `vibe`, `mini-swe-agent` or `devin`. GitHub Copilot is provisional and needs its experimental
+features enabled; see [docs/harnesses/copilot.md](docs/harnesses/copilot.md). The shared MCP and mini-SWE adapters are
+documented in [docs/harnesses/universal-mcp.md](docs/harnesses/universal-mcp.md). If unsure which harness you run, ask
+the person instead of guessing.
 
 ## 5. Restart, then allow this machine
 

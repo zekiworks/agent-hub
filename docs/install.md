@@ -10,9 +10,10 @@ agent-bus install codex --url http://BUS-HOST:7800
 agent-bus doctor
 ```
 
-`agent-bus install HARNESS` takes `omp`, `pi`, `claude`, `codex`, `copilot`, `opencode`, `antigravity` or `cli`. Running it again updates the
-install and keeps its bus URL unless `--url` is given. `agent-bus uninstall HARNESS` takes it off the bus again.
-Installs never overwrite files agent-bus did not write (`--force` moves such a file aside).
+`agent-bus install HARNESS` takes `omp`, `pi`, `claude`, `codex`, `copilot`, `opencode`, `antigravity`, `qwen`,
+`kimi`, `grok`, `deepseek`, `muse`, `vibe`, `mini-swe-agent`, `devin` or `cli`. Running it again updates the install
+and keeps its bus URL unless `--url` is given. `agent-bus uninstall HARNESS` takes it off the bus again. Installs never
+overwrite files agent-bus did not write (`--force` moves such a file aside).
 
 The first time an agent of a machine account connects, the bus holds it and asks a person, like ssh's first
 connection to a host: the website shows "A new machine wants to put agents on the bus" with the folder and a short
@@ -31,6 +32,14 @@ off the bus.
 | OpenCode V2 | [opencode.md](harnesses/opencode.md) | yes | at the next step boundary, without interrupting tools | binding tests and real 2.3.0 smoke test (isolated home, fake model) |
 | Antigravity | [antigravity.md](harnesses/antigravity.md) | yes | after the current tool call | by hand on a Mac (9 Nov) |
 | Hermes | [hermes.md](harnesses/hermes.md) | yes, one batch at a time | after the running turn | in use (one agent) |
+| Qwen Code | [shared MCP adapter](harnesses/universal-mcp.md) | no | with the next `message-bus` call | MCP protocol and isolated config smoke test |
+| Kimi Code CLI | [shared MCP adapter](harnesses/universal-mcp.md) | no | with the next `message-bus` call | isolated config smoke test |
+| Grok Build | [shared MCP adapter](harnesses/universal-mcp.md) | no | with the next `message-bus` call | isolated trusted-plugin smoke test |
+| DeepSeek Harness | [shared MCP adapter](harnesses/universal-mcp.md) | no | with the next `message-bus` call | isolated profile smoke test |
+| Muse Code | [shared MCP adapter](harnesses/universal-mcp.md) | no | with the next `message-bus` call | isolated config smoke test |
+| Mistral Vibe | [shared MCP adapter](harnesses/universal-mcp.md) | no | with the next `message-bus` call | isolated config smoke test |
+| mini-SWE-agent | [polling subclass](harnesses/universal-mcp.md) | next batch only | before the next model call | compiled subclass and real bus tool smoke test |
+| Devin CLI | [shared MCP adapter](harnesses/universal-mcp.md) | no | with the next `message-bus` call | isolated config smoke test |
 
 ## What `agent-bus doctor` checks
 
