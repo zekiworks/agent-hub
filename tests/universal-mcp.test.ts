@@ -111,6 +111,37 @@ describe("universal MCP adapter configuration", () => {
     expect(existsSync(settings)).toBe(false);
   }, 30_000);
 
+  test("Grok reinstall and uninstall restore config.toml byte for byte", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const before = `[models]\ndefault = "dspark"\n\n[mcp_servers.other]\ncommand = "printf"\nargs = ["keep-me"]`;
+    await Bun.write(config, before);
+
+    await agentBus(root, "install", "grok", "--url", "http://127.0.0.1:7800", "--build-only");
+    const installed = readFileSync(config, "utf8");
+    expect(installed.startsWith(`${before}\n`)).toBe(true);
+    expect(installed).toContain("[mcp_servers.agent-hub]");
+    await agentBus(root, "install", "grok", "--url", "http://127.0.0.1:7800", "--build-only");
+    expect(readFileSync(config, "utf8")).toBe(installed);
+    await agentBus(root, "uninstall", "grok");
+
+    expect(readFileSync(config, "utf8")).toBe(before);
+  }, 30_000);
+
+  test("Grok uninstall keeps settings added while installed", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    await Bun.write(config, "[models]\ndefault = \"dspark\"\n");
+    await agentBus(root, "install", "grok", "--url", "http://127.0.0.1:7800", "--build-only");
+    await Bun.write(config, `${readFileSync(config, "utf8")}\n[ui]\ntheme = "dark"\n`);
+    await agentBus(root, "uninstall", "grok");
+
+    const after = readFileSync(config, "utf8");
+    expect(after).not.toContain("agent-hub");
+    expect(after).toContain("[models]");
+    expect(after).toContain("theme = \"dark\"");
+  }, 30_000);
+
   test("Qwen hook injects each unseen Inbox message once before a turn", async () => {
     const root = home();
     const project = repo;

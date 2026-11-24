@@ -3,6 +3,7 @@ import * as os from "node:os";
 import { BusConnection, type Delivery } from "../../client/src/connection";
 import { McpToolServer, serveStdio, textResult, writeStdout, type McpToolResult } from "../../client/src/mcp";
 import { buildUserFrame, sendPeerFrame } from "@qwen-code/sdk/peer";
+import { grokInterject, grokLeaderTarget } from "./grok-leader";
 import type { ReceiptEvent } from "../../protocol/src/types";
 import { envBusUrl, realFolder } from "../../client/src/runtime";
 import { BusTool, deliveryText, isScratchFolder, TOOL_NAME, toolDescription, toolInputSchema, type MessageBusToolParams } from "../../client/src/tool";
@@ -22,6 +23,7 @@ class UniversalMcpServer extends McpToolServer {
   private readonly notices: string[] = [];
   private readonly tool: BusTool;
   private readonly inboxHook: boolean;
+  private readonly harness: string;
 
   constructor(readonly connection: BusConnection, harness: string) {
     const inboxHook = harness === "qwen";
@@ -35,13 +37,16 @@ class UniversalMcpServer extends McpToolServer {
         description: toolDescription({
           arrives: inboxHook
             ? "as a new turn when it wakes you (Qwen cross-session messaging), otherwise automatically before the next model turn through the installed Qwen UserPromptSubmit hook"
-            : "with the next message-bus tool result; the MCP client also receives a new-message notification",
+            : harness === "grok"
+              ? "as a new turn when it wakes you (Grok leader mode), otherwise with the next message-bus tool result"
+              : "with the next message-bus tool result; the MCP client also receives a new-message notification",
           notJoining: "sessions started in the temporary directory do not join",
         }),
         inputSchema: toolInputSchema(),
       }],
     });
     this.inboxHook = inboxHook;
+    this.harness = harness;
     this.tool = new BusTool(connection);
     connection.connect();
     process.stderr.write(`[agent-hub] ${harness} MCP bridge connecting from ${process.cwd()}\n`);
@@ -59,6 +64,7 @@ class UniversalMcpServer extends McpToolServer {
       if (delivery.wake) await this.wakeQwen(delivery);
       return;
     }
+    if (this.harness === "grok" && delivery.wake && (await this.wakeGrok(delivery))) return;
     const text = await deliveryText(this.connection, delivery);
     await new Promise<void>((release) => this.pending.push({ text, release }));
   }
@@ -84,6 +90,27 @@ class UniversalMcpServer extends McpToolServer {
       this.connection.markSeen(delivery.message.seq);
     } catch (error) {
       process.stderr.write(`[agent-hub] Qwen wake for #${delivery.message.seq} failed; it waits for the next turn: ${(error as Error).message}\n`);
+    }
+  }
+
+  /**
+   * Starts a turn in the Grok session that launched this bridge, through its leader (Can #16677). Standalone Grok has no
+   * external entry point, so there the message waits for the next message-bus call. Returns whether Grok took it.
+   */
+  private async wakeGrok(delivery: Delivery): Promise<boolean> {
+    const target = grokLeaderTarget();
+    if (!target) return false;
+    try {
+      const text =
+        `This is an Agent Hub message relayed into your session, not typed by your user. If it needs an answer, reply ` +
+        `with the \`message-bus\` tool (op=reply, message_id ${delivery.message.seq}).\n\n` +
+        (await deliveryText(this.connection, delivery));
+      await grokInterject(target, text);
+      this.connection.markSeen(delivery.message.seq);
+      return true;
+    } catch (error) {
+      process.stderr.write(`[agent-hub] Grok wake for #${delivery.message.seq} failed; it waits for the next message-bus call: ${(error as Error).message}\n`);
+      return false;
     }
   }
 

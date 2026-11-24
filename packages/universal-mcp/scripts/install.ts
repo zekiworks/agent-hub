@@ -32,7 +32,7 @@ const xdg = (): string => process.env.XDG_CONFIG_HOME || path.join(os.homedir(),
 const DEFINITIONS: Record<UniversalAdapterName, Definition> = {
   qwen: { title: "Qwen Code", command: "qwen", kind: "json", config: path.join(os.homedir(), ".qwen", "settings.json"), key: "mcpServers" },
   kimi: { title: "Kimi Code CLI", command: "kimi", kind: "json", config: path.join(os.homedir(), ".kimi", "mcp.json"), key: "mcpServers" },
-  grok: { title: "Grok Build", command: "grok", kind: "grok" },
+  grok: { title: "Grok Build", command: "grok", kind: "grok", config: path.join(process.env.GROK_HOME || path.join(os.homedir(), ".grok"), "config.toml") },
   deepseek: { title: "DeepSeek Harness", command: "dsh", kind: "deepseek" },
   muse: { title: "Muse Code", command: "muse", kind: "json", config: path.join(xdg(), "muse", "settings.json"), key: "mcp_servers", muse: true },
   vibe: { title: "Mistral Vibe", command: "vibe", kind: "vibe" },
@@ -48,9 +48,10 @@ const ownedName = (name: UniversalAdapterName): string => `@agent-bus/${name}-mc
 const serverFile = (target: string): string => path.join(target, "server.mjs");
 const qwenHookFile = (target: string): string => path.join(target, "qwen-hook.mjs");
 const configFile = (target: string): string => path.join(target, "config.json");
-const jsonSnapshotFile = (target: string): string => path.join(target, "config-snapshot.json");
+const configSnapshotFile = (target: string): string => path.join(target, "config-snapshot.json");
 
-interface JsonConfigSnapshot {
+/** The harness config file's exact bytes before install and as installed, so uninstall can restore them untouched. */
+interface ConfigSnapshot {
   originalExists: boolean;
   original: string;
   installed: string;
@@ -123,11 +124,11 @@ function addQwenHook(config: Record<string, unknown>, target: string, url: strin
 
 const jsonText = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
-function readJsonSnapshot(target: string): JsonConfigSnapshot | undefined {
+function readConfigSnapshot(target: string): ConfigSnapshot | undefined {
   try {
-    const value = JSON.parse(readFileSync(jsonSnapshotFile(target), "utf8")) as Partial<JsonConfigSnapshot>;
+    const value = JSON.parse(readFileSync(configSnapshotFile(target), "utf8")) as Partial<ConfigSnapshot>;
     return typeof value.originalExists === "boolean" && typeof value.original === "string" && typeof value.installed === "string"
-      ? value as JsonConfigSnapshot
+      ? value as ConfigSnapshot
       : undefined;
   } catch {
     return undefined;
@@ -139,7 +140,7 @@ function setJsonEntry(
   definition: Definition,
   target: string,
   url: string,
-  previous?: JsonConfigSnapshot
+  previous?: ConfigSnapshot
 ): void {
   const file = definition.config!;
   const existed = existsSync(file);
@@ -170,10 +171,10 @@ function setJsonEntry(
   config[definition.key!] = servers;
   if (name === "qwen") addQwenHook(config, target, url);
   writeJson(file, config);
-  writeJson(jsonSnapshotFile(target), { originalExists, original, installed: readFileSync(file, "utf8") });
+  writeJson(configSnapshotFile(target), { originalExists, original, installed: readFileSync(file, "utf8") });
 }
 
-function removeJsonEntry(definition: Definition, snapshot?: JsonConfigSnapshot): void {
+function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
   const file = definition.config!;
   if (!existsSync(file)) return;
   const current = readFileSync(file, "utf8");
@@ -192,6 +193,52 @@ function removeJsonEntry(definition: Definition, snapshot?: JsonConfigSnapshot):
   writeJson(file, config);
 }
 
+const GROK_BEGIN = "# agent-bus:grok begin";
+const GROK_END = "# agent-bus:grok end";
+const GROK_BLOCK = /\n*# agent-bus:grok begin\n[\s\S]*?# agent-bus:grok end\n?/g;
+
+/**
+ * Grok reads MCP servers from `[mcp_servers.<name>]` in its config.toml. A plugin under ~/.grok/plugins is not enough:
+ * user plugins start disabled (seen with grok 1.0.45, 24 Nov).
+ */
+function setGrokEntry(name: UniversalAdapterName, definition: Definition, target: string, url: string, previous?: ConfigSnapshot): void {
+  const file = definition.config!;
+  const existed = existsSync(file);
+  const before = existed ? readFileSync(file, "utf8") : "";
+  const withoutOurs = before.replace(GROK_BLOCK, "");
+  if (/^\s*\[mcp_servers\.(?:agent-hub|"agent-hub")\]/m.test(withoutOurs)) {
+    throw new Error(`${file} already has an agent-hub MCP server not written by Agent Hub; not replacing it`);
+  }
+  let originalExists = existed;
+  let original = before;
+  if (previous && before === previous.installed) {
+    originalExists = previous.originalExists;
+    original = previous.original;
+  } else if (withoutOurs !== before) {
+    original = withoutOurs;
+  }
+  const args = argsFor(name, target, url).map((value) => JSON.stringify(value)).join(", ");
+  const body = `${GROK_BEGIN}\n[mcp_servers.agent-hub]\ncommand = ${JSON.stringify(jsRuntime())}\nargs = [${args}]\n${GROK_END}\n`;
+  const base = existed ? original : "";
+  const installed = `${base}${base && !base.endsWith("\n") ? "\n" : ""}${base ? "\n" : ""}${body}`;
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, installed);
+  writeJson(configSnapshotFile(target), { originalExists, original, installed });
+}
+
+function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
+  const file = definition.config!;
+  if (!existsSync(file)) return;
+  const current = readFileSync(file, "utf8");
+  if (snapshot && current === snapshot.installed) {
+    if (snapshot.originalExists) writeFileSync(file, snapshot.original);
+    else rmSync(file);
+    return;
+  }
+  const cleaned = current.replace(GROK_BLOCK, "\n").replace(/\n+$/, "\n");
+  if (cleaned !== current) writeFileSync(file, cleaned === "\n" ? "" : cleaned);
+}
+
 const block = (file: string, start: string, end: string, body?: string): void => {
   const old = existsSync(file) ? readFileSync(file, "utf8") : "";
   const pattern = new RegExp(`${start.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}[\\s\\S]*?${end.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\n?`, "g");
@@ -203,14 +250,6 @@ const block = (file: string, start: string, end: string, body?: string): void =>
 function configureText(name: UniversalAdapterName, definition: Definition, target: string, url: string): void {
   const command = JSON.stringify(jsRuntime());
   const args = argsFor(name, target, url).map((value) => JSON.stringify(value)).join(", ");
-  if (definition.kind === "grok") {
-    const plugin = path.join(os.homedir(), ".grok", "plugins", "agent-hub");
-    mkdirSync(plugin, { recursive: true });
-    writeJson(path.join(plugin, "plugin.json"), { name: "agent-hub", version: "0.2.0", description: "Agent Hub message bus tools" });
-    writeJson(path.join(plugin, ".mcp.json"), { mcpServers: { "agent-hub": { command: jsRuntime(), args: argsFor(name, target, url) } } });
-    writeMetadata(plugin, "message-bus", "Trusted Grok Build plugin exposing Agent Hub through MCP.");
-    return;
-  }
   if (definition.kind === "deepseek") {
     const file = path.join(os.homedir(), ".dsh", "cordis.patch.yml");
     // A new DSH profile may contain only `[]`; appending a patch item after that is invalid YAML.
@@ -223,11 +262,6 @@ function configureText(name: UniversalAdapterName, definition: Definition, targe
 }
 
 function unconfigureText(name: UniversalAdapterName, definition: Definition): void {
-  if (definition.kind === "grok") {
-    const plugin = path.join(os.homedir(), ".grok", "plugins", "agent-hub");
-    if (manifestName(path.join(plugin, "plugin.json")) === "agent-hub") rmSync(plugin, { recursive: true, force: true });
-    return;
-  }
   const file = definition.kind === "deepseek" ? path.join(os.homedir(), ".dsh", "cordis.patch.yml") : path.join(os.homedir(), ".vibe", "config.toml");
   block(file, `# agent-bus:${name} begin`, `# agent-bus:${name} end`);
 }
@@ -289,8 +323,8 @@ export async function installUniversal(name: UniversalAdapterName, opts: Install
   const definition = DEFINITIONS[name];
   const target = targetDir(name, opts);
   const previous =
-    manifestName(manifest(target)) === ownedName(name) && definition.kind === "json"
-      ? readJsonSnapshot(target)
+    manifestName(manifest(target)) === ownedName(name) && (definition.kind === "json" || definition.kind === "grok")
+      ? readConfigSnapshot(target)
       : undefined;
   const url = installBusUrl(configFile(target), opts.url);
   removeOwnedDir(target, manifest(target), ownedName(name), "plugin");
@@ -306,8 +340,12 @@ export async function installUniversal(name: UniversalAdapterName, opts: Install
   writeJson(configFile(target), { busUrl: url, harness: name });
   writeMetadata(target, "message-bus", `${definition.title} bridge for Agent Hub.`);
   if (definition.kind === "json") setJsonEntry(name, definition, target, url, previous);
+  else if (definition.kind === "grok") setGrokEntry(name, definition, target, url, previous);
   else if (definition.kind === "mini") installMini(target, url, opts.force);
   else configureText(name, definition, target, url);
+  if (definition.kind === "grok") {
+    console.log("Grok wakes for Agent Hub messages only in leader mode: set `[cli] use_leader = true` in its config.toml or start it with `grok --leader`.");
+  }
   console.log(`Installed ${definition.title} Agent Hub adapter in ${target} (bus ${url}).`);
 }
 
@@ -315,7 +353,9 @@ export async function uninstallUniversal(name: UniversalAdapterName, opts: Insta
   const definition = DEFINITIONS[name];
   const target = targetDir(name, opts);
   const owned = manifestName(manifest(target)) === ownedName(name);
-  if (definition.kind === "json") removeJsonEntry(definition, owned ? readJsonSnapshot(target) : undefined);
+  const snapshot = owned ? readConfigSnapshot(target) : undefined;
+  if (definition.kind === "json") removeJsonEntry(definition, snapshot);
+  else if (definition.kind === "grok") removeGrokEntry(definition, snapshot);
   else if (definition.kind === "mini") uninstallMini();
   else unconfigureText(name, definition);
   removeOwnedDir(target, manifest(target), ownedName(name), "plugin");
@@ -337,6 +377,9 @@ export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions
   }
   if (installed && definition.kind === "mini" && !isOwnedFile(path.join(os.homedir(), ".local", "bin", "agent-bus-mini"))) {
     notes.push("agent-bus-mini launcher is missing; install again");
+  }
+  if (installed && definition.kind === "grok" && !(existsSync(definition.config!) && readFileSync(definition.config!, "utf8").includes(GROK_BEGIN))) {
+    notes.push(`MCP entry missing from ${definition.config}`);
   }
   return { installed, where: target, busUrl: configBusUrl(configFile(target)), notes };
 }
