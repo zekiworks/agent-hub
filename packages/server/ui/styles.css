@@ -4564,6 +4564,12 @@ ul.md-list ul.md-list { list-style: circle; }
     align-items: center;
     justify-content: center;
   }
+  .header-folded .conv-header {
+    padding-block: 2px;
+  }
+  .header-folded .conv-bar .fold-btn {
+    height: 16px;
+  }
   .conv-bar .fold-btn::before {
     content: "";
     width: 64px;
@@ -4575,6 +4581,7 @@ ul.md-list ul.md-list { list-style: circle; }
 
   /* Folded (Ümit #14561): the first row only (←, the name, the toggle); the tabs, the room's buttons and "Back to …"
      step aside together, back with the same toggle. */
+  .header-folded #conv-search-btn,
   .header-folded .tab-row,
   .header-folded #conv-settings-btn,
   .header-folded #checklist-btn,
