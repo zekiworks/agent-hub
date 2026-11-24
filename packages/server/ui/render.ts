@@ -542,8 +542,8 @@ function pulseAt(message: Message): number | undefined {
 
 /**
  * More opens like one physical drop (Can #16377): every button starts at the first button's row, moves downward at
- * the same constant speed, then returns at half that speed. The bottom button overshoots by one button height; each
- * button above overshoots half as far as the one below it. Their different distances therefore finish naturally,
+ * the same constant speed, then returns at half that speed. The bottom button overshoots by three button heights;
+ * each button above overshoots half as far as the one below it. Their different distances therefore finish naturally,
  * without a fixed stagger or spring easing.
  */
 function bounceActionColumn(column: HTMLElement): void {
@@ -551,12 +551,12 @@ function bounceActionColumn(column: HTMLElement): void {
   for (const button of buttons) button.getAnimations().forEach((animation) => animation.cancel());
   if (buttons.length === 0 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const firstTop = buttons[0]!.offsetTop;
-  const bottomHeight = buttons.at(-1)!.getBoundingClientRect().height;
+  const bottomOvershoot = buttons.at(-1)!.getBoundingClientRect().height * 3;
   const downSpeed = 0.8; // CSS pixels per millisecond; return speed is exactly half.
   const last = buttons.length - 1;
   buttons.forEach((button, index) => {
     const startDistance = Math.max(0, button.offsetTop - firstTop);
-    const overshoot = bottomHeight / 2 ** (last - index);
+    const overshoot = bottomOvershoot / 2 ** (last - index);
     const downMs = (startDistance + overshoot) / downSpeed;
     const backMs = overshoot / (downSpeed / 2);
     const duration = downMs + backMs;
