@@ -104,13 +104,20 @@ function setComposerHeight(height: number | undefined): void {
   autosize();
   dom.composerGrip.setAttribute("aria-valuenow", String(dom.input.offsetHeight));
 }
+
+/** A remembered drag must not leave an empty phone composer covering the conversation when the person returns to it. */
+export function resetEmptyPhoneComposer(): void {
+  if (PHONE.matches && dom.input.value.length === 0 && composerHeight !== undefined) setComposerHeight(undefined);
+}
 setIcon(dom.attachBtn, "paperclip");
 
 // Dragging the grip: read the sizes once at the start, then write only the box's height (one write per frame). A tap,
 // or a slip of a few pixels while reaching for the box, changes nothing (Ümit #11235: the box was not stable enough).
 {
   const grip = dom.composerGrip;
-  let drag: { startY: number; startHeight: number; max: number; stick: boolean; target: number; frame: number; moving: boolean } | undefined;
+  let drag:
+    | { startY: number; startHeight: number; max: number; threshold: number; stick: boolean; target: number; frame: number; moving: boolean }
+    | undefined;
   grip.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -120,13 +127,22 @@ setIcon(dom.attachBtn, "paperclip");
       // The pointer is already gone (released before this ran): the drag still follows moves over the grip.
     }
     const startHeight = dom.input.offsetHeight;
-    drag = { startY: event.clientY, startHeight, max: composerMax(), stick: nearBottom(), target: startHeight, frame: 0, moving: false };
+    drag = {
+      startY: event.clientY,
+      startHeight,
+      max: composerMax(),
+      threshold: event.pointerType === "touch" ? 14 : 6,
+      stick: nearBottom(),
+      target: startHeight,
+      frame: 0,
+      moving: false,
+    };
   });
   grip.addEventListener("pointermove", (event) => {
     const d = drag;
     if (!d) return;
     if (!d.moving) {
-      if (Math.abs(event.clientY - d.startY) < 6) return;
+      if (Math.abs(event.clientY - d.startY) < d.threshold) return;
       d.moving = true;
       grip.classList.add("dragging");
     }

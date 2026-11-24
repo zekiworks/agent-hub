@@ -1,5 +1,5 @@
 // Phones: one screen at a time (the conversation list, or one conversation), sized above the keyboard.
-import { autosize } from "./composer";
+import { autosize, resetEmptyPhoneComposer } from "./composer";
 import { dom, nearBottom, PHONE, scrollToBottom } from "./dom";
 import { isCurrent, state } from "./state";
 
@@ -48,7 +48,9 @@ viewport?.addEventListener("scroll", fitViewport);
 window.addEventListener("resize", fitViewport);
 window.addEventListener("scroll", fitViewport, { passive: true });
 window.addEventListener("pageshow", fitViewport);
-document.addEventListener("focusin", () => {
+document.addEventListener("focusin", (event) => {
+  // A stale drag height must not turn an empty box into the screen-sized sheet Ümit captured (#15886, #15887).
+  if (event.target === dom.input) resetEmptyPhoneComposer();
   // The keyboard animates in: fit as it comes.
   for (const ms of [100, 400, 800]) setTimeout(fitViewport, ms);
 });
