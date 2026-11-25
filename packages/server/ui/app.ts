@@ -12,7 +12,7 @@ import "./group";
 import { resourcesChanged } from "./gpus";
 import { hooks } from "./hooks";
 import { applyActivity, syncWatch } from "./live";
-import { loadEarlier, loadMessages, loadState, receive } from "./loading";
+import { loadEarlierUntil, loadMessages, loadState, receive } from "./loading";
 import { loadAgentRequests } from "./machines";
 import { closeMention, updateMention } from "./mentions";
 import { setDetails, setPhoneList, wasOnPhoneList } from "./phones";
@@ -189,13 +189,7 @@ async function showMessage(seq: number): Promise<void> {
     history.pushState(null, "", viewHash(view));
     applyView(view);
   }
-  for (;;) {
-    const cache = state.caches.get(id);
-    const first = cache?.messages[0]?.seq;
-    if (cache?.messages.some((m) => m.seq === seq) || !cache?.hasEarlier || !isCurrent(id) || first === undefined || first < seq) break;
-    await loadEarlier();
-    if (state.caches.get(id)?.messages[0]?.seq === first) break; // the page failed to load
-  }
+  await loadEarlierUntil(id, seq);
   // With threads on, a message folded into a thread opens that thread; a room message, the room (Can #14203).
   const cache = state.caches.get(id);
   if (threadsOn() && cache?.messages.some((m) => m.seq === seq)) {

@@ -81,6 +81,36 @@ export async function loadEarlier(): Promise<void> {
   }
 }
 
+/**
+ * Earlier pages of conversation `id` until message `seq` is among them (or there are none), then one render. Jumping to
+ * an old message used to re-render the whole room after every page: eight pages of a busy room froze a phone for many
+ * seconds (Ümit #16715).
+ */
+export async function loadEarlierUntil(id: string, seq: number): Promise<void> {
+  const cache = state.caches.get(id);
+  if (!cache) return;
+  dom.loadEarlierBtn.disabled = true;
+  let fetched = false;
+  try {
+    for (;;) {
+      const first = cache.messages[0];
+      if (!first || first.seq <= seq || !cache.hasEarlier || !isCurrent(id)) break;
+      const res = await api<MessagesResponse>(
+        `/api/conversations/${encodeURIComponent(id)}/messages?beforeSeq=${first.seq}&limit=${PAGE_SIZE}`
+      );
+      cache.messages = mergeMessages(res.messages, cache.messages);
+      cache.hasEarlier = res.messages.length >= PAGE_SIZE;
+      fetched = true;
+      if (res.messages.length === 0) break;
+    }
+  } catch (err) {
+    showError(`Could not load earlier messages: ${errorText(err)}`);
+  } finally {
+    dom.loadEarlierBtn.disabled = false;
+    if (fetched && isCurrent(id)) renderMessages();
+  }
+}
+
 dom.loadEarlierBtn.addEventListener("click", () => void loadEarlier());
 
 /** Records a message (from the viewer socket or a POST response). */
