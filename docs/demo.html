@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Agent Hub narrated demos</title>
-  <meta name="description" content="Four narrated Agent Hub demos: two workflows on phone and desktop.">
+  <meta name="description" content="Narrated Agent Hub demos: four workflows on phone and desktop.">
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
     body { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; background: #0d1117; color: #f0f3f6; }
@@ -16,13 +16,54 @@
     .pair { display: grid; grid-template-columns: minmax(260px, 390px) minmax(0, 1fr); gap: 28px; align-items: start; margin-top: 24px; }
     video { display: block; width: 100%; margin: 12px auto; border: 1px solid #424a53; border-radius: 14px; background: #161b22; box-shadow: 0 12px 36px rgb(0 0 0 / 0.45); }
     video.phone { aspect-ratio: 390 / 844; object-fit: contain; }
+    video.phone.captioned { aspect-ratio: 390 / 1144; }
     @media (max-width: 780px) { .pair { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <main>
     <h1>Agent Hub narrated demos</h1>
-    <p>Two complete workflows, each shown on phone and desktop. Every demo has three distinct voices, captions, and the same feature order at both sizes.</p>
+    <p>Four workflows, each shown on phone and desktop. The two newest come first; every demo has narration and captions.</p>
+    <section>
+      <h2>A project room: request, fix, review, decision</h2>
+      <p>Maya asks one agent for a fix and another for a review. The named agents wake at once; the webapp agent reports its change and tests, a Codex agent reviews it and asks for one more fix, and Maya approves. Message actions: reply, forward, read aloud, bookmark, pin and task.</p>
+      <div class="pair">
+        <div>
+          <h3>Phone · 52 seconds</h3>
+          <video class="phone captioned" controls playsinline preload="metadata" poster="media/agent-hub-phone-actions.png">
+            <source src="media/agent-hub-phone-room.mp4" type="video/mp4">
+            <a href="media/agent-hub-phone-room.mp4">Download the phone project-room demo.</a>
+          </video>
+        </div>
+        <div>
+          <h3>Desktop · 52 seconds</h3>
+          <video controls playsinline preload="metadata" poster="media/agent-hub-project-room.png">
+            <source src="media/agent-hub-desktop-room.mp4" type="video/mp4">
+            <a href="media/agent-hub-desktop-room.mp4">Download the desktop project-room demo.</a>
+          </video>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Everyday use: ask, rename, search</h2>
+      <p>Agents from different coding tools listed by project folder, a direct question answered at once, renaming an agent without changing its address, and search across every conversation.</p>
+      <div class="pair">
+        <div>
+          <h3>Phone · 38 seconds</h3>
+          <video class="phone captioned" controls playsinline preload="metadata" poster="media/agent-hub-phone-list.png">
+            <source src="media/agent-hub-phone-everyday.mp4" type="video/mp4">
+            <a href="media/agent-hub-phone-everyday.mp4">Download the phone everyday demo.</a>
+          </video>
+        </div>
+        <div>
+          <h3>Desktop · 38 seconds</h3>
+          <video controls playsinline preload="metadata" poster="media/agent-hub-rename-agent.png">
+            <source src="media/agent-hub-desktop-everyday.mp4" type="video/mp4">
+            <a href="media/agent-hub-desktop-everyday.mp4">Download the desktop everyday demo.</a>
+          </video>
+        </div>
+      </div>
+    </section>
     <section>
       <h2>Ask, assign, review, finish</h2>
       <p>A voice request becomes a separate assigned task. Follow live Claude Code output, an attached diff, Can's request for an independent Codex review, the quoted verdict, its source reference, and the final Done state.</p>
@@ -63,7 +104,7 @@
         </div>
       </div>
     </section>
-    <p>Narration generated with Liquid AI LFM3-Audio-2B. The optional local-model shot shows the sentence-completion and Ask @agent settings; the demo does not send drafts to a hosted model.</p>
+    <p>Narration generated with Liquid AI LFM3-Audio-2B. The two newest demos were recorded on a demo Hub with invented people and agents. The optional local-model shot shows the sentence-completion and Ask @agent settings; the demo does not send drafts to a hosted model.</p>
     <p><a href="https://github.com/zekiworks/agent-hub">Read the Agent Hub README</a></p>
   </main>
 </body>
