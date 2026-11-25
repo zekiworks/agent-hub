@@ -22,9 +22,11 @@ export type UniversalAdapterName = "qwen" | "kimi" | "grok" | "deepseek" | "muse
 interface Definition {
   title: string;
   command: string;
-  kind: "json" | "grok" | "deepseek" | "vibe" | "mini";
+  kind: "json" | "kimi" | "grok" | "deepseek" | "vibe" | "mini";
   config?: string;
   key?: "mcpServers" | "mcp_servers";
+  /** Kimi Code only: the config.toml whose [[hooks]] run the Inbox hook. */
+  hooks?: string;
   muse?: boolean;
 }
 
@@ -32,7 +34,14 @@ const xdg = (): string => process.env.XDG_CONFIG_HOME || path.join(os.homedir(),
 const DEFINITIONS: Record<UniversalAdapterName, Definition> = {
   qwen: { title: "Qwen Code", command: "qwen", kind: "json", config: path.join(os.homedir(), ".qwen", "settings.json"), key: "mcpServers" },
   // Kimi Code 2.x reads $KIMI_CODE_HOME (~/.kimi-code); ~/.kimi is the pre-2.0 home it migrates from once (@qwen-kimi #16774).
-  kimi: { title: "Kimi Code CLI", command: "kimi", kind: "json", config: path.join(process.env.KIMI_CODE_HOME || path.join(os.homedir(), ".kimi-code"), "mcp.json"), key: "mcpServers" },
+  kimi: {
+    title: "Kimi Code CLI",
+    command: "kimi",
+    kind: "kimi",
+    config: path.join(process.env.KIMI_CODE_HOME || path.join(os.homedir(), ".kimi-code"), "mcp.json"),
+    key: "mcpServers",
+    hooks: path.join(process.env.KIMI_CODE_HOME || path.join(os.homedir(), ".kimi-code"), "config.toml"),
+  },
   grok: { title: "Grok Build", command: "grok", kind: "grok", config: path.join(process.env.GROK_HOME || path.join(os.homedir(), ".grok"), "config.toml") },
   deepseek: { title: "DeepSeek Harness", command: "dsh", kind: "deepseek" },
   muse: { title: "Muse Code", command: "muse", kind: "json", config: path.join(xdg(), "muse", "settings.json"), key: "mcp_servers", muse: true },
@@ -47,9 +56,11 @@ const targetDir = (name: UniversalAdapterName, opts: InstallOptions): string =>
 const manifest = (target: string): string => path.join(target, "package.json");
 const ownedName = (name: UniversalAdapterName): string => `@agent-bus/${name}-mcp`;
 const serverFile = (target: string): string => path.join(target, "server.mjs");
-const qwenHookFile = (target: string): string => path.join(target, "qwen-hook.mjs");
+const inboxHookFile = (target: string): string => path.join(target, "inbox-hook.mjs");
 const configFile = (target: string): string => path.join(target, "config.json");
 const configSnapshotFile = (target: string): string => path.join(target, "config-snapshot.json");
+/** Kimi Code's hooks live in a second file (config.toml), so they get a snapshot of their own. */
+const hooksSnapshotFile = (target: string): string => path.join(target, "config-snapshot-hooks.json");
 
 /** The harness config file's exact bytes before install and as installed, so uninstall can restore them untouched. */
 interface ConfigSnapshot {
@@ -114,7 +125,7 @@ function addQwenHook(config: Record<string, unknown>, target: string, url: strin
     hooks: [{
       type: "command",
       // Shell form: Qwen Code 0.28 ignores `args` (exec form exists only in the 1.0 previews), and both run this.
-      command: [jsRuntime(), qwenHookFile(target), "--url", url].map(shellQuote).join(" ") + ` ${QWEN_HOOK_MARKER}`,
+      command: [jsRuntime(), inboxHookFile(target), "--harness", "qwen", "--url", url].map(shellQuote).join(" ") + ` ${QWEN_HOOK_MARKER}`,
       timeout: 15,
       statusMessage: "Checking Agent Hub Inbox",
     }],
@@ -125,9 +136,9 @@ function addQwenHook(config: Record<string, unknown>, target: string, url: strin
 
 const jsonText = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
-function readConfigSnapshot(target: string): ConfigSnapshot | undefined {
+function readConfigSnapshot(target: string, file = configSnapshotFile(target)): ConfigSnapshot | undefined {
   try {
-    const value = JSON.parse(readFileSync(configSnapshotFile(target), "utf8")) as Partial<ConfigSnapshot>;
+    const value = JSON.parse(readFileSync(file, "utf8")) as Partial<ConfigSnapshot>;
     return typeof value.originalExists === "boolean" && typeof value.original === "string" && typeof value.installed === "string"
       ? value as ConfigSnapshot
       : undefined;
@@ -192,6 +203,53 @@ function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
   if (hadManagedEntry) delete servers["agent-hub"];
   config[definition.key!] = servers;
   writeJson(file, config);
+}
+
+const KIMI_HOOKS_BEGIN = "# agent-bus:kimi begin";
+const KIMI_HOOKS_END = "# agent-bus:kimi end";
+const KIMI_HOOKS_BLOCK = /\n*# agent-bus:kimi begin\n[\s\S]*?# agent-bus:kimi end\n?/g;
+
+/**
+ * Kimi Code 2.x runs [[hooks]] from config.toml: the UserPromptSubmit one injects unseen deliveries before a turn,
+ * the Stop one continues the turn when a message wakes the agent. Both run the shared Inbox hook.
+ */
+function setKimiHooks(definition: Definition, target: string, url: string, previous?: ConfigSnapshot): void {
+  const file = definition.hooks!;
+  const existed = existsSync(file);
+  const before = existed ? readFileSync(file, "utf8") : "";
+  const withoutOurs = before.replace(KIMI_HOOKS_BLOCK, "");
+  let originalExists = existed;
+  let original = before;
+  if (previous && before === previous.installed) {
+    originalExists = previous.originalExists;
+    original = previous.original;
+  } else if (withoutOurs !== before) {
+    original = withoutOurs;
+  }
+  const command = [jsRuntime(), inboxHookFile(target), "--harness", "kimi", "--url", url].map(shellQuote).join(" ") + ` ${QWEN_HOOK_MARKER}`;
+  const body =
+    `${KIMI_HOOKS_BEGIN}\n` +
+    `[[hooks]]\nevent = "UserPromptSubmit"\ncommand = ${JSON.stringify(command)}\ntimeout = 15\n\n` +
+    `[[hooks]]\nevent = "Stop"\ncommand = ${JSON.stringify(command)}\ntimeout = 15\n` +
+    `${KIMI_HOOKS_END}\n`;
+  const base = existed ? original : "";
+  const installed = `${base}${base && !base.endsWith("\n") ? "\n" : ""}${base ? "\n" : ""}${body}`;
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, installed);
+  writeJson(hooksSnapshotFile(target), { originalExists, original, installed });
+}
+
+function removeKimiHooks(definition: Definition, snapshot?: ConfigSnapshot): void {
+  const file = definition.hooks!;
+  if (!existsSync(file)) return;
+  const current = readFileSync(file, "utf8");
+  if (snapshot && current === snapshot.installed) {
+    if (snapshot.originalExists) writeFileSync(file, snapshot.original);
+    else rmSync(file);
+    return;
+  }
+  const cleaned = current.replace(KIMI_HOOKS_BLOCK, "\n").replace(/\n+$/, "\n");
+  if (cleaned !== current) writeFileSync(file, cleaned === "\n" ? "" : cleaned);
 }
 
 const GROK_BEGIN = "# agent-bus:grok begin";
@@ -323,24 +381,30 @@ function uninstallMini(): void {
 export async function installUniversal(name: UniversalAdapterName, opts: InstallOptions): Promise<void> {
   const definition = DEFINITIONS[name];
   const target = targetDir(name, opts);
+  const owned = manifestName(manifest(target)) === ownedName(name);
   const previous =
-    manifestName(manifest(target)) === ownedName(name) && (definition.kind === "json" || definition.kind === "grok")
+    owned && (definition.kind === "json" || definition.kind === "kimi" || definition.kind === "grok")
       ? readConfigSnapshot(target)
       : undefined;
+  const previousHooks = owned && definition.kind === "kimi" ? readConfigSnapshot(target, hooksSnapshotFile(target)) : undefined;
   const url = installBusUrl(configFile(target), opts.url);
   removeOwnedDir(target, manifest(target), ownedName(name), "plugin");
   mkdirSync(target, { recursive: true });
   const entries: Array<[string, string]> =
     definition.kind === "mini"
       ? [["src/one-shot.ts", "one-shot"]]
-      : name === "qwen"
-        ? [["src/server.ts", "server"], ["src/qwen-hook.ts", "qwen-hook"]]
+      : name === "qwen" || name === "kimi"
+        ? [["src/server.ts", "server"], ["src/inbox-hook.ts", "inbox-hook"]]
         : [["src/server.ts", "server"]];
   await bundleForNode(root, target, entries);
   writeJson(manifest(target), { name: ownedName(name), version: "0.2.0", private: true });
   writeJson(configFile(target), { busUrl: url, harness: name });
   writeMetadata(target, "message-bus", `${definition.title} bridge for Agent Hub.`);
   if (definition.kind === "json") setJsonEntry(name, definition, target, url, previous);
+  else if (definition.kind === "kimi") {
+    setJsonEntry(name, definition, target, url, previous);
+    setKimiHooks(definition, target, url, previousHooks);
+  }
   else if (definition.kind === "grok") setGrokEntry(name, definition, target, url, previous);
   else if (definition.kind === "mini") installMini(target, url, opts.force);
   else configureText(name, definition, target, url);
@@ -356,6 +420,10 @@ export async function uninstallUniversal(name: UniversalAdapterName, opts: Insta
   const owned = manifestName(manifest(target)) === ownedName(name);
   const snapshot = owned ? readConfigSnapshot(target) : undefined;
   if (definition.kind === "json") removeJsonEntry(definition, snapshot);
+  else if (definition.kind === "kimi") {
+    removeJsonEntry(definition, snapshot);
+    removeKimiHooks(definition, owned ? readConfigSnapshot(target, hooksSnapshotFile(target)) : undefined);
+  }
   else if (definition.kind === "grok") removeGrokEntry(definition, snapshot);
   else if (definition.kind === "mini") uninstallMini();
   else unconfigureText(name, definition);
@@ -378,6 +446,13 @@ export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions
   }
   if (installed && definition.kind === "mini" && !isOwnedFile(path.join(os.homedir(), ".local", "bin", "agent-bus-mini"))) {
     notes.push("agent-bus-mini launcher is missing; install again");
+  }
+  if (installed && definition.kind === "kimi") {
+    const servers = object(readJson(definition.config!)[definition.key!]);
+    if (!managedEntry(servers["agent-hub"])) notes.push(`MCP entry missing from ${definition.config}`);
+    if (!(existsSync(definition.hooks!) && readFileSync(definition.hooks!, "utf8").includes(KIMI_HOOKS_BEGIN))) {
+      notes.push(`Inbox hook missing from ${definition.hooks}`);
+    }
   }
   if (installed && definition.kind === "grok" && !(existsSync(definition.config!) && readFileSync(definition.config!, "utf8").includes(GROK_BEGIN))) {
     notes.push(`MCP entry missing from ${definition.config}`);

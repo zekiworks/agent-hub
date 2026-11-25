@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { StateResponse } from "@agent-bus/protocol";
@@ -91,7 +91,7 @@ describe("universal MCP adapter configuration", () => {
     const first = JSON.parse(readFileSync(settings, "utf8"));
     expect(first.hooks.UserPromptSubmit).toHaveLength(2);
     expect(first.hooks.UserPromptSubmit[1].hooks[0].command).toEndWith(" --managed-by agent-bus");
-    expect(existsSync(join(root, ".agent-bus", "adapters", "qwen", "qwen-hook.mjs"))).toBe(true);
+    expect(existsSync(join(root, ".agent-bus", "adapters", "qwen", "inbox-hook.mjs"))).toBe(true);
     await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only");
     const second = JSON.parse(readFileSync(settings, "utf8"));
     expect(second.hooks.UserPromptSubmit).toHaveLength(2);
@@ -279,6 +279,133 @@ describe("universal MCP adapter configuration", () => {
       if (stdin && typeof stdin !== "number") stdin.end();
       await first.exited;
       await until("the twin to take over the bus session", async () => (await connections()) === 1 && (await inboxOk(call)));
+    } finally {
+      for (const child of bridges) {
+        const stdin = child.stdin;
+        if (stdin && typeof stdin !== "number") stdin.end();
+      }
+      await Promise.all(bridges.map((child) => child.exited));
+      await bus.stop();
+    }
+  }, 30_000);
+
+  test("Kimi reinstall and uninstall restore mcp.json and config.toml byte for byte", async () => {
+    const root = home();
+    const mcp = join(root, ".kimi-code", "mcp.json");
+    const config = join(root, ".kimi-code", "config.toml");
+    const mcpBefore = `{
+  "mcpServers": {
+    "existing-tool": {
+      "command": "printf",
+      "args": ["keep-me"]
+    }
+  }
+}
+`;
+    const configBefore = `default_model = "kimi-code/kimi-for-coding"
+
+[[hooks]]
+event = "Notification"
+command = "true"
+`;
+    await Bun.write(mcp, mcpBefore);
+    await Bun.write(config, configBefore);
+
+    await agentBus(root, "install", "kimi", "--url", "http://127.0.0.1:7800", "--build-only");
+    const installedMcp = JSON.parse(readFileSync(mcp, "utf8"));
+    expect(installedMcp.mcpServers["existing-tool"].args).toEqual(["keep-me"]);
+    expect(installedMcp.mcpServers["agent-hub"].args).toContain("--managed-by");
+    const installedConfig = readFileSync(config, "utf8");
+    expect(installedConfig.startsWith(configBefore)).toBe(true);
+    expect(installedConfig).toContain('event = "UserPromptSubmit"');
+    expect(installedConfig).toContain('event = "Stop"');
+    expect(installedConfig).toContain("inbox-hook.mjs");
+    await agentBus(root, "install", "kimi", "--url", "http://127.0.0.1:7800", "--build-only");
+    expect(readFileSync(config, "utf8")).toBe(installedConfig);
+    await agentBus(root, "uninstall", "kimi");
+
+    expect(readFileSync(mcp, "utf8")).toBe(mcpBefore);
+    expect(readFileSync(config, "utf8")).toBe(configBefore);
+  }, 30_000);
+
+  test("Kimi hook injects unseen once per prompt, and continues the turn only on a wake", async () => {
+    const root = home();
+    const project = repo;
+    const other = join(root, "other");
+    mkdirSync(other, { recursive: true });
+    mkdirSync(join(root, ".agent-bus"), { recursive: true });
+    await Bun.write(join(root, ".agent-bus", "agent-token"), `${TEST_TOKEN}\n`);
+    const bus: BusServerHandle = startBus({ host: "127.0.0.1", port: 0, dataDir: join(root, "bus"), humans: ["carol"] });
+    const bridges: Array<ReturnType<typeof Bun.spawn>> = [];
+    try {
+      await agentBus(root, "install", "kimi", "--url", bus.url, "--build-only");
+      const server = JSON.parse(readFileSync(join(root, ".kimi-code", "mcp.json"), "utf8")).mcpServers["agent-hub"];
+      const spawnBridge = (cwd: string): ReturnType<typeof Bun.spawn> => {
+        const child = Bun.spawn([server.command, ...server.args], {
+          cwd,
+          env: { ...process.env, HOME: root, AGENT_BUS_JOIN_FROM_TMP: "1" },
+          stdin: "pipe",
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        bridges.push(child);
+        return child;
+      };
+      const agentAt = async (folder: string): Promise<StateResponse["participants"][number]> => {
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          const state = await getJson<StateResponse>(bus, "/api/state", "carol");
+          const agent = state.participants.find((participant) => participant.kind === "agent" && participant.path === folder);
+          if (agent) return agent;
+          await Bun.sleep(10);
+        }
+        throw new Error(`No bridge joined the test bus from ${folder}`);
+      };
+      spawnBridge(project);
+      const agent = await agentAt(realpathSync(project));
+      // A second agent whose messages name no wake: a person's DM always wakes its recipient, an agent's need not.
+      spawnBridge(other);
+      const writer = await agentAt(realpathSync(other));
+      const command = readFileSync(join(root, ".kimi-code", "config.toml"), "utf8").match(/command = "(.*inbox-hook\.mjs.*)"/)?.[1];
+      if (!command) throw new Error("Installed Kimi hook is missing");
+      const runHook = async (event: string): Promise<{ code: number; stdout: string; stderr: string }> => {
+        const child = Bun.spawn(["/bin/sh", "-c", command], {
+          cwd: project,
+          env: { ...process.env, HOME: root, AGENT_BUS_JOIN_FROM_TMP: "1" },
+          stdin: "pipe",
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        child.stdin.write(JSON.stringify({ hook_event_name: event, session_id: "session_test", cwd: project }));
+        child.stdin.end();
+        const [code, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        if (stderr.includes("Inbox hook:")) throw new Error(stderr);
+        return { code, stdout, stderr };
+      };
+
+      // A message that names no wake never buys a turn: Stop stays quiet, the next prompt injects it once.
+      const plain = await postJson(bus, "/api/messages", { from: writer.id, to: `@${agent.id}`, text: "Plain note for the next turn.", wake: [] });
+      if (!plain.ok) throw new Error(await plain.text());
+      const quiet = await runHook("Stop");
+      expect(quiet.code).toBe(0);
+      expect(quiet.stdout + quiet.stderr).not.toContain("Plain note");
+      const prompt = await runHook("UserPromptSubmit");
+      expect(prompt.code).toBe(0);
+      expect(prompt.stdout).toContain("Plain note for the next turn.");
+      expect((await runHook("UserPromptSubmit")).stdout).toBe("");
+
+      // A person's DM wakes its recipient: the Stop blocks (exit 2), which starts a continuation turn — once.
+      const waking = await postJson(bus, "/api/messages", { from: "carol", to: `@${agent.id}`, text: "Wake and read this." });
+      if (!waking.ok) throw new Error(await waking.text());
+      const stop = await runHook("Stop");
+      expect(stop.code).toBe(2);
+      expect(stop.stderr).toContain("Wake and read this.");
+      const after = await runHook("Stop");
+      expect(after.code).toBe(0);
+      expect(after.stdout + after.stderr).not.toContain("Wake and read this.");
     } finally {
       for (const child of bridges) {
         const stdin = child.stdin;
