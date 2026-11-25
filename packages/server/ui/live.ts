@@ -104,8 +104,8 @@ export function renderLive(): void {
     rows.push([
       "Waiting",
       agent.waiting === 0
-        ? "no bus messages waiting"
-        : `${agent.waiting} bus message${agent.waiting === 1 ? "" : "s"} delivered, not seen by its model yet`,
+        ? "no Hub messages waiting"
+        : `${agent.waiting} Hub message${agent.waiting === 1 ? "" : "s"} delivered, not seen by its model yet`,
     ]);
   }
   const where = [agent.path ? shortPath(agent.path) : "", agent.host ?? "", agent.harness ?? ""].filter(Boolean).join(" · ");

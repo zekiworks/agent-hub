@@ -173,7 +173,7 @@ export class HumanAuth {
       .query<{ human: string; expires_at: number; used_at: number | null }, [string]>("SELECT human, expires_at, used_at FROM auth_invites WHERE token_hash = ?1")
       .get(hash(invite));
     if (!row || row.used_at !== null || row.expires_at < this.now()) throw new AuthError(403, "This invite link is unknown, used or expired; ask for a new one (agent-bus invite <name>)");
-    if (!this.options.humans.includes(row.human)) throw new AuthError(403, `@${row.human} is not a human on this bus`);
+    if (!this.options.humans.includes(row.human)) throw new AuthError(403, `@${row.human} is not a person on this Hub`);
     return row.human;
   }
 
@@ -275,7 +275,7 @@ export class HumanAuth {
    * embedding the server, which hold the database anyway.
    */
   signIn(human: string, label: string): string {
-    if (!this.options.humans.includes(human)) throw new AuthError(400, `@${human} is not a human on this bus`);
+    if (!this.options.humans.includes(human)) throw new AuthError(400, `@${human} is not a person on this Hub`);
     return this.newSession(human, label);
   }
 
@@ -363,7 +363,7 @@ export class HumanAuth {
       .query<{ human: string; expires_at: number; used_at: number | null }, [string]>("SELECT human, expires_at, used_at FROM auth_links WHERE token_hash = ?1")
       .get(hash(code));
     if (!row || row.used_at !== null || row.expires_at < now) throw new AuthError(403, "This code is unknown, used or expired; show a new one on a signed-in device");
-    if (!this.options.humans.includes(row.human)) throw new AuthError(403, `@${row.human} is not a human on this bus`);
+    if (!this.options.humans.includes(row.human)) throw new AuthError(403, `@${row.human} is not a person on this Hub`);
     this.db.query("UPDATE auth_links SET used_at = ?2 WHERE token_hash = ?1").run(hash(code), now);
     return { human: row.human, token: this.newSession(row.human, label) };
   }

@@ -289,7 +289,7 @@ function render(consumed: string[] = []): void {
       const shown = candidates.filter((p) => !q || p.id.includes(q) || picking.ids.has(p.id));
       choices.replaceChildren(
         ...(shown.length === 0
-          ? [h("li", "forward-empty", candidates.length === 0 ? "Everyone on the bus is in it already." : "Nobody by that name.")]
+          ? [h("li", "forward-empty", candidates.length === 0 ? "Everyone on the Hub is in it already." : "Nobody by that name.")]
           : shown.map((p) => {
               const on = picking.ids.has(p.id);
               const li = h("li", on ? "forward-choice selected" : "forward-choice");

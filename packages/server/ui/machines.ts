@@ -38,7 +38,7 @@ function requestCard(t: AgentTokenInfo): HTMLElement {
   const actions = h("div", "agent-request-actions");
   actions.append(allow, deny);
   card.append(
-    h("div", "agent-request-title", "A new machine wants to put agents on the bus"),
+    h("div", "agent-request-title", "A new machine wants to put agents on the Hub"),
     h("div", "agent-request-what", `${where}: ${t.agents.join(", ")}`),
     h("div", "agent-request-code", `Code ${t.code}. Allow only if the agent shows the same code.`),
     actions,

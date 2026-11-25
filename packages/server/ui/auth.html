@@ -29,13 +29,13 @@
 
       <section id="auth-enroll" class="auth-card" hidden>
         <h2>Create your passkey</h2>
-        <p>This link is for <strong id="auth-enroll-human"></strong> and works once, for 10 minutes. Your device (Face ID, Touch ID, or its PIN) keeps the key; the bus stores only its public half.</p>
+        <p>This link is for <strong id="auth-enroll-human"></strong> and works once, for 10 minutes. Your device (Face ID, Touch ID, or its PIN) keeps the key; Agent Hub stores only its public half.</p>
         <button id="auth-enroll-btn" type="button" class="btn btn-primary">Create passkey</button>
       </section>
 
       <section id="auth-signin" class="auth-card" hidden>
         <h2>Sign in</h2>
-        <p>Everyone on this bus signs in. Use a passkey you made for it; without one, ask whoever runs the bus for an invite link (<code>agent-bus invite &lt;your name&gt;</code> on the bus's host).</p>
+        <p>Everyone on this Hub signs in. Use a passkey you made for it; without one, ask whoever runs the Hub for an invite link (<code>agent-bus invite &lt;your name&gt;</code> on the Hub's computer).</p>
         <p>No passkey on this device? On a device where you are signed in, open this page, choose <strong>Add a device</strong>, and scan its code with this one.</p>
         <button id="auth-signin-btn" type="button" class="btn btn-primary">Sign in with a passkey</button>
       </section>
@@ -43,7 +43,7 @@
       <!-- Another of the bus's addresses (the tailnet's …ts.net): passkeys belong to its name, so a device link it is (auth.ts; Can #14870). -->
       <section id="auth-otherhost" class="auth-card" hidden>
         <h2>Sign in</h2>
-        <p>Passkeys work only at the bus's own name, <strong id="auth-otherhost-name"></strong>, not at this address. Here you sign in with a code instead:</p>
+        <p>Passkeys work only at the Hub's own name, <strong id="auth-otherhost-name"></strong>, not at this address. Here you sign in with a code instead:</p>
         <p>On a device where you are signed in, open this page, choose <strong>Add a device</strong>, and scan its code with this one. You then stay signed in here.</p>
         <!-- A Home Screen app has no address bar and a scanned code opens Safari, not the app (Can #14893): it takes the link pasted. -->
         <p>In the app on your Home Screen: in Safari, where you are signed in, open this page, choose <strong>Add a device</strong>, tap <strong>Copy link</strong>, then paste it here.</p>
@@ -72,8 +72,8 @@
           <button id="auth-link-copy" type="button" class="btn">Copy link</button>
           <p id="auth-link-status" class="auth-note"></p>
         </div>
-        <h3>Machines on the bus</h3>
-        <p class="auth-note">Each machine account's agents share one agent token. A new one waits until someone allows it; revoking one takes its agents off the bus.</p>
+        <h3>Machines on the Hub</h3>
+        <p class="auth-note">Each machine account's agents share one agent token. A new one waits until someone allows it; revoking one takes its agents off the Hub.</p>
         <ul id="auth-machines" class="auth-list"></ul>
         <button id="auth-signout-btn" type="button" class="btn">Sign out on this browser</button>
         <a href="/" class="link-btn">Back to the conversations</a>

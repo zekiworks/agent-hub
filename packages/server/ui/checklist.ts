@@ -220,7 +220,7 @@ registerExtension({
     }
     if (list.items.length === 0) root.append(h("p", "check-note", "No items yet."));
     const forWhom = list.assignees.length > 0 ? ` For ${list.assignees.map((a) => `@${a}`).join(", ")}.` : "";
-    root.append(h("p", "check-foot", `Started by @${list.creator}, updated ${relativeTime(list.updatedAt)} by @${list.updatedBy}.${forWhom} Ticks go back to the bus; the agents read them.`));
+    root.append(h("p", "check-foot", `Started by @${list.creator}, updated ${relativeTime(list.updatedAt)} by @${list.updatedBy}.${forWhom} Ticks go back to the Hub; the agents read them.`));
     body.replaceChildren(root);
   },
 });

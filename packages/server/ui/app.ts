@@ -324,8 +324,8 @@ async function loadAuth(): Promise<string | undefined> {
   // The account, once, at the right of the top bar (Can #11389): the name, a link to passkeys, machines, sign out.
   dom.authLink.hidden = false;
   dom.authLink.textContent = `✓ ${auth.me}`;
-  dom.authLink.title = `Signed in as ${auth.me} with a passkey: passkeys, machines on the bus, sign out`;
-  dom.authLink.setAttribute("aria-label", `Your account: signed in as ${auth.me} (passkeys, machines on the bus, sign out)`);
+  dom.authLink.title = `Signed in as ${auth.me} with a passkey: passkeys, machines on the Hub, sign out`;
+  dom.authLink.setAttribute("aria-label", `Your account: signed in as ${auth.me} (passkeys, machines on the Hub, sign out)`);
   return auth.me;
 }
 
@@ -341,7 +341,7 @@ async function boot(): Promise<void> {
     await loadState();
   } catch (err) {
     setLinkStatus("offline", "server unreachable");
-    showEmpty(`Could not reach the bus: ${errorText(err)}. Reload to retry.`);
+    showEmpty(`Could not reach Agent Hub: ${errorText(err)}. Reload to retry.`);
     return;
   }
   // A signed-in browser is that human (the server refuses any other `from`).

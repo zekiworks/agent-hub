@@ -62,7 +62,7 @@ function render(): void {
       "p",
       "dialog-hint",
       "Measured by compactor on CPU with FLEURS: English, 100 recordings (14 Nov); Turkish, 50 recordings (6 Nov, " +
-        "with Whisper large-v3, the larger sibling of the turbo the bus runs). Lower is better."
+        "with Whisper large-v3, the larger sibling of the turbo the Hub runs). Lower is better."
     ),
     note,
     voiceRecordingSetting(),
@@ -115,7 +115,7 @@ function decisionModelsSetting(current: boolean | undefined): HTMLElement | stri
 function voiceLanguageSetting(current: AgentSettings["voiceLanguage"]): HTMLElement {
   const select = h("select");
   for (const [value, label] of [
-    ["default", "Turkish, unless clearly English (the bus's rule)"],
+    ["default", "Turkish, unless clearly English (the Hub's rule)"],
     ["en", "English"],
     ["tr", "Turkish"],
     ["auto", "Detect for each message"],
@@ -152,7 +152,7 @@ function notificationsSetting(): HTMLElement {
   for (const b of [on, off, test]) b.type = "button";
   const buttons = h("p", "");
   const TEXT: Record<PushState, string> = {
-    unsupported: "This browser can't take notifications from the bus here (it needs https and a newer browser).",
+    unsupported: "This browser can't take notifications from Agent Hub here (it needs https and a newer browser).",
     "home-screen-first":
       "On the iPhone: Share (the square with the arrow) → Add to Home Screen, then open Agent Hub from that icon " +
       "and turn them on here. Safari itself can't take them.",
@@ -323,7 +323,7 @@ function suggestionSetting(): HTMLElement {
   const label = h("label", "settings-check");
   label.append(box, " Suggest how to go on while I type");
   const model = suggestionBox()
-    ? " The next words come from a small model on the bus's own machine: your draft and the conversation's latest " +
+    ? " The next words come from a small model on the Hub's own computer: your draft and the conversation's latest " +
       "messages go to it, and nothing is kept (English only)."
     : "";
   const section = h("div", "");

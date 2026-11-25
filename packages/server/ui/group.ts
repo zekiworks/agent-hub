@@ -34,7 +34,7 @@ function openGroupDialog(asRoom = false): void {
     ...state.humans.filter((id) => id !== state.me).map((id) => ({ id, detail: "human", dot: "dot-human" })),
   ];
   if (choices.length === 0) {
-    dom.groupChoices.replaceChildren(h("li", "side-empty", "Nobody else is on the bus yet."));
+    dom.groupChoices.replaceChildren(h("li", "side-empty", "Nobody else is on the Hub yet."));
   } else {
     dom.groupChoices.replaceChildren(
       ...choices.map((choice) => {

@@ -190,7 +190,7 @@ function checkClientData(raw: Uint8Array, type: "webauthn.create" | "webauthn.ge
   }
   if (data.type !== type) throw new WebAuthnError(`expected ${type}, got ${String(data.type)}`);
   if (data.challenge !== challenge) throw new WebAuthnError("challenge does not match");
-  if (!origins.includes(data.origin)) throw new WebAuthnError(`origin ${String(data.origin)} is not this bus (${origins.join(", ")})`);
+  if (!origins.includes(data.origin)) throw new WebAuthnError(`origin ${String(data.origin)} is not this Hub (${origins.join(", ")})`);
 }
 
 function checkRp(auth: AuthData, rpId: string): void {

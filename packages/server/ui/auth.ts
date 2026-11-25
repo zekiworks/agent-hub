@@ -249,7 +249,7 @@ async function renderMachines(): Promise<void> {
       button.className = "link-btn";
       button.textContent = t.state === "approved" ? "Revoke" : "Allow";
       button.addEventListener("click", () => {
-        if (action === "deny" && !confirm(`Revoke ${t.host ?? "this machine"}? Its agents leave the bus until someone allows it again.`)) return;
+        if (action === "deny" && !confirm(`Revoke ${t.host ?? "this machine"}? Its agents leave the Hub until someone allows it again.`)) return;
         postJson(`/api/agent-tokens/${encodeURIComponent(t.id)}/${action}`, {}).then(
           () => void renderMachines(),
           (err: Error) => (msg.textContent = err.message)
@@ -271,9 +271,9 @@ const run = (action: () => Promise<void>) => (): void => {
       // another device through iCloud Keychain or Google Password Manager), so it refuses to make another.
       msg.textContent =
         err.name === "NotAllowedError"
-          ? "Cancelled (or this device has no passkey for this bus)."
+          ? "Cancelled (or this device has no passkey for this Hub)."
           : err.name === "InvalidStateError"
-            ? "This device already has a passkey for you on this bus (perhaps synced from another device). Sign in with it instead: open /auth and choose Sign in with a passkey."
+            ? "This device already has a passkey for you on this Hub (perhaps synced from another device). Sign in with it instead: open /auth and choose Sign in with a passkey."
             : err.message;
     }
   );
