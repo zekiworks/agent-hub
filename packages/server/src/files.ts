@@ -82,7 +82,7 @@ export async function transcribeFile(
   /** The person asking: their englishSpeech setting picks who writes English. */
   asker?: string
 ): Promise<TranscriptResponse> {
-  if (!sttUrl) throw new HttpError(503, "This bus has no speech-to-text service (serve --stt-url)");
+  if (!sttUrl) throw new HttpError(503, "This Hub has no speech-to-text service (serve --stt-url)");
   const file = ctx.db.getFile(fileId);
   const blobPath = path.join(ctx.filesDir, fileId);
   if (!file || !existsSync(blobPath)) throw new HttpError(404, `Unknown file "${fileId}"`);

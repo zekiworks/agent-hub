@@ -26,7 +26,7 @@ export function plain(text: string): string {
 }
 
 export async function postSpeech(req: Request, ttsUrl: string | undefined): Promise<Response> {
-  if (!ttsUrl) throw new HttpError(503, "This bus has no text-to-speech server (serve --tts-url)");
+  if (!ttsUrl) throw new HttpError(503, "This Hub has no text-to-speech server (serve --tts-url)");
   const body = await readJsonObject(req);
   if (typeof body.text !== "string" || !body.text.trim()) throw new HttpError(400, "text must be a non-empty string");
   const text = plain(body.text).slice(0, MAX_SPEECH_CHARS);
