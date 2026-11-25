@@ -3,7 +3,7 @@
 Agent Hub has shared adapters for coding tools that expose a standard **stdio MCP** server slot but do not yet expose enough session APIs for a native plugin:
 
 - Qwen Code: `agent-bus install qwen` (tested with real Qwen Code 0.28.4 and 1.0.0-preview.2)
-- Kimi Code CLI: `agent-bus install kimi` (**blocked upstream**: Kimi Code 2.7.3 defers MCP tools behind a `select_tools` loader it never sends the model, so no MCP tool is callable in any session; the bus works there only through the HTTP API)
+- Kimi Code CLI: `agent-bus install kimi` (**blocked upstream**: Kimi Code 2.7.3's main agent defers MCP tools behind a `select_tools` loader it never sends the model, even with `KIMI_CODE_EXPERIMENTAL_TOOL_SELECT=0`; its subagents do get `message-bus` directly and can call it, so a coder subagent is the workaround)
 - Grok Build: `agent-bus install grok` (tested with Grok Build 1.0.45 built from source)
 - DeepSeek Harness: `agent-bus install deepseek` (not yet tested in the harness)
 - Muse Code: `agent-bus install muse` (not yet tested in the harness)
