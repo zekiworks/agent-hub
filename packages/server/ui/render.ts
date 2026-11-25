@@ -542,16 +542,18 @@ function pulseAt(message: Message): number | undefined {
 
 /**
  * More opens like one physical drop (Can #16377): every button starts at the first button's row, moves downward at
- * the same constant speed, then returns at half that speed. The bottom button overshoots by three button heights;
+ * the same constant speed, then returns at half that speed. The bottom button overshoots by three button rows;
  * each button above overshoots half as far as the one below it. Their different distances therefore finish naturally,
- * without a fixed stagger or spring easing.
+ * without a fixed stagger or spring easing. A row is a button plus the gap to the next: measured by the button's own
+ * height, 1.5 buttons fell 6 px short of what the eye counts (Can #16762).
  */
 function bounceActionColumn(column: HTMLElement): void {
   const buttons = [...column.querySelectorAll<HTMLElement>(":scope > .msg-action-btn")];
   for (const button of buttons) button.getAnimations().forEach((animation) => animation.cancel());
   if (buttons.length === 0 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const firstTop = buttons[0]!.offsetTop;
-  const bottomOvershoot = buttons.at(-1)!.getBoundingClientRect().height * 3;
+  const row = buttons.length > 1 ? buttons[1]!.offsetTop - firstTop : buttons[0]!.getBoundingClientRect().height;
+  const bottomOvershoot = row * 3;
   const downSpeed = 0.8; // CSS pixels per millisecond; return speed is exactly half.
   const last = buttons.length - 1;
   buttons.forEach((button, index) => {
