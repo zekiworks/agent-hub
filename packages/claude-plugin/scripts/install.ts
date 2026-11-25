@@ -107,8 +107,9 @@ export function status(opts: InstallOptions): InstallStatus {
   const notes: string[] = [];
   const installed = existsSync(target) && manifestName(manifestOf(target)) === MARKETPLACE;
   if (installed && claude.present) {
-    const listed = claude.run("plugin", "list");
-    if (listed.ok && !listed.out.includes(`${PLUGIN}@${MARKETPLACE}`)) notes.push("built but not installed in Claude Code");
+    const listed = claude.query("plugin", "list");
+    if (listed.timedOut) notes.push("`claude plugin list` did not answer within 10 s, so installation was not checked");
+    else if (listed.ok && !listed.out.includes(`${PLUGIN}@${MARKETPLACE}`)) notes.push("built but not installed in Claude Code");
   }
   if (installed) notes.push(`start sessions with: claude --dangerously-load-development-channels plugin:${PLUGIN}@${MARKETPLACE}`);
   return { installed, where: target, busUrl: configBusUrl(path.join(target, PLUGIN, "config.json")), notes };

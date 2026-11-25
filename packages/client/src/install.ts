@@ -144,6 +144,11 @@ export interface Cli {
   readonly present: boolean;
   /** Runs the CLI; a failure is returned, not thrown. */
   run(...args: string[]): { ok: boolean; out: string };
+  /**
+   * Runs the CLI for a read-only check (`doctor`), given up after 10 s instead of waiting forever: `codex plugin list`
+   * hung with no output on 25 Nov and `agent-bus doctor` with it (Can #16765).
+   */
+  query(...args: string[]): { ok: boolean; out: string; timedOut: boolean };
   /** Runs the CLI; a failure throws with its output. */
   must(...args: string[]): void;
 }
@@ -161,6 +166,12 @@ export function harnessCli(command: string, product: string): Cli {
       return Bun.which(command) !== null;
     },
     run,
+    query(...args) {
+      const res = spawnSync(command, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] });
+      const timedOut = (res.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT";
+      if (res.error && !timedOut) throw new Error(`Could not run ${command} (${res.error.message}); is ${product} installed?`);
+      return { ok: !timedOut && res.status === 0, out: `${res.stdout ?? ""}${res.stderr ?? ""}`.trim(), timedOut };
+    },
     must(...args) {
       const res = run(...args);
       if (!res.ok) throw new Error(`${command} ${args.join(" ")} failed:\n${res.out}`);

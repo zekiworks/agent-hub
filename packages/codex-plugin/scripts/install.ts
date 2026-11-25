@@ -150,8 +150,9 @@ export function status(opts: InstallOptions): InstallStatus {
   const notes: string[] = [];
   const installed = existsSync(target) && manifestName(manifestOf(target)) === MARKETPLACE;
   if (installed && codex.present) {
-    const listed = codex.run("plugin", "list");
-    if (listed.ok && !listed.out.includes(PLUGIN)) notes.push("built but not registered with Codex");
+    const listed = codex.query("plugin", "list");
+    if (listed.timedOut) notes.push("`codex plugin list` did not answer within 10 s, so registration was not checked");
+    else if (listed.ok && !listed.out.includes(PLUGIN)) notes.push("built but not registered with Codex");
   }
   if (installed) notes.push("trust the plugin's hooks in Codex once, and allow its message-bus tool");
   return { installed, where: target, busUrl: configBusUrl(path.join(target, "plugins", PLUGIN, "config.json")), notes };
