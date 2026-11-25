@@ -187,4 +187,105 @@ describe("universal MCP adapter configuration", () => {
       await bus.stop();
     }
   }, 30_000);
+
+  test("twin kimi bridges of one window share one bus session, and the survivor takes over", async () => {
+    const root = home();
+    const project = repo;
+    mkdirSync(join(root, ".agent-bus"), { recursive: true });
+    await Bun.write(join(root, ".agent-bus", "agent-token"), `${TEST_TOKEN}\n`);
+    const bus: BusServerHandle = startBus({ host: "127.0.0.1", port: 0, dataDir: join(root, "bus"), humans: ["carol"] });
+    const bridges: Array<ReturnType<typeof Bun.spawn>> = [];
+    const connections = async (): Promise<number> => {
+      const state = await getJson<StateResponse>(bus, "/api/state", "carol");
+      return state.participants.find((participant) => participant.kind === "agent" && participant.path === project)?.connections ?? 0;
+    };
+    const until = async (what: string, ok: () => Promise<boolean>): Promise<void> => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (await ok()) return;
+        await Bun.sleep(50);
+      }
+      throw new Error(`Timed out waiting for ${what}`);
+    };
+    type McpReply = { result?: unknown; error?: { message: string } };
+    const mcpClient = (child: ReturnType<typeof Bun.spawn>) => {
+      let nextId = 0;
+      const waiting = new Map<number, (message: McpReply) => void>();
+      void (async () => {
+        const reader = (child.stdout as ReadableStream<Uint8Array>).getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) return;
+          buffer += decoder.decode(value, { stream: true });
+          let at = buffer.indexOf("\n");
+          while (at >= 0) {
+            const line = buffer.slice(0, at);
+            buffer = buffer.slice(at + 1);
+            at = buffer.indexOf("\n");
+            if (!line.trim()) continue;
+            const message = JSON.parse(line) as { id?: number } & McpReply;
+            const resolve = message.id === undefined ? undefined : waiting.get(message.id);
+            if (resolve) {
+              waiting.delete(message.id as number);
+              resolve(message);
+            }
+          }
+        }
+      })();
+      return (method: string, params?: unknown): Promise<McpReply> => {
+        const id = (nextId += 1);
+        (child.stdin as { write(chunk: string): void }).write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+        return new Promise((resolve, reject) => {
+          waiting.set(id, resolve);
+          setTimeout(() => reject(new Error(`The bridge did not answer ${method}`)), 10_000);
+        });
+      };
+    };
+    const inboxOk = async (call: ReturnType<typeof mcpClient>): Promise<boolean> => {
+      const reply = await call("tools/call", { name: "message-bus", arguments: { op: "inbox" } });
+      return reply.result !== undefined && (reply.result as { isError?: boolean }).isError !== true;
+    };
+    try {
+      await agentBus(root, "install", "kimi", "--url", bus.url, "--build-only");
+      const server = JSON.parse(readFileSync(join(root, ".kimi-code", "mcp.json"), "utf8")).mcpServers["agent-hub"];
+      const spawnBridge = (): ReturnType<typeof Bun.spawn> => {
+        const child = Bun.spawn([server.command, ...server.args], {
+          cwd: project,
+          env: { ...process.env, HOME: root, AGENT_BUS_JOIN_FROM_TMP: "1" },
+          stdin: "pipe",
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        bridges.push(child);
+        return child;
+      };
+
+      const first = spawnBridge();
+      await until("the first bridge to join the bus", async () => (await connections()) === 1);
+
+      // The harness starts the same server again for the same window: same parent, folder and bus.
+      const second = spawnBridge();
+      const call = mcpClient(second);
+      const hello = await call("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
+      expect((hello.result as { serverInfo: { name: string } }).serverInfo.name).toBe("message-bus");
+      // The twin has no bus connection of its own; a working call is served through the primary.
+      expect(await inboxOk(call)).toBe(true);
+      await Bun.sleep(200);
+      expect(await connections()).toBe(1);
+
+      // The harness closes the primary's connection: the twin takes the bus session over.
+      const stdin = first.stdin;
+      if (stdin && typeof stdin !== "number") stdin.end();
+      await first.exited;
+      await until("the twin to take over the bus session", async () => (await connections()) === 1 && (await inboxOk(call)));
+    } finally {
+      for (const child of bridges) {
+        const stdin = child.stdin;
+        if (stdin && typeof stdin !== "number") stdin.end();
+      }
+      await Promise.all(bridges.map((child) => child.exited));
+      await bus.stop();
+    }
+  }, 30_000);
 });

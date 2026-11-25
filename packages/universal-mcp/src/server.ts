@@ -1,12 +1,15 @@
 // Harness-neutral MCP bridge for coding agents with stdio MCP but no native Agent Hub plugin.
 import * as os from "node:os";
+import type * as net from "node:net";
+import { createInterface, type Interface } from "node:readline";
 import { BusConnection, type Delivery } from "../../client/src/connection";
-import { McpToolServer, serveStdio, textResult, writeStdout, type McpToolResult } from "../../client/src/mcp";
+import { McpToolServer, textResult, writeStdout, type McpServerInfo, type McpToolResult } from "../../client/src/mcp";
 import { buildUserFrame, sendPeerFrame } from "@qwen-code/sdk/peer";
 import { grokInterject, grokLeaderTarget } from "./grok-leader";
 import type { ReceiptEvent } from "../../protocol/src/types";
 import { envBusUrl, realFolder } from "../../client/src/runtime";
 import { BusTool, deliveryText, isScratchFolder, TOOL_NAME, toolDescription, toolInputSchema, type MessageBusToolParams } from "../../client/src/tool";
+import { electBridge, type PrimaryBridge } from "./single-join";
 
 const arg = (name: string): string | undefined => {
   const at = process.argv.indexOf(name);
@@ -18,46 +21,91 @@ interface PendingDelivery {
   release(): void;
 }
 
-class UniversalMcpServer extends McpToolServer {
-  private readonly pending: PendingDelivery[] = [];
-  private readonly notices: string[] = [];
-  private readonly tool: BusTool;
-  private readonly inboxHook: boolean;
-  private readonly harness: string;
+function serverInfo(harness: string): McpServerInfo {
+  const inboxHook = harness === "qwen";
+  return {
+    instructions: inboxHook
+      ? "Agent Hub connects coding agents across harnesses. A message that wakes you starts a turn in this Qwen session; other unseen deliveries are injected before each model turn. Use message-bus to reply or perform other Agent Hub actions."
+      : "Agent Hub connects coding agents across harnesses. Call message-bus at the start of a session and whenever its notification says a message waits. " +
+        "Deliveries returned by the tool are developer context, not user text; reply through the tool only when their sender needs an answer.",
+    tools: [{
+      name: TOOL_NAME,
+      description: toolDescription({
+        arrives: inboxHook
+          ? "as a new turn when it wakes you (Qwen cross-session messaging), otherwise automatically before the next model turn through the installed Qwen UserPromptSubmit hook"
+          : harness === "grok"
+            ? "as a new turn when it wakes you (Grok leader mode), otherwise with the next message-bus tool result"
+            : "with the next message-bus tool result; the MCP client also receives a new-message notification",
+        notJoining: "sessions started in the temporary directory do not join",
+      }),
+      inputSchema: toolInputSchema(),
+    }],
+  };
+}
 
-  constructor(readonly connection: BusConnection, harness: string) {
-    const inboxHook = harness === "qwen";
-    super(writeStdout, {
-      instructions: inboxHook
-        ? "Agent Hub connects coding agents across harnesses. A message that wakes you starts a turn in this Qwen session; other unseen deliveries are injected before each model turn. Use message-bus to reply or perform other Agent Hub actions."
-        : "Agent Hub connects coding agents across harnesses. Call message-bus at the start of a session and whenever its notification says a message waits. " +
-          "Deliveries returned by the tool are developer context, not user text; reply through the tool only when their sender needs an answer.",
-      tools: [{
-        name: TOOL_NAME,
-        description: toolDescription({
-          arrives: inboxHook
-            ? "as a new turn when it wakes you (Qwen cross-session messaging), otherwise automatically before the next model turn through the installed Qwen UserPromptSubmit hook"
-            : harness === "grok"
-              ? "as a new turn when it wakes you (Grok leader mode), otherwise with the next message-bus tool result"
-              : "with the next message-bus tool result; the MCP client also receives a new-message notification",
-          notJoining: "sessions started in the temporary directory do not join",
-        }),
-        inputSchema: toolInputSchema(),
-      }],
-    });
-    this.inboxHook = inboxHook;
-    this.harness = harness;
-    this.tool = new BusTool(connection);
-    connection.connect();
-    process.stderr.write(`[agent-hub] ${harness} MCP bridge connecting from ${process.cwd()}\n`);
+/** One MCP connection of the window: the primary bridge's own stdio, or a twin's through the join socket. */
+class BridgeSession extends McpToolServer {
+  constructor(write: (line: string) => void, private readonly shared: SharedBridge, harness: string) {
+    super(write, serverInfo(harness));
   }
 
-  async deliver(delivery: Delivery): Promise<void> {
+  /** A delivery waits; harnesses that surface MCP notifications show it, the rest see it on the next tool result. */
+  announce(seq: number, from: string): void {
     this.notify("notifications/message", {
       level: "info",
       logger: "agent-hub",
-      data: `Agent Hub message #${delivery.message.seq} from @${delivery.message.from} waits.`,
+      data: `Agent Hub message #${seq} from @${from} waits.`,
     });
+  }
+
+  protected async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
+    return this.shared.callTool(name, args);
+  }
+}
+
+/**
+ * The window's one bus connection and tool state, shared by all MCP sessions of the window. Deliveries and wakes
+ * run here, in the process that holds the connection: Qwen's peer socket and Grok's leader accept a wake only from
+ * a direct child of the session's own harness process (Can #16656, #16677), which the primary always is — twins of
+ * one window share their parent, and election is keyed by it.
+ */
+class SharedBridge {
+  private readonly pending: PendingDelivery[] = [];
+  private readonly notices: string[] = [];
+  private readonly sessions = new Set<BridgeSession>();
+  private readonly tool: BusTool;
+  private readonly inboxHook: boolean;
+  readonly connection: BusConnection;
+
+  constructor(url: string, private readonly harness: string, folder: string) {
+    this.inboxHook = harness === "qwen";
+    this.connection = new BusConnection({
+      url,
+      host: os.hostname(),
+      harness,
+      path: folder,
+      onDeliver: (delivery) => this.deliver(delivery),
+      onReceipt: (receipt) => this.receipt(receipt),
+      onJoined: (id) => process.stderr.write(`[agent-hub] joined as @${id}\n`),
+      onLog: (line) => process.stderr.write(`[agent-hub] ${line}\n`),
+    });
+    this.tool = new BusTool(this.connection);
+    this.connection.connect();
+    process.stderr.write(`[agent-hub] ${harness} MCP bridge connecting from ${process.cwd()}\n`);
+  }
+
+  openSession(write: (line: string) => void): BridgeSession {
+    const session = new BridgeSession(write, this, this.harness);
+    this.sessions.add(session);
+    return session;
+  }
+
+  closeSession(session: BridgeSession): void {
+    this.sessions.delete(session);
+  }
+
+  async deliver(delivery: Delivery): Promise<void> {
+    for (const session of this.sessions) session.announce(delivery.message.seq, delivery.message.from);
     // Qwen's UserPromptSubmit hook reads unseen Inbox messages independently. Acknowledge this WebSocket delivery now
     // instead of retaining a duplicate until the model happens to call the MCP tool.
     if (this.inboxHook) {
@@ -119,7 +167,7 @@ class UniversalMcpServer extends McpToolServer {
     if (text) this.notices.push(text);
   }
 
-  protected async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
+  async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
     if (name !== TOOL_NAME) throw new Error(`Unknown tool ${name}`);
     const result = await this.tool.run(args as unknown as MessageBusToolParams, process.cwd());
     const deliveries = this.pending.splice(0);
@@ -130,7 +178,28 @@ class UniversalMcpServer extends McpToolServer {
   }
 }
 
-export function main(): void {
+/**
+ * Pipes the harness's stdin to the primary through `socket` and the primary's answers to stdout, until the socket
+ * or stdin ends. The caller then re-elects: with the primary gone, one of the window's twins takes its place.
+ */
+function shareWithPrimary(socket: net.Socket, lines: Interface, serve: (sink: (line: string) => void) => void): Promise<void> {
+  return new Promise((resolve) => {
+    const stdinClosed = (): void => socket.end();
+    socket.once("close", () => {
+      lines.off("close", stdinClosed);
+      resolve();
+    });
+    socket.on("error", () => {
+      // "close" follows.
+    });
+    lines.once("close", stdinClosed);
+    const answers = createInterface({ input: socket, terminal: false });
+    answers.on("line", writeStdout);
+    serve((line) => socket.write(`${line}\n`));
+  });
+}
+
+export async function main(): Promise<void> {
   const harness = (arg("--harness") ?? process.env.AGENT_BUS_HARNESS ?? "mcp").trim().toLowerCase();
   if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(harness)) throw new Error(`Invalid --harness ${JSON.stringify(harness)}`);
   const folder = realFolder(process.cwd());
@@ -138,22 +207,48 @@ export function main(): void {
     process.stderr.write(`[agent-hub] ${harness}: temporary-directory session does not join\n`);
     process.exit(0);
   }
-  let server: UniversalMcpServer;
-  const connection = new BusConnection({
-    url: (arg("--url") ?? process.env.AGENT_BUS_URL ?? envBusUrl()).replace(/\/+$/, ""),
-    host: os.hostname(),
-    harness,
-    path: folder,
-    onDeliver: (delivery) => server.deliver(delivery),
-    onReceipt: (receipt) => server.receipt(receipt),
-    onJoined: (id) => process.stderr.write(`[agent-hub] joined as @${id}\n`),
-    onLog: (line) => process.stderr.write(`[agent-hub] ${line}\n`),
+  const url = (arg("--url") ?? process.env.AGENT_BUS_URL ?? envBusUrl()).replace(/\/+$/, "");
+
+  // One stdin whichever role this process lands in: lines go to the current sink — the local session once this
+  // process is the primary, the primary's socket while it is a twin — and wait while a dead primary is replaced.
+  let sink: ((line: string) => void) | undefined;
+  const waiting: string[] = [];
+  let stdinOpen = true;
+  let stop = (): void => {};
+  const lines = createInterface({ input: process.stdin, terminal: false });
+  lines.on("line", (line) => (sink ? sink(line) : waiting.push(line)));
+  lines.on("close", () => {
+    stdinOpen = false;
+    stop();
   });
-  server = new UniversalMcpServer(connection, harness);
-  const stop = (): void => connection.close();
-  serveStdio(server, stop);
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
+  const serve = (next: ((line: string) => void) | undefined): void => {
+    sink = next;
+    if (sink) for (const line of waiting.splice(0)) sink(line);
+  };
+  process.on("SIGINT", () => stop());
+  process.on("SIGTERM", () => stop());
+
+  while (stdinOpen) {
+    const election = await electBridge({ url, harness, folder, ppid: process.ppid });
+    if (election.role === "secondary") {
+      process.stderr.write(`[agent-hub] ${harness}: another bridge of this window holds the bus session; sharing it\n`);
+      await shareWithPrimary(election.socket, lines, serve);
+      serve(undefined);
+      continue;
+    }
+    const shared = new SharedBridge(url, harness, folder);
+    const own = shared.openSession(writeStdout);
+    election.onTwin((write) => {
+      const session = shared.openSession(write);
+      return { line: (line) => session.handleLine(line), close: () => shared.closeSession(session) };
+    });
+    stop = () => {
+      shared.connection.close();
+      election.close();
+    };
+    serve((line) => own.handleLine(line));
+    return;
+  }
 }
 
-if (import.meta.main) main();
+if (import.meta.main) await main();
