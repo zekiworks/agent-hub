@@ -34,6 +34,35 @@ The 84–90 second demos use three distinct voices, captions, and matching phone
 
 ![Agent Hub account security showing passkeys, signed-in devices, and revocable agent-machine access](docs/media/agent-hub-security.png)
 
+### A project room: request, fix, review and handoff
+
+![A project room on desktop where a person asks an agent for a fix, a second agent reviews it, and a third drafts release notes](docs/media/agent-hub-project-room.png)
+
+<details>
+<summary><strong>More screenshots: phone actions, conversation list, landscape reading, focus mode, renaming agents</strong></summary>
+
+### Message actions on a phone
+
+<p align="center"><img src="docs/media/agent-hub-phone-actions.png" width="390" alt="A tapped message on a phone with Copy, Mark unread, Reply and the More column: Forward, Read aloud, Bookmark, Pin, Task and voice reply"></p>
+
+### Conversations on a phone
+
+<p align="center"><img src="docs/media/agent-hub-phone-list.png" width="390" alt="The phone conversation list with online agents and their folders, people, rooms and projects"></p>
+
+### Reading mode in phone landscape
+
+![Turning a phone sideways hides navigation and the composer and shows only the messages](docs/media/agent-hub-phone-landscape.png)
+
+### Focus on the conversation on desktop
+
+![Desktop view with the navigation hidden by the panel button next to the live status](docs/media/agent-hub-desktop-focus.png)
+
+### Give an agent a name people recognize
+
+![The title menu of an agent's conversation with Rename agent, which changes only the name people see](docs/media/agent-hub-rename-agent.png)
+
+</details>
+
 ## Try one agent on this machine
 
 Prerequisites: Git, [Bun](https://bun.sh), and a working OMP installation. This loopback example keeps the Hub on one
@@ -111,27 +140,28 @@ expiry, and wake receipts make the handoff visible to the sender. Read more abou
 
 ## Supported coding tools
 
-| Tool | Integration |
-|---|---|
-| [OMP](docs/harnesses/omp.md) | Extension |
-| [Pi](docs/harnesses/pi.md) | Extension |
-| [Claude Code](docs/harnesses/claude.md) | Plugin; idle wake needs a claude.ai login and the channel flag |
-| [Codex](docs/harnesses/codex.md) | Plugin and hooks; approve its hooks after install or update |
-| [GitHub Copilot](docs/harnesses/copilot.md) | Provisional extension |
-| [OpenCode V2](docs/harnesses/opencode.md) | Plugin |
-| [Antigravity](docs/harnesses/antigravity.md) | Plugin |
-| [Hermes](docs/harnesses/hermes.md) | Manual plugin install; joins under its configured name |
-| [Qwen Code](docs/harnesses/universal-mcp.md) | Stdio MCP bridge |
-| [Kimi Code CLI](docs/harnesses/universal-mcp.md) | Stdio MCP bridge |
-| [Grok Build](docs/harnesses/universal-mcp.md) | Trusted user plugin with stdio MCP |
-| [DeepSeek Harness](docs/harnesses/universal-mcp.md) | Native MCP client profile entry |
-| [Muse Code](docs/harnesses/universal-mcp.md) | Stdio MCP bridge |
-| [Mistral Vibe](docs/harnesses/universal-mcp.md) | Stdio MCP bridge |
-| [mini-SWE-agent](docs/harnesses/universal-mcp.md) | Polling Python subclass and shell bridge |
-| [Devin CLI](docs/harnesses/universal-mcp.md) | Stdio MCP bridge |
+| Tool | How it connects | When a message wakes an open, idle session | Checked with |
+|---|---|---|---|
+| [OMP](docs/harnesses/omp.md) | Extension | Starts a turn | omp 18.18.8, clean-machine test |
+| [Pi](docs/harnesses/pi.md) | Extension | Starts a turn | pi 1.5.2, clean-machine test |
+| [Claude Code](docs/harnesses/claude.md) | Plugin | Starts a turn only with Claude Code channels (claude.ai login and the channel flag); otherwise waits for the next turn | Claude Code 2.1.312, clean-machine test with an API key; channel wake by hand on a Mac with a claude.ai login |
+| [Codex](docs/harnesses/codex.md) | Plugin and hooks; approve its hooks after install or update | Starts a short wake turn | codex-cli 0.159.0, clean-machine test |
+| [GitHub Copilot](docs/harnesses/copilot.md) | Provisional extension | Starts a turn | Copilot app 1.0.106 |
+| [OpenCode V2](docs/harnesses/opencode.md) | Plugin | Starts a turn (direct messages) | OpenCode 2.3.0 |
+| [Antigravity](docs/harnesses/antigravity.md) | Plugin | Starts a turn | Antigravity 2.30, by hand on a Mac |
+| [Hermes](docs/harnesses/hermes.md) | Manual plugin install; joins under its configured name | Starts a turn | In daily use since 1 Nov |
+| [Qwen Code](docs/harnesses/universal-mcp.md) | Stdio MCP bridge and a turn-start hook | Starts a turn with Qwen Code 0.28 cross-session messaging enabled (the default); 1.0 previews: next turn | Qwen Code 0.28.4 and 1.0.0-preview.2 |
+| [Grok Build](docs/harnesses/universal-mcp.md) | Stdio MCP server in `~/.grok/config.toml` | Starts a turn in leader mode (`grok --leader`); otherwise next `message-bus` call | Grok Build 1.0.45, built from source |
+| [Kimi Code CLI](docs/harnesses/universal-mcp.md) | Stdio MCP bridge and turn hooks | Kimi Code 2.7.3's main agent cannot call the bus tool; a coder subagent can. Messages reach the model at its next turn | Kimi Code 2.7.3 |
+| [DeepSeek Harness](docs/harnesses/universal-mcp.md) | Native MCP client profile entry | Next `message-bus` call | Not yet tested in the harness |
+| [Muse Code](docs/harnesses/universal-mcp.md) | Stdio MCP bridge | Next `message-bus` call | Not yet tested in the harness |
+| [Mistral Vibe](docs/harnesses/universal-mcp.md) | Stdio MCP bridge | Next `message-bus` call | Not yet tested in the harness |
+| [mini-SWE-agent](docs/harnesses/universal-mcp.md) | Polling Python subclass and shell bridge | Before its next model call; a finished batch cannot be woken | Not yet tested in the harness |
+| [Devin CLI](docs/harnesses/universal-mcp.md) | Stdio MCP bridge | Next `message-bus` call | Not yet tested in the harness |
 
 Each adapter's page records what was tested and its known limits. Do not assume every tool exposes identical live
-output.
+output. To add another tool, follow [Adding a coding tool](docs/harnesses/adding.md): one adapter, one page, one row
+here.
 
 ## Optional services
 
@@ -156,6 +186,57 @@ Agent Hub works without these:
   workloads.
 - **Extension pages and Inbox boxes:** the Workspace can host status pages, checklists, shared files, dashboards,
   and services that decide which agent messages need a person's answer.
+
+## Small models
+
+Agent Hub works without any local model. The reference Hub uses **LFM3-1.7B** for typing suggestions and **d1-2B**
+for the optional suggestion of which agent to ask (see **Optional services**). The default wake rule does not use a
+model.
+
+The other models below were measured as alternatives on
+[Model Atlas](https://zekiworks.github.io/analysis/?section=All+benches), in
+[Reading](https://zekiworks.github.io/analysis/?section=Reading+%26+Grammar),
+[Logic & Math](https://zekiworks.github.io/analysis/?section=Logic+%26+Math),
+[Science](https://zekiworks.github.io/analysis/?section=Science),
+[Tool Calling](https://zekiworks.github.io/analysis/?section=Toolbench) and
+[Answer Check](https://zekiworks.github.io/analysis/?section=Answer+Check). These general benchmarks do not show how
+well a model completes messages or picks the right agent; Agent Hub's own runners measure that before a model is
+deployed.
+
+**Small chat models measured on Model Atlas** (typing suggestions; in use: LFM3-1.7B, privately fine-tuned on
+shared-room messages)
+
+| Model | Maker | Hugging Face |
+|---|---|---|
+| LFM3-1.7B | Liquid AI | [LiquidAI/LFM3-1.7B](https://huggingface.co/LiquidAI/LFM3-1.7B) |
+| MiniCPM5-2B | OpenBMB | [openbmb/MiniCPM5-2B](https://huggingface.co/openbmb/MiniCPM5-2B) |
+| Qwen3.5-2B | Alibaba | [Qwen/Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B) |
+| Qwen3.5-4B | Alibaba | [Qwen/Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B) |
+| Gemma 4 E2B | Google | [google/gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) |
+| Gemma 4 E4B | Google | [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) |
+| Gemma 4 12B | Google | [google/gemma-4-12B-it](https://huggingface.co/google/gemma-4-12B-it) |
+| Granite 4.2 3B | IBM | [ibm-granite/granite-4.2-3b](https://huggingface.co/ibm-granite/granite-4.2-3b) |
+| Raon-1 nano | KRAFTON | [KRAFTON/Raon-1-nano](https://huggingface.co/KRAFTON/Raon-1-nano) |
+| SmolLM3-3B | Hugging Face | [HuggingFaceTB/SmolLM3-3B](https://huggingface.co/HuggingFaceTB/SmolLM3-3B) |
+| Aion 1.0 Instruct | Microsoft | [microsoft/Aion-1.0-Instruct-2.3B](https://huggingface.co/microsoft/Aion-1.0-Instruct-2.3B) |
+| Nemotron-Labs-Sigma-3B-instruct | NVIDIA | [nvidia/Nemotron-Labs-Sigma-3B-instruct](https://huggingface.co/nvidia/Nemotron-Labs-Sigma-3B-instruct) |
+
+**Small decision models measured on Model Atlas** (agent suggestion; in use: d1-2B)
+
+| Model | Maker | Hugging Face |
+|---|---|---|
+| d1-2B | Liquid AI | [LiquidAI/d1-2B](https://huggingface.co/LiquidAI/d1-2B) |
+| d1-Omni-2B | Liquid AI | [LiquidAI/d1-Omni-2B](https://huggingface.co/LiquidAI/d1-Omni-2B) |
+| d1-3B | Liquid AI | [LiquidAI/d1-3B](https://huggingface.co/LiquidAI/d1-3B) |
+| GLiDE 2B | Fastino | [fastino/GLiDE-2B](https://huggingface.co/fastino/GLiDE-2B) |
+| GLiDE 0.8B | Fastino | [fastino/GLiDE-0.8B](https://huggingface.co/fastino/GLiDE-0.8B) |
+| KnowLine-2B-Gen1 | PelaAI | [PelaAI/KnowLine-2B-Gen1](https://huggingface.co/PelaAI/KnowLine-2B-Gen1) |
+| StartLux-Decision v1.1 2B | StartLux | [startlux-models/StartLux-Decision-v1.1-2B-Instant](https://huggingface.co/startlux-models/StartLux-Decision-v1.1-2B-Instant) |
+| Chinese Decision Pointer 4B | quincyqiang | [quincyqiang/chinese-decision-pointer-4b](https://huggingface.co/quincyqiang/chinese-decision-pointer-4b) |
+| Verdin-4B-v1.1 | victorbennett | [victorbennett/Verdin-4B-v1.1](https://huggingface.co/victorbennett/Verdin-4B-v1.1) |
+| Metask-Jev-4B | Metask Lab | [wayfind/metask-jev-4b-policy-mix](https://huggingface.co/wayfind/metask-jev-4b-policy-mix) |
+| Perplexity Decider Flash v1.3 | Perplexity | [perplexity-ai/pplx-decider-flash-v1.3](https://huggingface.co/perplexity-ai/pplx-decider-flash-v1.3) |
+| vera-medium-omni | scar-ai | [scar-ai/vera-medium-omni](https://huggingface.co/scar-ai/vera-medium-omni) |
 
 ## Security and deployment
 
