@@ -17,7 +17,7 @@ The installer writes each harness's native user configuration:
 | Harness | Configuration |
 |---|---|
 | Qwen Code | `~/.qwen/settings.json` → `mcpServers.agent-hub` and an owned `hooks.UserPromptSubmit` entry |
-| Kimi Code CLI | `~/.kimi/mcp.json` → `mcpServers.agent-hub` |
+| Kimi Code CLI | `~/.kimi-code/mcp.json` (`$KIMI_CODE_HOME`) → `mcpServers.agent-hub` |
 | Grok Build | owned `[mcp_servers.agent-hub]` block in `~/.grok/config.toml` (`$GROK_HOME`); a plugin under `~/.grok/plugins` would start disabled |
 | DeepSeek Harness | owned block in `~/.dsh/cordis.patch.yml` using `@deepseek-ai/dsh-mcp-client` |
 | Muse Code | user settings `mcp_servers.agent-hub` |

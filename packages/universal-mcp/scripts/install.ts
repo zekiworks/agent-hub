@@ -31,7 +31,8 @@ interface Definition {
 const xdg = (): string => process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
 const DEFINITIONS: Record<UniversalAdapterName, Definition> = {
   qwen: { title: "Qwen Code", command: "qwen", kind: "json", config: path.join(os.homedir(), ".qwen", "settings.json"), key: "mcpServers" },
-  kimi: { title: "Kimi Code CLI", command: "kimi", kind: "json", config: path.join(os.homedir(), ".kimi", "mcp.json"), key: "mcpServers" },
+  // Kimi Code 2.x reads $KIMI_CODE_HOME (~/.kimi-code); ~/.kimi is the pre-2.0 home it migrates from once (@qwen-kimi #16774).
+  kimi: { title: "Kimi Code CLI", command: "kimi", kind: "json", config: path.join(process.env.KIMI_CODE_HOME || path.join(os.homedir(), ".kimi-code"), "mcp.json"), key: "mcpServers" },
   grok: { title: "Grok Build", command: "grok", kind: "grok", config: path.join(process.env.GROK_HOME || path.join(os.homedir(), ".grok"), "config.toml") },
   deepseek: { title: "DeepSeek Harness", command: "dsh", kind: "deepseek" },
   muse: { title: "Muse Code", command: "muse", kind: "json", config: path.join(xdg(), "muse", "settings.json"), key: "mcp_servers", muse: true },
