@@ -283,7 +283,8 @@ async function start(target?: { view: View; chosen: Chosen }): Promise<void> {
       spoke: false,
       live: false,
       confirmed: false,
-      mic: stream.getAudioTracks()[0]?.label ?? "",
+      // Named only when one was chosen in Settings, to confirm that choice; the default needs no name (Ümit #16712).
+      mic: chosenMicrophone() ? (stream.getAudioTracks()[0]?.label ?? "") : "",
       autoSend: autoSendMs(),
     };
     const r = rec;

@@ -83,21 +83,26 @@ export function conversationLink(conv: Conversation): HTMLAnchorElement {
 
 /**
  * "#n" as a link: click shows message n (in its conversation); hovering highlights it when it is on screen and shows
- * its message in the same floating-card language as a new-message banner (Can #15519).
+ * its message in the same floating-card language as a new-message banner (Can #15519). Mouse only: a tap on a phone
+ * fakes a hover that never ends, so the card stayed over the next conversation (Ümit #16711).
  */
 export function refLink(seq: number): HTMLAnchorElement {
   const a = h("a", "msg-ref", `#${seq}`);
   a.href = "#";
   a.addEventListener("click", (event) => {
     event.preventDefault();
+    shownMessage(seq)?.classList.remove("msg-ref-target");
+    hideRefPreview(a);
     void hooks.showMessage(seq);
   });
-  a.addEventListener("mouseenter", () => {
+  a.addEventListener("pointerenter", (event) => {
+    if (event.pointerType !== "mouse") return;
     const target = shownMessage(seq);
     if (target && onScreen(target)) target.classList.add("msg-ref-target");
     void showRefPreview(a, seq);
   });
-  a.addEventListener("mouseleave", () => {
+  a.addEventListener("pointerleave", (event) => {
+    if (event.pointerType !== "mouse") return;
     shownMessage(seq)?.classList.remove("msg-ref-target");
     hideRefPreview(a);
   });
