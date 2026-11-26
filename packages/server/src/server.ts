@@ -23,7 +23,7 @@ import { CORS_HEADERS, errorResponse, HttpError, json, nonEmptyParam, readJsonOb
 import type { SocketData } from "./hub";
 import { resolveLanAddresses } from "./lan";
 import { editChecklist, getChecklist, pinChecklist, putChecklist, tickChecklist } from "./checklists";
-import { changeMessage, forwardMessage, getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, postBookmark, postMessage, postOwnTask, postTabs } from "./messages";
+import { changeMessage, forwardMessage, getMessageReceipts, getMessages, getSharedFiles, MAX_RECEIPT_WAIT_MS, postBookmark, postMessage, postOwnTask, postTabs, titleThread } from "./messages";
 import { getHistory, getInbox, getSearch } from "./reading";
 import { ScheduleService } from "./schedule-routes";
 import { forwardExtension } from "./extensions";
@@ -322,6 +322,9 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     // Someone who may read a message shows it to someone else (Can #12470).
     const forwardMatch = /^\/api\/messages\/(\d+)\/forward$/.exec(pathname);
     if (method === "POST" && forwardMatch?.[1]) return json(await forwardMessage(ctx, req, Number(forwardMatch[1])));
+    // An agent asked to (or anyone who may read it) titles a thread (Can #17615).
+    const titleMatch = /^\/api\/messages\/(\d+)\/title$/.exec(pathname);
+    if (method === "POST" && titleMatch?.[1]) return json(await titleThread(ctx, req, Number(titleMatch[1])));
     if (method === "POST" && pathname === "/api/files") return json(await postFile(ctx, req, url));
     if (method === "GET" && fileMatch?.[1]) return getFile(ctx, decodeURIComponent(fileMatch[1]));
     const transcriptMatch = /^\/api\/files\/([^/]+)\/transcript$/.exec(pathname);

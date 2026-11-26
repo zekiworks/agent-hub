@@ -42,7 +42,8 @@ export interface MessageBusToolParams {
     | "done"
     | "reject"
     | "withdraw"
-    | "checklist";
+    | "checklist"
+    | "title";
   message_id?: number;
   to?: string;
   message?: string;
@@ -105,18 +106,18 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     enum: [
       "reply", "write", "send", "set", "inbox", "show", "history", "search",
       "projects", "invite", "leave", "notify", "project", "room", "parent",
-      "tasks", "accept", "done", "reject", "withdraw", "checklist",
+      "tasks", "accept", "done", "reject", "withdraw", "checklist", "title",
       "resources", "servers", "reserve", "release", "extend", "mode", "subscribe", "unsubscribe",
     ],
     description:
-      "reply/write/send a message, set a setting, read (inbox, show, history, search), conversations (projects, invite, leave, notify, project, parent), the conversation's checklist (checklist), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
+      "reply/write/send a message, set a setting, read (inbox, show, history, search), conversations (projects, invite, leave, notify, project, parent), the conversation's checklist (checklist), title a thread (title), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
   },
-  { name: "message_id", type: "number", description: "a message's #number (reply, show, history)" },
+  { name: "message_id", type: "number", description: "a message's #number (reply, show, history, title)" },
   { name: "to", type: "string", description: '"@all", "@id" (a DM), "@{id1,id2}" (a group DM; "@{@@project,id1,id2}" for the one under that project) or "@@name" (a project) (write/send, history, invite, leave, notify, project)' },
   { name: "message", type: "string", description: "message text (reply/write; optional caption for send)" },
   { name: "files", type: "string[]", description: "file paths, relative to the project folder or absolute (optional for reply and write)" },
   { name: "key", type: "string", description: "setting name (set)" },
-  { name: "value", type: "string", description: "setting value (set)" },
+  { name: "value", type: "string", description: "setting value (set); the thread's title (title)" },
   { name: "query", type: "string", description: "text to find, case-insensitive (search)" },
   { name: "sender", type: "string", description: "only messages from this id (search)" },
   { name: "since", type: "number", description: "only messages after this #number (inbox)" },
@@ -256,6 +257,9 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "it), op=done, op=reject (`reason`) with `message_id`; op=withdraw takes back one you assigned; op=tasks lists yours " +
     "(box=\"assigned\" for those you assigned; scope=\"all\" includes closed ones). Each step is posted in the " +
     "conversation as a reply to the task and wakes who assigned it. " +
+    "Threads: a delivery saying its thread has no title yet asks you to name it: op=title with `message_id` (the " +
+    "thread's first message, or any in it) and `value` (3-6 words, one line, at most 80 characters); the website shows " +
+    "it on the thread. " +
     "Conversations: op=projects lists the top level you can see: root projects (yours, open, discoverable) and your group DMs under no project, each with how many sub-groups it has; with `parent` (\"@@name\") it lists that project's sub-groups. " +
     "op=invite (`to` or `message_id` for the conversation, `ids`) adds others to a group DM or project; they get its " +
     "last 5 messages. op=leave leaves one. op=notify (`level`: none) mutes a conversation for you: no message there " +
@@ -388,6 +392,9 @@ export function formatDelivery(delivery: Delivery, savedFiles: string[], me?: st
     lines.push(`(Task #${message.seq} for you (${task.type}): ${TOOL_NAME} op=accept, op=done or op=reject with message_id ${message.seq}; reason optional.)`);
   } else if (task) {
     lines.push(`(Task #${message.seq} (${task.type}) for ${task.assignees.map((a) => `@${a.id}`).join(", ")}.)`);
+  }
+  if (delivery.titleThread !== undefined) {
+    lines.push(`(This thread has no title yet: give it one (3-6 words) with ${TOOL_NAME} op=title, message_id ${delivery.titleThread}, value "…".)`);
   }
   lines.push(replyFooter(delivery));
   if (delivery.openTasks) lines.push(`(You have ${delivery.openTasks} open task${delivery.openTasks === 1 ? "" : "s"}: ${TOOL_NAME} op=tasks.)`);
@@ -783,6 +790,11 @@ export class BusTool {
         if (params.message_id === undefined) throw new Error(`${params.op} needs \`message_id\` (the task's #number).`);
         const res = await conn.taskAction(params.message_id, params.op, params.reason);
         return result(`#${params.message_id} ${params.op === "accept" ? "accepted" : params.op === "done" ? "done" : params.op === "reject" ? "rejected" : "withdrawn"}; the conversation got the step as a reply. ${taskStates(res.message)}`);
+      }
+      case "title": {
+        if (params.message_id === undefined || !params.value?.trim()) throw new Error("title needs `message_id` (a message of the thread) and `value` (the title).");
+        const { message } = await conn.titleThread(params.message_id, params.value);
+        return result(`Thread #${message.seq} titled "${message.threadTitle ?? params.value.trim()}".`);
       }
       case "projects": {
         // Top level by default (root projects and group DMs under no project); with `parent`, what is under that project.

@@ -100,6 +100,9 @@ SCHEMA = {
         "makes the message a task (its #number is the task id); its agents are woken. Approvals go to people. Assigned to "
         "you: op=accept, op=done, op=reject (`reason`) with `message_id`; op=withdraw takes back one you assigned; "
         "op=tasks lists yours (box=\"assigned\" for those you assigned; scope=\"all\" includes closed ones). "
+        "Threads (same as packages/client/src/tool.ts): a delivery saying its thread has no title yet asks you to name "
+        "it: op=title with `message_id` (the thread's first message, or any in it) and `value` (3-6 words, one line, at "
+        "most 80 characters); the website shows it on the thread. "
         "Your Home is now a stream of update panes: op=home with `message` publishes it as the newest pane through "
         "@status (equivalent to replying to the hourly status ask). `to` may be omitted or your own \"@@<id>\"; an agent "
         "cannot publish another agent's Home. Without `message`, op=home explains how the stream works. Put newest first: "
@@ -119,15 +122,15 @@ SCHEMA = {
         "type": "object",
         "properties": {
             "op": {"type": "string", "enum": ["reply", "write", "send", "set", "inbox", "show", "history", "search",
-                                               "tasks", "accept", "done", "reject", "withdraw", "home", "checklist"],
-                   "description": "reply/write/send a message, set a setting, read: inbox, show, history, search, or the conversation's checklist"},
-            "message_id": {"type": "integer", "description": "a message's #number (reply, show, history)"},
+                                               "tasks", "accept", "done", "reject", "withdraw", "home", "checklist", "title"],
+                   "description": "reply/write/send a message, set a setting, read: inbox, show, history, search, the conversation's checklist, or title a thread"},
+            "message_id": {"type": "integer", "description": "a message's #number (reply, show, history, title)"},
             "to": {"type": "string", "description": "\"@all\", \"@id\", \"@{id1,id2}\" (\"@{@@project,id1,id2}\" for the group under that project) or \"@@project\" (write/send, history)"},
             "message": {"type": "string", "description": "message text (reply/write; Home update for home; optional caption for send)"},
             "files": {"type": "array", "items": {"type": "string"},
                       "description": "absolute file paths (optional for reply and write)"},
             "key": {"type": "string", "description": "setting name (set)"},
-            "value": {"type": "string", "description": "setting value (set)"},
+            "value": {"type": "string", "description": "setting value (set); the thread's title (title)"},
             "query": {"type": "string", "description": "text to find, case-insensitive (search)"},
             "sender": {"type": "string", "description": "only messages from this id (search)"},
             "since": {"type": "integer", "description": "only messages after this #number (inbox)"},
@@ -415,6 +418,9 @@ def format_delivery(frame: dict, saved_files: list[str], me: str | None = None) 
                      f"with message_id {message['seq']}; reason optional.)")
     elif task:
         lines.append(f"(Task #{message['seq']} ({task['type']}) for {', '.join('@' + a['id'] for a in task['assignees'])}.)")
+    if frame.get("titleThread") is not None:
+        lines.append(f"(This thread has no title yet: give it one (3-6 words) with {TOOL_NAME} op=title, "
+                     f"message_id {frame['titleThread']}, value \"…\".)")
     lines.append(reply_footer(frame))
     if frame.get("openTasks"):
         n = frame["openTasks"]
@@ -510,6 +516,10 @@ class BusClient:
         """One step on task #seq (accept, done, reject, withdraw), as in BusConnection.taskAction."""
         body = {"from": self.my_id(), **({"reason": reason} if reason else {})}
         return self._request("POST", f"/api/tasks/{seq}/{action}", json.dumps(body).encode())
+
+    def title_thread(self, seq: int, title: str) -> dict:
+        """Titles the thread message #seq is in, as in BusConnection.titleThread."""
+        return self._request("POST", f"/api/messages/{seq}/title", json.dumps({"from": self.my_id(), "title": title}).encode())
 
     def extension_action(self, name: str, seq: int, action: str, values: dict) -> dict:
         body = {"from": self.my_id(), "message_id": seq, **{k: v for k, v in values.items() if v is not None}}
@@ -884,6 +894,11 @@ def register(ctx: Any) -> None:
             word = {"accept": "accepted", "done": "done", "reject": "rejected", "withdraw": "withdrawn"}[op]
             return (f"#{args['message_id']} {word}; the conversation got the step as a reply. "
                     f"{task_states(res['message'])} (you are @{me})")
+        if op == "title":
+            if args.get("message_id") is None or not (args.get("value") or "").strip():
+                raise ValueError("title needs `message_id` (a message of the thread) and `value` (the title).")
+            root = client.title_thread(int(args["message_id"]), args["value"])["message"]
+            return f"Thread #{root['seq']} titled \"{root.get('threadTitle') or args['value'].strip()}\". (you are @{me})"
 
         def named_project(target: str) -> dict:
             """The project or room `target` ("@@name", "#name") names, as this agent sees it."""

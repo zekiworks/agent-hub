@@ -287,6 +287,18 @@ CREATE TABLE IF NOT EXISTS pinned_messages (
   PRIMARY KEY (conversation_id, seq)
 );
 
+-- Thread titles (Can #17615), by the thread's root message (seqs are global). A row without a title records the one
+-- delivery that asked an agent for it (asked_to, asked_seq), so a thread is asked about once.
+CREATE TABLE IF NOT EXISTS thread_titles (
+  root_seq INTEGER PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  title TEXT,
+  set_by TEXT,
+  set_at INTEGER,
+  asked_to TEXT,
+  asked_seq INTEGER
+);
+
 -- A person's own bookmarks (Can #11065): messages saved for themselves; nobody else sees them.
 CREATE TABLE IF NOT EXISTS bookmarks (
   participant_id TEXT NOT NULL,
@@ -451,7 +463,7 @@ function partOf(quote: Quote | undefined, part: string | null): Quote | undefine
   return { ...quote, text: part.length > QUOTE_TEXT_CHARS ? `${part.slice(0, QUOTE_TEXT_CHARS - 1)}…` : part, part: true };
 }
 
-function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefined, forwards: MessageForward[] = []): Message {
+function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefined, forwards: MessageForward[] = [], threadTitle?: string): Message {
   const ext = row.ext_json ? (JSON.parse(row.ext_json) as MessageExtensions) : undefined;
   const task = ext?.task?.data as Task | undefined;
   return {
@@ -476,6 +488,7 @@ function toMessage(row: MessageRow, receipts: Receipt[], quote: Quote | undefine
     ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
     ...(row.forwarded_json ? { forwarded: parseForwarded(row.forwarded_json) } : {}),
     ...(forwards.length > 0 ? { forwards } : {}),
+    ...(threadTitle ? { threadTitle } : {}),
   };
 }
 /** A stored forwarded copy (Can #12470), its files checked as in files_json. */
@@ -514,6 +527,8 @@ export class BusDatabase {
     if (!messageColumns.some((c) => c.name === "reply_to_seq")) {
       this.db.exec("ALTER TABLE messages ADD COLUMN reply_to_seq INTEGER");
     }
+    // Threads walk replies down from their root (threadRootOf).
+    this.db.exec("CREATE INDEX IF NOT EXISTS messages_reply_to ON messages(reply_to_seq) WHERE reply_to_seq IS NOT NULL");
     // Databases created before human authentication lack the column (null: written while it was off).
     if (!messageColumns.some((c) => c.name === "verified")) {
       this.db.exec("ALTER TABLE messages ADD COLUMN verified INTEGER");
@@ -1058,6 +1073,70 @@ export class BusDatabase {
     }
   }
 
+  /**
+   * The thread message `seq` is in (Can #17615), by the website's rule (ui/threads.ts): the first message of its reply
+   * chain (quote.seq links), once a person has replied in that chain; null when it is in none.
+   */
+  threadRootOf(seq: number): number | null {
+    const root = this.db
+      .query<{ root: number | null }, [number]>(
+        `WITH RECURSIVE up(seq, parent, conversation_id) AS (
+           SELECT seq, reply_to_seq, conversation_id FROM messages WHERE seq = ?1
+           UNION ALL
+           SELECT m.seq, m.reply_to_seq, m.conversation_id FROM messages m JOIN up ON m.seq = up.parent
+           WHERE m.seq < up.seq AND m.conversation_id = up.conversation_id
+         )
+         SELECT MIN(seq) AS root FROM up`
+      )
+      .get(seq)?.root;
+    if (root === null || root === undefined) return null;
+    const replied = this.db
+      .query<{ one: number }, [number]>(
+        `WITH RECURSIVE down(seq, conversation_id) AS (
+           SELECT seq, conversation_id FROM messages WHERE seq = ?1
+           UNION ALL
+           SELECT m.seq, m.conversation_id FROM messages m JOIN down ON m.reply_to_seq = down.seq
+           WHERE m.seq > down.seq AND m.conversation_id = down.conversation_id
+         )
+         SELECT 1 AS one FROM down JOIN messages m ON m.seq = down.seq WHERE m.seq != ?1 AND m.from_kind = 'human' LIMIT 1`
+      )
+      .get(root);
+    return replied ? root : null;
+  }
+
+  /**
+   * Whether delivering `message` to agent `to` asks it to title the message's thread (Can #17615): the thread's root
+   * when the thread has no title and nobody was asked yet (this ask is recorded), or when this is the delivery that
+   * asked, handed over again (a dropped session, held while offline); else undefined. The caller asks only on
+   * deliveries that wake an agent connected now.
+   */
+  threadTitleAsk(message: Message, to: string): number | undefined {
+    const root = this.threadRootOf(message.seq);
+    if (root === null) return undefined;
+    const row = this.db
+      .query<{ title: string | null; asked_to: string | null; asked_seq: number | null }, [number]>(
+        "SELECT title, asked_to, asked_seq FROM thread_titles WHERE root_seq = ?1"
+      )
+      .get(root);
+    if (!row) {
+      this.db
+        .query("INSERT INTO thread_titles (root_seq, conversation_id, asked_to, asked_seq) VALUES (?1, ?2, ?3, ?4)")
+        .run(root, message.conversationId, to, message.seq);
+      return root;
+    }
+    return row.title === null && row.asked_to === to && row.asked_seq === message.seq ? root : undefined;
+  }
+
+  /** Titles thread `root` of `conversationId` (a later title replaces it). Callers check who may and that it is a thread. */
+  setThreadTitle(conversationId: string, root: number, title: string, by: string, now = Date.now()): void {
+    this.db
+      .query(
+        `INSERT INTO thread_titles (root_seq, conversation_id, title, set_by, set_at) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(root_seq) DO UPDATE SET title = excluded.title, set_by = excluded.set_by, set_at = excluded.set_at`
+      )
+      .run(root, conversationId, title, by, now);
+  }
+
   /** `participantId`'s own bookmarks, newest first (Can #11065). */
   bookmarksOf(participantId: string): Bookmark[] {
     return this.db
@@ -1443,6 +1522,7 @@ export class BusDatabase {
       this.db.query("DELETE FROM checklists WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM pins WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM pinned_messages WHERE conversation_id = ?1").run(conversationId);
+      this.db.query("DELETE FROM thread_titles WHERE conversation_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversation_aliases WHERE new_id = ?1").run(conversationId);
       this.db.query("DELETE FROM conversations WHERE id = ?1 AND kind = 'project'").run(conversationId);
       return n;
@@ -1765,8 +1845,22 @@ export class BusDatabase {
       if (!list) forwards.set(f.seq, (list = []));
       list.push({ by: f.by_id, to: f.to_label, at: f.at });
     }
+    const titles = new Map(
+      this.db
+        .query<{ root_seq: number; title: string }, [string]>(
+          "SELECT root_seq, title FROM thread_titles WHERE title IS NOT NULL AND root_seq IN (SELECT value FROM json_each(?1))"
+        )
+        .all(JSON.stringify(rows.map((r) => r.seq)))
+        .map((t): [number, string] => [t.root_seq, t.title])
+    );
     return rows.map((row) =>
-      toMessage(row, bySeq.get(row.seq) ?? [], partOf(row.reply_to_seq === null ? undefined : quotes.get(row.reply_to_seq), row.quote_text), forwards.get(row.seq))
+      toMessage(
+        row,
+        bySeq.get(row.seq) ?? [],
+        partOf(row.reply_to_seq === null ? undefined : quotes.get(row.reply_to_seq), row.quote_text),
+        forwards.get(row.seq),
+        titles.get(row.seq)
+      )
     );
   }
 

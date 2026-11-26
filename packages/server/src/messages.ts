@@ -19,6 +19,7 @@ import {
   type SharedFilesResponse,
   type PostMessageResponse,
   type Receipt,
+  THREAD_TITLE_CHARS,
 } from "@agent-bus/protocol";
 import type { BusContext } from "./context";
 import { addMembers, canRead, canSee, checkedProjectName, leave, mayRead, type Reader } from "./conversations";
@@ -596,6 +597,36 @@ export async function changeMessage(ctx: BusContext, req: Request, seq: number, 
   const changed = ctx.db.getMessage(seq) ?? message;
   ctx.hub.messageChanged(changed, conversation);
   return { message: changed };
+}
+
+/**
+ * POST /api/messages/:seq/title {from, title} (Can #17615): anyone who may read its conversation titles the thread
+ * message `seq` is in (`seq` its root or any reply in it); a later title replaces it. The root, as it is now, goes to
+ * the viewers in a "changed" frame, so open pages show the title at once.
+ */
+export async function titleThread(ctx: BusContext, req: Request, seq: number): Promise<{ message: Message }> {
+  const body = await readJsonObject(req);
+  if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+  const writer = ctx.hub.knownParticipant(body.from.trim().toLowerCase());
+  if (!writer) throw new HttpError(400, `Unknown participant "${body.from}"`);
+  ctx.checkWriter(req, writer);
+  const message = ctx.db.getMessage(seq);
+  const conversation = message ? ctx.db.getConversation(message.conversationId) : null;
+  if (!message || !conversation || !mayRead(ctx, conversation, { id: writer.id, kind: writer.kind === "human" ? "human" : "agent" })) {
+    throw new HttpError(404, `Unknown message ${seq}`);
+  }
+  if (typeof body.title !== "string") throw new HttpError(400, "title must be a string");
+  const title = body.title.trim();
+  if (title === "") throw new HttpError(400, "The title is empty");
+  if (/[\r\n]/.test(title)) throw new HttpError(400, "A title is one line");
+  if (title.length > THREAD_TITLE_CHARS) throw new HttpError(400, `A title is at most ${THREAD_TITLE_CHARS} characters (this one is ${title.length})`);
+  const root = ctx.db.threadRootOf(seq);
+  if (root === null) throw new HttpError(409, `#${seq} is not in a thread (a reply chain a person has replied in)`);
+  ctx.db.setThreadTitle(conversation.id, root, title, writer.id);
+  const titled = ctx.db.getMessage(root);
+  if (!titled) throw new HttpError(404, `Unknown message ${root}`);
+  ctx.hub.messageChanged(titled, conversation);
+  return { message: titled };
 }
 
 /**

@@ -328,6 +328,15 @@ export class BusConnection {
     });
   }
 
+  /** Titles the thread message #seq is in (its root or any reply in it); returns the root as it is now. */
+  titleThread(seq: number, title: string): Promise<{ message: Message }> {
+    return this.request<{ message: Message }>(`/api/messages/${seq}/title`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: this.requireId(), title }),
+    });
+  }
+
   /** Runs one action supplied by an extension manifest. */
   extensionAction(name: string, seq: number, action: string, input: Record<string, string | undefined> = {}): Promise<{ message: Message }> {
     return this.request<{ message: Message }>(`/api/ext/${encodeURIComponent(name)}/actions/${encodeURIComponent(action)}`, {

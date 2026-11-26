@@ -33,6 +33,8 @@ const ID_COLUMNS: Array<[table: string, column: string]> = [
   ["checklists", "owner"],
   ["checklists", "updated_by"],
   ["pinned_messages", "pinned_by"],
+  ["thread_titles", "set_by"],
+  ["thread_titles", "asked_to"],
   ["message_forwards", "by_id"],
   ["files", "uploaded_by"],
   ["receipts", "recipient"],

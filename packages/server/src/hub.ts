@@ -413,7 +413,7 @@ export class Hub {
 
   /** Sends a delivery to `sockets` and remembers it there until acked; `held`: it waited while the agent was offline. */
   deliver(sockets: Socket[], message: Message, conversation: Conversation, recipient: ParticipantRecord, held = false): void {
-    const frame = JSON.stringify(this.deliverFrame(message, conversation, recipient, held));
+    const frame = JSON.stringify(this.deliverFrame(message, conversation, recipient, held, sockets.length > 0));
     for (const ws of sockets) {
       if (ws.data.kind === "agent") ws.data.inflight.add(message.seq);
       ws.send(frame);
@@ -499,14 +499,19 @@ export class Hub {
 
   // ---- Messages and receipts ----
 
-  deliverFrame(message: Message, conversation: Conversation, recipient: ParticipantRecord, held = false): AgentServerFrame {
+  /** `live`: it goes to a connected session now, so it may ask the agent to title the message's thread (Can #17615). */
+  deliverFrame(message: Message, conversation: Conversation, recipient: ParticipantRecord, held = false, live = false): AgentServerFrame {
+    const wake = shouldWake(conversation, message, recipient.id, recipient.settings);
+    // Only a delivery that starts a turn asks: the agent answers now, in the thread, and titles it once.
+    const titleThread = live && wake ? this.db.threadTitleAsk(message, recipient.id) : undefined;
     return {
       type: "deliver",
       message,
       conversation,
       replyTo: replyAddress(conversation, recipient.id),
-      wake: shouldWake(conversation, message, recipient.id, recipient.settings),
+      wake,
       ...(held ? { held } : {}),
+      ...(titleThread !== undefined ? { titleThread } : {}),
     };
   }
 

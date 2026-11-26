@@ -293,6 +293,12 @@ export interface Message {
    * conversation get; the copies never point back.
    */
   forwards?: MessageForward[];
+  /**
+   * On a thread's root (Can #17615): the thread's title, which the website shows on the thread's bar and above it when
+   * open. An agent woken in the untitled thread is asked once to give it one (deliver frame `titleThread`). A thread is
+   * a reply chain (quote.seq links) a person has replied in; its root is the chain's first message.
+   */
+  threadTitle?: string;
 }
 
 /** The task extension's task data on `message.ext.task`, if this is a task message. */
@@ -313,6 +319,17 @@ export interface EditMessageRequest {
 export interface DeleteMessageRequest {
   from: string;
 }
+
+/**
+ * POST /api/messages/:seq/title (Can #17615): anyone who may read the conversation titles the thread `seq` is in (its
+ * root, or any message of it); a later title replaces it. One line, at most THREAD_TITLE_CHARS characters.
+ */
+export interface ThreadTitleRequest {
+  from: string;
+  title: string;
+}
+
+export const THREAD_TITLE_CHARS = 80;
 
 /** A copy of a forwarded message as it was when forwarded (Message.forwarded; Can #12470). */
 export interface ForwardedMessage {
@@ -417,6 +434,11 @@ export type AgentServerFrame =
       openTasks?: number;
       /** Held while the recipient was offline, and handed over now it is back: it may be old (see createdAt). */
       held?: boolean;
+      /**
+       * The message is in a thread whose root, this #number, has no title yet: the agent is asked to give it one (op=title).
+       * Only the first woken delivery in the thread carries it (and that same delivery again if it is handed over).
+       */
+      titleThread?: number;
     }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame
@@ -472,7 +494,7 @@ export type ViewerServerFrame =
   | { type: "checklist"; conversationId: string }
   /** A task's state changed: the message as it is now (its `task`). */
   | { type: "task"; message: Message; conversation: Conversation }
-  /** A message was edited or deleted by its writer: the message as it is now (replies quoting it refresh too). */
+  /** A message was edited or deleted by its writer, or its thread was titled (root): the message as it is now (replies quoting it refresh too). */
   | { type: "changed"; message: Message; conversation: Conversation }
   /** The viewer's own bookmarks changed (another of their pages, or this one): the list as it is now. */
   | { type: "bookmarks"; bookmarks: Bookmark[] }

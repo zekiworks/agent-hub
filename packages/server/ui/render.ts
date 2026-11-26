@@ -253,7 +253,10 @@ export function appendMessage(message: Message): boolean {
   return true;
 }
 
-/** A thread root's bar in the room: how many replies, how many new, who wrote last; a click or Enter opens it. */
+/**
+ * A thread root's bar in the room: its title when it has one (Can #17615), how many replies, how many new, who wrote
+ * last; a click or Enter opens it.
+ */
 function threadBar(li: HTMLElement, conversationId: string, root: Message, threads: Threads): void {
   li.querySelector(":scope > .thread-bar")?.remove();
   const replies = threads.replies.get(root.seq);
@@ -263,13 +266,15 @@ function threadBar(li: HTMLElement, conversationId: string, root: Message, threa
   const bar = h("button", fresh > 0 ? "thread-bar thread-bar-new" : "thread-bar");
   bar.type = "button";
   const count = `${replies.length} ${replies.length === 1 ? "reply" : "replies"}`;
+  const title = root.threadTitle;
   bar.append(
-    h("span", "thread-count", `↳ ${count}`),
+    ...(title ? [h("span", "thread-count", `↳ ${title}`), h("span", "thread-last", count)] : [h("span", "thread-count", `↳ ${count}`)]),
     ...(fresh > 0 ? [h("span", "thread-new", `${fresh} new`)] : []),
     h("span", "thread-last", `last @${last.from} ${timeFormat.format(last.createdAt)}`)
   );
-  bar.title = `Open the thread: ${count}${fresh > 0 ? `, ${fresh} new` : ""}`;
-  bar.setAttribute("aria-label", `Open the thread of #${root.seq}: ${count}${fresh > 0 ? `, ${fresh} new` : ""}`);
+  const what = `${title ? ` "${title}"` : ""}: ${count}${fresh > 0 ? `, ${fresh} new` : ""}`;
+  bar.title = `Open the thread${what}`;
+  bar.setAttribute("aria-label", `Open the thread of #${root.seq}${what}`);
   bar.addEventListener("click", (event) => {
     event.stopPropagation();
     location.hash = threadHash(conversationId, root.seq);
@@ -279,7 +284,7 @@ function threadBar(li: HTMLElement, conversationId: string, root: Message, threa
   else li.append(bar);
 }
 
-/** Above an open thread: "‹ #room › thread of @x: …", the room a click (or Enter) away (Can #14203). */
+/** Above an open thread: "‹ #room › its title" (Can #17615), else "thread of @x: …"; the room a click (or Enter) away (Can #14203). */
 function renderCrumb(conversationId: string, root: Message | undefined, threads: Threads | undefined): void {
   dom.threadCrumb.hidden = !root;
   if (!root) return dom.threadCrumb.replaceChildren();
@@ -293,12 +298,10 @@ function renderCrumb(conversationId: string, root: Message | undefined, threads:
   });
   const words = root.text.replace(/\s+/g, " ").trim();
   const n = threads?.replies.get(root.seq)?.length ?? 0;
-  dom.threadCrumb.replaceChildren(
-    back,
-    h("span", "thread-sep", "›"),
-    h("span", "thread-title", `Thread of @${root.from}: ${words.length > 60 ? `${words.slice(0, 59)}…` : words || "(file)"}`),
-    h("span", "thread-meta", `${n} ${n === 1 ? "reply" : "replies"}`)
-  );
+  const start = `Thread of @${root.from}: ${words.length > 60 ? `${words.slice(0, 59)}…` : words || "(file)"}`;
+  const title = h("span", "thread-title", root.threadTitle ?? start);
+  if (root.threadTitle) title.title = start;
+  dom.threadCrumb.replaceChildren(back, h("span", "thread-sep", "›"), title, h("span", "thread-meta", `${n} ${n === 1 ? "reply" : "replies"}`));
 }
 
 /** Someone saw the conversation (Ümit #12323): only the newest message's "Seen by" line changes. */

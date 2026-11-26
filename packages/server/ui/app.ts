@@ -125,8 +125,9 @@ function taskChanged(message: Message, conversation: Conversation): void {
 }
 
 /**
- * A message was edited or deleted by its writer (Ümit #10890): shown as it is now, and the replies quoting it quote the
- * new text (an empty quote with no files reads "message deleted").
+ * A message was edited or deleted by its writer (Ümit #10890), or its thread titled (Can #17615): shown as it is now,
+ * and the replies quoting it quote the new text (an empty quote with no files reads "message deleted"). A reply to one
+ * paragraph keeps its quote: the bus keeps that part as it was.
  */
 function messageChanged(message: Message, conversation: Conversation): void {
   // A bookmark or #number tooltip of it asks the bus again (it fetched the old text).
@@ -138,7 +139,7 @@ function messageChanged(message: Message, conversation: Conversation): void {
   cache.messages = cache.messages.map((m) =>
     m.seq === message.seq
       ? message
-      : m.quote?.seq === message.seq
+      : m.quote?.seq === message.seq && !m.quote.part
         ? { ...m, quote: { ...m.quote, text: quote, files: message.files.length } }
         : m
   );
