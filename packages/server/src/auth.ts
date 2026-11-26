@@ -142,7 +142,12 @@ export class HumanAuth {
   }
 
   private rp(): RelyingParty {
-    return { rpId: this.options.rpId, origins: this.options.origins() };
+    return { rpId: this.options.rpId, origins: this.origins() };
+  }
+
+  /** The exact website origins passkey registration and sign-in accept (an installer picks its sign-in link from them). */
+  origins(): string[] {
+    return this.options.origins();
   }
 
   private newChallenge(entry: Challenge): string {

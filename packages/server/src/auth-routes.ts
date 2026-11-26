@@ -24,6 +24,7 @@ export async function handleAuth(
     const me = auth.humanOf(req) ?? null;
     return json({
       rpId: site.rpId,
+      origins: auth.origins(),
       publicUrls: site.publicUrls,
       httpsPort: site.httpsPort ?? null,
       me,
