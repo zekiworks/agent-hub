@@ -198,17 +198,34 @@ const LEADER_LINE = new RegExp(`^\\s*(?:cli\\s*\\.\\s*)?use_leader\\s*=\\s*true\
 const LEADER_HEADER = new RegExp(`^\\s*\\[\\s*cli\\s*\\]\\s*${LEADER_MARK}\\s*$`);
 
 /**
- * Removes Agent Hub's MCP block, putting `joiner` in its place. Installs before 27 Nov kept a `[cli]` table at the end
- * of the block; the person's keys there survive as their own `[cli]` table, and only an unchanged `use_leader = true`
- * (Agent Hub's) goes.
+ * Removes Agent Hub's MCP block, leaving a line break in its place so the settings on either side stay on their own
+ * lines. Installs before 27 Nov kept a `[cli]` table at the end of the block; the person's keys there survive as their
+ * own `[cli]` table, and only an unchanged `use_leader = true` (Agent Hub's) goes.
  */
-function stripGrokBlock(text: string, joiner: string): string {
+function stripGrokBlock(text: string): string {
   return text.replace(GROK_BLOCK, (block) => {
     const cli = /\n\[cli\]\n([\s\S]*?)# agent-bus:grok end/.exec(block);
     const kept = cli?.[1]!.split("\n").filter((line) => line.trim() !== "" && line.trim() !== "use_leader = true") ?? [];
-    return kept.length ? `\n\n[cli]\n${kept.join("\n")}\n` : joiner;
+    return kept.length ? `\n\n[cli]\n${kept.join("\n")}\n` : "\n";
   });
 }
+
+/** Throws, so nothing is written, unless `text` is valid TOML: Agent Hub never leaves a config.toml Grok cannot read. */
+function checkToml(text: string, problem: string): void {
+  try {
+    Bun.TOML.parse(text);
+  } catch (error) {
+    throw new Error(`${problem} (${error instanceof Error ? error.message : String(error)}); nothing was changed`);
+  }
+}
+
+/** A TOML key as a regex: bare, "basic-quoted" or 'literal-quoted'. */
+const tomlKey = (name: string): string => `(?:${name}|"${name}"|'${name}')`;
+const CLI_SETTING = new RegExp(`^\\s*${tomlKey("use_leader")}\\s*=\\s*(true|false)\\b`);
+const ROOT_SETTING = new RegExp(`^\\s*${tomlKey("cli")}\\s*\\.\\s*${tomlKey("use_leader")}\\s*=\\s*(true|false)\\b`);
+const ROOT_DOTTED = new RegExp(`^\\s*${tomlKey("cli")}\\s*\\.`);
+const ROOT_INLINE = new RegExp(`^\\s*${tomlKey("cli")}\\s*=`);
+const INLINE_ON = new RegExp(`[{,]\\s*${tomlKey("use_leader")}\\s*=\\s*true\\b`);
 
 /** Where Grok's `use_leader` lives in a config.toml (line numbers), read line by line. */
 interface LeaderScan {
@@ -238,8 +255,7 @@ function scanLeader(text: string): LeaderScan {
       if (table === "cli") scan.cliHeader ??= i;
       return;
     }
-    const setting = table === "cli" ? /^\s*use_leader\s*=\s*(true|false)\b/.exec(line)
-      : table === "" ? /^\s*cli\s*\.\s*use_leader\s*=\s*(true|false)\b/.exec(line) : null;
+    const setting = table === "cli" ? CLI_SETTING.exec(line) : table === "" ? ROOT_SETTING.exec(line) : null;
     if (setting) {
       scan.value = setting[1] === "true";
       if (!scan.value) {
@@ -247,10 +263,10 @@ function scanLeader(text: string): LeaderScan {
         scan.falseDotted = table === "";
       }
     }
-    if (table === "" && /^\s*cli\s*\./.test(line)) scan.rootDotted = i;
-    if (table === "" && /^\s*cli\s*=/.test(line)) {
+    if (table === "" && ROOT_DOTTED.test(line)) scan.rootDotted = i;
+    if (table === "" && ROOT_INLINE.test(line)) {
       scan.inline = true;
-      if (/\buse_leader\s*=\s*true\b/.test(line)) scan.value = true;
+      if (INLINE_ON.test(line)) scan.value = true;
     }
   });
   return scan;
@@ -352,11 +368,12 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
   const file = definition.config!;
   const existed = existsSync(file);
   const before = existed ? readFileSync(file, "utf8") : "";
-  const stripped = stripGrokBlock(before, "");
-  if (/^\s*\[mcp_servers\.(?:agent-hub|"agent-hub")\]/m.test(stripped)) {
+  const stripped = stripGrokBlock(before);
+  const base = stripped !== before && stripped.trim() === "" ? "" : stripped;
+  if (/^\s*\[mcp_servers\.(?:agent-hub|"agent-hub")\]/m.test(base)) {
     throw new Error(`${file} already has an agent-hub MCP server not written by Agent Hub; not replacing it`);
   }
-  const base = stripped !== before && stripped && !stripped.endsWith("\n") ? `${stripped}\n` : stripped;
+  checkToml(base, `${file} is not valid TOML; fix it, then install again`);
   const untouched = previous !== undefined && before === previous.installed;
   const ours = base.split("\n").some((line) => LEADER_LINE.test(line));
   const plan: GrokPlan = {
@@ -399,11 +416,18 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
   return { ...plan, base: set.text, leader: { replaced: set.replaced }, turnedOn: true };
 }
 
-function writeGrokEntry(name: UniversalAdapterName, plan: GrokPlan, target: string, url: string): void {
-  const { file, base, originalExists, original, leader } = plan;
+/** The config.toml this install writes, checked to be valid TOML before anything is written. */
+function grokInstalled(name: UniversalAdapterName, plan: GrokPlan, target: string, url: string): string {
+  const { file, base } = plan;
   const args = argsFor(name, target, url).map((value) => JSON.stringify(value)).join(", ");
   const body = `${GROK_BEGIN}\n[mcp_servers.agent-hub]\ncommand = ${JSON.stringify(jsRuntime())}\nargs = [${args}]\n${GROK_END}\n`;
   const installed = `${base}${base && !base.endsWith("\n") ? "\n" : ""}${base ? "\n" : ""}${body}`;
+  checkToml(installed, `Adding Agent Hub to ${file} would make it invalid TOML`);
+  return installed;
+}
+
+function writeGrokEntry(plan: GrokPlan, installed: string, target: string): void {
+  const { file, originalExists, original, leader } = plan;
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, installed);
   writeJson(configSnapshotFile(target), { originalExists, original, installed, ...(leader ? { leader } : {}) });
@@ -420,8 +444,16 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
     return;
   }
   // Edited since install: the user's changes stay; only Agent Hub's block and its own unchanged leader line go.
-  const cleaned = revertLeader(stripGrokBlock(current, "\n"), snapshot?.leader?.replaced).replace(/\n+$/, "\n");
-  if (cleaned !== current) writeFileSync(file, cleaned === "\n" ? "" : cleaned);
+  const cleaned = revertLeader(stripGrokBlock(current), snapshot?.leader?.replaced).replace(/\n+$/, "\n");
+  if (cleaned === current) return;
+  let valid = true;
+  try {
+    Bun.TOML.parse(current);
+  } catch {
+    valid = false; // Already unreadable: removing Agent Hub's lines cannot make it worse.
+  }
+  if (valid) checkToml(cleaned, `Removing Agent Hub from ${file} would make it invalid TOML`);
+  writeFileSync(file, cleaned === "\n" ? "" : cleaned);
 }
 
 export async function installUniversal(name: UniversalAdapterName, opts: UniversalInstallOptions): Promise<void> {
@@ -429,9 +461,10 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
   const target = targetDir(name, opts);
   const owned = manifestName(manifest(target)) === ownedName(name);
   const previous = owned ? readConfigSnapshot(target) : undefined;
-  // Asked before anything is written.
-  const grok = definition.kind === "grok" ? planGrok(definition, opts, previous) : undefined;
   const url = installBusUrl(configFile(target), opts.url);
+  // Asked, and the new config.toml checked, before anything is written.
+  const grok = definition.kind === "grok" ? planGrok(definition, opts, previous) : undefined;
+  const grokText = grok ? grokInstalled(name, grok, target, url) : undefined;
   removeOwnedDir(target, manifest(target), ownedName(name), "plugin");
   mkdirSync(target, { recursive: true });
   const entries: Array<[string, string]> =
@@ -440,7 +473,7 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
   writeJson(manifest(target), { name: ownedName(name), version: "0.2.0", private: true });
   writeJson(configFile(target), { busUrl: url, harness: name });
   writeMetadata(target, "message-bus", `${definition.title} bridge for Agent Hub.`);
-  if (grok) writeGrokEntry(name, grok, target, url);
+  if (grok) writeGrokEntry(grok, grokText!, target);
   else setJsonEntry(name, definition, target, url, previous);
   console.log(`Installed ${definition.title} Agent Hub adapter in ${target} (Hub ${url}).`);
 }
