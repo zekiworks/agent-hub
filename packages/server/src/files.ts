@@ -89,8 +89,10 @@ export async function transcribeFile(
   if (!file.mimeType.startsWith("audio/")) throw new HttpError(400, `${file.name} is not audio (${file.mimeType})`);
   let res: Response;
   try {
-    // The bus's own names (agents, people), so speech-to-text writes "message-bus" and "compactor", not look-alike words.
-    const names = ctx.hub.knownIds().join(" ");
+    // The Hub's own names (agents, people), so speech-to-text writes "message-bus" and "compactor", not look-alike words.
+    // As a punctuated list: a bare lowercase word list made Whisper drop all capitals and punctuation ("thanks leo yes
+    // ship it on friday"); "docs, leo, maya." keeps them in English and Turkish (launch demo, 26 Nov).
+    const names = `${ctx.hub.knownIds().join(", ")}.`;
     const query = new URLSearchParams({ hotwords: names });
     const settings = asker ? ctx.db.getParticipant(asker)?.settings : undefined;
     if (settings?.englishSpeech === "liquid") query.set("english", "liquid");
