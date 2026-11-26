@@ -233,7 +233,8 @@ test("a viewer gets nothing before it signs in; a bad auth frame closes it (4401
   const bySession = connect(wsUrl("/ws/viewer"));
   await bySession.opened;
   bySession.send({ type: "auth", session: bus.signIn("uma") });
-  expect(await bySession.take("participants")).toMatchObject({ participants: [{ id: "carol" }, { id: "uma" }] });
+  // The built-in @system is always listed, online first (30d8704).
+  expect(await bySession.take("participants")).toMatchObject({ participants: [{ id: "system" }, { id: "carol" }, { id: "uma" }] });
   const byToken = connect(wsUrl("/ws/viewer"));
   await byToken.opened;
   byToken.send({ type: "auth", agentToken: TEST_TOKEN });

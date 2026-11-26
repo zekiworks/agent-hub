@@ -422,9 +422,6 @@ def format_delivery(frame: dict, saved_files: list[str], me: str | None = None) 
         lines.append(f"(This thread has no title yet: give it one (3-6 words) with {TOOL_NAME} op=title, "
                      f"message_id {frame['titleThread']}, value \"…\".)")
     lines.append(reply_footer(frame))
-    if frame.get("openTasks"):
-        n = frame["openTasks"]
-        lines.append(f"(You have {n} open task{'' if n == 1 else 's'}: {TOOL_NAME} op=tasks.)")
     return "\n".join(lines)
 
 

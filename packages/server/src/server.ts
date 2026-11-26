@@ -276,7 +276,8 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
       const id = viewer.kind === "human" ? viewer.id : (url.searchParams.get("for") ?? "");
       if (viewer.kind === "agent") {
         const agent = ctx.hub.knownParticipant(id);
-        if (!agent || agent.kind !== "agent") throw new HttpError(400, `Unknown agent "${id}"`);
+        if (!agent) throw new HttpError(400, `Unknown agent "${id}"`);
+        if (agent.kind !== "agent") throw new HttpError(403, `An agent token does not read @${agent.id}'s tasks`);
         ctx.checkWriter(req, agent);
       }
       return json(await extensions.tasks(id, box, state));

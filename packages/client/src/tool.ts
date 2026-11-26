@@ -397,7 +397,6 @@ export function formatDelivery(delivery: Delivery, savedFiles: string[], me?: st
     lines.push(`(This thread has no title yet: give it one (3-6 words) with ${TOOL_NAME} op=title, message_id ${delivery.titleThread}, value "…".)`);
   }
   lines.push(replyFooter(delivery));
-  if (delivery.openTasks) lines.push(`(You have ${delivery.openTasks} open task${delivery.openTasks === 1 ? "" : "s"}: ${TOOL_NAME} op=tasks.)`);
   return lines.join("\n");
 }
 

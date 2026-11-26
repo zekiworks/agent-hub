@@ -328,8 +328,11 @@ async function writeMessage(ctx: BusContext, req: Request, body: Record<string, 
     .map((participant) => participant.id)
     .map((id) => (id === SYSTEM_AGENT_ID && routedSource ? routedSource : id));
   const listed = wakeList(ctx, writer, body.wake, conversation, recipients, text, replyToSeq, newcomers);
+  // A task wakes its assignees and the agents an agent's explicit wake list names; the default rule (mentions, the
+  // last answerer) adds nobody: the extension strips the assignees' @mentions from the text.
   const assigned = extension?.wake.filter((id) => recipients.includes(id)) ?? [];
-  const wake = assigned.length > 0 ? [...new Set([...(listed ?? []), ...assigned])] : listed;
+  const explicit = writer.kind === "agent" && Array.isArray(body.wake) ? (listed ?? []) : [];
+  const wake = extension ? [...new Set([...explicit, ...assigned])] : listed;
   const message = db.insertMessage({
     conversationId: conversation.id,
     from: systemSource ? SYSTEM_AGENT_ID : writer.id,

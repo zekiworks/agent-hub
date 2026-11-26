@@ -139,10 +139,11 @@ export class ExtensionRuntime {
     if (assignees !== undefined && (!Array.isArray(assignees) || !assignees.every((id) => typeof id === "string"))) {
       throw new HttpError(400, "task assignees must be participant ids");
     }
-    if (taskType === "approval" && (assignees as string[] | undefined)?.some((id) => !this.ctx.humans.includes(id.replace(/^@/, "")))) {
-      throw new HttpError(400, "approvals may be assigned only to people");
-    }
-    const raw = `${(assignees as string[] | undefined)?.map((id) => `@${id.replace(/^@/, "")}`).join(" ") ?? ""} ${text}`.trim();
+    // Neither given nor @mentioned first: in a DM, its other member (the message-bus tool's documented default).
+    const named =
+      (assignees as string[] | undefined) ??
+      (conversation.kind === "dm" && !text.trimStart().startsWith("@") ? conversation.members.filter((id) => id !== writer.id) : undefined);
+    const raw = `${named?.map((id) => `@${id.replace(/^@/, "")}`).join(" ") ?? ""} ${text}`.trim();
     const answer = await this.call<CommandAnswer>("/commands/task", {
       v: 1,
       caller: { id: writer.id, kind: "agent" },
@@ -150,6 +151,11 @@ export class ExtensionRuntime {
       raw,
       taskType,
     });
+    // Checked on the extension's answer: its assignees come from `assignees` and from the text's leading @mentions.
+    const assigned = (answer.post.annotation.data as Partial<Task> | undefined)?.assignees ?? [];
+    if (taskType === "approval" && assigned.some((assignee) => !this.ctx.humans.includes(assignee.id))) {
+      throw new HttpError(400, "approvals may be assigned only to people");
+    }
     return { text: answer.post.text, ext: { [this.name]: answer.post.annotation }, wake: answer.post.wake ?? [] };
   }
 

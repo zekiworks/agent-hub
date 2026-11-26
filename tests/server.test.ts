@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { isJsonObject, mentionedIds, slugFromTitle, titledLabel } from "@agent-bus/protocol";
+import { isJsonObject, mentionedIds, slugFromTitle, SYSTEM_AGENT_ID, titledLabel } from "@agent-bus/protocol";
 import { BusDatabase } from "../packages/server/src/db";
 import type {
   AgentServerFrame,
@@ -99,8 +99,34 @@ beforeEach(() => {
 afterEach(async () => {
   await Promise.all(clients.splice(0).map((client) => client.close()));
   await bus.stop();
+  taskExt?.kill();
+  await taskExt?.exited;
+  taskExt = undefined;
   rmSync(dataDir, { recursive: true, force: true });
 });
+
+let taskExt: Bun.Subprocess<"ignore", "pipe", "inherit"> | undefined;
+
+/** Restarts the bus with the real task extension (packages/task-ext), sharing this test's data dir and secret. */
+async function withTaskExtension(): Promise<void> {
+  taskExt = Bun.spawn(["bun", "run", path.join(import.meta.dir, "../packages/task-ext/src/server.ts")], {
+    env: { ...process.env, TASK_EXT_PORT: "0", AGENT_BUS_DATA_DIR: dataDir },
+    stdout: "pipe",
+    stderr: "inherit",
+  });
+  const reader = taskExt.stdout.getReader();
+  let out = "";
+  let url: string | undefined;
+  while (url === undefined) {
+    const { value, done } = await reader.read();
+    if (done) throw new Error(`task-ext exited before listening: ${out}`);
+    out += new TextDecoder().decode(value);
+    url = /task-ext on (\S+)/.exec(out)?.[1];
+  }
+  reader.releaseLock();
+  await bus.stop();
+  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"], taskExtension: url });
+}
 
 const wsUrl = (route: string): string => `${bus.url.replace(/^http/, "ws")}${route}`;
 
@@ -135,6 +161,11 @@ function setSetting(from: string, key: string, value: unknown): Promise<Response
 /** GET /api/state as `as` (a person: what they see), else as the test agent token (what agents may read). */
 function state(as?: string): Promise<StateResponse> {
   return getJson<StateResponse>(bus, "/api/state", as);
+}
+
+/** The agents listed in /api/state, less the built-in @system, which is always there (since 23 Nov, 30d8704). */
+async function joinedAgentIds(): Promise<string[]> {
+  return (await state()).participants.filter((p) => p.kind === "agent" && p.id !== SYSTEM_AGENT_ID).map((p) => p.id);
 }
 
 test("status, task and resources share the visible system identity while replies route to the source", async () => {
@@ -891,7 +922,8 @@ describe("delivery", () => {
     expect((await postJson(bus, `/api/conversations/${project.conversation.id}/parent`, { from: "carol", parent: made.conversation.id })).status).toBe(409);
   });
 
-  test("tasks: assigned by mention or DM, they wake their agents; assignees accept/finish/reject, the assigner withdraws; each step replies in the conversation", async () => {
+  test("tasks: assigned by mention or DM, they wake their agents; assignees accept/finish/reject, the assigner withdraws; @system notices reply in the conversation", async () => {
+    await withTaskExtension();
     const alpha = await joinPath("/tmp/x/alpha");
     const beta = await joinPath("/tmp/x/beta");
     const act = (seq: number, action: string, from: string, reason?: string) =>
@@ -907,21 +939,26 @@ describe("delivery", () => {
     await beta.client.take("deliver");
     const t = await send({ from: "carol", conversationId: group.conversation.id, text: "@beta please rerun 7", task: { type: "task" } });
     expect(t.message.task).toEqual({ type: "task", assignees: [{ id: "beta", state: "open" }] });
-    expect((await beta.client.take("deliver")).openTasks).toBe(1);
+    // The assignee is woken; deliveries carry no open-task count since tasks moved into the extension (546098f).
+    const assignedDelivery = await beta.client.take("deliver");
+    expect(assignedDelivery.wake).toBe(true);
+    expect(assignedDelivery).not.toHaveProperty("openTasks");
     expect((await alpha.client.take("deliver")).wake).toBe(false); // not its task
     expect(await tasks("beta")).toMatchObject({ open: 1, unread: 1 });
     // Nobody named: refused; agents cannot approve; approvals go to people only.
     expect((await postJson(bus, "/api/messages", { from: "carol", conversationId: group.conversation.id, text: "someone do it", task: {} })).status).toBe(400);
     expect((await postJson(bus, "/api/messages", { from: alpha.id, conversationId: group.conversation.id, text: "@beta approve?", task: { type: "approval" } })).status).toBe(400);
 
-    // The assignee accepts (informs, wakes nobody), then finishes (wakes the assigner if an agent).
+    // The assignee accepts (the task message shows it; no notice), then finishes: @system says so in a reply that wakes
+    // the assigner if an agent (task notices since 546098f and 30d8704).
     expect((await act(t.message.seq, "done", "alpha")).status).toBe(403); // not assigned
     expect((await act(t.message.seq, "accept", beta.id)).status).toBe(200);
-    const accepted = await alpha.client.take("deliver");
-    expect([accepted.message.text, accepted.message.quote?.seq, accepted.wake]).toEqual(["Accepted: on it.", t.message.seq, false]);
+    expect((await tasks("beta")).messages[0]?.task?.assignees[0]).toMatchObject({ id: "beta", state: "accepted" });
     expect((await act(t.message.seq, "done", beta.id)).status).toBe(200);
-    expect((await alpha.client.take("deliver")).message.text).toBe("✓ Done.");
-    expect((await act(t.message.seq, "reject", beta.id)).status).toBe(409); // already done
+    const done = await alpha.client.take("deliver");
+    expect([done.message.from, done.message.text, done.message.quote?.seq, done.wake]).toEqual(["system", "task> ✓ Done by @beta.", t.message.seq, false]);
+    expect((await beta.client.take("deliver")).wake).toBe(false); // @system's notice reaches every agent member, quietly
+    expect((await act(t.message.seq, "reject", beta.id)).status).toBe(403); // already done: no longer among beta's allowed actions
     expect(await tasks("beta")).toMatchObject({ open: 0, messages: [] });
     expect((await tasks("beta", "mine", "all")).messages[0]?.task?.assignees[0]).toMatchObject({ id: "beta", state: "done" });
 
@@ -933,18 +970,19 @@ describe("delivery", () => {
     expect(await tasks("carol")).toMatchObject({ open: 1, unread: 0 });
     expect((await act(ask.message.seq, "reject", "carol", "keep it until Monday")).status).toBe(200);
     const denied = await alpha.client.take("deliver");
-    expect([denied.message.text, denied.wake, denied.message.verified]).toEqual(["✕ Denied. keep it until Monday", true, true]);
-    expect((await tasks(alpha.id, "assigned", "all")).messages[0]?.task?.assignees[0]).toMatchObject({ state: "rejected", reason: "keep it until Monday", verified: true });
+    expect([denied.message.text, denied.wake]).toEqual(["task> ✕ Rejected by @carol. keep it until Monday", true]);
+    expect((await tasks(alpha.id, "assigned", "all")).messages[0]?.task?.assignees[0]).toMatchObject({ state: "rejected", reason: "keep it until Monday" });
 
     // The assigner withdraws an open task: its agent assignees are told and woken.
     const w = await send({ from: "carol", to: "@beta", text: "check the logs", task: {} });
     await beta.client.take("deliver");
     expect((await act(w.message.seq, "withdraw", beta.id)).status).toBe(403);
     expect((await act(w.message.seq, "withdraw", "carol", "not needed")).status).toBe(200);
-    expect(await beta.client.take("deliver")).toMatchObject({ wake: true, message: { text: "Withdrawn. not needed" } });
+    expect(await beta.client.take("deliver")).toMatchObject({ wake: true, message: { text: "task> Cancelled by @carol. not needed" } });
   });
 
   test("an agent token reads only its own agents' tasks, never a person's (their private conversations leaked)", async () => {
+    await withTaskExtension();
     const alpha = await joinPath("/tmp/x/alpha");
     // A task between two people, in their private DM: no agent may read it.
     const secret = await send({ from: "carol", to: "@uma", text: "@uma please renew the lease", task: {} });
@@ -1436,7 +1474,8 @@ describe("http", () => {
   test("viewers get participants and message frames", async () => {
     const viewer = await connectViewer();
     const initial = await viewer.take("participants");
-    expect(initial.participants.map((p) => p.id)).toEqual(["carol", "uma"]);
+    // The built-in @system is always listed, online (30d8704).
+    expect(initial.participants.map((p) => p.id)).toEqual(["system", "carol", "uma"]);
 
     const alpha = await joinPath("/tmp/x/alpha");
     const joined = await viewer.take("participants");
@@ -1611,7 +1650,7 @@ describe("agents that never took part", () => {
     await send({ from: "writer", to: "@carol", text: "I wrote" });
     await send({ from: "uma", to: "@addressed", text: "you are in a group now" });
 
-    const ids = async () => (await state()).participants.filter((p) => p.kind === "agent").map((p) => p.id);
+    const ids = joinedAgentIds;
     await leave(scratch.client);
     await leave(twice.client);
     await leave(writer.client);
@@ -1639,7 +1678,7 @@ describe("agents that never took part", () => {
     clients.splice(clients.indexOf(active.client), 1);
     await bus.stop();
     bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
-    expect((await state()).participants.filter((p) => p.kind === "agent").map((p) => p.id)).toEqual(["active"]);
+    expect(await joinedAgentIds()).toEqual(["active"]);
   });
 });
 
@@ -1688,7 +1727,7 @@ describe("agents offline for a long time", () => {
     raw.query("UPDATE participants SET last_seen_at = ?2 WHERE id = ?1").run("recent", Date.now() - 14 * day);
     raw.query("INSERT INTO receipts (seq, recipient, delivered_at) VALUES (?1, 'old', NULL)").run(wrote.message.seq);
     raw.close();
-    const agentIds = async () => (await state()).participants.filter((p) => p.kind === "agent").map((p) => p.id);
+    const agentIds = joinedAgentIds;
 
     bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"], forgetOfflineDays: 0 });
     expect(await agentIds()).toEqual(["old", "recent"]);

@@ -430,8 +430,6 @@ export type AgentServerFrame =
       replyTo: string;
       /** false = deliver quietly (no new turn); see AgentSettings.all. */
       wake: boolean;
-      /** Tasks open or accepted for the recipient (the delivery footer reminds it). */
-      openTasks?: number;
       /** Held while the recipient was offline, and handed over now it is back: it may be old (see createdAt). */
       held?: boolean;
       /**
