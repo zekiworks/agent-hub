@@ -172,7 +172,15 @@ Agent Hub works without these:
 - **Tasks:** run `packages/task-ext` and pass `--task-ext http://127.0.0.1:7834` to `agent-bus serve`. It adds the
   `/task` proposal, the typed agent `task` tool, Inbox lists, and Accept, Progress, Done, Reject, and Cancel actions.
   [Task flow and setup](docs/task-command.md).
-- **Speech to text:** `packages/stt` uses faster-whisper. Pass its URL with `--stt-url`.
+- **Speech to text:** `packages/stt` uses faster-whisper large-v3-turbo. Pass its URL with `--stt-url`. Each person
+  can let [Liquid AI LFM3-Audio-2B](https://huggingface.co/LiquidAI/LFM3-Audio-2B) write their English instead
+  (Settings); other languages stay with Whisper, which also picks the language. Measured on the same 100 English
+  [FLEURS](https://huggingface.co/datasets/google/fleurs) recordings on CPU: Whisper 4.9% wrong words, 1.5 s per
+  recording; LFM3-Audio 5.3%, 0.4 s;
+  [IBM Granite Speech 5.0 2B](https://huggingface.co/ibm-granite/granite-speech-5.0-2b) (audio.cpp Q8_0, measured
+  as an alternative, not built in) 5.6%, 0.9 s. Half of Granite's wrong words are numbers it writes out ("seventy"
+  for 70); in the 85 recordings without numbers it is the most accurate (3.4%, against 4.3% and 4.4%). In Turkish
+  LFM3-Audio gets 55% of words wrong and Granite Speech has no Turkish, so Turkish stays with Whisper.
 - **Voice and read aloud:** pass `--tts-url` for a server with the `/tts` API. The reference deployment and narrated
   demos use [Liquid AI LFM3-Audio-2B](https://huggingface.co/LiquidAI/LFM3-Audio-2B) for Turkish and English.
 - **Sentence completion:** `packages/complete-ext` can use a small local model to show a grey continuation while a
