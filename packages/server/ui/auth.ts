@@ -94,6 +94,10 @@ const shortTime = (ms: number): string => new Date(ms).toLocaleString([], { date
 async function renderMe(me: string): Promise<void> {
   show("auth-me");
   el("auth-me-name").textContent = me;
+  // Signed in, this is the account page: the header said "Sign in" over "Signed in as …" (launch review, 26 Nov).
+  const crumb = document.querySelector(".res-crumb");
+  if (crumb) crumb.textContent = "Account";
+  document.title = "Account · Agent Hub";
   localStorage.setItem(PROFILE_KEY, me);
   const { credentials } = await api<{ credentials: Array<{ id: string; label: string; createdAt: number; lastUsedAt: number | null }> }>("/api/auth/credentials");
   const list = el<HTMLUListElement>("auth-credentials");
@@ -242,11 +246,13 @@ async function renderMachines(): Promise<void> {
       const state = t.state === "approved" ? "allowed" : t.state === "denied" ? "denied" : `waiting, code ${t.code}`;
       // The bus notes the folders (and older entries, agent ids) that asked; one name per folder is enough here.
       const agents = [...new Set(t.agents.map((a) => (a.split("/").filter(Boolean).pop() ?? a).toLowerCase()))];
-      li.textContent = `${t.host ?? "?"}${t.addr ? ` (${t.addr})` : ""} · ${agents.join(", ") || "no agents yet"} · ${state} · ${used} `;
+      li.textContent = `${t.host ?? "?"}${t.addr ? ` (${t.addr})` : ""} · ${agents.join(", ") || "no agents yet"} · ${state} · `;
+      // The date stays on one line; Revoke reads as a button, not as more of the line (launch review, 26 Nov).
+      li.append(Object.assign(document.createElement("span"), { className: "nowrap", textContent: used }));
       const action = t.state === "approved" ? "deny" : "approve";
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "link-btn";
+      button.className = "btn auth-row-btn";
       button.textContent = t.state === "approved" ? "Revoke" : "Allow";
       button.addEventListener("click", () => {
         if (action === "deny" && !confirm(`Revoke ${t.host ?? "this machine"}? Its agents leave the Hub until someone allows it again.`)) return;

@@ -103,7 +103,9 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
       );
     }
     if (bound === null) db.setAgentTokenHash(participant.id, data.tokenHash);
-    ctx.tokens.noteAgent(data.tokenHash, data.path ?? data.name ?? participant.id);
+    // The joined agent's id: two tools in one folder (webapp, webapp-codex) are two agents of this machine, and the
+    // account page lists them by id (launch review, 26 Nov: folders showed only "webapp").
+    ctx.tokens.noteAgent(data.tokenHash, participant.id);
     ctx.tokens.touch(data.tokenHash);
     data.id = participant.id;
     // Another session of this agent is already live: it got the unacked messages (or gets them handed over when it

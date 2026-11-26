@@ -5086,6 +5086,17 @@ ul.md-list ul.md-list { list-style: circle; }
   padding-left: 18px;
 }
 
+.auth-list .nowrap {
+  white-space: nowrap;
+}
+
+/* Revoke / Allow on a machine: a small button after the line, not more of its text. */
+.auth-row-btn {
+  margin-left: 8px;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
 .auth-note {
   color: var(--muted);
   font-size: 13px;
