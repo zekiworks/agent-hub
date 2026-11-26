@@ -677,7 +677,9 @@ export class BusTool {
         }
         const saved: string[] = [];
         for (const file of [...message.files, ...(message.forwarded?.files ?? [])]) saved.push(await conn.downloadFile(file, receivedDir(conn.id ?? "")));
-        return result(formatReadMessage(message, conversation, Number.MAX_SAFE_INTEGER, saved));
+        // Whom it asked to start a turn (Can #17584): the website shows it under each message, the tool did not.
+        const wake = message.wake === undefined ? "" : `\n\nWake list: ${message.wake.length > 0 ? message.wake.map((id) => `@${id}`).join(", ") : "nobody (quiet)"}`;
+        return result(formatReadMessage(message, conversation, Number.MAX_SAFE_INTEGER, saved) + wake);
       }
       case "history": {
         let target: { to: string } | { conversationId: string };
