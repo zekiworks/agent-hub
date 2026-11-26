@@ -401,7 +401,12 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
     voiceReply.type = "button";
     voiceReply.title = "Record a voice reply";
     voiceReply.setAttribute("aria-label", `Record a voice reply to message #${message.seq}`);
-    voiceReply.addEventListener("click", () => startVoiceReply({ kind: "conversation", id: message.conversationId }, message));
+    voiceReply.addEventListener("click", () => {
+      // Its ⋯ row folds, as for a typed reply (Ümit #14607): recording, the screen is for the message box.
+      actions.classList.remove("msg-actions-open");
+      overflow.setAttribute("aria-expanded", "false");
+      startVoiceReply({ kind: "conversation", id: message.conversationId }, message);
+    });
   }
   // Visible row: Copy, Mark read/seen, Reply. In More, Forward is first and Task occupies Forward's old position
   // immediately above voice reply (Can #16356).
