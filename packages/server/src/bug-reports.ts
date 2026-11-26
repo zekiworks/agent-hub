@@ -6,7 +6,7 @@ import type { BusContext } from "./context";
 import { HttpError, readJsonObject } from "./http";
 import { postMessage } from "./messages";
 
-const KINDS = { crash: "Crash", ended: "Page ended unexpectedly", report: "Problem report" } as const;
+const KINDS = { crash: "Crash", ended: "Page ended unexpectedly", freeze: "Page froze", report: "Problem report" } as const;
 type Kind = keyof typeof KINDS;
 const PER_HOUR = 20;
 const recent = new Map<string, number[]>();
