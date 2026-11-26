@@ -229,16 +229,64 @@ function parseToml(text: string, subject: string, hint: string): Toml {
 /** `cli.use_leader` as Grok reads it. */
 const leaderOf = (config: Toml): unknown => object(config.cli).use_leader;
 
-/** A parsed config without the two values Agent Hub may change: its MCP server and `cli.use_leader`. */
+/**
+ * A parsed config without the two values Agent Hub may change: its MCP server and `cli.use_leader`. Copies only the
+ * two tables it edits: TOML dates parse to Temporal objects, which structuredClone cannot copy.
+ */
 function withoutOurs(config: Toml): Toml {
-  const copy = structuredClone(config);
-  const servers = object(copy.mcp_servers);
-  delete servers["agent-hub"];
-  if (copy.mcp_servers !== undefined && Object.keys(servers).length === 0) delete copy.mcp_servers;
-  const cli = object(copy.cli);
-  delete cli.use_leader;
-  if (copy.cli !== undefined && Object.keys(cli).length === 0) delete copy.cli;
+  const copy: Toml = { ...config };
+  for (const [table, key] of [["mcp_servers", "agent-hub"], ["cli", "use_leader"]] as const) {
+    if (copy[table] === undefined) continue;
+    const rest = { ...object(copy[table]) };
+    delete rest[key];
+    if (Object.keys(rest).length > 0) copy[table] = rest;
+    else delete copy[table];
+  }
   return copy;
+}
+
+/** A parsed TOML value written back as TOML; undefined for what this does not write (dates and times). */
+function tomlValue(value: unknown): string | undefined {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "boolean") return String(value);
+  if (typeof value === "number") return Number.isNaN(value) ? "nan" : value === Infinity ? "inf" : value === -Infinity ? "-inf" : String(value);
+  if (Array.isArray(value)) {
+    const items = value.map(tomlValue);
+    return items.includes(undefined) ? undefined : `[${items.join(", ")}]`;
+  }
+  if (value && Object.getPrototypeOf(value) === Object.prototype) return inlineTable(value as Toml);
+  return undefined;
+}
+
+function inlineTable(table: Toml): string | undefined {
+  const entries = Object.entries(table).map(([key, value]) => {
+    const text = tomlValue(value);
+    return text === undefined ? undefined : `${/^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key)} = ${text}`;
+  });
+  if (entries.includes(undefined)) return undefined;
+  return entries.length > 0 ? `{ ${entries.join(", ")} }` : "{}";
+}
+
+/**
+ * What to tell a person whose `cli` is an inline table (line `index` of `base`): the line to write, built from the
+ * parsed table with `use_leader = true` and checked to parse to the same config with only that value changed; or,
+ * when it cannot be built that way, the key to set.
+ */
+function inlineLeaderEdit(base: string, parsedBase: Toml, index: number): string {
+  const lines = base.split("\n");
+  const table = inlineTable({ ...object(parsedBase.cli), use_leader: true });
+  if (table !== undefined) {
+    lines[index] = `${/^\s*/.exec(lines[index]!)![0]}cli = ${table}`;
+    try {
+      const after = Bun.TOML.parse(lines.join("\n")) as Toml;
+      if (leaderOf(after) === true && Bun.deepEquals(withoutOurs(parsedBase), withoutOurs(after))) {
+        return `change that line to \`${lines[index]!.trim()}\``;
+      }
+    } catch {
+      // Falls through to the key to set.
+    }
+  }
+  return "inside cli = { … } set use_leader = true";
 }
 
 /**
@@ -258,7 +306,6 @@ const CLI_FALSE = new RegExp(`^\\s*${tomlKey("use_leader")}\\s*=\\s*false\\b`);
 const ROOT_FALSE = new RegExp(`^\\s*${tomlKey("cli")}\\s*\\.\\s*${tomlKey("use_leader")}\\s*=\\s*false\\b`);
 const ROOT_DOTTED = new RegExp(`^\\s*${tomlKey("cli")}\\s*\\.`);
 const ROOT_INLINE = new RegExp(`^\\s*${tomlKey("cli")}\\s*=`);
-const INLINE_FALSE = new RegExp(`(${tomlKey("use_leader")}\\s*=\\s*)false\\b`);
 
 /**
  * Where to edit Grok's `use_leader` in a config.toml (line numbers), read line by line, skipping multi-line strings.
@@ -311,9 +358,9 @@ function scanLeader(text: string): LeaderScan {
 /**
  * Sets `use_leader = true` in the user's own `[cli]` table (or root `cli.` keys) when there is one; otherwise adds a
  * `[cli]` table at the end of the file, outside the MCP block, so keys the person adds to it later stay theirs. The
- * file stays valid TOML. `inline`: `cli` is an inline table (`cli = {…}`), which takes no further key; its line.
+ * file stays valid TOML. `inline`: `cli` is an inline table (`cli = {…}`), which takes no further key; its line number.
  */
-function setLeader(text: string): { text: string; replaced?: string } | { inline: string } {
+function setLeader(text: string): { text: string; replaced?: string } | { inline: number } {
   const scan = scanLeader(text);
   const lines = text.split("\n");
   if (scan.falseLine !== undefined) {
@@ -321,7 +368,7 @@ function setLeader(text: string): { text: string; replaced?: string } | { inline
     lines[scan.falseLine] = `${/^\s*/.exec(replaced)![0]}${scan.falseDotted ? "cli." : ""}use_leader = true ${LEADER_MARK}`;
     return { text: lines.join("\n"), replaced };
   }
-  if (scan.inline !== undefined) return { inline: lines[scan.inline]! };
+  if (scan.inline !== undefined) return { inline: scan.inline };
   if (scan.cliHeader !== undefined) lines.splice(scan.cliHeader + 1, 0, `use_leader = true ${LEADER_MARK}`);
   else if (scan.rootDotted !== undefined) lines.splice(scan.rootDotted + 1, 0, `cli.use_leader = true ${LEADER_MARK}`);
   else return { text: `${text}${text && !text.endsWith("\n") ? "\n" : ""}${text ? "\n" : ""}[cli] ${LEADER_MARK}\nuse_leader = true ${LEADER_MARK}\n` };
@@ -454,12 +501,9 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
   const set = setLeader(base);
   if ("inline" in set) {
     // Asked for and not possible: fail, never install with leader mode silently still off.
-    const on = INLINE_FALSE.test(set.inline) ? set.inline.replace(INLINE_FALSE, "$1true")
-      : /\{\s*\}/.test(set.inline) ? set.inline.replace(/\{\s*\}/, "{ use_leader = true }")
-      : set.inline.replace(/\{\s*/, "{ use_leader = true, ");
     throw new Error(
       `${file} sets cli as an inline table, which Agent Hub does not edit; nothing was changed. To turn leader mode on, ` +
-        `change that line to \`${on.trim()}\`, then run this again, or start Grok with grok --leader.`,
+        `${inlineLeaderEdit(base, parsedBase, set.inline)}, then run this again, or start Grok with grok --leader.`,
     );
   }
   return { ...plan, base: set.text, leaderValue: true, leader: { replaced: set.replaced }, turnedOn: true };

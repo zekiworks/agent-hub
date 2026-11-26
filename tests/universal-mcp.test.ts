@@ -408,8 +408,10 @@ describe("universal MCP adapter configuration", () => {
   test("Grok leader mode: --leader with an inline cli table fails, changes nothing, and gives the line to write", async () => {
     const inputs: Array<[string, string]> = [
       [`cli = { use_leader = false }`, `cli = { use_leader = true }`],
-      [`cli = { theme = "light" }`, `cli = { use_leader = true, theme = "light" }`],
+      [`cli = { theme = "light" }`, `cli = { theme = "light", use_leader = true }`],
       [`cli = {}`, `cli = { use_leader = true }`],
+      // Built from the parsed table: the text inside the string stays as it is.
+      [`cli = { description = "use_leader = false", use_leader = false }`, `cli = { description = "use_leader = false", use_leader = true }`],
     ];
     for (const [line, fixed] of inputs) {
       const root = home();
@@ -427,10 +429,27 @@ describe("universal MCP adapter configuration", () => {
       // Leaving leader mode alone works; the suggested line is valid TOML that turns it on.
       await agentBus(root, ...INSTALL_GROK, "--no-leader");
       expect(toml(config).cli?.use_leader).not.toBe(true);
+      const cliBefore = toml(config).cli;
       await Bun.write(config, readFileSync(config, "utf8").replace(line, fixed));
-      expect(toml(config).cli?.use_leader).toBe(true);
+      expect(toml(config).cli).toEqual({ ...cliBefore, use_leader: true });
       expect(await agentBus(root, ...INSTALL_GROK, "--leader")).toContain("already on");
     }
+
+    // A value this cannot write back exactly (a date): the key to set, not a line.
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const before = `cli = { since = 1979-05-27, use_leader = false }\n`;
+    await Bun.write(config, before);
+    const leader = await run(root, [...INSTALL_GROK, "--leader"]);
+    expect(leader.code).not.toBe(0);
+    expect(leader.output).toContain("To turn leader mode on, inside cli = { … } set use_leader = true, then run this again");
+    expect(readFileSync(config, "utf8")).toBe(before);
+
+    // Dates elsewhere do not stop the check that only use_leader changed.
+    await Bun.write(config, `[cli]\nsince = 1979-05-27T07:32:00Z\n`);
+    await agentBus(root, ...INSTALL_GROK, "--leader");
+    expect(toml(config).cli?.use_leader).toBe(true);
+    expect(String(toml(config).cli?.since)).toBe("1979-05-27T07:32:00Z");
   }, 60_000);
 
   test("Grok leader mode: use_leader inside a multi-line string is text, not the setting", async () => {
