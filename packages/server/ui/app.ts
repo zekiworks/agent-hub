@@ -1,7 +1,7 @@
 // The conversations page (index.html): wires the modules together, routes between views and boots.
 import { QUOTE_TEXT_CHARS, type Conversation, type Message, type ViewerServerFrame } from "@agent-bus/protocol";
 import { api, PROFILE_KEY, setFileKey } from "./api";
-import { reportProblem, startCrashLog } from "./crashlog";
+import { reportProblem, reportStartRetries, startCrashLog } from "./crashlog";
 import { bookmarksChanged } from "./bookmarks";
 import { tabsChanged } from "./tabs";
 import { hideError, moveStaged, resetComposerHeight, setReplyTo, showError, updateComposerState } from "./composer";
@@ -333,21 +333,36 @@ async function loadAuth(): Promise<string | undefined> {
   return auth.me;
 }
 
+/** A start request that hasn't answered in this long is given up and tried again. */
+const START_TRY_MS = 10_000;
+
+function within<T>(work: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([work, new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`no answer within ${ms / 1000} s`)), ms))]);
+}
+
 async function boot(): Promise<void> {
+  // The start keeps trying instead of waiting forever or saying "Reload": a Home Screen app has no reload button, and
+  // a request that never answered left Ümit's phone on an empty page until she restarted it (#17267, #17433).
   let signedIn: string | undefined;
-  try {
-    signedIn = await loadAuth();
-    if (!signedIn) {
-      rememberAddress();
-      location.replace("/auth");
-      return;
+  let lastError = "";
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      signedIn = await within(loadAuth(), START_TRY_MS);
+      if (!signedIn) {
+        rememberAddress();
+        location.replace("/auth");
+        return;
+      }
+      await within(loadState(), START_TRY_MS);
+      if (attempt > 1) reportStartRetries(attempt, lastError);
+      break;
+    } catch (err) {
+      lastError = errorText(err);
+      setLinkStatus("offline", "server unreachable");
+      showEmpty(`Connecting to Agent Hub… (${lastError}; trying again, attempt ${attempt + 1})`);
+      startCrashLog();
+      await new Promise((resolve) => setTimeout(resolve, Math.min(2_000 * attempt, 15_000)));
     }
-    await loadState();
-  } catch (err) {
-    setLinkStatus("offline", "server unreachable");
-    showEmpty(`Could not reach Agent Hub: ${errorText(err)}. Reload to retry.`);
-    startCrashLog();
-    return;
   }
   // A signed-in browser is that human (the server refuses any other `from`).
   state.me = state.humans.includes(signedIn) ? signedIn : "";

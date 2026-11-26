@@ -11,7 +11,8 @@ import { postJson } from "./api";
 
 const ALIVE_KEY = "agent-bus.page-alive";
 
-type Kind = "crash" | "ended" | "freeze" | "report";
+type Kind = "crash" | "ended" | "freeze" | "start" | "report";
+let started = false;
 
 function report(kind: Kind, text: string, stack?: string): Promise<{ sent: boolean }> {
   return postJson<{ sent: boolean }>("/api/bug-reports", {
@@ -24,8 +25,15 @@ function report(kind: Kind, text: string, stack?: string): Promise<{ sent: boole
   });
 }
 
-/** Called once the app has drawn its first view: the start-up watchdog in index.html stops waiting. */
+/** The start needed more than one try to reach the Hub: sent once it got through, with the last failure. */
+export function reportStartRetries(attempts: number, lastError: string): void {
+  void report("start", `The app needed ${attempts} tries to reach the Hub when it opened. Last failure: ${lastError}.`).catch(() => undefined);
+}
+
+/** Called once the app has drawn something (its first view, or "Connecting…"): the watchdog in index.html stops waiting. */
 export function startCrashLog(): void {
+  if (started) return;
+  started = true;
   (window as { agentHubStarted?: boolean }).agentHubStarted = true;
   try {
     const last = JSON.parse(localStorage.getItem(ALIVE_KEY) ?? "null") as { at?: number; where?: string; closed?: boolean } | null;
