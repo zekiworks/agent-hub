@@ -31,7 +31,7 @@ install / uninstall: put this machine's HARNESS on the bus, or take it off. HARN
   copilot           a Copilot CLI extension (~/.copilot/extensions): Copilot CLI and app sessions
   opencode          an OpenCode V2 server plugin in ~/.config/opencode/plugins/agent-bus (respects XDG_CONFIG_HOME)
   antigravity       a plugin folder in ~/.gemini/config/plugins/message-bus
-  qwen, kimi, grok  a harness-native stdio MCP bridge
+  qwen, grok        a harness-native stdio MCP bridge
   cli               this command, as ~/.local/bin/agent-bus
   --url defaults to the URL of the install being replaced, then $AGENT_BUS_URL, then http://127.0.0.1:7800.
   Installing again updates. --force replaces a file at the install path that agent-bus did not write (moved aside).
