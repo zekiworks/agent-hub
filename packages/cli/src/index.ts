@@ -9,7 +9,7 @@ import { runTicketed } from "./run";
 
 const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR] --humans carol,uma
                        [--https-port 7843 --tls-cert FILE --tls-key FILE] [--gpudash URL] [--forget-offline-days 15]
-                       [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL] [--task-ext URL] [--ext NAME=URL[,launcher=LABEL|,box=complete|recipient|needs]]…
+                       [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL] [--task-ext URL] [--ext NAME=URL[,launcher=LABEL|,box=complete|recipient|needs]]… [--bug-reports-to AGENT]
                        [--brand-name NAME [--brand-logo FILE] [--brand-icon FILE]]
        agent-bus invite HUMAN [--data-dir DIR] [--url http://localhost:7800]
        agent-bus agents [--data-dir DIR]
@@ -74,6 +74,7 @@ serve:
                 NAME=URL,launcher=LABEL: a global item opened from the top bar (e.g. gpudash=http://127.0.0.1:3420,launcher=GPUs);
                 NAME=URL,agents=LABEL: a tab LABEL on every agent's page, URL?agent=ID (e.g. status=http://127.0.0.1:7833,agents=Home);
   --tts-url     Text-to-speech server (llama-server with LFM3-Audio, e.g. http://127.0.0.1:9941): ▶ reads messages aloud
+  --bug-reports-to  The agent that gets the website's crash reports and Tools → Report a problem, as direct messages
   --brand-name  The website's name instead of "Agent Hub" (e.g. "Team Hub"); --brand-logo: the header's mark and home-screen
                 icon (an image file); --brand-icon: the browser tab's icon (a small PNG)
   --forget-offline-days  Forget agents offline this many days (default 15; 0 keeps them forever)
@@ -142,6 +143,9 @@ function parseServeArgs(args: string[]): BusServerOptions {
         break;
       case "--tts-url":
         options.ttsUrl = value;
+        break;
+      case "--bug-reports-to":
+        options.bugReportsTo = value.replace(/^@/, "").toLowerCase();
         break;
       case "--task-ext":
         options.taskExtension = value;

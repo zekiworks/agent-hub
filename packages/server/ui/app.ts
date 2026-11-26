@@ -1,6 +1,7 @@
 // The conversations page (index.html): wires the modules together, routes between views and boots.
 import { QUOTE_TEXT_CHARS, type Conversation, type Message, type ViewerServerFrame } from "@agent-bus/protocol";
 import { api, PROFILE_KEY, setFileKey } from "./api";
+import { reportProblem, startCrashLog } from "./crashlog";
 import { bookmarksChanged } from "./bookmarks";
 import { tabsChanged } from "./tabs";
 import { hideError, moveStaged, resetComposerHeight, setReplyTo, showError, updateComposerState } from "./composer";
@@ -172,6 +173,9 @@ dom.gotoBtn.addEventListener("click", () => {
   if (Number.isSafeInteger(seq) && seq > 0) void showMessage(seq);
 });
 
+// "Report a problem…" in Tools: goes to the agent that maintains this Hub (Ümit #17141).
+dom.reportBtn.addEventListener("click", () => void reportProblem());
+
 /** Opens the conversation of message `seq` (loading earlier pages as needed), scrolls to it and flashes it. */
 async function showMessage(seq: number): Promise<void> {
   const here = shownMessage(seq);
@@ -342,6 +346,7 @@ async function boot(): Promise<void> {
   } catch (err) {
     setLinkStatus("offline", "server unreachable");
     showEmpty(`Could not reach Agent Hub: ${errorText(err)}. Reload to retry.`);
+    startCrashLog();
     return;
   }
   // A signed-in browser is that human (the server refuses any other `from`).
@@ -367,6 +372,7 @@ async function boot(): Promise<void> {
   // Phones opened without a conversation in the address, or reloaded on the list, start on the conversation list.
   const startOnList = location.hash === "" || (reloaded && wasOnPhoneList());
   applyView(parseHash());
+  startCrashLog();
   if (startOnList) setPhoneList(true);
   if (linkedSeq !== undefined) void showMessage(linkedSeq);
   loadDraft();

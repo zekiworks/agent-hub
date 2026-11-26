@@ -15,6 +15,32 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Agent Hub" />
   <link rel="stylesheet" href="/styles.css" />
+  <!-- Crash reports (Ümit #17132, #17141; crashlog.ts): kept here, before app.js, so an error while the app starts, or a
+       start that never draws anything (a blank page), still reaches the Hub. -->
+  <script>
+    (() => {
+      let left = 5;
+      const send = (text, stack) => {
+        const session = localStorage.getItem("agent-bus.session");
+        if (!session || left <= 0) return;
+        left -= 1;
+        fetch("/api/bug-reports", {
+          method: "POST",
+          keepalive: true,
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + session },
+          body: JSON.stringify({
+            kind: "crash", text: String(text).slice(0, 2000), stack: stack ? String(stack).slice(0, 4000) : undefined, where: location.hash,
+            device: navigator.userAgent, standalone: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true,
+          }),
+        }).catch(() => undefined);
+      };
+      addEventListener("error", (e) => send(e.message || "Script error", e.error && e.error.stack ? e.error.stack : (e.filename || "") + ":" + e.lineno + ":" + e.colno));
+      addEventListener("unhandledrejection", (e) => send(e.reason instanceof Error ? e.reason.message : String(e.reason), e.reason instanceof Error ? e.reason.stack : undefined));
+      setTimeout(() => {
+        if (!window.agentHubStarted && document.visibilityState === "visible") send("The page stayed blank: the app had not drawn anything 20 s after it opened.");
+      }, 20_000);
+    })();
+  </script>
 </head>
 <body>
   <div id="app" class="app">
@@ -37,6 +63,7 @@
         <div id="tools-menu" class="entry-menu tools-menu" role="menu" hidden>
           <button id="goto-btn" type="button" class="entry-menu-item" role="menuitem" title="Go to a message by its number (or open …/#/m/1234)">Go to message #…</button>
           <button id="stats-btn" type="button" class="entry-menu-item" role="menuitem" title="Messages written and agent turns started, per participant">Stats</button>
+          <button id="report-btn" type="button" class="entry-menu-item" role="menuitem" title="Tell the agent that maintains this Hub what went wrong">Report a problem…</button>
           <button id="gpu-btn" type="button" class="entry-menu-item" role="menuitem" title="Who holds which GPU, and book one" hidden>GPU booking</button>
         </div>
       </div>

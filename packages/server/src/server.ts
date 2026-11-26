@@ -29,6 +29,7 @@ import { ScheduleService } from "./schedule-routes";
 import { forwardExtension } from "./extensions";
 import { getBoxUsage, postBox, postBoxReport, type BoxExtension } from "./boxes";
 import { postSpeech } from "./speech";
+import { postBugReport } from "./bug-reports";
 import { WebPush } from "./push";
 import { postAttention } from "./attention";
 import { NeedsJudge } from "./needs";
@@ -56,6 +57,8 @@ export interface BusServerOptions {
   sttUrl?: string;
   /** A text-to-speech server (llama-server with LFM3-Audio, e.g. http://127.0.0.1:9941) that reads messages aloud. */
   ttsUrl?: string;
+  /** The agent that gets the website's crash and problem reports as direct messages (`--bug-reports-to`; Ümit #17141). */
+  bugReportsTo?: string;
   /** Pages shown in the website's Workspace: name → local URL (`--ext gpudash=http://127.0.0.1:3420`). */
   extensions?: Record<string, string>;
   /** Which of them are global, opened by a top-bar launcher: name → its label (`--ext gpudash=…,launcher=GPUs`). */
@@ -324,6 +327,10 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
     const transcriptMatch = /^\/api\/files\/([^/]+)\/transcript$/.exec(pathname);
     if (method === "POST" && transcriptMatch?.[1]) return json(await transcribeFile(ctx, decodeURIComponent(transcriptMatch[1]), options.sttUrl, viewer.kind === "human" ? viewer.id : undefined));
     if (method === "POST" && pathname === "/api/speech") return await postSpeech(req, options.ttsUrl);
+    if (method === "POST" && pathname === "/api/bug-reports") {
+      if (viewer.kind !== "human") throw new HttpError(403, "Only a signed-in person reports a problem");
+      return json(await postBugReport(ctx, req, viewer.id, options.bugReportsTo));
+    }
     const extensionCommand = /^\/api\/ext\/([a-z0-9][a-z0-9_-]*)\/command$/.exec(pathname);
     if (method === "POST" && extensionCommand?.[1]) {
       if (!extensions || extensionCommand[1] !== "task") throw new HttpError(404, `No command extension "${extensionCommand[1]}"`);
