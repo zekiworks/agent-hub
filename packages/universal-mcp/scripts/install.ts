@@ -212,29 +212,58 @@ function stripGrokBlock(text: string): string {
 
 const BY_HAND = "If Grok reads it fine, add the [mcp_servers.agent-hub] block by hand (see docs/harnesses/universal-mcp.md).";
 
+type Toml = Record<string, unknown>;
+
 /**
- * Throws, so nothing is written, unless Bun parses `text` as TOML: Agent Hub never leaves a config.toml it cannot
- * read. Bun's parser may reject a file Grok reads, so the message says so instead of calling the file invalid.
+ * Parses `text` with Bun, or throws so nothing is written: Agent Hub never leaves a config.toml it cannot read. Bun's
+ * parser may reject a file Grok reads, so the message says so instead of calling the file invalid.
  */
-function checkToml(text: string, subject: string, hint: string): void {
+function parseToml(text: string, subject: string, hint: string): Toml {
   try {
-    Bun.TOML.parse(text);
+    return Bun.TOML.parse(text) as Toml;
   } catch (error) {
     throw new Error(`Bun could not parse ${subject} (${error instanceof Error ? error.message : String(error)}); nothing was changed. ${hint}`);
   }
 }
 
+/** `cli.use_leader` as Grok reads it. */
+const leaderOf = (config: Toml): unknown => object(config.cli).use_leader;
+
+/** A parsed config without the two values Agent Hub may change: its MCP server and `cli.use_leader`. */
+function withoutOurs(config: Toml): Toml {
+  const copy = structuredClone(config);
+  const servers = object(copy.mcp_servers);
+  delete servers["agent-hub"];
+  if (copy.mcp_servers !== undefined && Object.keys(servers).length === 0) delete copy.mcp_servers;
+  const cli = object(copy.cli);
+  delete cli.use_leader;
+  if (copy.cli !== undefined && Object.keys(cli).length === 0) delete copy.cli;
+  return copy;
+}
+
+/**
+ * Throws unless the edited config differs from the one before only where Agent Hub meant to change it: its MCP server
+ * there (install) or gone (uninstall), `cli.use_leader` as `leader` (unless undefined: not checked), all else equal.
+ */
+function checkGrokEdit(file: string, before: Toml, after: Toml, server: boolean, leader: unknown, hint: string): void {
+  const ok = Bun.deepEquals(withoutOurs(before), withoutOurs(after))
+    && (object(after.mcp_servers)["agent-hub"] !== undefined) === server
+    && (leader === undefined || leaderOf(after) === leader);
+  if (!ok) throw new Error(`Agent Hub could not edit ${file} without changing other settings; nothing was changed. ${hint}`);
+}
+
 /** A TOML key as a regex: bare, "basic-quoted" or 'literal-quoted'. */
 const tomlKey = (name: string): string => `(?:${name}|"${name}"|'${name}')`;
-const CLI_SETTING = new RegExp(`^\\s*${tomlKey("use_leader")}\\s*=\\s*(true|false)\\b`);
-const ROOT_SETTING = new RegExp(`^\\s*${tomlKey("cli")}\\s*\\.\\s*${tomlKey("use_leader")}\\s*=\\s*(true|false)\\b`);
+const CLI_FALSE = new RegExp(`^\\s*${tomlKey("use_leader")}\\s*=\\s*false\\b`);
+const ROOT_FALSE = new RegExp(`^\\s*${tomlKey("cli")}\\s*\\.\\s*${tomlKey("use_leader")}\\s*=\\s*false\\b`);
 const ROOT_DOTTED = new RegExp(`^\\s*${tomlKey("cli")}\\s*\\.`);
 const ROOT_INLINE = new RegExp(`^\\s*${tomlKey("cli")}\\s*=`);
-const INLINE_ON = new RegExp(`[{,]\\s*${tomlKey("use_leader")}\\s*=\\s*true\\b`);
 
-/** Where Grok's `use_leader` lives in a config.toml (line numbers), read line by line. */
+/**
+ * Where to edit Grok's `use_leader` in a config.toml (line numbers), read line by line, skipping multi-line strings.
+ * Only for placing the edit: the value Grok sees comes from the parsed file, and every edit is checked against it.
+ */
 interface LeaderScan {
-  value?: boolean;
   /** The `[cli]` header line. */
   cliHeader?: number;
   /** A `use_leader = false` line: under `[cli]`, or a root `cli.use_leader = false`. */
@@ -249,7 +278,15 @@ interface LeaderScan {
 function scanLeader(text: string): LeaderScan {
   const scan: LeaderScan = {};
   let table: string | undefined = "";
+  let inString: string | undefined;
   text.split("\n").forEach((line, i) => {
+    const quotes = line.match(/"""|'''/g) ?? [];
+    if (inString) {
+      if (quotes.filter((quote) => quote === inString).length % 2 === 1) inString = undefined;
+      return;
+    }
+    const opening = quotes[0];
+    if (opening && quotes.filter((quote) => quote === opening).length % 2 === 1) inString = opening;
     if (/^\s*\[\[/.test(line)) {
       table = undefined;
       return;
@@ -260,19 +297,12 @@ function scanLeader(text: string): LeaderScan {
       if (table === "cli") scan.cliHeader ??= i;
       return;
     }
-    const setting = table === "cli" ? CLI_SETTING.exec(line) : table === "" ? ROOT_SETTING.exec(line) : null;
-    if (setting) {
-      scan.value = setting[1] === "true";
-      if (!scan.value) {
-        scan.falseLine = i;
-        scan.falseDotted = table === "";
-      }
+    if (table === "cli" ? CLI_FALSE.test(line) : table === "" && ROOT_FALSE.test(line)) {
+      scan.falseLine = i;
+      scan.falseDotted = table === "";
     }
     if (table === "" && ROOT_DOTTED.test(line)) scan.rootDotted = i;
-    if (table === "" && ROOT_INLINE.test(line)) {
-      scan.inline = true;
-      if (INLINE_ON.test(line)) scan.value = true;
-    }
+    if (table === "" && ROOT_INLINE.test(line)) scan.inline = true;
   });
   return scan;
 }
@@ -353,6 +383,10 @@ interface GrokPlan {
   file: string;
   /** The config to write the MCP block after: the current file without the block, leader setting already applied. */
   base: string;
+  /** The current file, parsed: the install may change only Agent Hub's server and `cli.use_leader` in it. */
+  parsed: Toml;
+  /** `cli.use_leader` the written file must have. */
+  leaderValue: unknown;
   /** What uninstall restores when the file is untouched since this install: the config without any of our changes. */
   originalExists: boolean;
   original: string;
@@ -373,32 +407,35 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
   const file = definition.config!;
   const existed = existsSync(file);
   const before = existed ? readFileSync(file, "utf8") : "";
+  const parsed = parseToml(before, file, BY_HAND);
   const stripped = stripGrokBlock(before);
   const base = stripped !== before && stripped.trim() === "" ? "" : stripped;
-  if (/^\s*\[mcp_servers\.(?:agent-hub|"agent-hub")\]/m.test(base)) {
+  const parsedBase = parseToml(base, file, BY_HAND);
+  if (object(parsedBase.mcp_servers)["agent-hub"] !== undefined) {
     throw new Error(`${file} already has an agent-hub MCP server not written by Agent Hub; not replacing it`);
   }
-  checkToml(base, file, BY_HAND);
   const untouched = previous !== undefined && before === previous.installed;
   const ours = base.split("\n").some((line) => LEADER_LINE.test(line));
+  const value = leaderOf(parsedBase);
   const plan: GrokPlan = {
     file,
     base,
+    parsed,
+    leaderValue: value,
     originalExists: untouched ? previous.originalExists : existed,
     original: untouched ? previous.original : ours ? revertLeader(base, previous?.leader?.replaced) : base,
     ...(ours ? { leader: { replaced: previous?.leader?.replaced } } : {}),
   };
-  const value = scanLeader(base).value;
   if (value === true) {
     console.log(`Grok leader mode is already on in ${file}, so Grok wakes for Agent Hub messages.`);
     return plan;
   }
-  if (value === undefined && previous?.leader && scanLeader(before).value === true) {
+  if (value === undefined && previous?.leader && leaderOf(parsed) === true) {
     // An install before 27 Nov kept the setting inside the MCP block; it moves to the person's config, still on.
     const set = setLeader(base);
     if (set) {
       console.log(`Grok leader mode is already on in ${file}, so Grok wakes for Agent Hub messages.`);
-      return { ...plan, base: set.text, leader: {} };
+      return { ...plan, base: set.text, leaderValue: true, leader: {} };
     }
   }
   const turnOn = opts.leader ?? askTerminal([
@@ -418,16 +455,20 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
     console.log(`${file} sets cli as an inline table; add use_leader = true to it by hand, or start Grok with grok --leader.`);
     return plan;
   }
-  return { ...plan, base: set.text, leader: { replaced: set.replaced }, turnedOn: true };
+  return { ...plan, base: set.text, leaderValue: true, leader: { replaced: set.replaced }, turnedOn: true };
 }
 
-/** The config.toml this install writes, checked to be valid TOML before anything is written. */
+/**
+ * The config.toml this install writes, checked before anything is written: Bun parses it, it has Agent Hub's server
+ * and the intended `cli.use_leader`, and every other value is as it was.
+ */
 function grokInstalled(name: UniversalAdapterName, plan: GrokPlan, target: string, url: string): string {
   const { file, base } = plan;
   const args = argsFor(name, target, url).map((value) => JSON.stringify(value)).join(", ");
   const body = `${GROK_BEGIN}\n[mcp_servers.agent-hub]\ncommand = ${JSON.stringify(jsRuntime())}\nargs = [${args}]\n${GROK_END}\n`;
   const installed = `${base}${base && !base.endsWith("\n") ? "\n" : ""}${base ? "\n" : ""}${body}`;
-  checkToml(installed, `${file} with Agent Hub's block added`, BY_HAND);
+  const after = parseToml(installed, `${file} with Agent Hub's block added`, BY_HAND);
+  checkGrokEdit(file, plan.parsed, after, true, plan.leaderValue, BY_HAND);
   return installed;
 }
 
@@ -451,15 +492,15 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
   // Edited since install: the user's changes stay; only Agent Hub's block and its own unchanged leader line go.
   const cleaned = revertLeader(stripGrokBlock(current), snapshot?.leader?.replaced).replace(/\n+$/, "\n");
   if (cleaned === current) return;
-  let valid = true;
+  let parsed: Toml | undefined;
   try {
-    Bun.TOML.parse(current);
+    parsed = Bun.TOML.parse(current) as Toml;
   } catch {
-    valid = false; // Already unreadable: removing Agent Hub's lines cannot make it worse.
+    // Already unreadable: removing Agent Hub's lines cannot make it worse.
   }
-  if (valid) {
-    checkToml(cleaned, `${file} with Agent Hub's block removed`,
-      `If Grok reads it fine, delete the lines from "${GROK_BEGIN}" to "${GROK_END}" by hand.`);
+  if (parsed) {
+    const hint = `If Grok reads it fine, delete the lines from "${GROK_BEGIN}" to "${GROK_END}" by hand.`;
+    checkGrokEdit(file, parsed, parseToml(cleaned, `${file} with Agent Hub's block removed`, hint), false, undefined, hint);
   }
   writeFileSync(file, cleaned === "\n" ? "" : cleaned);
 }
@@ -511,8 +552,15 @@ export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions
   }
   if (installed && definition.kind === "grok") {
     const text = existsSync(definition.config!) ? readFileSync(definition.config!, "utf8") : "";
+    let leader: unknown;
+    try {
+      leader = leaderOf(Bun.TOML.parse(text) as Toml);
+    } catch {
+      notes.push(`Bun could not parse ${definition.config}`);
+    }
     if (!text.includes(GROK_BEGIN)) notes.push(`MCP entry missing from ${definition.config}`);
-    else if (scanLeader(text).value !== true) notes.push("no idle wake: leader mode off (agent-bus install grok --leader, or grok --leader)");
+    else if (leader === true) notes.push("idle wake: leader mode on");
+    else notes.push("no idle wake: leader mode off (agent-bus install grok --leader, or grok --leader)");
   }
   return { installed, where: target, busUrl: configBusUrl(configFile(target)), notes };
 }

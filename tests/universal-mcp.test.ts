@@ -36,7 +36,7 @@ async function run(home: string, args: string[], tty?: string): Promise<{ code: 
 }
 
 /** Bun's TOML parser: throws unless the file is valid TOML. */
-type GrokConfig = { cli?: { use_leader?: boolean; theme?: string }; mcp_servers?: Record<string, unknown>; [table: string]: unknown };
+type GrokConfig = { cli?: { use_leader?: boolean; [key: string]: unknown }; mcp_servers?: Record<string, unknown>; [table: string]: unknown };
 const toml = (file: string): GrokConfig => Bun.TOML.parse(readFileSync(file, "utf8")) as GrokConfig;
 
 const PROMPT = "Turn on leader mode in";
@@ -351,8 +351,8 @@ describe("universal MCP adapter configuration", () => {
   test("Grok: a config.toml Bun cannot parse, before or after the change, is refused and left unchanged", async () => {
     const cases: Array<[string, string]> = [
       [`[models]\ndefault = "a"\ndefault = "b"\n`, " ("],
-      // Another agent-hub server, as a key of [mcp_servers]: adding the block would define it twice.
-      [`[mcp_servers]\n"agent-hub" = { command = "mine" }\n`, " with Agent Hub's block added ("],
+      // An inline mcp_servers table cannot take the [mcp_servers.agent-hub] block.
+      [`mcp_servers = { other = { command = "mine" } }\n`, " with Agent Hub's block added ("],
     ];
     for (const [before, subject] of cases) {
       const root = home();
@@ -366,6 +366,64 @@ describe("universal MCP adapter configuration", () => {
       );
       expect(readFileSync(config, "utf8")).toBe(before);
       expect(existsSync(join(root, ".agent-bus", "adapters", "grok"))).toBe(false);
+    }
+
+    // Another agent-hub server, as a key of [mcp_servers]: not Agent Hub's, so not replaced.
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const theirs = `[mcp_servers]\n"agent-hub" = { command = "mine" }\n`;
+    await Bun.write(config, theirs);
+    const conflict = await run(root, [...INSTALL_GROK, "--leader"]);
+    expect(conflict.code).not.toBe(0);
+    expect(conflict.output).toContain("already has an agent-hub MCP server not written by Agent Hub");
+    expect(readFileSync(config, "utf8")).toBe(theirs);
+
+    // A broken line inside Agent Hub's own block: the file as it is fails to parse, so reinstall changes nothing.
+    await Bun.write(config, `[models]\ndefault = "a"\n`);
+    await agentBus(root, ...INSTALL_GROK, "--no-leader");
+    const broken = readFileSync(config, "utf8").replace("# agent-bus:grok end", "broken =\n# agent-bus:grok end");
+    await Bun.write(config, broken);
+    const again = await run(root, [...INSTALL_GROK, "--leader"]);
+    expect(again.code).not.toBe(0);
+    expect(again.output).toContain(`Bun could not parse ${config} (`);
+    expect(readFileSync(config, "utf8")).toBe(broken);
+  }, 30_000);
+
+  test("Grok leader mode: use_leader inside a multi-line string is text, not the setting", async () => {
+    for (const quote of [`"""`, `'''`]) {
+      const root = home();
+      const config = join(root, ".grok", "config.toml");
+      const before = `[cli]\ndescription = ${quote}\nuse_leader = false\n${quote}\n\n[models]\ndefault = "dspark"\n`;
+      await Bun.write(config, before);
+      const status = await run(root, [...INSTALL_GROK, "--leader"]);
+      expect(status.code).toBe(0);
+      expect(status.output).toContain("Grok leader mode is on");
+      expect(toml(config).cli).toEqual({ description: "use_leader = false\n", use_leader: true });
+      await agentBus(root, "uninstall", "grok");
+      expect(readFileSync(config, "utf8")).toBe(before);
+
+      // Through an edit: uninstall takes back only Agent Hub's line.
+      await agentBus(root, ...INSTALL_GROK, "--leader");
+      await Bun.write(config, `${readFileSync(config, "utf8")}[ui]\ntheme = "dark"\n`);
+      await agentBus(root, "uninstall", "grok");
+      expect(toml(config)).toEqual({ cli: { description: "use_leader = false\n" }, models: { default: "dspark" }, ui: { theme: "dark" } });
+    }
+  }, 60_000);
+
+  test("Grok leader mode: a quoted use_leader = true counts as on, for install and doctor", async () => {
+    for (const before of [`[cli]\n"use_leader" = true\n`, `'cli'.'use_leader' = true\n`]) {
+      const root = home();
+      const config = join(root, ".grok", "config.toml");
+      await Bun.write(config, before);
+      const output = await agentBus(root, ...INSTALL_GROK);
+      expect(output).toContain("Grok leader mode is already on");
+      expect(output).not.toContain(PROMPT);
+      expect(readFileSync(config, "utf8").startsWith(before)).toBe(true);
+      const doctor = await run(root, ["doctor", "--url", "http://127.0.0.1:9"]);
+      expect(doctor.output).toContain("idle wake: leader mode on");
+      expect(doctor.output).not.toContain("leader mode off");
+      await agentBus(root, "uninstall", "grok");
+      expect(readFileSync(config, "utf8")).toBe(before);
     }
   }, 30_000);
 
