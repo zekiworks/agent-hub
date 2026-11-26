@@ -103,12 +103,12 @@ test("the Codex MCP server exposes the tool and reports an off-bus task", async 
   mcp.handleLine(JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "message-bus", arguments: { op: "inbox" } } }));
   await until(() => out.length === 3);
   const init = out.find((m) => m.id === 1)?.result as { instructions: string };
-  expect(init.instructions).toContain("Message-bus deliveries");
+  expect(init.instructions).toContain("Agent Hub deliveries");
   const tools = (out.find((m) => m.id === 2)?.result as { tools: Array<{ name: string }> }).tools;
   expect(tools.map((tool) => tool.name)).toEqual(["message-bus", "task", HOOK_TOOL]);
   const call = out.find((m) => m.id === 3)?.result as { isError: boolean; content: Array<{ text: string }> };
   expect(call.isError).toBe(true);
-  expect(call.content[0]?.text).toContain("not on the message bus (started in the temp directory)");
+  expect(call.content[0]?.text).toContain("not on Agent Hub (started in the temp directory)");
 });
 
 test("the message-bus tool acts as the Codex task's folder agent", async () => {

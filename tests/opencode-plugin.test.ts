@@ -208,7 +208,7 @@ test("one binding per main session, concurrent hooks deduplicate; no stored hist
   server.add("foreign", path.join(dir, "foreign"));
   await server.prompt("child");
   await server.prompt("foreign");
-  await expect(server.run("child", { op: "inbox" })).rejects.toThrow("not on the message bus");
+  await expect(server.run("child", { op: "inbox" })).rejects.toThrow("not on Agent Hub");
   delete process.env.AGENT_BUS_JOIN_FROM_TMP;
   server.add("scratch", path.join(dir, "scratch"));
   await server.prompt("scratch");

@@ -89,8 +89,8 @@ export async function install(opts: InstallOptions): Promise<void> {
       Stop: hook("Stop"),
     },
   });
-  writeMetadata(target, "antigravity", "Antigravity plugin that puts this machine's Antigravity conversations on the message bus.");
-  console.log(`Installed ${PLUGIN} in ${target} (bus ${busUrl}, runtime ${node}).`);
+  writeMetadata(target, "antigravity", "Antigravity plugin that puts this machine's Antigravity conversations on Agent Hub.");
+  console.log(`Installed ${PLUGIN} in ${target} (Hub ${busUrl}, runtime ${node}).`);
   if (opts.buildOnly) return;
   console.log(await refreshAntigravity().catch((err: Error) => `Could not reach Antigravity (${err.message}); restart it.`));
 }

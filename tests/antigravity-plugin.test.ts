@@ -184,7 +184,7 @@ test("tool calls act as the calling conversation's folder; conversations without
   expect(await call("c3", "beta", { op: "write", to: "@carol", message: "from beta" })).toContain("(you are @beta)");
 
   await daemon.hook("SessionStart", payload("c9", undefined));
-  await expect(call("c9", undefined, { op: "inbox" })).rejects.toThrow(/not on the message bus/);
+  await expect(call("c9", undefined, { op: "inbox" })).rejects.toThrow(/not on Agent Hub/);
 
   await daemon.hook("SessionStart", payload("sub-1", "gamma"));
   await daemon.hook("PreInvocation", payload("sub-1", "gamma"));

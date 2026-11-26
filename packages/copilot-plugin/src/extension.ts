@@ -62,7 +62,7 @@ export class CopilotBinding {
       onDeliver: (delivery) => this.deliver(delivery),
       onReceipt: (receipt) => this.receipt(receipt),
       onWatch: (on) => this.activity.setWatching(on),
-      onJoined: (id) => log(`on the bus as @${id} (${folder})`),
+      onJoined: (id) => log(`on the Hub as @${id} (${folder})`),
       onLog: log,
     });
     this.tool = new BusTool(this.conn);
@@ -83,7 +83,7 @@ export class CopilotBinding {
   }
 
   async runTool(params: MessageBusToolParams): Promise<string> {
-    if (!this.conn.id) throw new Error("Not connected to the message bus yet (still trying).");
+    if (!this.conn.id) throw new Error("Not connected to Agent Hub yet (still trying).");
     return this.tool.run(params, this.folder);
   }
 
@@ -179,7 +179,7 @@ export async function start(joinSession: JoinSession, options: ExtensionOptions)
         parameters: toolInputSchema(),
         skipPermission: true,
         async handler(args) {
-          if (!binding) throw new Error(`This session is not on the message bus: ${NOT_JOINING}.`);
+          if (!binding) throw new Error(`This session is not on Agent Hub: ${NOT_JOINING}.`);
           return binding.runTool(args as unknown as MessageBusToolParams);
         },
       },
@@ -189,7 +189,7 @@ export async function start(joinSession: JoinSession, options: ExtensionOptions)
         parameters: taskToolInputSchema(),
         skipPermission: true,
         async handler(args) {
-          if (!binding) throw new Error(`This session is not on the message bus: ${NOT_JOINING}.`);
+          if (!binding) throw new Error(`This session is not on Agent Hub: ${NOT_JOINING}.`);
           return runTaskTool(binding.conn, args as unknown as TaskToolParams);
         },
       },
@@ -206,6 +206,6 @@ export async function start(joinSession: JoinSession, options: ExtensionOptions)
     return undefined;
   }
   binding.attach(session);
-  log(`bus ${options.busUrl}, folder ${folder}, session ${session.sessionId}`);
+  log(`Hub ${options.busUrl}, folder ${folder}, session ${session.sessionId}`);
   return binding;
 }

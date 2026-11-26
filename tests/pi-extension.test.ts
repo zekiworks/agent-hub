@@ -219,7 +219,7 @@ test("non-interactive runs (print, json) do not join unless AGENT_BUS_JOIN_NONIN
   const printed = new FakePi(path.join(dataDir, "projects", "gamma"), "print");
   sessions.push(printed);
   printed.start();
-  await expect(printed.run({ op: "inbox" })).rejects.toThrow(/not on the message bus: non-interactive run \(--mode print\)/);
+  await expect(printed.run({ op: "inbox" })).rejects.toThrow(/not on Agent Hub: non-interactive run \(--mode print\)/);
   await startSession("alpha"); // a later participants frame proves gamma never joined
   expect(participants.some((p) => p.id === "gamma")).toBe(false);
 

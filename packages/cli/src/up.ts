@@ -95,7 +95,7 @@ export async function runUp(opts: UpOptions): Promise<number> {
     state = (await res.json()) as StateResponse;
   } catch (error) {
     console.error(
-      `agent-bus up: the bus at ${opts.url} is not reachable (${error instanceof Error ? error.message : String(error)}). ` +
+      `agent-bus up: the Hub at ${opts.url} is not reachable (${error instanceof Error ? error.message : String(error)}). ` +
         "Is it running? systemctl --user status agent-bus"
     );
     return 1;

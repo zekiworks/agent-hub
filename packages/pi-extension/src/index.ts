@@ -150,12 +150,12 @@ export default function messageBus(pi: MessageBusApi): void {
       onJoined: (id) => {
         if (announced) return;
         announced = true;
-        ctx.ui?.notify(`message-bus: on the bus as @${id}`, "info");
+        ctx.ui?.notify(`message-bus: on the Hub as @${id}`, "info");
       },
       onLog: log,
       onPending: (code) => {
         waitingForApproval = true;
-        ctx.ui?.notify(`message-bus: waiting for a person to allow this machine (code ${code}, on the bus website)`, "warning");
+        ctx.ui?.notify(`message-bus: waiting for a person to allow this machine (code ${code}, on the Hub website)`, "warning");
       },
     });
     connection = conn;
@@ -165,7 +165,7 @@ export default function messageBus(pi: MessageBusApi): void {
     const notice = setTimeout(() => {
       if (connection !== conn || conn.connected || waitingForApproval) return;
       ctx.ui?.notify(
-        `message-bus: cannot reach the bus at ${url} (still retrying). Check AGENT_BUS_URL and the network.`,
+        `message-bus: cannot reach the Hub at ${url} (still retrying). Check AGENT_BUS_URL and the network.`,
         "warning"
       );
     }, JOIN_NOTICE_MS);
@@ -218,14 +218,14 @@ export default function messageBus(pi: MessageBusApi): void {
 
   pi.registerTool({
     name: TOOL_NAME,
-    label: "Message bus",
+    label: "Agent Hub",
     description: toolDescription({
       arrives: "after your current tool calls finish, before your next step",
       notJoining: "sessions started in the temp directory and non-interactive runs (pi -p, --mode json) do not join",
     }),
     parameters: toolInputSchema(),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      if (!tool) throw new Error(`This session is not on the message bus: ${offBus}.`);
+      if (!tool) throw new Error(`This session is not on Agent Hub: ${offBus}.`);
       return { content: [{ type: "text", text: await tool.run(params, ctx.cwd) }], details: {} };
     },
   });
@@ -236,7 +236,7 @@ export default function messageBus(pi: MessageBusApi): void {
     description: TASK_TOOL_DESCRIPTION,
     parameters: taskToolInputSchema(),
     async execute(_toolCallId, params) {
-      if (!connection) throw new Error(`This session is not on the message bus: ${offBus}.`);
+      if (!connection) throw new Error(`This session is not on Agent Hub: ${offBus}.`);
       return { content: [{ type: "text", text: await runTaskTool(connection, params as unknown as TaskToolParams) }], details: {} };
     },
   });

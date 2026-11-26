@@ -174,12 +174,12 @@ export default function messageBus(pi: MessageBusApi): void {
       onJoined: (id) => {
         if (announced) return;
         announced = true;
-        ctx.ui?.notify(`message-bus: on the bus as @${id}`, "info");
+        ctx.ui?.notify(`message-bus: on the Hub as @${id}`, "info");
       },
       onLog: log,
       onPending: (code) => {
         waitingForApproval = true;
-        ctx.ui?.notify(`message-bus: waiting for a person to allow this machine (code ${code}, on the bus website)`, "warning");
+        ctx.ui?.notify(`message-bus: waiting for a person to allow this machine (code ${code}, on the Hub website)`, "warning");
       },
     });
     connection = conn;
@@ -189,7 +189,7 @@ export default function messageBus(pi: MessageBusApi): void {
     ctx.setTimeout?.(() => {
       if (connection !== conn || conn.connected || waitingForApproval) return;
       ctx.ui?.notify(
-        `message-bus: cannot reach the bus at ${url} (still retrying). Check AGENT_BUS_URL and the network.`,
+        `message-bus: cannot reach the Hub at ${url} (still retrying). Check AGENT_BUS_URL and the network.`,
         "warning"
       );
     }, JOIN_NOTICE_MS);
@@ -242,7 +242,7 @@ export default function messageBus(pi: MessageBusApi): void {
 
   pi.registerTool({
     name: TOOL_NAME,
-    label: "Message bus",
+    label: "Agent Hub",
     description: toolDescription({
       arrives: "after your current tool call finishes, and they end a running `wait`",
       notJoining: "sessions started in the temp directory do not join",
@@ -250,7 +250,7 @@ export default function messageBus(pi: MessageBusApi): void {
     parameters: zodParameters(pi.zod),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (!tool) {
-        throw new Error("This session is not on the message bus: subagents and sessions started in the temp directory do not join.");
+        throw new Error("This session is not on Agent Hub: subagents and sessions started in the temp directory do not join.");
       }
       return { content: [{ type: "text", text: await tool.run(params, ctx.cwd) }] };
     },
@@ -274,7 +274,7 @@ export default function messageBus(pi: MessageBusApi): void {
       eta: pi.zod.string().optional(),
     }),
     async execute(_toolCallId, params) {
-      if (!connection) throw new Error("This session is not on the message bus.");
+      if (!connection) throw new Error("This session is not on Agent Hub.");
       return { content: [{ type: "text", text: await runTaskTool(connection, params as unknown as TaskToolParams) }] };
     },
   });

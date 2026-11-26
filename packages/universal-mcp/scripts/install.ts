@@ -314,7 +314,7 @@ export async function installUniversal(name: UniversalAdapterName, opts: Install
   if (definition.kind === "grok") {
     console.log("Grok wakes for Agent Hub messages only in leader mode: set `[cli] use_leader = true` in its config.toml or start it with `grok --leader`.");
   }
-  console.log(`Installed ${definition.title} Agent Hub adapter in ${target} (bus ${url}).`);
+  console.log(`Installed ${definition.title} Agent Hub adapter in ${target} (Hub ${url}).`);
 }
 
 export async function uninstallUniversal(name: UniversalAdapterName, opts: InstallOptions): Promise<void> {

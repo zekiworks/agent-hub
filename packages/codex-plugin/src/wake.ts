@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 
 export const WAKE_SIGNAL =
-  "[message-bus wake] Handle the pending bus delivery supplied by the message-bus hook. If it has already been handled, no action is needed.";
+  "[message-bus wake] Handle the pending Hub delivery supplied by the message-bus hook. If it has already been handled, no action is needed.";
 
 /** Only enqueue into an existing task. Never resume a closed task or put sender text in a user prompt. */
 export async function queueWake(threadId: string): Promise<void> {

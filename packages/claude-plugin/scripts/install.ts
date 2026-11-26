@@ -48,7 +48,7 @@ export async function install(opts: InstallOptions): Promise<void> {
     ["src/hook.ts", "hook"],
   ]);
   const description =
-    "Puts Claude Code sessions on the LAN message bus: messages from other agents and humans arrive in the session, and the message-bus tool answers them.";
+    "Puts Claude Code sessions on the LAN's Agent Hub: messages from other agents and humans arrive in the session, and the message-bus tool answers them.";
   writeJson(manifestOf(target), {
     name: MARKETPLACE,
     owner: { name: "message-bus" },
@@ -58,7 +58,7 @@ export async function install(opts: InstallOptions): Promise<void> {
     name: PLUGIN,
     version,
     description,
-    channels: [{ server: PLUGIN, displayName: "Message bus" }],
+    channels: [{ server: PLUGIN, displayName: "Agent Hub" }],
   });
   writeJson(path.join(pluginDir, "config.json"), { busUrl });
   writeJson(path.join(pluginDir, ".mcp.json"), {
@@ -75,10 +75,10 @@ export async function install(opts: InstallOptions): Promise<void> {
       Stop: [{ hooks: hook("Stop") }],
     },
   });
-  writeMetadata(target, "claude", "local Claude Code plugin marketplace holding the message-bus plugin (sessions join the LAN message bus).");
+  writeMetadata(target, "claude", "local Claude Code plugin marketplace holding the message-bus plugin (sessions join the LAN's Agent Hub).");
 
   if (opts.buildOnly) {
-    console.log(`Built ${pluginDir} (bus ${busUrl}, runtime ${node}); not installed.`);
+    console.log(`Built ${pluginDir} (Hub ${busUrl}, runtime ${node}); not installed.`);
     return;
   }
   const known = claude.run("plugin", "marketplace", "list");
@@ -87,8 +87,8 @@ export async function install(opts: InstallOptions): Promise<void> {
   // Reinstall so the installed copy is this build.
   claude.run("plugin", "uninstall", `${PLUGIN}@${MARKETPLACE}`, "--keep-data");
   claude.must("plugin", "install", `${PLUGIN}@${MARKETPLACE}`, "--scope", "user");
-  console.log(`Installed ${PLUGIN}@${MARKETPLACE} from ${target} (bus ${busUrl}, runtime ${node}).`);
-  console.log("New Claude Code sessions join the bus. To let bus messages start turns, start Claude Code with:");
+  console.log(`Installed ${PLUGIN}@${MARKETPLACE} from ${target} (Hub ${busUrl}, runtime ${node}).`);
+  console.log("New Claude Code sessions join the Hub. To let Hub messages start turns, start Claude Code with:");
   console.log(`  claude --dangerously-load-development-channels plugin:${PLUGIN}@${MARKETPLACE}`);
 }
 

@@ -17,14 +17,14 @@ const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir
        agent-bus reset-agent AGENT [--data-dir DIR]
        agent-bus rename-agent AGENT NEW-ID [--path FOLDER] [--data-dir DIR]
        agent-bus run [--bus URL] RESERVATION[,RESERVATION…] -- COMMAND [ARGS…]
-       agent-bus install HARNESS [--url http://BUS:7800] [--dir DIR] [--build-only] [--force]
+       agent-bus install HARNESS [--url http://HUB:7800] [--dir DIR] [--build-only] [--force]
        agent-bus uninstall HARNESS [--dir DIR]
-       agent-bus doctor [--url http://BUS:7800]
-       agent-bus up [--url http://BUS:7800] [--session 0] [--since-days 7] [--dry-run]
+       agent-bus doctor [--url http://HUB:7800]
+       agent-bus up [--url http://HUB:7800] [--session 0] [--since-days 7] [--dry-run]
        agent-bus train-suggestions [--data-dir DIR] [--people carol,uma] [--gpu N | --cpu] [--test-days 4] [--model-out FILE]
                                [--llama-cpp DIR] [--python FILE] [--max-gib N] [--install-weekly] [--smoke]
 
-install / uninstall: put this machine's HARNESS on the bus, or take it off. HARNESS is one of
+install / uninstall: put this machine's HARNESS on the Hub, or take it off. HARNESS is one of
   omp, pi           an extension file in ~/.omp/agent/extensions or ~/.pi/agent/extensions that loads this checkout
   claude            a plugin in a local marketplace (~/.agent-bus/claude-marketplace), installed with the claude CLI
   codex             a plugin in a local marketplace (~/.agent-bus/codex-marketplace), registered with the codex CLI
@@ -37,12 +37,12 @@ install / uninstall: put this machine's HARNESS on the bus, or take it off. HARN
   Installing again updates. --force replaces a file at the install path that agent-bus did not write (moved aside).
   codex only: --bind-current-transcript FILE (run inside a pre-1.5 chat to seed its reopen binding).
 
-up: after a reboot, asks the bus which agents ran on this machine (omp and pi, seen within --since-days) and opens a
+up: after a reboot, asks the Hub which agents ran on this machine (omp and pi, seen within --since-days) and opens a
   tmux window for each in its folder that resumes its last session (omp -c, pi -c), in session --session (created if
   missing). Agents that already have a window in their folder are left alone, so running it again adds only what is
   missing. --dry-run lists what it would do.
 
-doctor: what is installed here, which bus each install joins, whether it is reachable, which agents of this machine
+doctor: what is installed here, which Hub each install joins, whether it is reachable, which agents of this machine
   are on it, and the agent token.
 
 train-suggestions: fine-tunes the typing-suggestion model (LFM3 1.7B) on this hub's own messages, on this machine;
@@ -85,20 +85,20 @@ serve:
   Everyone reading or writing is identified: people sign in with a passkey, agents send their machine account's
   agent token, which a person allows once (website, or agent-bus approve).
 
-invite: a one-time link (10 min) for HUMAN to create a passkey; needs the bus's database, so only the bus's host can.
+invite: a one-time link (10 min) for HUMAN to create a passkey; needs the Hub's database, so only the Hub's host can.
   --url is where the person opens the website: default http://localhost:7800 (a plain install on this machine; passkeys
-  work on localhost); a bus served over https on a host name gives that, e.g. --url https://HOST:7843.
+  work on localhost); a Hub served over https on a host name gives that, e.g. --url https://HOST:7843.
 
 agents: the machine accounts' agent tokens, waiting or decided, with the agents that joined with them.
 approve / deny: decide a waiting token by the code its agents show (or a token id from agents); deny also revokes
-  an approved one. Both need the bus's database, as does reset-agent.
+  an approved one. Both need the Hub's database, as does reset-agent.
 
 reset-agent: unbind AGENT from its agent token (lost token file, agent moved to another machine); the next
-  join claims it again. Needs the bus's database.
+  join claims it again. Needs the Hub's database.
 
-rename-agent: give AGENT the id NEW-ID everywhere the bus keeps it (messages, conversations, its project @@AGENT,
+rename-agent: give AGENT the id NEW-ID everywhere the Hub keeps it (messages, conversations, its project @@AGENT,
   checklists, bookings); @AGENT stays an alias that still reaches it. --path also moves where it lives, so the harness
-  started in FOLDER joins as NEW-ID with its history (the old folder's session is then refused). Stop the bus first.
+  started in FOLDER joins as NEW-ID with its history (the old folder's session is then refused). Stop the Hub first.
 
 run: start COMMAND on the GPUs of active reservations only (CUDA_VISIBLE_DEVICES), marked as theirs.
   --bus defaults to $AGENT_BUS_URL or http://127.0.0.1:${DEFAULT_BUS_PORT}.`;
@@ -384,7 +384,7 @@ export async function runCli(argv: string[]): Promise<number> {
 /** The bus's database (`--data-dir`, $AGENT_BUS_DATA_DIR, ~/.agent-bus), for the commands that only the host can run. */
 function openBusDatabase(dataDir: string): Database {
   const dbPath = path.join(dataDir, "message-bus.sqlite");
-  if (!existsSync(dbPath)) throw new Error(`No bus database at ${dbPath}`);
+  if (!existsSync(dbPath)) throw new Error(`No Hub database at ${dbPath}`);
   const db = new Database(dbPath, { strict: true });
   db.exec("PRAGMA busy_timeout = 5000;");
   return db;
@@ -415,7 +415,7 @@ function runTokens(command: "agents" | "approve" | "deny", args: string[]): numb
     const hash = tokens.resolve(ref);
     if (!hash) throw new Error(`No agent token ${ref} (agent-bus agents lists them)`);
     tokens.decide(hash, command === "approve" ? "approved" : "denied", `${os.userInfo().username} on the host`);
-    console.log(`${command === "approve" ? "Allowed" : "Denied"} ${ref}; the bus applies it within a few seconds.`);
+    console.log(`${command === "approve" ? "Allowed" : "Denied"} ${ref}; the Hub applies it within a few seconds.`);
     return 0;
   } finally {
     db.close();
@@ -444,7 +444,7 @@ function runRenameAgent(args: string[]): number {
       `@${oldId} is now @${newId}: ${r.messages} messages, ${r.conversations} conversations${r.project ? `, project @@${r.project}` : ""}${folder ? `, lives in ${folder}` : ""}. @${oldId} stays an alias.`
     );
     if (r.siblings.length > 0) console.log(`Not renamed (other harnesses of its folder): ${r.siblings.map((id) => `@${id}`).join(", ")}`);
-    console.log("Start the bus again, then the agent's harness" + (folder ? ` in ${folder}.` : "."));
+    console.log("Start the Hub again, then the agent's harness" + (folder ? ` in ${folder}.` : "."));
   } finally {
     db.close();
   }

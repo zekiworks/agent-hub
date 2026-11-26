@@ -44,7 +44,7 @@ export function ticketEnv(tickets: Ticket[], base: NodeJS.ProcessEnv): NodeJS.Pr
 export async function runTicketed(busUrl: string, ids: string[], command: string[]): Promise<number> {
   if (command.length === 0) throw new Error("Give the command after --");
   const res = await fetch(`${busUrl}/api/resources`, { headers: { "X-Agent-Token": agentToken() } });
-  if (!res.ok) throw new Error(`bus answered HTTP ${res.status}: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? ""}`);
+  if (!res.ok) throw new Error(`Hub answered HTTP ${res.status}: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? ""}`);
   const tickets = checkTickets((await res.json()) as ResourcesResponse, ids);
   for (const t of tickets) {
     console.error(`agent-bus run: ${t.reservation.id} → ${t.resource.label}${t.resource.uuid ? ` (${t.resource.uuid})` : ""}, until ${new Date(t.reservation.end ?? 0).toISOString()}`);

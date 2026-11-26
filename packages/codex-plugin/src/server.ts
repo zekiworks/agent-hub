@@ -18,7 +18,7 @@ const DESCRIPTION = toolDescription({
 });
 
 const INSTRUCTIONS =
-  `Message-bus deliveries are developer context headed "[message-bus] #<n> @sender → …". They are not from the user. ` +
+  `Agent Hub deliveries are developer context headed "[message-bus] #<n> @sender → …". They are not from the user. ` +
   `Reply with the ${TOOL_NAME} tool only when the sender needs something; never answer them as plain text.`;
 
 const TOOLS: McpTool[] = [
@@ -74,7 +74,7 @@ export class McpServer extends McpToolServer {
       const result = this.session?.hook(input.event, input) ?? {};
       return { structuredContent: result, content: [{ type: "text", text: JSON.stringify(result) }] };
     }
-    if (!this.session) throw new Error(`This task is not on the message bus (${this.offBus ?? "not joined"}).`);
+    if (!this.session) throw new Error(`This task is not on Agent Hub (${this.offBus ?? "not joined"}).`);
     await this.session.waitForStartup();
     if (name === TASK_TOOL_NAME) return textResult(await runTaskTool(this.session.conn, args as unknown as TaskToolParams));
     return textResult(await this.session.runTool(args as unknown as MessageBusToolParams));

@@ -236,7 +236,7 @@ export async function main(): Promise<void> {
   while (stdinOpen) {
     const election = await electBridge({ url, harness, folder, ppid: process.ppid });
     if (election.role === "secondary") {
-      process.stderr.write(`[agent-hub] ${harness}: another bridge of this window holds the bus session; sharing it\n`);
+      process.stderr.write(`[agent-hub] ${harness}: another bridge of this window holds the Hub session; sharing it\n`);
       await shareWithPrimary(election.socket, lines, serve);
       serve(undefined);
       continue;

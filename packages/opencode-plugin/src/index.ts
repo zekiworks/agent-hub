@@ -75,7 +75,7 @@ const plugin: Plugin = {
           harness: "opencode",
           path: directory,
           async onDeliver(delivery) {
-            if (closed || bindings.get(sessionID)?.connection !== connection) throw new Error("session left the bus");
+            if (closed || bindings.get(sessionID)?.connection !== connection) throw new Error("session left the Hub");
             const text = await deliveryText(connection, delivery);
             unseen.add(delivery.message.seq);
             await synthetic(text, delivery.wake);
@@ -85,7 +85,7 @@ const plugin: Plugin = {
             if (text) void synthetic(text, false).catch((error) => log(`receipt: ${error}`));
           },
           onWatch: (on) => activity.setWatching(on),
-          onJoined: (id) => log(`OpenCode ${sessionID}: on the bus as @${id}`),
+          onJoined: (id) => log(`OpenCode ${sessionID}: on the Hub as @${id}`),
           onLog: log,
         });
         const tool = new BusTool(connection);
@@ -123,7 +123,7 @@ const plugin: Plugin = {
         options: { codemode: true },
         async execute(input, context) {
           const binding = await join(context.sessionID);
-          if (!binding) throw new Error("This session is not on the message bus: subagents and sessions in the temp directory do not join.");
+          if (!binding) throw new Error("This session is not on Agent Hub: subagents and sessions in the temp directory do not join.");
           return { content: await binding.tool.run(input as MessageBusToolParams, binding.directory) };
         },
       });
@@ -136,7 +136,7 @@ const plugin: Plugin = {
         options: { codemode: true },
         async execute(input, context) {
           const binding = await join(context.sessionID);
-          if (!binding) throw new Error("This session is not on the message bus: subagents and sessions in the temp directory do not join.");
+          if (!binding) throw new Error("This session is not on Agent Hub: subagents and sessions in the temp directory do not join.");
           return { content: await runTaskTool(binding.connection, input as TaskToolParams) };
         },
       });

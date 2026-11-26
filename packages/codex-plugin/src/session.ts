@@ -68,7 +68,7 @@ export class CodexSession {
       onReceipt: (receipt) => this.receipt(receipt),
       onWatch: (on) => this.live.watch(on),
       onJoined: (id) => {
-        this.log(`on the bus as @${id} (${folder})`);
+        this.log(`on the Hub as @${id} (${folder})`);
         if (!this.restoring) {
           this.restoring = true;
           void this.restoreHeld(id)
@@ -124,7 +124,7 @@ export class CodexSession {
   }
 
   runTool(params: MessageBusToolParams): Promise<string> {
-    if (!this.conn.id) throw new Error("Not connected to the message bus yet (still trying).");
+    if (!this.conn.id) throw new Error("Not connected to Agent Hub yet (still trying).");
     return this.tool.run(params, this.folder);
   }
 

@@ -31,8 +31,8 @@ export async function install(opts: InstallOptions): Promise<void> {
   writeJson(path.join(target, "config.json"), { busUrl });
   await Bun.write(path.join(target, "extension.mjs"),
     '// agent-bus install copilot: the message-bus Copilot extension.\nimport "./dist/extension.mjs";\n');
-  writeMetadata(target, "copilot", "Copilot CLI extension: Copilot CLI and Copilot app sessions join the LAN message bus.");
-  console.log(`Built ${target} (bus ${busUrl}).`);
+  writeMetadata(target, "copilot", "Copilot CLI extension: Copilot CLI and Copilot app sessions join the LAN's Agent Hub.");
+  console.log(`Built ${target} (Hub ${busUrl}).`);
   if (target === path.resolve(defaultDir())) {
     console.log("Copilot loads it for new sessions; restart the Copilot app (or /clear a CLI session) to load it now.");
   } else {

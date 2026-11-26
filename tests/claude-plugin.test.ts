@@ -86,7 +86,7 @@ async function startSession(name = "alpha", channelWorks = true): Promise<Claude
       if (channelWorks) channelArrived(content);
     },
     log: (line) => {
-      if (line.startsWith(`on the bus as @${name} `)) joined.resolve();
+      if (line.startsWith(`on the Hub as @${name} `)) joined.resolve();
     },
   });
   session.hook("SessionStart", input({ source: "startup" }));
@@ -300,7 +300,7 @@ test("the MCP server declares the channel, lists the tool and sends channel even
   expect(tools.map((t) => t.name)).toEqual(["message-bus"]);
   const call = out.find((m) => m.id === 3)?.result as { isError: boolean; content: Array<{ text: string }> };
   expect(call.isError).toBe(true);
-  expect(call.content[0]?.text).toContain("not on the message bus (started in the temp directory)");
+  expect(call.content[0]?.text).toContain("not on Agent Hub (started in the temp directory)");
 });
 
 test("the tool acts as the session's folder agent", async () => {

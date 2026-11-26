@@ -146,7 +146,7 @@ export class BusConnection {
       // the error frame said why.
       if (event.code === 4401 || event.code === 4403) {
         this.closed = true;
-        this.log(event.code === 4401 ? "not on the bus: this agent id belongs to another agent token" : "not on the bus: this machine's agent token was refused");
+        this.log(event.code === 4401 ? "not on the Hub: this agent id belongs to another agent token" : "not on the Hub: this machine's agent token was refused");
         return;
       }
       this.scheduleReconnect();
@@ -211,7 +211,7 @@ export class BusConnection {
         return;
       case "pending":
         this.log(
-          `waiting for a person to allow this machine on the bus: code ${frame.code} (on the bus website, or \`agent-bus approve ${frame.code}\` on the bus's host)`
+          `waiting for a person to allow this machine on the Hub: code ${frame.code} (on the Hub website, or \`agent-bus approve ${frame.code}\` on the Hub's host)`
         );
         this.options.onPending?.(frame.code);
         return;
@@ -251,7 +251,7 @@ export class BusConnection {
 
   private requireId(): string {
     if (!this.connected || !this.id) {
-      throw new Error(`Not connected to the message bus at ${this.baseUrl} (it may be down; retrying in the background).`);
+      throw new Error(`Not connected to Agent Hub at ${this.baseUrl} (it may be down; retrying in the background).`);
     }
     return this.id;
   }

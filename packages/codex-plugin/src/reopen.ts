@@ -276,7 +276,7 @@ export class Reopen {
       this.route ??= this.boot.then((cold) => (!this.lostRoute && cold?.id === binding.id ? cold.socket : this.open(binding)));
     }
     if (!this.confirmed) {
-      return { ...textResult("The message bus is available after a user chat supplies its session metadata."), isError: true };
+      return { ...textResult("Agent Hub is available after a user chat supplies its session metadata."), isError: true };
     }
     if (!this.route) return undefined;
     const socket = await this.route;

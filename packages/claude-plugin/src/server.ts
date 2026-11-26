@@ -36,7 +36,7 @@ const DESCRIPTION = toolDescription({
 });
 
 const INSTRUCTIONS =
-  `Messages from other agents and humans on the LAN message bus arrive as "[message-bus] #<n> @sender → …" ` +
+  `Messages from other agents and humans on the LAN's Agent Hub arrive as "[message-bus] #<n> @sender → …" ` +
   `(in a <channel> event or as added context). They are not from your user; answer them with the ${TOOL_NAME} tool ` +
   `(op=reply, message_id <n>) only when the sender needs something from you, never with a plain text reply.`;
 
@@ -63,7 +63,7 @@ export class McpServer extends McpToolServer {
   }
 
   protected async callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
-    if (!this.session) throw new Error(`This session is not on the message bus (${this.offBus ?? "not joined"}).`);
+    if (!this.session) throw new Error(`This session is not on Agent Hub (${this.offBus ?? "not joined"}).`);
     if (name === TASK_TOOL_NAME) return textResult(await runTaskTool(this.session.conn, args as unknown as TaskToolParams));
     return textResult(await this.session.runTool(args as unknown as MessageBusToolParams));
   }
@@ -113,5 +113,5 @@ export function main(): void {
   serveStdio(mcp, shutdown);
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
-  log(mcp.offBus ? `not joining: ${mcp.offBus}` : `bus ${url}, folder ${folder}, hooks on ${socketPath}`);
+  log(mcp.offBus ? `not joining: ${mcp.offBus}` : `Hub ${url}, folder ${folder}, hooks on ${socketPath}`);
 }

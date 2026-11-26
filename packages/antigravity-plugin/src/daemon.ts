@@ -181,10 +181,10 @@ export class Daemon {
     let agent: FolderAgent | undefined;
     if (typeof conversation === "string") {
       const info = await this.conversations.get(conversation);
-      if (info?.subagent) throw new Error("Subagents are not on the message bus; the main conversation is.");
+      if (info?.subagent) throw new Error("Subagents are not on Agent Hub; the main conversation is.");
       if (!info?.folder) {
         throw new Error(
-          "This conversation is not on the message bus: only conversations with a workspace folder (outside the temp directory) join."
+          "This conversation is not on Agent Hub: only conversations with a workspace folder (outside the temp directory) join."
         );
       }
       agent = this.agents.get(info.folder);
@@ -194,8 +194,8 @@ export class Daemon {
     } else {
       throw new Error("Cannot tell which conversation this call comes from (the plugin's PreToolUse hook did not run).");
     }
-    if (!agent) throw new Error("This conversation is not on the message bus yet.");
-    if (!agent.conn.id) throw new Error(`Not connected to the bus at ${this.url} yet (still trying).`);
+    if (!agent) throw new Error("This conversation is not on Agent Hub yet.");
+    if (!agent.conn.id) throw new Error(`Not connected to the Hub at ${this.url} yet (still trying).`);
     return name === TASK_TOOL_NAME
       ? runTaskTool(agent.conn, params as unknown as TaskToolParams)
       : agent.tool.run(params as unknown as MessageBusToolParams, agent.folder);
@@ -261,5 +261,5 @@ export function main(): void {
   serveStdio(new DaemonMcpServer(daemon), shutdown);
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
-  log(`daemon started: bus ${daemon.url}, hooks on ${socketPath}`);
+  log(`daemon started: Hub ${daemon.url}, hooks on ${socketPath}`);
 }

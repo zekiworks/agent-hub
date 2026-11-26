@@ -59,7 +59,7 @@ export class FolderAgent {
       onDeliver: (delivery) => this.deliver(delivery),
       onReceipt: (receipt) => this.receipt(receipt),
       onWatch: (on) => this.watch(on),
-      onJoined: (id) => this.log(`on the bus as @${id} (${this.folder})`),
+      onJoined: (id) => this.log(`on the Hub as @${id} (${this.folder})`),
       onLog: (line) => this.log(line),
     });
     this.tool = new BusTool(this.conn);

@@ -108,7 +108,7 @@ export class ClaudeSession {
       onDeliver: (delivery) => this.deliver(delivery),
       onReceipt: (receipt) => this.receipt(receipt),
       onWatch: (on) => this.activityLog.setWatching(on),
-      onJoined: (id) => this.log(`on the bus as @${id} (${this.folder})`),
+      onJoined: (id) => this.log(`on the Hub as @${id} (${this.folder})`),
       onLog: (line) => this.log(line),
     });
     this.tool = new BusTool(this.conn);
@@ -129,7 +129,7 @@ export class ClaudeSession {
   }
 
   runTool(params: MessageBusToolParams): Promise<string> {
-    if (!this.conn.id) throw new Error("Not connected to the message bus yet (still trying).");
+    if (!this.conn.id) throw new Error("Not connected to Agent Hub yet (still trying).");
     return this.tool.run(params, this.folder);
   }
 
@@ -172,7 +172,7 @@ export class ClaudeSession {
       this.channelWorks = false;
       this.log(
         `channel events (${seqs}) did not reach this session ${this.channelDrops} times in a row; is Claude Code started with ` +
-          "--dangerously-load-development-channels plugin:message-bus@agent-bus? Bus messages now wait for the next prompt"
+          "--dangerously-load-development-channels plugin:message-bus@agent-bus? Hub messages now wait for the next prompt"
       );
     } else {
       this.log(`channel event(s) ${seqs} not in the transcript after ${CHANNEL_CHECK_MS} ms; trying again`);

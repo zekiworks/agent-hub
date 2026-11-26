@@ -63,7 +63,7 @@ function loaderHarness(name: "omp" | "pi", title: string, defaultDir: string): H
       const previous = existsSync(file) ? loaderUrl(readFileSync(file, "utf8")) : undefined;
       const url = (opts.url ?? previous ?? process.env.AGENT_BUS_URL ?? DEFAULT_INSTALL_URL).replace(/\/+$/, "");
       const source = [
-        `// ${OWNED_MARK} ${name}: every interactive ${name} session joins the message bus as its project folder and gets`,
+        `// ${OWNED_MARK} ${name}: every interactive ${name} session joins Agent Hub as its project folder and gets`,
         `// the message-bus tool. It loads ${entry} (this checkout), so sessions pick up changes at their next start.`,
         `// Remove with: agent-bus uninstall ${name}`,
         `import { existsSync } from "node:fs";`,
@@ -77,7 +77,7 @@ function loaderHarness(name: "omp" | "pi", title: string, defaultDir: string): H
         ``,
         `export default async function agentBus(api: Api): Promise<void> {`,
         `  if (!existsSync(entry)) {`,
-        `    api.on("session_start", (_event, ctx) => ctx.ui?.notify(\`message-bus: not on the bus, \${entry} not found\`, "warning"));`,
+        `    api.on("session_start", (_event, ctx) => ctx.ui?.notify(\`message-bus: not on the Hub, \${entry} not found\`, "warning"));`,
         `    return;`,
         `  }`,
         `  const mod = (await import(entry)) as { default: (api: unknown) => void | Promise<void> };`,
@@ -86,7 +86,7 @@ function loaderHarness(name: "omp" | "pi", title: string, defaultDir: string): H
         ``,
       ].join("\n");
       writeOwnedFile(file, source, opts.force);
-      console.log(`Installed ${file} (bus ${url}); new ${name} sessions join the bus.`);
+      console.log(`Installed ${file} (Hub ${url}); new ${name} sessions join the Hub.`);
     },
     async uninstall(opts) {
       const file = fileOf(opts);
@@ -96,7 +96,7 @@ function loaderHarness(name: "omp" | "pi", title: string, defaultDir: string): H
       }
       if (!isOwnedFile(file)) throw new Error(`${file} was not written by agent-bus; not touching it.`);
       rmSync(file);
-      console.log(`Removed ${file}; new ${name} sessions no longer join the bus.`);
+      console.log(`Removed ${file}; new ${name} sessions no longer join the Hub.`);
     },
     status(opts) {
       const file = fileOf(opts);

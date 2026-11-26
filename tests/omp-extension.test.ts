@@ -278,7 +278,7 @@ test("subagent sessions do not join and cannot use the tool", async () => {
   sub.start();
   await startSession("alpha"); // a later participants frame proves gamma never joined
   expect(participants.some((p) => p.id === "gamma")).toBe(false);
-  await expect(sub.run({ op: "write", to: "@alpha", message: "x" })).rejects.toThrow(/not on the message bus/);
+  await expect(sub.run({ op: "write", to: "@alpha", message: "x" })).rejects.toThrow(/not on Agent Hub/);
 });
 
 test("write to an offline agent is held for it; the result says so", async () => {
@@ -331,7 +331,7 @@ test("sessions started in the temp directory do not join unless AGENT_BUS_JOIN_F
   const scratch = new FakeOmp(path.join(dataDir, "projects", "scratch"));
   sessions.push(scratch);
   scratch.start();
-  await expect(scratch.run({ op: "write", to: "@carol", message: "x" })).rejects.toThrow(/not on the message bus/);
+  await expect(scratch.run({ op: "write", to: "@carol", message: "x" })).rejects.toThrow(/not on Agent Hub/);
   process.env.AGENT_BUS_JOIN_FROM_TMP = "1";
   await startSession("alpha"); // a later participants frame proves scratch never joined
   expect(participants.some((p) => p.id === "scratch")).toBe(false);

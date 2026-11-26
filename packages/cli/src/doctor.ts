@@ -60,15 +60,15 @@ export async function runDoctor(urlOverride?: string): Promise<number> {
   }
 
   let failed = false;
-  if (urls.size === 0) lines.push(info("No bus URL known: install a harness with --url, or pass --url."));
+  if (urls.size === 0) lines.push(info("No Hub URL known: install a harness with --url, or pass --url."));
   for (const url of urls) {
     const result = await reach(url);
     if ("error" in result) {
       failed = true;
-      lines.push(bad(result.status === 401 ? `bus ${url}: this machine is not allowed on it yet (${result.error})` : `bus ${url}: unreachable (${result.error})`));
+      lines.push(bad(result.status === 401 ? `Hub ${url}: this machine is not allowed on it yet (${result.error})` : `Hub ${url}: unreachable (${result.error})`));
       continue;
     }
-    lines.push(ok(`bus ${url}: reachable (${result.ms} ms)`));
+    lines.push(ok(`Hub ${url}: reachable (${result.ms} ms)`));
     const mine = result.participants.filter((p) => p.kind === "agent" && p.host === os.hostname());
     if (mine.length === 0) lines.push(info(`no agents from ${os.hostname()} have joined it yet`));
     for (const p of mine) {

@@ -37,8 +37,8 @@ export async function install(opts: InstallOptions): Promise<void> {
     "};",
     "",
   ].join("\n"));
-  writeMetadata(target, "opencode", "OpenCode V2 server plugin: main sessions join the LAN message bus.");
-  console.log(`Built ${target} (bus ${busUrl}).`);
+  writeMetadata(target, "opencode", "OpenCode V2 server plugin: main sessions join the LAN's Agent Hub.");
+  console.log(`Built ${target} (Hub ${busUrl}).`);
   if (target === path.resolve(defaultDir())) {
     console.log("OpenCode V2 discovers this global plugin automatically; config directory changes reload it.");
   } else {

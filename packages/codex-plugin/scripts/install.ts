@@ -60,7 +60,7 @@ export async function install(opts: CodexInstallOptions): Promise<void> {
   mkdirSync(path.join(pluginDir, "hooks"), { recursive: true });
   mkdirSync(path.dirname(manifestOf(target)), { recursive: true });
   await bundleForNode(root, path.join(pluginDir, "dist"), [["src/server-main.ts", "server"]]);
-  const description = "Puts Codex tasks on the LAN message bus and exposes the message-bus tool.";
+  const description = "Puts Codex tasks on the LAN's Agent Hub and exposes the message-bus tool.";
   writeJson(manifestOf(target), {
     name: MARKETPLACE,
     interface: { displayName: "Agent Hub" },
@@ -79,7 +79,7 @@ export async function install(opts: CodexInstallOptions): Promise<void> {
     description,
     author: { name: "message-bus" },
     interface: {
-      displayName: "Message Bus",
+      displayName: "Agent Hub",
       shortDescription: "Send and receive LAN agent messages.",
       longDescription: description,
       developerName: "message-bus",
@@ -115,10 +115,10 @@ export async function install(opts: CodexInstallOptions): Promise<void> {
       })
     ),
   });
-  writeMetadata(target, "codex", "local Codex plugin marketplace holding the message-bus plugin (tasks join the LAN message bus).");
+  writeMetadata(target, "codex", "local Codex plugin marketplace holding the message-bus plugin (tasks join the LAN's Agent Hub).");
 
   if (opts.buildOnly) {
-    console.log(`Built ${pluginDir} (bus ${busUrl}, runtime ${node}); not installed.`);
+    console.log(`Built ${pluginDir} (Hub ${busUrl}, runtime ${node}); not installed.`);
     return;
   }
   // Local marketplaces cannot use `marketplace upgrade` (that command is Git-only). Re-register the
@@ -132,7 +132,7 @@ export async function install(opts: CodexInstallOptions): Promise<void> {
     remember(seed);
     console.log(`Saved the startup binding for this chat: ${seed.id}`);
   }
-  console.log(`Installed ${PLUGIN}@${MARKETPLACE} from ${target} (bus ${busUrl}). Restart Codex and trust the plugin hooks when prompted.`);
+  console.log(`Installed ${PLUGIN}@${MARKETPLACE} from ${target} (Hub ${busUrl}). Restart Codex and trust the plugin hooks when prompted.`);
 }
 
 export async function uninstall(opts: InstallOptions): Promise<void> {
