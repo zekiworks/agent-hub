@@ -210,12 +210,17 @@ function stripGrokBlock(text: string): string {
   });
 }
 
-/** Throws, so nothing is written, unless `text` is valid TOML: Agent Hub never leaves a config.toml Grok cannot read. */
-function checkToml(text: string, problem: string): void {
+const BY_HAND = "If Grok reads it fine, add the [mcp_servers.agent-hub] block by hand (see docs/harnesses/universal-mcp.md).";
+
+/**
+ * Throws, so nothing is written, unless Bun parses `text` as TOML: Agent Hub never leaves a config.toml it cannot
+ * read. Bun's parser may reject a file Grok reads, so the message says so instead of calling the file invalid.
+ */
+function checkToml(text: string, subject: string, hint: string): void {
   try {
     Bun.TOML.parse(text);
   } catch (error) {
-    throw new Error(`${problem} (${error instanceof Error ? error.message : String(error)}); nothing was changed`);
+    throw new Error(`Bun could not parse ${subject} (${error instanceof Error ? error.message : String(error)}); nothing was changed. ${hint}`);
   }
 }
 
@@ -373,7 +378,7 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
   if (/^\s*\[mcp_servers\.(?:agent-hub|"agent-hub")\]/m.test(base)) {
     throw new Error(`${file} already has an agent-hub MCP server not written by Agent Hub; not replacing it`);
   }
-  checkToml(base, `${file} is not valid TOML; fix it, then install again`);
+  checkToml(base, file, BY_HAND);
   const untouched = previous !== undefined && before === previous.installed;
   const ours = base.split("\n").some((line) => LEADER_LINE.test(line));
   const plan: GrokPlan = {
@@ -422,7 +427,7 @@ function grokInstalled(name: UniversalAdapterName, plan: GrokPlan, target: strin
   const args = argsFor(name, target, url).map((value) => JSON.stringify(value)).join(", ");
   const body = `${GROK_BEGIN}\n[mcp_servers.agent-hub]\ncommand = ${JSON.stringify(jsRuntime())}\nargs = [${args}]\n${GROK_END}\n`;
   const installed = `${base}${base && !base.endsWith("\n") ? "\n" : ""}${base ? "\n" : ""}${body}`;
-  checkToml(installed, `Adding Agent Hub to ${file} would make it invalid TOML`);
+  checkToml(installed, `${file} with Agent Hub's block added`, BY_HAND);
   return installed;
 }
 
@@ -452,7 +457,10 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
   } catch {
     valid = false; // Already unreadable: removing Agent Hub's lines cannot make it worse.
   }
-  if (valid) checkToml(cleaned, `Removing Agent Hub from ${file} would make it invalid TOML`);
+  if (valid) {
+    checkToml(cleaned, `${file} with Agent Hub's block removed`,
+      `If Grok reads it fine, delete the lines from "${GROK_BEGIN}" to "${GROK_END}" by hand.`);
+  }
   writeFileSync(file, cleaned === "\n" ? "" : cleaned);
 }
 

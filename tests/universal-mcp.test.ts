@@ -348,20 +348,22 @@ describe("universal MCP adapter configuration", () => {
     }
   }, 120_000);
 
-  test("Grok: a config.toml that is or would become invalid TOML is refused and left unchanged", async () => {
+  test("Grok: a config.toml Bun cannot parse, before or after the change, is refused and left unchanged", async () => {
     const cases: Array<[string, string]> = [
-      [`[models]\ndefault = "a"\ndefault = "b"\n`, "is not valid TOML; fix it, then install again"],
+      [`[models]\ndefault = "a"\ndefault = "b"\n`, " ("],
       // Another agent-hub server, as a key of [mcp_servers]: adding the block would define it twice.
-      [`[mcp_servers]\n"agent-hub" = { command = "mine" }\n`, "would make it invalid TOML"],
+      [`[mcp_servers]\n"agent-hub" = { command = "mine" }\n`, " with Agent Hub's block added ("],
     ];
-    for (const [before, message] of cases) {
+    for (const [before, subject] of cases) {
       const root = home();
       const config = join(root, ".grok", "config.toml");
       await Bun.write(config, before);
       const { code, output } = await run(root, [...INSTALL_GROK, "--leader"]);
       expect(code).not.toBe(0);
-      expect(output).toContain(message);
-      expect(output).toContain("nothing was changed");
+      expect(output).toContain(`Bun could not parse ${config}${subject}`);
+      expect(output).toContain(
+        "nothing was changed. If Grok reads it fine, add the [mcp_servers.agent-hub] block by hand (see docs/harnesses/universal-mcp.md).",
+      );
       expect(readFileSync(config, "utf8")).toBe(before);
       expect(existsSync(join(root, ".agent-bus", "adapters", "grok"))).toBe(false);
     }
