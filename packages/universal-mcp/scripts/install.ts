@@ -245,42 +245,81 @@ function withoutOurs(config: Toml): Toml {
   return copy;
 }
 
-/** A parsed TOML value written back as TOML; undefined for what this does not write (dates and times). */
-function tomlValue(value: unknown): string | undefined {
-  if (typeof value === "string") return JSON.stringify(value);
-  if (typeof value === "boolean") return String(value);
-  if (typeof value === "number") return Number.isNaN(value) ? "nan" : value === Infinity ? "inf" : value === -Infinity ? "-inf" : String(value);
-  if (Array.isArray(value)) {
-    const items = value.map(tomlValue);
-    return items.includes(undefined) ? undefined : `[${items.join(", ")}]`;
+/** The index just past the TOML string starting at `start` (basic, literal, or their multi-line forms); -1 if open. */
+function skipTomlString(line: string, start: number): number {
+  const quote = line[start]!;
+  const triple = quote.repeat(3);
+  if (line.startsWith(triple, start)) {
+    let end = line.indexOf(triple, start + 3);
+    if (quote === '"') while (end > 0 && line[end - 1] === "\\") end = line.indexOf(triple, end + 1);
+    if (end < 0) return -1;
+    end += 3;
+    for (let extra = 0; extra < 2 && line[end] === quote; extra++) end++; // it may end in up to two more quotes
+    return end;
   }
-  if (value && Object.getPrototypeOf(value) === Object.prototype) return inlineTable(value as Toml);
-  return undefined;
-}
-
-function inlineTable(table: Toml): string | undefined {
-  const entries = Object.entries(table).map(([key, value]) => {
-    const text = tomlValue(value);
-    return text === undefined ? undefined : `${/^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key)} = ${text}`;
-  });
-  if (entries.includes(undefined)) return undefined;
-  return entries.length > 0 ? `{ ${entries.join(", ")} }` : "{}";
+  for (let at = start + 1; at < line.length; at++) {
+    if (quote === '"' && line[at] === "\\") at++;
+    else if (line[at] === quote) return at + 1;
+  }
+  return -1;
 }
 
 /**
- * What to tell a person whose `cli` is an inline table (line `index` of `base`): the line to write, built from the
- * parsed table with `use_leader = true` and checked to parse to the same config with only that value changed; or,
- * when it cannot be built that way, the key to set.
+ * `line` (`cli = { … }`) with leader mode on, every other token kept verbatim: the `use_leader` value directly inside
+ * cli's braces becomes `true`, or `use_leader = true` goes first in them. Reads the inline table token by token, so
+ * strings and nested tables are left alone. Undefined when the line is not a one-line inline table this can read.
+ */
+function inlineLeaderLine(line: string): string | undefined {
+  const head = new RegExp(`^\\s*${tomlKey("cli")}\\s*=\\s*\\{`).exec(line);
+  if (!head) return undefined;
+  const open = head[0].length - 1;
+  const pairs: Array<[number, number]> = [];
+  let pairStart = open + 1;
+  let depth = 0;
+  let close = -1;
+  for (let at = open; at < line.length && close < 0; at++) {
+    const char = line[at]!;
+    if (char === '"' || char === "'") {
+      const end = skipTomlString(line, at);
+      if (end < 0) return undefined;
+      at = end - 1;
+    } else if (char === "#") return undefined;
+    else if (char === "{" || char === "[") depth++;
+    else if (char === "}" || char === "]") {
+      depth--;
+      if (depth === 0) {
+        pairs.push([pairStart, at]);
+        close = at;
+      }
+    } else if (char === "," && depth === 1) {
+      pairs.push([pairStart, at]);
+      pairStart = at + 1;
+    }
+  }
+  if (close < 0) return undefined;
+  const setting = new RegExp(`^(\\s*${tomlKey("use_leader")}\\s*=\\s*)(.*?)(\\s*)$`);
+  for (const [start, end] of pairs) {
+    const pair = setting.exec(line.slice(start, end));
+    if (pair) return `${line.slice(0, start)}${pair[1]}true${pair[3]}${line.slice(end)}`;
+  }
+  const inner = line.slice(open + 1, close);
+  if (inner.trim() === "") return `${line.slice(0, open)}{ use_leader = true }${line.slice(close + 1)}`;
+  return `${line.slice(0, open + 1)} use_leader = true,${/^\s/.test(inner) ? "" : " "}${line.slice(open + 1)}`;
+}
+
+/**
+ * What to tell a person whose `cli` is an inline table (line `index` of `base`): the line to write, checked to parse to
+ * the same config with only `cli.use_leader` changed, to true; or, when there is no such line, the key to set.
  */
 function inlineLeaderEdit(base: string, parsedBase: Toml, index: number): string {
   const lines = base.split("\n");
-  const table = inlineTable({ ...object(parsedBase.cli), use_leader: true });
-  if (table !== undefined) {
-    lines[index] = `${/^\s*/.exec(lines[index]!)![0]}cli = ${table}`;
+  const line = inlineLeaderLine(lines[index]!);
+  if (line !== undefined) {
+    lines[index] = line;
     try {
       const after = Bun.TOML.parse(lines.join("\n")) as Toml;
       if (leaderOf(after) === true && Bun.deepEquals(withoutOurs(parsedBase), withoutOurs(after))) {
-        return `change that line to \`${lines[index]!.trim()}\``;
+        return `change that line to \`${line.trim()}\``;
       }
     } catch {
       // Falls through to the key to set.

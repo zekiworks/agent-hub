@@ -408,10 +408,19 @@ describe("universal MCP adapter configuration", () => {
   test("Grok leader mode: --leader with an inline cli table fails, changes nothing, and gives the line to write", async () => {
     const inputs: Array<[string, string]> = [
       [`cli = { use_leader = false }`, `cli = { use_leader = true }`],
-      [`cli = { theme = "light" }`, `cli = { theme = "light", use_leader = true }`],
+      [`cli = { theme = "light" }`, `cli = { use_leader = true, theme = "light" }`],
       [`cli = {}`, `cli = { use_leader = true }`],
-      // Built from the parsed table: the text inside the string stays as it is.
+      // Every other token stays as written: a float stays a float, a date a date, a string's text untouched.
+      [`cli = { scale = 1.0, use_leader = false }`, `cli = { scale = 1.0, use_leader = true }`],
+      [`cli = { size = 1e3, use_leader = false }`, `cli = { size = 1e3, use_leader = true }`],
+      [`cli = { since = 1979-05-27, use_leader = false }`, `cli = { since = 1979-05-27, use_leader = true }`],
       [`cli = { description = "use_leader = false", use_leader = false }`, `cli = { description = "use_leader = false", use_leader = true }`],
+      // Nested inline tables keep their own use_leader; strings with braces and commas are skipped whole.
+      [
+        `cli = { note = 'a, b }', ui = { use_leader = false, colors = { accent = "red" } }, use_leader = false } # mine`,
+        `cli = { note = 'a, b }', ui = { use_leader = false, colors = { accent = "red" } }, use_leader = true } # mine`,
+      ],
+      [`cli = { ui = { use_leader = false } }`, `cli = { use_leader = true, ui = { use_leader = false } }`],
     ];
     for (const [line, fixed] of inputs) {
       const root = home();
@@ -435,10 +444,10 @@ describe("universal MCP adapter configuration", () => {
       expect(await agentBus(root, ...INSTALL_GROK, "--leader")).toContain("already on");
     }
 
-    // A value this cannot write back exactly (a date): the key to set, not a line.
+    // No line that sets only cli.use_leader (use_leader is itself a table here): the key to set, not a line.
     const root = home();
     const config = join(root, ".grok", "config.toml");
-    const before = `cli = { since = 1979-05-27, use_leader = false }\n`;
+    const before = `cli = { use_leader.x = 1 }\n`;
     await Bun.write(config, before);
     const leader = await run(root, [...INSTALL_GROK, "--leader"]);
     expect(leader.code).not.toBe(0);
@@ -450,7 +459,7 @@ describe("universal MCP adapter configuration", () => {
     await agentBus(root, ...INSTALL_GROK, "--leader");
     expect(toml(config).cli?.use_leader).toBe(true);
     expect(String(toml(config).cli?.since)).toBe("1979-05-27T07:32:00Z");
-  }, 60_000);
+  }, 120_000);
 
   test("Grok leader mode: use_leader inside a multi-line string is text, not the setting", async () => {
     for (const quote of [`"""`, `'''`]) {
