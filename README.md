@@ -178,8 +178,8 @@ Agent Hub works without these:
   [FLEURS](https://huggingface.co/datasets/google/fleurs) recordings on CPU: Whisper 4.9% wrong words, 1.5 s per
   recording; LFM3-Audio 5.3%, 0.4 s;
   [IBM Granite Speech 5.0 2B](https://huggingface.co/ibm-granite/granite-speech-5.0-2b) (audio.cpp Q8_0, measured
-  as an alternative, not built in) 5.6%, 0.9 s. Half of Granite's wrong words are numbers it writes out ("seventy"
-  for 70); in the 85 recordings without numbers it is the most accurate (3.4%, against 4.3% and 4.4%). In Turkish
+  as an alternative, not built in) 5.6%, 0.9 s. Granite writes numbers out ("seventy" for 70); counting a number
+  right as digits or as words, Granite is the most accurate: 4.1%, against Whisper 4.7% and LFM3-Audio 5.0%. In Turkish
   LFM3-Audio gets 55% of words wrong and Granite Speech has no Turkish, so Turkish stays with Whisper.
 - **Voice and read aloud:** pass `--tts-url` for a server with the `/tts` API. The reference deployment and narrated
   demos use [Liquid AI LFM3-Audio-2B](https://huggingface.co/LiquidAI/LFM3-Audio-2B) for Turkish and English.
