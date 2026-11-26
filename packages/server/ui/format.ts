@@ -38,6 +38,11 @@ const TOOL_NAMES: Record<string, string> = {
   kimi: "Kimi Code",
 };
 
+/** A coding tool's name for people ("codex" → "Codex"); unknown ones as sent. */
+export function toolName(harness: string): string {
+  return TOOL_NAMES[harness] ?? harness;
+}
+
 /**
  * Second sidebar line for an agent: its folder and the coding tool it runs in, plus the host when it disambiguates.
  * The tool is named because the host alone read like one (launch review, 26 Nov: "~/code/webapp · studio").
@@ -45,7 +50,7 @@ const TOOL_NAMES: Record<string, string> = {
 export function agentDetail(agent: Participant, showHost: boolean): string {
   const parts: string[] = [];
   if (agent.path) parts.push(shortPath(agent.path));
-  if (agent.harness && agent.harness !== "system") parts.push(TOOL_NAMES[agent.harness] ?? agent.harness);
+  if (agent.harness && agent.harness !== "system") parts.push(toolName(agent.harness));
   if (agent.host && (showHost || !agent.path)) parts.push(agent.host);
   return parts.join(" · ");
 }

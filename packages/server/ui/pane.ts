@@ -7,7 +7,7 @@
 // is about the conversation on the left, both headers share one tint (#10122).
 import { dom } from "./dom";
 import { h } from "./html";
-import { conversationAddress, conversationTitle, hasProjectColor, projectColor, state, type View } from "./state";
+import { conversationAddress, conversationTitle, hasProjectColor, participantDisplayName, projectColor, state, type View } from "./state";
 import { setPhoneList } from "./phones";
 import { navigate, viewHash } from "./routing";
 
@@ -266,7 +266,12 @@ function subjectOf(view: View): string {
   if (view.kind === "draft") return view.project !== undefined ? `@@${view.project}` : view.to.map((id) => `@${id}`).join(", ");
   const conv = state.conversations.get(view.id);
   if (!conv) return "";
-  if (conv.kind === "dm") return `@${conv.members.find((id) => id !== state.me) ?? conv.members[0]}`;
+  if (conv.kind === "dm") {
+    // A renamed agent's tab says its name, like the title and the list; @address only while it has none.
+    const other = conv.members.find((id) => id !== state.me) ?? conv.members[0] ?? "";
+    const name = participantDisplayName(other);
+    return name === other ? `@${other}` : name;
+  }
   return conversationAddress(conv) ?? conversationTitle(conv);
 }
 

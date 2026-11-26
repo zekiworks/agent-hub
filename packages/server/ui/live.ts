@@ -1,7 +1,7 @@
 // Right-pane extension "Live": the status and live output of the agent whose page is open (its DM). The output is
 // streamed only while the Live tab is visible and the browser tab is in front (Can, 15 Nov: moved out of the header).
 import type { ActivityEvent, AgentSession, ViewerServerFrame } from "@agent-bus/protocol";
-import { elapsed, relativeTime, shortPath } from "./format";
+import { elapsed, relativeTime, shortPath, toolName } from "./format";
 import { h } from "./html";
 import { renderMarkdown } from "./markdown";
 import { paneView, registerExtension } from "./pane";
@@ -108,7 +108,7 @@ export function renderLive(): void {
         : `${agent.waiting} Hub message${agent.waiting === 1 ? "" : "s"} delivered, not seen by its model yet`,
     ]);
   }
-  const where = [agent.path ? shortPath(agent.path) : "", agent.host ?? "", agent.harness ?? ""].filter(Boolean).join(" · ");
+  const where = [agent.path ? shortPath(agent.path) : "", agent.host ?? "", agent.harness ? toolName(agent.harness) : ""].filter(Boolean).join(" · ");
   if (where) rows.push(["Where", where]);
   if (agent.sessions && agent.sessions.length > 1) rows.push(["Sessions", sessionChips(agent.id, agent.sessions)]);
   rows.push(["To all", agent.settings.all === "wake" ? "starts a turn" : "quiet (read at its next turn)"]);

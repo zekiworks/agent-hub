@@ -55,14 +55,9 @@ function render(): void {
     h(
       "p",
       "dialog-hint",
-      "Whisper decides the language first; only English goes to the model chosen here. Every other language, Turkish " +
-        "included, is always written by Whisper: on Turkish, Liquid gets 55% of the words wrong and Whisper 6%."
-    ),
-    h(
-      "p",
-      "dialog-hint",
-      "Measured on CPU with FLEURS: English, 100 recordings; Turkish, 50 recordings (with Whisper large-v3, the " +
-        "larger sibling of the turbo model used here). Lower is better."
+      "Whisper detects the language first; only English goes to the model chosen here, and every other language stays " +
+        "with Whisper. Wrong words and time per recording were measured on CPU (FLEURS, 100 English recordings); " +
+        "lower is better."
     ),
     note,
     voiceRecordingSetting(),
@@ -125,7 +120,7 @@ function voiceLanguageSetting(current: AgentSettings["voiceLanguage"]): HTMLElem
     select.append(option);
   }
   select.value = current ?? "default";
-  const note = h("p", "dialog-hint", "Short messages are where the rule guesses wrong most; setting your language avoids that.");
+  const note = h("p", "dialog-hint", "Short messages are where automatic detection guesses wrong most; setting your language avoids that.");
   select.addEventListener("change", async () => {
     try {
       await postJson("/api/settings", { from: state.me, key: "voiceLanguage", value: select.value });
@@ -215,7 +210,7 @@ function voiceRecordingSetting(): HTMLElement {
     mic.value = chosen;
     micNote.textContent = devices.some((d) => d.label)
       ? "If the chosen one is not connected, the default records instead, and the recording bar says which one it uses."
-      : "Their names show once this page has used the microphone (record with 🎤 once, then open Settings again).";
+      : "Microphone names show once this page has used the microphone (record with 🎤 once, then open Settings again).";
   };
   void fill();
   mic.addEventListener("change", () => setChosenMicrophone(mic.value));
@@ -245,9 +240,9 @@ function voiceRecordingSetting(): HTMLElement {
     h(
       "p",
       "dialog-hint",
-      "Only a recording started with a tap on 🎤 (holding it sends when you let go), and only after you have said " +
-        "something: silence before you speak never sends. ⏸ stops it while you think. A pause longer than this " +
-        "sends what you said so far. Only this browser."
+      "When a delay is chosen, a pause longer than it sends what you said so far. It applies to a recording started " +
+        "with a tap on 🎤 (holding 🎤 sends when you let go), and only after you have said something; ⏸ stops it while " +
+        "you think. Only this browser."
     )
   );
   return section;
