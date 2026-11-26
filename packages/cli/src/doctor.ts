@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Participant } from "@agent-bus/protocol";
 import { agentToken } from "../../client/src/connection";
-import { EXPERIMENTAL_HARNESSES, HARNESSES } from "./harnesses";
+import { HARNESSES } from "./harnesses";
 
 const ok = (text: string): string => `  ✓ ${text}`;
 const bad = (text: string): string => `  ✗ ${text}`;
@@ -35,7 +35,7 @@ export async function runDoctor(urlOverride?: string): Promise<number> {
   else if (process.env.AGENT_BUS_URL) urls.add(process.env.AGENT_BUS_URL.replace(/\/+$/, ""));
 
   lines.push(`Harnesses on ${os.hostname()}:`);
-  for (const h of [...HARNESSES, ...EXPERIMENTAL_HARNESSES.filter((x) => x.status({}).installed)]) {
+  for (const h of HARNESSES) {
     const status = h.status({});
     const found = h.command === undefined ? undefined : Bun.which(h.command) ? "on PATH" : h.commandAt && existsSync(h.commandAt) ? `at ${h.commandAt}` : undefined;
     const cli = h.command === undefined ? "" : `, ${h.command} ${found ?? "not found"}`;

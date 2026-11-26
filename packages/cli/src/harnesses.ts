@@ -166,15 +166,8 @@ export const HARNESSES: readonly Harness[] = [
   cliHarness,
 ];
 
-/**
- * Adapters being tested by the owner, not supported yet (Can #17468: v1 lists only tested tools that wake when
- * idle). `agent-bus install NAME` works for them; help and the unknown-name list don't offer them, and doctor shows
- * one only once it is installed.
- */
-export const EXPERIMENTAL_HARNESSES: readonly Harness[] = [universalHarness("kimi")];
-
 export function harness(name: string): Harness {
-  const found = [...HARNESSES, ...EXPERIMENTAL_HARNESSES].find((h) => h.name === name);
+  const found = HARNESSES.find((h) => h.name === name);
   if (!found) throw new Error(`Unknown harness "${name}". Known: ${HARNESSES.map((h) => h.name).join(", ")}`);
   return found;
 }

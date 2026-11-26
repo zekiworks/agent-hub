@@ -228,7 +228,6 @@ function setKimiHooks(definition: Definition, target: string, url: string, previ
   writeFileSync(file, installed);
   writeJson(hooksSnapshotFile(target), { originalExists, original, installed });
 }
-
 function removeKimiHooks(definition: Definition, snapshot?: ConfigSnapshot): void {
   const file = definition.hooks!;
   if (!existsSync(file)) return;
@@ -236,7 +235,6 @@ function removeKimiHooks(definition: Definition, snapshot?: ConfigSnapshot): voi
   if (snapshot && current === snapshot.installed) {
     if (snapshot.originalExists) writeFileSync(file, snapshot.original);
     else rmSync(file);
-    return;
   }
   const cleaned = current.replace(KIMI_HOOKS_BLOCK, "\n").replace(/\n+$/, "\n");
   if (cleaned !== current) writeFileSync(file, cleaned === "\n" ? "" : cleaned);
@@ -265,7 +263,6 @@ function setGrokEntry(name: UniversalAdapterName, definition: Definition, target
     original = previous.original;
   } else if (withoutOurs !== before) {
     original = withoutOurs;
-  }
   const args = argsFor(name, target, url).map((value) => JSON.stringify(value)).join(", ");
   const body = `${GROK_BEGIN}\n[mcp_servers.agent-hub]\ncommand = ${JSON.stringify(jsRuntime())}\nargs = [${args}]\n${GROK_END}\n`;
   const base = existed ? original : "";

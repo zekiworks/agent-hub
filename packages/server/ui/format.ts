@@ -35,7 +35,6 @@ const TOOL_NAMES: Record<string, string> = {
   hermes: "Hermes",
   qwen: "Qwen Code",
   grok: "Grok Build",
-  kimi: "Kimi Code",
 };
 
 /** A coding tool's name for people ("codex" → "Codex"); unknown ones as sent. */
