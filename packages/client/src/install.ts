@@ -1,7 +1,7 @@
 // Shared by the harness installers (`agent-bus install <harness>`, packages/cli/src/harnesses.ts). Runs on Bun
 // (`Bun.build`, `Bun.which`); the bundled plugin code never imports it.
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 
 /** What `agent-bus install <harness>` passes to a harness's installer. */
@@ -48,9 +48,20 @@ export function configBusUrl(configFile: string): string | undefined {
   }
 }
 
-/** The JS runtime the harness should start: node if installed (absolute: a GUI app's PATH may lack it), else bun. */
+/**
+ * The JS runtime the harness should start: node if installed (absolute: a GUI app's PATH may lack it), else bun.
+ * `bun run` puts a temporary `node` shim (/tmp/bun-node-…) first on PATH on machines without Node; it resolves to bun
+ * itself and vanishes with /tmp, so it counts as no node (clean-container installer test, 26 Nov).
+ */
 export function jsRuntime(): string {
-  return Bun.which("node") ?? process.execPath;
+  const node = Bun.which("node");
+  if (!node) return process.execPath;
+  try {
+    if (realpathSync(node) === realpathSync(process.execPath) || /\/bun-node-[^/]*\//.test(node)) return process.execPath;
+  } catch {
+    return process.execPath;
+  }
+  return node;
 }
 
 /**
