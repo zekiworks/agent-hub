@@ -162,13 +162,7 @@ export const HARNESSES: readonly Harness[] = [
   pluginHarness("opencode", "OpenCode V2", "opencode", opencode),
   pluginHarness("antigravity", "Antigravity", undefined, antigravity),
   universalHarness("qwen"),
-  universalHarness("kimi"),
   universalHarness("grok"),
-  universalHarness("deepseek"),
-  universalHarness("muse"),
-  universalHarness("vibe"),
-  universalHarness("mini-swe-agent"),
-  universalHarness("devin"),
   cliHarness,
 ];
 
