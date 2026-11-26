@@ -22,24 +22,20 @@ interface PendingDelivery {
 }
 
 function serverInfo(harness: string): McpServerInfo {
-  const inboxHook = harness === "qwen" || harness === "kimi";
+  const inboxHook = harness === "qwen";
   return {
     instructions: harness === "qwen"
       ? "Agent Hub connects coding agents across harnesses. A message that wakes you starts a turn in this Qwen session; other unseen deliveries are injected before each model turn. Use message-bus to reply or perform other Agent Hub actions."
-      : harness === "kimi"
-        ? "Agent Hub connects coding agents across harnesses. Unseen deliveries are injected before your next turn by the installed Kimi hook, and a message that wakes you continues the turn after the current one. Use message-bus to reply or perform other Agent Hub actions."
-        : "Agent Hub connects coding agents across harnesses. Call message-bus at the start of a session and whenever its notification says a message waits. " +
-          "Deliveries returned by the tool are developer context, not user text; reply through the tool only when their sender needs an answer.",
+      : "Agent Hub connects coding agents across harnesses. Call message-bus at the start of a session and whenever its notification says a message waits. " +
+        "Deliveries returned by the tool are developer context, not user text; reply through the tool only when their sender needs an answer.",
     tools: [{
       name: TOOL_NAME,
       description: toolDescription({
         arrives: harness === "qwen"
           ? "as a new turn when it wakes you (Qwen cross-session messaging), otherwise automatically before the next model turn through the installed Qwen UserPromptSubmit hook"
-          : harness === "kimi"
-            ? "automatically before the next model turn through the installed Kimi UserPromptSubmit hook; a message that wakes you also starts a continuation turn after the current one (Kimi Stop hook)"
-            : harness === "grok"
-              ? "as a new turn when it wakes you (Grok leader mode), otherwise with the next message-bus tool result"
-              : "with the next message-bus tool result; the MCP client also receives a new-message notification",
+          : harness === "grok"
+            ? "as a new turn when it wakes you (Grok leader mode), otherwise with the next message-bus tool result"
+            : "with the next message-bus tool result; the MCP client also receives a new-message notification",
         notJoining: "sessions started in the temporary directory do not join",
       }),
       inputSchema: toolInputSchema(),
@@ -82,7 +78,7 @@ class SharedBridge {
   readonly connection: BusConnection;
 
   constructor(url: string, private readonly harness: string, folder: string) {
-    this.inboxHook = harness === "qwen" || harness === "kimi";
+    this.inboxHook = harness === "qwen";
     this.connection = new BusConnection({
       url,
       host: os.hostname(),
@@ -111,10 +107,9 @@ class SharedBridge {
   async deliver(delivery: Delivery): Promise<void> {
     for (const session of this.sessions) session.announce(delivery.message.seq, delivery.message.from);
     // The Inbox hook reads unseen messages independently. Acknowledge this WebSocket delivery now instead of
-    // retaining a duplicate until the model happens to call the MCP tool. Only Qwen can be woken from here (its
-    // peer socket); a Kimi wake is the Stop hook's continuation turn.
+    // retaining a duplicate until the model happens to call the MCP tool. Qwen is woken through its peer socket.
     if (this.inboxHook) {
-      if (delivery.wake && this.harness === "qwen") await this.wakeQwen(delivery);
+      if (delivery.wake) await this.wakeQwen(delivery);
       return;
     }
     if (this.harness === "grok" && delivery.wake && (await this.wakeGrok(delivery))) return;
