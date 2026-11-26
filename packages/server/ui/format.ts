@@ -23,11 +23,29 @@ export function shortPath(path: string): string {
   return path.replace(/^\/(?:home|Users)\/[^/]+(?=\/|$)/, "~");
 }
 
-/** Second sidebar line for an agent: path when it joined by folder, else harness; host when it disambiguates. */
+/** How each coding tool is named for people; unknown ones show as sent. */
+const TOOL_NAMES: Record<string, string> = {
+  omp: "OMP",
+  pi: "Pi",
+  claude: "Claude Code",
+  codex: "Codex",
+  copilot: "Copilot",
+  opencode: "OpenCode",
+  antigravity: "Antigravity",
+  hermes: "Hermes",
+  qwen: "Qwen Code",
+  grok: "Grok Build",
+  kimi: "Kimi Code",
+};
+
+/**
+ * Second sidebar line for an agent: its folder and the coding tool it runs in, plus the host when it disambiguates.
+ * The tool is named because the host alone read like one (launch review, 26 Nov: "~/code/webapp · studio").
+ */
 export function agentDetail(agent: Participant, showHost: boolean): string {
   const parts: string[] = [];
   if (agent.path) parts.push(shortPath(agent.path));
-  else if (agent.harness) parts.push(agent.harness);
+  if (agent.harness && agent.harness !== "system") parts.push(TOOL_NAMES[agent.harness] ?? agent.harness);
   if (agent.host && (showHost || !agent.path)) parts.push(agent.host);
   return parts.join(" · ");
 }

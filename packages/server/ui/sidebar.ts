@@ -28,6 +28,7 @@ import {
   sortedConversations,
   sortedRooms,
   state,
+  participantDisplayName,
   UNREAD_ONLY_KEY,
 } from "./state";
 
@@ -70,7 +71,7 @@ function renderWorkingLine(): void {
     dom.workingLine.replaceChildren();
     return;
   }
-  const who = busy.length <= 3 ? nameList(busy) : `${busy.length} agents`;
+  const who = busy.length <= 3 ? nameList(busy.map(participantDisplayName)) : `${busy.length} agents`;
   const dots = h("span", "working-dots");
   dots.append(h("span"), h("span"), h("span"));
   dom.workingLine.replaceChildren(dots, h("span", "", ` ${who} ${busy.length === 1 ? "is" : "are"} working`));
@@ -230,7 +231,7 @@ function conversationItem(conv: Conversation): HTMLLIElement {
   }
   // The whole name first: a long one is cut off in the list (Can #10852).
   button.title =
-    conv.kind === "all" ? "#all: delivered to every agent" : `${conversationTitle(conv)}\nMembers: ${nameList(conv.members)}`;
+    conv.kind === "all" ? "#all: delivered to every agent" : `${conversationTitle(conv)}\nMembers: ${nameList(conv.members.map(participantDisplayName))}`;
   button.addEventListener("click", () => navigate({ kind: "conversation", id: conv.id }));
   li.append(button);
   if (conv.kind === "project" || conv.kind === "group") li.append(entryMenuButton(conv));
@@ -559,7 +560,8 @@ function renderAgentList(): void {
   // otherwise blink in and out and shift every row below it.
   const recent = Date.now() - RECENTLY_SEEN_MS;
   const list = state.includeOffline ? all : all.filter((a) => a.online || a.lastSeenAt > recent || a.id === currentDirectAgent());
-  const hosts = new Set(list.map((a) => a.host ?? ""));
+  // The built-in system agent has no host: counting it made one-machine Hubs show every host (launch demos, 26 Nov).
+  const hosts = new Set(list.filter((a) => a.harness !== "system").map((a) => a.host ?? ""));
   const showHost = hosts.size > 1;
   const active = currentDirectAgent();
   const online = all.filter((a) => a.online).length;

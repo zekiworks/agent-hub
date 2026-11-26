@@ -47,21 +47,29 @@ export function startCrashLog(): void {
   const beat = (closed: boolean): void => localStorage.setItem(ALIVE_KEY, JSON.stringify({ at: Date.now(), where: location.hash, closed }));
   beat(false);
   let lastBeat = Date.now();
+  let focusedAtBeat = document.hasFocus();
   let freezes = 0;
   setInterval(() => {
     if (document.visibilityState !== "visible") return;
     const gap = Date.now() - lastBeat;
-    // Hidden pages' timers pause, so only a gap between two visible beats is a freeze of the page itself.
-    if (gap > 15_000 && freezes < 3) {
+    const focused = document.hasFocus();
+    // A gap only counts while the person was using the page, before and after: a window left visible behind others
+    // keeps "visible" but its timers sleep (Ümit's Mac Home Screen app: two 6-minute "freezes" nobody saw, #17539).
+    if (gap > 15_000 && focusedAtBeat && focused && freezes < 3) {
       freezes += 1;
-      void report("freeze", `The page did not respond for about ${Math.round(gap / 1000)} s while it was open, then recovered.`).catch(() => undefined);
+      void report("freeze", `The page did not respond for about ${Math.round(gap / 1000)} s while it was open and in use, then recovered.`).catch(() => undefined);
     }
     lastBeat = Date.now();
+    focusedAtBeat = focused;
     beat(false);
   }, 5_000);
-  document.addEventListener("visibilitychange", () => {
+  const restart = (): void => {
     lastBeat = Date.now();
-  });
+    focusedAtBeat = document.hasFocus();
+  };
+  document.addEventListener("visibilitychange", restart);
+  window.addEventListener("focus", restart);
+  window.addEventListener("blur", restart);
   // Hidden or closed normally: a later start must not count it as a crash.
   document.addEventListener("visibilitychange", () => beat(document.visibilityState === "hidden"));
   window.addEventListener("pagehide", () => beat(true));

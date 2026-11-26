@@ -61,8 +61,8 @@ function render(): void {
     h(
       "p",
       "dialog-hint",
-      "Measured by compactor on CPU with FLEURS: English, 100 recordings (14 Nov); Turkish, 50 recordings (6 Nov, " +
-        "with Whisper large-v3, the larger sibling of the turbo the Hub runs). Lower is better."
+      "Measured on CPU with FLEURS: English, 100 recordings; Turkish, 50 recordings (with Whisper large-v3, the " +
+        "larger sibling of the turbo model used here). Lower is better."
     ),
     note,
     voiceRecordingSetting(),
@@ -115,7 +115,7 @@ function decisionModelsSetting(current: boolean | undefined): HTMLElement | stri
 function voiceLanguageSetting(current: AgentSettings["voiceLanguage"]): HTMLElement {
   const select = h("select");
   for (const [value, label] of [
-    ["default", "Turkish, unless clearly English (the Hub's rule)"],
+    ["default", "The Hub's default language (set by whoever runs it)"],
     ["en", "English"],
     ["tr", "Turkish"],
     ["auto", "Detect for each message"],

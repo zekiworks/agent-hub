@@ -70,7 +70,7 @@ export function renderHeader(): void {
     return;
   }
   const title = conversationTitle(conv);
-  setConvTitle(title, conv.kind === "all" ? "Everyone" : `Members: ${nameList(conv.members)}`);
+  setConvTitle(title, conv.kind === "all" ? "Everyone" : `Members: ${nameList(conv.members.map(participantDisplayName))}`);
   // The title in the text colour (#10099): a project's colour is its band in the list and the Workspace's shared tint.
   setTitleBase(`${title} · ${BRAND}`);
   setNameMenu("tab");
@@ -99,7 +99,7 @@ export function renderHeader(): void {
     const level = conv.notify?.[state.me];
     const notify = level ? ` Your notifications: ${level === "mentions" ? "mentions only" : "none"}.` : "";
     const archived = conv.archived ? " Archived: writing in it brings it back." : "";
-    dom.convSubtitle.textContent = `${project}Members: ${nameList(conv.members)}.${membership}${notify}${archived}`;
+    dom.convSubtitle.textContent = `${project}Members: ${nameList(conv.members.map(participantDisplayName))}.${membership}${notify}${archived}`;
   }
   renderSubgroups(conv);
 }
@@ -638,7 +638,8 @@ function renderReceipts(message: Message): HTMLDivElement | null {
           .filter(Boolean)
           .join(" · ");
   // Whom it started a turn for (Can, 15 Nov: wake lists); the other agents take it in at their next turn.
-  if (message.wake) el.textContent += message.wake.length > 0 ? ` · woke ${message.wake.join(", ")}` : " · woke nobody";
+  // Renamed agents show their name here too, as in the sidebar and the title (Opus launch review, 26 Nov).
+  if (message.wake) el.textContent += message.wake.length > 0 ? ` · woke ${message.wake.map(participantDisplayName).join(", ")}` : " · woke nobody";
   el.title = receipts
     .map((r) =>
       r.deliveredAt !== null
