@@ -342,7 +342,7 @@ afterEach(async () => {
   if (dataDir) rmSync(dataDir, { recursive: true, force: true });
 });
 
-test("over HTTP: an observation, reservation, refusal, and a human's release reaching the holder from @resources", async () => {
+test("over HTTP: an observation, reservation, refusal, and a human's release reaching the holder from @system (resources>)", async () => {
   dataDir = mkdtempSync(path.join(tmpdir(), "mb-res-test-"));
   bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
   const delivered: string[] = [];
@@ -369,8 +369,9 @@ test("over HTTP: an observation, reservation, refusal, and a human's release rea
   expect((await post("/api/reservations", { from: "nobody", resource: "host1 GPU 2", hours: 1, purpose: "x" })).status).toBe(400);
   expect((await post(`/api/reservations/${id}/release`, { from: "carol" })).status).toBe(200);
   const deadline = Date.now() + 4000;
-  while (!delivered.some((d) => d.startsWith("resources: @carol released")) && Date.now() < deadline) await Bun.sleep(25);
-  expect(delivered.find((d) => d.startsWith("resources:"))).toContain(`@carol released your reservation ${id}`);
+  // Resource notices come from @system with a `resources>` prefix (30d8704).
+  while (!delivered.some((d) => d.startsWith("system: resources> @carol released")) && Date.now() < deadline) await Bun.sleep(25);
+  expect(delivered.find((d) => d.startsWith("system: resources>"))).toContain(`@carol released your reservation ${id}`);
   const listing = await getJson<ResourcesResponse>(bus, "/api/resources");
   expect(listing.reservations.find((r) => r.id === id)?.state).toBe("released");
   ws.close();

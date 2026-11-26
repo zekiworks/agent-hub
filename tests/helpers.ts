@@ -1,5 +1,6 @@
 // A bus for tests where everyone is identified, as on a real bus: this test run's agent token (the shared client's
 // `agentToken()`, in a temp file per run: tests/setup.ts) is approved, and the configured humans get sessions.
+import path from "node:path";
 import { createBusServer, type BusServerHandle, type BusServerOptions } from "@agent-bus/server";
 import { agentToken } from "../packages/client/src/connection";
 
@@ -58,4 +59,36 @@ export function viewerSocket(bus: BusServerHandle, human?: string): WebSocket {
 /** `/ws/agent?…` with the test agent token (unless `query` names its own `token`). */
 export function agentSocketUrl(bus: BusServerHandle, query: Record<string, string>): string {
   return `${bus.url.replace(/^http/, "ws")}/ws/agent?${new URLSearchParams({ token: TEST_TOKEN, ...query })}`;
+}
+
+/** A running task extension: the URL the Hub's `taskExtension` option takes, and how to stop it. */
+export interface TaskExtension {
+  url: string;
+  stop: () => Promise<void>;
+}
+
+/** The real task extension (packages/task-ext) on a free port, keeping its state and secret in `dataDir`, as the Hub does. */
+export async function startTaskExtension(dataDir: string): Promise<TaskExtension> {
+  const child = Bun.spawn(["bun", "run", path.join(import.meta.dir, "../packages/task-ext/src/server.ts")], {
+    env: { ...process.env, TASK_EXT_PORT: "0", AGENT_BUS_DATA_DIR: dataDir },
+    stdout: "pipe",
+    stderr: "inherit",
+  });
+  const reader = child.stdout.getReader();
+  let out = "";
+  let url: string | undefined;
+  while (url === undefined) {
+    const { value, done } = await reader.read();
+    if (done) throw new Error(`task-ext exited before listening: ${out}`);
+    out += new TextDecoder().decode(value);
+    url = /task-ext on (\S+)/.exec(out)?.[1];
+  }
+  reader.releaseLock();
+  return {
+    url,
+    stop: async () => {
+      child.kill();
+      await child.exited;
+    },
+  };
 }

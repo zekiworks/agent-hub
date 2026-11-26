@@ -18,7 +18,7 @@ export interface RenameResult {
 /** JSON text columns that hold participant ids as string values. */
 const JSON_COLUMNS: Array<[table: string, column: string]> = [
   ["messages", "wake_json"],
-  ["messages", "task_json"],
+  ["messages", "ext_json"], // task annotations (assignees, allowed actions) since 546098f
   ["messages", "forwarded_json"],
   ["checklists", "assignees_json"],
   ["checklists", "items_json"],

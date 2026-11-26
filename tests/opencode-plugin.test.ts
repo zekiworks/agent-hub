@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import path from "node:path";
 import { tmpdir } from "node:os";
 import type { BusServerHandle } from "@agent-bus/server";
-import type { Participant, PostMessageResponse, ViewerServerFrame } from "@agent-bus/protocol";
+import { SYSTEM_AGENT_ID, type Participant, type PostMessageResponse, type ViewerServerFrame } from "@agent-bus/protocol";
 import plugin, { type Context } from "../packages/opencode-plugin/src/index";
 import * as installer from "../packages/opencode-plugin/scripts/install";
 import { harness } from "../packages/cli/src/harnesses";
@@ -116,8 +116,9 @@ async function until(predicate: () => boolean | Promise<boolean>): Promise<void>
   }
 }
 
+/** The Hub's participants, less the built-in @system, which is always online (30d8704). */
 async function participants(): Promise<Participant[]> {
-  return (await getJson<{ participants: Participant[] }>(bus, "/api/state")).participants;
+  return (await getJson<{ participants: Participant[] }>(bus, "/api/state")).participants.filter((p) => p.id !== SYSTEM_AGENT_ID);
 }
 
 async function active(id: string): Promise<Participant> {

@@ -9,7 +9,7 @@ import messageBus, {
   type MessageBusContext,
   type MessageBusToolParams,
 } from "../packages/omp-extension/src/index";
-import { agentSocketUrl, busFetch, getJson, postJson, startBus, viewerSocket } from "./helpers";
+import { agentSocketUrl, busFetch, getJson, postJson, startBus, startTaskExtension, type TaskExtension, viewerSocket } from "./helpers";
 
 type Injected =
   | { via: "user"; content: string; deliverAs?: string }
@@ -30,8 +30,9 @@ class FakeOmp {
       on: ((event: string, handler: (event: never, ctx: MessageBusContext) => void) => {
         this.handlers.set(event, handler);
       }) as MessageBusApi["on"],
+      // The extension also registers the typed `task` tool (546098f); these tests drive `message-bus`.
       registerTool: (definition) => {
-        this.tool = definition;
+        if (definition.name === "message-bus") this.tool = definition;
       },
       sendUserMessage: (content, options) => this.record({ via: "user", content, deliverAs: options.deliverAs }),
       sendMessage: (message, options) => this.record({ via: "message", content: message.content, deliverAs: options.deliverAs }),
@@ -92,6 +93,7 @@ let participants: Participant[] = [];
 let participantWaiters: Array<{ until: () => boolean; resolve: () => void }> = [];
 const sessions: FakeOmp[] = [];
 const sockets: WebSocket[] = [];
+let taskExt: TaskExtension | undefined;
 
 function participantsWhere(pred: (ps: Participant[]) => boolean): Promise<void> {
   if (pred(participants)) return Promise.resolve();
@@ -142,11 +144,10 @@ async function rawAgent(folder: string) {
   return { ws, delivered };
 }
 
-beforeEach(async () => {
-  dataDir = mkdtempSync(path.join(tmpdir(), "mb-ext-test-"));
-  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"] });
+/** Starts the Hub (with the task extension at `taskExtension`, if given) and a viewer that tracks its participants. */
+async function startHub(taskExtension?: string): Promise<void> {
+  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"], ...(taskExtension ? { taskExtension } : {}) });
   process.env.AGENT_BUS_URL = bus.url;
-  process.env.AGENT_BUS_JOIN_FROM_TMP = "1"; // fake projects live under the temp dir
   viewer = viewerSocket(bus);
   viewer.addEventListener("message", (e) => {
     const frame = JSON.parse(String(e.data)) as ViewerServerFrame;
@@ -160,6 +161,12 @@ beforeEach(async () => {
   const opened = Promise.withResolvers<void>();
   viewer.addEventListener("open", () => opened.resolve(), { once: true });
   await opened.promise;
+}
+
+beforeEach(async () => {
+  dataDir = mkdtempSync(path.join(tmpdir(), "mb-ext-test-"));
+  process.env.AGENT_BUS_JOIN_FROM_TMP = "1"; // fake projects live under the temp dir
+  await startHub();
 });
 
 afterEach(async () => {
@@ -169,6 +176,8 @@ afterEach(async () => {
   participants = [];
   participantWaiters = [];
   await bus.stop();
+  await taskExt?.stop();
+  taskExt = undefined;
   delete process.env.AGENT_BUS_URL;
   delete process.env.AGENT_BUS_JOIN_FROM_TMP;
   rmSync(dataDir, { recursive: true, force: true });
@@ -338,13 +347,17 @@ test("sessions started in the temp directory do not join unless AGENT_BUS_JOIN_F
 });
 
 test("tasks through the tool: the assignee is told it is theirs, accepts and finishes it; op=tasks lists them; an agent assigns one", async () => {
+  // Tasks live in the task extension (546098f): run the Hub with a real one.
+  taskExt = await startTaskExtension(dataDir);
+  viewer.close();
+  await bus.stop();
+  await startHub(taskExt.url);
   const alpha = await startSession("alpha");
   const beta = await rawAgent("beta");
 
   const { message } = await post({ from: "carol", to: "@alpha", text: "rotate the logs", task: {} });
   const delivered = await alpha.injectedWith("rotate the logs");
   expect(delivered.content).toContain(`(Task #${message.seq} for you (task): message-bus op=accept, op=done or op=reject with message_id ${message.seq}; reason optional.)`);
-  expect(delivered.content).toEndWith("(You have 1 open task: message-bus op=tasks.)");
   expect((await alpha.run({ op: "tasks" })).content[0]!.text).toMatch(new RegExp(`^1 open task\\(s\\) for you:\\n\\n#${message.seq} task from @carol in .*: rotate the logs — For @alpha: open\\.`));
   expect((await alpha.run({ op: "accept", message_id: message.seq })).content[0]!.text).toContain("For @alpha: accepted.");
   expect((await alpha.run({ op: "done", message_id: message.seq, reason: "rotated, 2 GB freed" })).content[0]!.text).toContain("For @alpha: done (rotated, 2 GB freed).");

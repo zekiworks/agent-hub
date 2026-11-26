@@ -21,7 +21,7 @@ import type {
 } from "@agent-bus/protocol";
 import type { BusServerHandle } from "@agent-bus/server";
 import { formatDelivery } from "../packages/client/src/tool";
-import { agentSocketUrl, busFetch, getJson, identity, postJson, startBus } from "./helpers";
+import { agentSocketUrl, busFetch, getJson, identity, postJson, startBus, startTaskExtension, type TaskExtension } from "./helpers";
 
 type Frame = AgentServerFrame | ViewerServerFrame;
 type DeliverFrame = Extract<AgentServerFrame, { type: "deliver" }>;
@@ -99,33 +99,18 @@ beforeEach(() => {
 afterEach(async () => {
   await Promise.all(clients.splice(0).map((client) => client.close()));
   await bus.stop();
-  taskExt?.kill();
-  await taskExt?.exited;
+  await taskExt?.stop();
   taskExt = undefined;
   rmSync(dataDir, { recursive: true, force: true });
 });
 
-let taskExt: Bun.Subprocess<"ignore", "pipe", "inherit"> | undefined;
+let taskExt: TaskExtension | undefined;
 
 /** Restarts the bus with the real task extension (packages/task-ext), sharing this test's data dir and secret. */
 async function withTaskExtension(): Promise<void> {
-  taskExt = Bun.spawn(["bun", "run", path.join(import.meta.dir, "../packages/task-ext/src/server.ts")], {
-    env: { ...process.env, TASK_EXT_PORT: "0", AGENT_BUS_DATA_DIR: dataDir },
-    stdout: "pipe",
-    stderr: "inherit",
-  });
-  const reader = taskExt.stdout.getReader();
-  let out = "";
-  let url: string | undefined;
-  while (url === undefined) {
-    const { value, done } = await reader.read();
-    if (done) throw new Error(`task-ext exited before listening: ${out}`);
-    out += new TextDecoder().decode(value);
-    url = /task-ext on (\S+)/.exec(out)?.[1];
-  }
-  reader.releaseLock();
+  taskExt = await startTaskExtension(dataDir);
   await bus.stop();
-  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"], taskExtension: url });
+  bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol", "uma"], taskExtension: taskExt.url });
 }
 
 const wsUrl = (route: string): string => `${bus.url.replace(/^http/, "ws")}${route}`;

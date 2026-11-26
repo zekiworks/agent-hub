@@ -297,7 +297,7 @@ test("the MCP server declares the channel, lists the tool and sends channel even
   mcp.handleLine(JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "message-bus", arguments: { op: "inbox" } } }));
   await until(() => out.length === 4);
   const tools = (out.find((m) => m.id === 2)?.result as { tools: Array<{ name: string }> }).tools;
-  expect(tools.map((t) => t.name)).toEqual(["message-bus"]);
+  expect(tools.map((t) => t.name)).toEqual(["message-bus", "task"]); // the typed task tool since 546098f
   const call = out.find((m) => m.id === 3)?.result as { isError: boolean; content: Array<{ text: string }> };
   expect(call.isError).toBe(true);
   expect(call.content[0]?.text).toContain("not on Agent Hub (started in the temp directory)");

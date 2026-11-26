@@ -30,8 +30,9 @@ class FakePi {
       on: ((event: string, handler: (event: never, ctx: MessageBusContext) => void) => {
         this.handlers.set(event, handler);
       }) as MessageBusApi["on"],
+      // The extension also registers the typed `task` tool (546098f); these tests drive `message-bus`.
       registerTool: (definition) => {
-        this.tool = definition;
+        if (definition.name === "message-bus") this.tool = definition;
       },
       sendMessage: (message, options) =>
         this.record({ content: message.content, customType: message.customType, deliverAs: options.deliverAs, triggerTurn: options.triggerTurn }),
