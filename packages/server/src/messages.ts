@@ -67,11 +67,15 @@ export function mentionedParticipants(ctx: BusContext, text: string): string[] {
   return ids;
 }
 
-/** Agents a new message goes to: every agent for `all`, else the conversation's agents; never the writer. */
+/**
+ * Agents a new message goes to: every agent for `all`, else the conversation's agents; never the writer. @system is the
+ * Hub's own notice sender, not an agent that reads: it gets no @all broadcasts (they showed it among the receipts and
+ * the wake list); in its own DMs it stays a member, which routes replies to the notice's source.
+ */
 export function recipientsFor(ctx: BusContext, conversation: Conversation, writerId: string): ParticipantRecord[] {
   return (
     conversation.kind === "all"
-      ? ctx.db.listAgents()
+      ? ctx.db.listAgents().filter((p) => p.id !== SYSTEM_AGENT_ID)
       : conversation.members
           .map((id) => ctx.db.getParticipant(id))
           .filter((p): p is ParticipantRecord => p !== null && p.kind === "agent")
