@@ -36,7 +36,7 @@ async function run(home: string, args: string[], tty?: string): Promise<{ code: 
 }
 
 /** Bun's TOML parser: throws unless the file is valid TOML. */
-type GrokConfig = { cli?: { use_leader?: boolean; theme?: string }; mcp_servers?: Record<string, unknown> };
+type GrokConfig = { cli?: { use_leader?: boolean; theme?: string }; mcp_servers?: Record<string, unknown>; models?: unknown };
 const toml = (file: string): GrokConfig => Bun.TOML.parse(readFileSync(file, "utf8")) as GrokConfig;
 
 const PROMPT = "Turn on leader mode in";
@@ -221,6 +221,72 @@ describe("universal MCP adapter configuration", () => {
     await agentBus(root, ...INSTALL_GROK, "--leader");
     expect(toml(config).cli).toEqual({ theme: "light", use_leader: true });
   }, 30_000);
+
+  test("Grok leader mode: a [cli] table the install added stays the person's once edited, on reinstall and uninstall", async () => {
+    const before = `[models]\ndefault = "dspark"\n`;
+    const edits: Array<[string, string, Record<string, unknown>]> = [
+      // Turned off and a key added: all theirs now.
+      ["reinstall", 'use_leader = false\ntheme = "light"', { use_leader: false, theme: "light" }],
+      ["uninstall", 'use_leader = false\ntheme = "light"', { use_leader: false, theme: "light" }],
+      // A key added, the setting left alone: the setting is still Agent Hub's to take back on uninstall.
+      ["uninstall", `use_leader = true # agent-bus:grok leader\ntheme = "light"`, { theme: "light" }],
+    ];
+    for (const [operation, replacement, cli] of edits) {
+      const root = home();
+      const config = join(root, ".grok", "config.toml");
+      await Bun.write(config, before);
+      await agentBus(root, ...INSTALL_GROK, "--leader");
+      const installed = readFileSync(config, "utf8");
+      expect(installed.slice(installed.indexOf("# agent-bus:grok begin"))).not.toContain("[cli]");
+      expect(toml(config).cli?.use_leader).toBe(true);
+      await Bun.write(config, installed.replace("use_leader = true # agent-bus:grok leader", replacement));
+
+      if (operation === "reinstall") {
+        const output = await agentBus(root, ...INSTALL_GROK, "--no-leader");
+        expect(output).toContain("Leaving Grok leader mode off.");
+        expect(toml(config).cli).toEqual(cli);
+        expect(readFileSync(config, "utf8").match(/^\[cli\]/gm)).toHaveLength(1);
+      }
+      await agentBus(root, "uninstall", "grok");
+      expect(readFileSync(config, "utf8")).not.toContain("agent-hub");
+      expect(toml(config)).toEqual({ models: { default: "dspark" }, cli });
+    }
+  }, 60_000);
+
+  test("Grok leader mode: a [cli] table inside the block (installs before 27 Nov) keeps the person's keys", async () => {
+    const before = `[models]\ndefault = "dspark"\n`;
+    const legacy = (text: string, cli: string): string => text.replace("# agent-bus:grok end", `[cli]\n${cli}# agent-bus:grok end`);
+    for (const operation of ["untouched", "reinstall", "uninstall"]) {
+      const root = home();
+      const config = join(root, ".grok", "config.toml");
+      const snapshotFile = join(root, ".agent-bus", "adapters", "grok", "config-snapshot.json");
+      await Bun.write(config, before);
+      await agentBus(root, ...INSTALL_GROK, "--no-leader");
+      // What the earlier install wrote: leader mode on, in the block.
+      const old = legacy(readFileSync(config, "utf8"), "use_leader = true\n");
+      await Bun.write(snapshotFile, JSON.stringify({ ...JSON.parse(readFileSync(snapshotFile, "utf8")), installed: old, leader: {} }));
+      await Bun.write(config, operation === "untouched" ? old : old.replace("use_leader = true\n", 'use_leader = false\ntheme = "light"\n'));
+
+      if (operation === "untouched") {
+        // Still on, now in a [cli] table of the person's config; uninstall restores the file from before.
+        await agentBus(root, ...INSTALL_GROK, "--no-leader");
+        const installed = readFileSync(config, "utf8");
+        expect(toml(config).cli?.use_leader).toBe(true);
+        expect(installed.slice(installed.indexOf("# agent-bus:grok begin"))).not.toContain("[cli]");
+        await agentBus(root, "uninstall", "grok");
+        expect(readFileSync(config, "utf8")).toBe(before);
+        continue;
+      }
+      if (operation === "reinstall") {
+        await agentBus(root, ...INSTALL_GROK, "--no-leader");
+        expect(toml(config).cli).toEqual({ use_leader: false, theme: "light" });
+        expect(readFileSync(config, "utf8").match(/^\[cli\]/gm)).toHaveLength(1);
+      }
+      await agentBus(root, "uninstall", "grok");
+      expect(readFileSync(config, "utf8")).toBe(`${before}\n[cli]\nuse_leader = false\ntheme = "light"\n`);
+      expect(toml(config).cli).toEqual({ use_leader: false, theme: "light" });
+    }
+  }, 60_000);
 
   test("Grok leader mode: already on is reported and left alone", async () => {
     const root = home();

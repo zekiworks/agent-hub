@@ -192,8 +192,23 @@ function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
 const GROK_BEGIN = "# agent-bus:grok begin";
 const GROK_END = "# agent-bus:grok end";
 const GROK_BLOCK = /\n*# agent-bus:grok begin\n[\s\S]*?# agent-bus:grok end\n?/g;
+/** Marks the `use_leader = true` line an install wrote, and a `[cli]` header it added because the file had none. */
 const LEADER_MARK = "# agent-bus:grok leader";
 const LEADER_LINE = new RegExp(`^\\s*(?:cli\\s*\\.\\s*)?use_leader\\s*=\\s*true\\s*${LEADER_MARK}\\s*$`);
+const LEADER_HEADER = new RegExp(`^\\s*\\[\\s*cli\\s*\\]\\s*${LEADER_MARK}\\s*$`);
+
+/**
+ * Removes Agent Hub's MCP block, putting `joiner` in its place. Installs before 27 Nov kept a `[cli]` table at the end
+ * of the block; the person's keys there survive as their own `[cli]` table, and only an unchanged `use_leader = true`
+ * (Agent Hub's) goes.
+ */
+function stripGrokBlock(text: string, joiner: string): string {
+  return text.replace(GROK_BLOCK, (block) => {
+    const cli = /\n\[cli\]\n([\s\S]*?)# agent-bus:grok end/.exec(block);
+    const kept = cli?.[1]!.split("\n").filter((line) => line.trim() !== "" && line.trim() !== "use_leader = true") ?? [];
+    return kept.length ? `\n\n[cli]\n${kept.join("\n")}\n` : joiner;
+  });
+}
 
 /** Where Grok's `use_leader` lives in a config.toml (line numbers), read line by line. */
 interface LeaderScan {
@@ -242,10 +257,11 @@ function scanLeader(text: string): LeaderScan {
 }
 
 /**
- * Sets `use_leader = true` in the user's own `[cli]` table (or root `cli.` keys) when there is one, keeping the file
- * valid TOML; "block" means there is none, so the owned block carries a `[cli]` table; undefined: an inline `cli = {…}`.
+ * Sets `use_leader = true` in the user's own `[cli]` table (or root `cli.` keys) when there is one; otherwise adds a
+ * `[cli]` table at the end of the file, outside the MCP block, so keys the person adds to it later stay theirs. The
+ * file stays valid TOML. Undefined: `cli` is an inline table (`cli = {…}`), which takes no further key.
  */
-function setLeader(text: string): { text: string; replaced?: string } | "block" | undefined {
+function setLeader(text: string): { text: string; replaced?: string } | undefined {
   const scan = scanLeader(text);
   const lines = text.split("\n");
   if (scan.falseLine !== undefined) {
@@ -256,17 +272,31 @@ function setLeader(text: string): { text: string; replaced?: string } | "block" 
   if (scan.inline) return undefined;
   if (scan.cliHeader !== undefined) lines.splice(scan.cliHeader + 1, 0, `use_leader = true ${LEADER_MARK}`);
   else if (scan.rootDotted !== undefined) lines.splice(scan.rootDotted + 1, 0, `cli.use_leader = true ${LEADER_MARK}`);
-  else return "block";
+  else return { text: `${text}${text && !text.endsWith("\n") ? "\n" : ""}${text ? "\n" : ""}[cli] ${LEADER_MARK}\nuse_leader = true ${LEADER_MARK}\n` };
   return { text: lines.join("\n") };
 }
 
-/** Takes back the `use_leader = true` line an install wrote, if it is still there and still true. */
+/**
+ * Takes back the `use_leader = true` line an install wrote, if it is still there and still true: puts back the line it
+ * replaced, or removes it, and then the `[cli]` header the install added if the person put nothing under it.
+ */
 function revertLeader(text: string, replaced?: string): string {
   const lines = text.split("\n");
   const index = lines.findIndex((line) => LEADER_LINE.test(line));
   if (index < 0) return text;
   if (replaced === undefined) lines.splice(index, 1);
   else lines[index] = replaced;
+  const header = lines.findIndex((line) => LEADER_HEADER.test(line));
+  if (header >= 0) {
+    let end = header + 1;
+    while (end < lines.length && lines[end]!.trim() === "") end++;
+    if (end === lines.length || /^\s*\[/.test(lines[end]!)) {
+      let start = header;
+      // At the end of the file, the blank line that separated the table goes too.
+      if (end === lines.length) while (start > 0 && lines[start - 1]!.trim() === "") start--;
+      lines.splice(start, end - start, ...(end === lines.length && start > 0 ? [""] : []));
+    }
+  }
   return lines.join("\n");
 }
 
@@ -300,43 +330,54 @@ function askTerminal(lines: string[], question: string): boolean | undefined {
 /** What a Grok install will write, worked out before anything is written. */
 interface GrokPlan {
   file: string;
+  /** The config to write the MCP block after: the current file without the block, leader setting already applied. */
+  base: string;
+  /** What uninstall restores when the file is untouched since this install: the config without any of our changes. */
   originalExists: boolean;
-  /** The user's config without Agent Hub's block or leader change. */
   original: string;
-  /** Set when leader mode is to be on by this install: the record uninstall reverts it with. */
+  /** Present while a `use_leader = true` line in the file is Agent Hub's: the record uninstall reverts it with. */
   leader?: { replaced?: string };
+  /** This install turned leader mode on. */
+  turnedOn?: boolean;
 }
 
 /**
  * Grok reads MCP servers from `[mcp_servers.<name>]` in its config.toml. A plugin under ~/.grok/plugins is not enough:
  * user plugins start disabled (seen with grok 1.0.45, 24 Nov). It wakes for Hub messages only in leader mode, which
  * changes how every Grok session on the machine runs, so the person decides: asked on a terminal, else `--leader`.
+ * The leader setting lives in the person's `[cli]` table, never in the MCP block, and is read from the file as it is
+ * now: a value the person changed since an earlier install is theirs.
  */
 function planGrok(definition: Definition, opts: UniversalInstallOptions, previous?: ConfigSnapshot): GrokPlan {
   const file = definition.config!;
   const existed = existsSync(file);
   const before = existed ? readFileSync(file, "utf8") : "";
-  const withoutOurs = before.replace(GROK_BLOCK, "");
-  if (/^\s*\[mcp_servers\.(?:agent-hub|"agent-hub")\]/m.test(withoutOurs)) {
+  const stripped = stripGrokBlock(before, "");
+  if (/^\s*\[mcp_servers\.(?:agent-hub|"agent-hub")\]/m.test(stripped)) {
     throw new Error(`${file} already has an agent-hub MCP server not written by Agent Hub; not replacing it`);
   }
-  const plan: GrokPlan = { file, originalExists: existed, original: before };
-  if (previous && before === previous.installed) {
-    plan.originalExists = previous.originalExists;
-    plan.original = previous.original;
-    // Untouched since the last install: keep the leader mode the person turned on then.
-    if (previous.leader) return { ...plan, leader: previous.leader };
-  } else if (withoutOurs !== before) {
-    plan.original = withoutOurs;
-    if (previous?.leader && withoutOurs.split("\n").some((line) => LEADER_LINE.test(line))) {
-      // The leader line an earlier install wrote is still there: keep it, and keep it revertible on uninstall.
-      return { ...plan, original: revertLeader(withoutOurs, previous.leader.replaced), leader: previous.leader };
-    }
-    if (previous?.leader && scanLeader(withoutOurs).value === undefined) return { ...plan, leader: previous.leader };
-  }
-  if (scanLeader(plan.original).value === true) {
+  const base = stripped !== before && stripped && !stripped.endsWith("\n") ? `${stripped}\n` : stripped;
+  const untouched = previous !== undefined && before === previous.installed;
+  const ours = base.split("\n").some((line) => LEADER_LINE.test(line));
+  const plan: GrokPlan = {
+    file,
+    base,
+    originalExists: untouched ? previous.originalExists : existed,
+    original: untouched ? previous.original : ours ? revertLeader(base, previous?.leader?.replaced) : base,
+    ...(ours ? { leader: { replaced: previous?.leader?.replaced } } : {}),
+  };
+  const value = scanLeader(base).value;
+  if (value === true) {
     console.log(`Grok leader mode is already on in ${file}, so Grok wakes for Agent Hub messages.`);
     return plan;
+  }
+  if (value === undefined && previous?.leader && scanLeader(before).value === true) {
+    // An install before 27 Nov kept the setting inside the MCP block; it moves to the person's config, still on.
+    const set = setLeader(base);
+    if (set) {
+      console.log(`Grok leader mode is already on in ${file}, so Grok wakes for Agent Hub messages.`);
+      return { ...plan, base: set.text, leader: {} };
+    }
   }
   const turnOn = opts.leader ?? askTerminal([
     "Grok wakes for Agent Hub messages only in leader mode, and it is off.",
@@ -350,30 +391,23 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
     console.log(`Leaving Grok leader mode off. ${leaderLater(file)}`);
     return plan;
   }
-  const set = setLeader(plan.original);
+  const set = setLeader(base);
   if (set === undefined) {
     console.log(`${file} sets cli as an inline table; add use_leader = true to it by hand, or start Grok with grok --leader.`);
     return plan;
   }
-  return { ...plan, leader: set === "block" ? {} : { replaced: set.replaced } };
+  return { ...plan, base: set.text, leader: { replaced: set.replaced }, turnedOn: true };
 }
 
 function writeGrokEntry(name: UniversalAdapterName, plan: GrokPlan, target: string, url: string): void {
-  const { file, originalExists, original, leader } = plan;
-  let base = originalExists ? original : "";
-  let leaderTable = "";
-  if (leader) {
-    const set = setLeader(base);
-    if (set === "block") leaderTable = "[cli]\nuse_leader = true\n";
-    else if (set !== undefined) base = set.text;
-  }
+  const { file, base, originalExists, original, leader } = plan;
   const args = argsFor(name, target, url).map((value) => JSON.stringify(value)).join(", ");
-  const body = `${GROK_BEGIN}\n[mcp_servers.agent-hub]\ncommand = ${JSON.stringify(jsRuntime())}\nargs = [${args}]\n${leaderTable}${GROK_END}\n`;
+  const body = `${GROK_BEGIN}\n[mcp_servers.agent-hub]\ncommand = ${JSON.stringify(jsRuntime())}\nargs = [${args}]\n${GROK_END}\n`;
   const installed = `${base}${base && !base.endsWith("\n") ? "\n" : ""}${base ? "\n" : ""}${body}`;
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, installed);
   writeJson(configSnapshotFile(target), { originalExists, original, installed, ...(leader ? { leader } : {}) });
-  if (leader) console.log(`Grok leader mode is on: use_leader = true under [cli] in ${file}.`);
+  if (plan.turnedOn) console.log(`Grok leader mode is on: use_leader = true under [cli] in ${file}.`);
 }
 
 function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
@@ -385,8 +419,8 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
     else rmSync(file);
     return;
   }
-  let cleaned = current.replace(GROK_BLOCK, "\n").replace(/\n+$/, "\n");
-  if (snapshot?.leader) cleaned = revertLeader(cleaned, snapshot.leader.replaced);
+  // Edited since install: the user's changes stay; only Agent Hub's block and its own unchanged leader line go.
+  const cleaned = revertLeader(stripGrokBlock(current, "\n"), snapshot?.leader?.replaced).replace(/\n+$/, "\n");
   if (cleaned !== current) writeFileSync(file, cleaned === "\n" ? "" : cleaned);
 }
 
