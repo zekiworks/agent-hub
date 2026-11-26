@@ -36,6 +36,8 @@ install / uninstall: put this machine's HARNESS on the Hub, or take it off. HARN
   --url defaults to the URL of the install being replaced, then $AGENT_BUS_URL, then http://127.0.0.1:7800.
   Installing again updates. --force replaces a file at the install path that agent-bus did not write (moved aside).
   codex only: --bind-current-transcript FILE (run inside a pre-1.5 chat to seed its reopen binding).
+  grok only: --leader turns on Grok's leader mode, which it needs to wake for Hub messages; --no-leader leaves it as it
+  is. Without either, the installer asks on a terminal, and leaves it as it is when there is none.
 
 up: after a reboot, asks the Hub which agents ran on this machine (omp and pi, seen within --since-days) and opens a
   tmux window for each in its folder that resumes its last session (omp -c, pi -c), in session --session (created if
@@ -509,7 +511,7 @@ async function runTool(command: "run", args: string[]): Promise<number> {
 }
 
 async function runInstall(command: "install" | "uninstall" | "doctor", args: string[]): Promise<number> {
-  const opts: { url?: string; dir?: string; buildOnly?: boolean; force?: boolean; bindTranscript?: string } = {};
+  const opts: { url?: string; dir?: string; buildOnly?: boolean; force?: boolean; bindTranscript?: string; leader?: boolean } = {};
   let name: string | undefined;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] ?? "";
@@ -523,6 +525,7 @@ async function runInstall(command: "install" | "uninstall" | "doctor", args: str
     else if (arg === "--build-only" && command === "install") opts.buildOnly = true;
     else if (arg === "--force" && command === "install") opts.force = true;
     else if (arg === "--bind-current-transcript" && command === "install") opts.bindTranscript = value();
+    else if ((arg === "--leader" || arg === "--no-leader") && command === "install") opts.leader = arg === "--leader";
     else if (arg.startsWith("--")) throw new Error(`Unknown option "${arg}"`);
     else if (name === undefined && command !== "doctor") name = arg;
     else throw new Error(`Unexpected argument "${arg}"`);
@@ -532,6 +535,7 @@ async function runInstall(command: "install" | "uninstall" | "doctor", args: str
   const { harness, HARNESSES } = await import("./harnesses");
   if (name === undefined) throw new Error(`Name the harness: ${HARNESSES.map((h) => h.name).join(", ")}`);
   if (opts.bindTranscript !== undefined && name !== "codex") throw new Error("--bind-current-transcript is for codex only");
+  if (opts.leader !== undefined && name !== "grok") throw new Error(`${opts.leader ? "--leader" : "--no-leader"} is for grok only`);
   const target = harness(name);
   await (command === "install" ? target.install(opts) : target.uninstall(opts));
   return 0;

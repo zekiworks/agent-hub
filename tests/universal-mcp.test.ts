@@ -9,20 +9,38 @@ import { getJson, postJson, startBus, TEST_TOKEN } from "./helpers";
 const repo = resolve(import.meta.dir, "..");
 const homes: string[] = [];
 
-async function agentBus(home: string, ...args: string[]): Promise<void> {
-  const child = Bun.spawn([process.execPath, "run", "packages/cli/src/bin.ts", ...args], {
-    cwd: repo,
-    env: { ...process.env, HOME: home },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+async function agentBus(home: string, ...args: string[]): Promise<string> {
+  const { code, output } = await run(home, args);
+  if (code !== 0) throw new Error(output);
+  return output;
+}
+
+/** Runs agent-bus; with `tty`, inside a pseudo-terminal (util-linux `script`) that types `tty` as the answer. */
+async function run(home: string, args: string[], tty?: string): Promise<{ code: number; output: string }> {
+  const command = [process.execPath, "run", "packages/cli/src/bin.ts", ...args];
+  const { GROK_HOME: _, ...env } = process.env;
+  const child = Bun.spawn(
+    tty === undefined ? command : ["script", "-qec", command.map((word) => `'${word.replaceAll("'", `'\\''`)}'`).join(" "), "/dev/null"],
+    { cwd: repo, env: { ...env, HOME: home }, stdin: tty === undefined ? "ignore" : "pipe", stdout: "pipe", stderr: "pipe" },
+  );
+  if (tty !== undefined && child.stdin) {
+    child.stdin.write(tty);
+    child.stdin.end();
+  }
   const [code, stdout, stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
   ]);
-  if (code !== 0) throw new Error(`${stdout}${stderr}`);
+  return { code, output: `${stdout}${stderr}` };
 }
+
+/** Bun's TOML parser: throws unless the file is valid TOML. */
+type GrokConfig = { cli?: { use_leader?: boolean; theme?: string }; mcp_servers?: Record<string, unknown> };
+const toml = (file: string): GrokConfig => Bun.TOML.parse(readFileSync(file, "utf8")) as GrokConfig;
+
+const PROMPT = "Turn on leader mode in";
+const INSTALL_GROK = ["install", "grok", "--url", "http://127.0.0.1:7800", "--build-only"];
 
 async function runHook(home: string, cwd: string): Promise<string> {
   const settings = JSON.parse(readFileSync(join(home, ".qwen", "settings.json"), "utf8"));
@@ -140,6 +158,113 @@ describe("universal MCP adapter configuration", () => {
     expect(after).not.toContain("agent-hub");
     expect(after).toContain("[models]");
     expect(after).toContain("theme = \"dark\"");
+  }, 30_000);
+
+  test("Grok leader mode: yes on a terminal adds [cli] to the owned block; uninstall restores the file byte for byte", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const before = `[models]\ndefault = "dspark"\n`;
+    await Bun.write(config, before);
+
+    const { code, output } = await run(root, INSTALL_GROK, "y\n");
+    expect(code).toBe(0);
+    expect(output).toContain("Grok wakes for Agent Hub messages only in leader mode, and it is off.");
+    expect(output).toContain("one Grok process, the leader, owns every Grok session on this machine");
+    expect(output).toContain(`${PROMPT} ${config}? [y/N]`);
+    expect(output).toContain("Grok leader mode is on");
+    const parsed = toml(config);
+    expect(parsed.cli?.use_leader).toBe(true);
+    expect(parsed.mcp_servers?.["agent-hub"]).toBeDefined();
+    const installed = readFileSync(config, "utf8");
+    // Reinstalling keeps the leader mode the person turned on, without asking again.
+    const again = await agentBus(root, ...INSTALL_GROK, "--no-leader");
+    expect(again).not.toContain(PROMPT);
+    expect(readFileSync(config, "utf8")).toBe(installed);
+
+    await agentBus(root, "uninstall", "grok");
+    expect(readFileSync(config, "utf8")).toBe(before);
+  }, 30_000);
+
+  test("Grok leader mode: yes with an existing [cli] sets it there; uninstall after an edit reverts only that", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    await Bun.write(config, `[cli]\ntheme = "light"\n\n[models]\ndefault = "dspark"\n`);
+
+    const { code, output } = await run(root, INSTALL_GROK, "yes\n");
+    expect(code).toBe(0);
+    expect(output).toContain(PROMPT);
+    expect(toml(config).cli).toEqual({ theme: "light", use_leader: true });
+    expect(readFileSync(config, "utf8").match(/^\[cli\]/gm)).toHaveLength(1);
+
+    await Bun.write(config, `${readFileSync(config, "utf8")}\n[ui]\ntheme = "dark"\n`);
+    await agentBus(root, "uninstall", "grok");
+    const after = readFileSync(config, "utf8");
+    expect(after).toBe(`[cli]\ntheme = "light"\n\n[models]\ndefault = "dspark"\n\n[ui]\ntheme = "dark"\n`);
+    expect(toml(config).cli).toEqual({ theme: "light" });
+  }, 30_000);
+
+  test("Grok leader mode: --leader without a terminal replaces use_leader = false; uninstall after an edit puts it back", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    await Bun.write(config, `[cli]\nuse_leader = false\n`);
+
+    const output = await agentBus(root, ...INSTALL_GROK, "--leader");
+    expect(output).not.toContain(PROMPT);
+    expect(toml(config).cli?.use_leader).toBe(true);
+    await Bun.write(config, `${readFileSync(config, "utf8")}\n[ui]\ntheme = "dark"\n`);
+    await agentBus(root, "uninstall", "grok");
+    expect(readFileSync(config, "utf8")).toBe(`[cli]\nuse_leader = false\n\n[ui]\ntheme = "dark"\n`);
+    expect(toml(config).cli?.use_leader).toBe(false);
+
+    // Root dotted cli keys: the setting joins them, never a second [cli] table.
+    await Bun.write(config, `cli.theme = "light"\n\n[models]\ndefault = "dspark"\n`);
+    await agentBus(root, ...INSTALL_GROK, "--leader");
+    expect(toml(config).cli).toEqual({ theme: "light", use_leader: true });
+  }, 30_000);
+
+  test("Grok leader mode: already on is reported and left alone", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    for (const before of [`[cli]\nuse_leader = true\n`, `cli.use_leader = true\n\n[models]\ndefault = "dspark"\n`]) {
+      await Bun.write(config, before);
+      const { code, output } = await run(root, INSTALL_GROK, "n\n");
+      expect(code).toBe(0);
+      expect(output).toContain("Grok leader mode is already on");
+      expect(output).not.toContain(PROMPT);
+      expect(toml(config).cli?.use_leader).toBe(true);
+      expect(readFileSync(config, "utf8").startsWith(before)).toBe(true);
+      await agentBus(root, "uninstall", "grok");
+      expect(readFileSync(config, "utf8")).toBe(before);
+    }
+  }, 30_000);
+
+  test("Grok leader mode: no, --no-leader, or no terminal leave it off and say how to turn it on", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const before = `[models]\ndefault = "dspark"\n`;
+    await Bun.write(config, before);
+
+    const no = await run(root, INSTALL_GROK, "n\n");
+    expect(no.code).toBe(0);
+    expect(no.output).toContain(PROMPT);
+    expect(no.output).toContain("Leaving Grok leader mode off. To turn it on later: agent-bus install grok --leader");
+    expect(toml(config).cli).toBeUndefined();
+
+    const flag = await agentBus(root, ...INSTALL_GROK, "--no-leader");
+    expect(flag).not.toContain(PROMPT);
+    expect(flag).toContain("Leaving Grok leader mode off.");
+    expect(toml(config).cli).toBeUndefined();
+
+    const quiet = await agentBus(root, ...INSTALL_GROK);
+    expect(quiet).not.toContain(PROMPT);
+    expect(quiet).toContain("Grok leader mode is off");
+    expect(toml(config).cli).toBeUndefined();
+    const doctor = await run(root, ["doctor", "--url", "http://127.0.0.1:9"]);
+    expect(doctor.output).toContain("no idle wake: leader mode off");
+
+    await expect(agentBus(root, "install", "qwen", "--leader")).rejects.toThrow("--leader is for grok only");
+    await agentBus(root, "uninstall", "grok");
+    expect(readFileSync(config, "utf8")).toBe(before);
   }, 30_000);
 
   test("Qwen hook injects each unseen Inbox message once before a turn", async () => {
