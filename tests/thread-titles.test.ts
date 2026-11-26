@@ -1,5 +1,6 @@
-// Thread titles (Can #17615): the Hub asks the first agent woken in an untitled thread to title it, once; the
-// `message-bus` op=title sets it (on the thread's root); the website gets the root again in a "changed" frame.
+// Thread titles (Can #17615, #17636): until a thread has a title, each delivery that wakes an agent in it asks that
+// agent (one per message) to title it; the `message-bus` op=title sets it (on the thread's root); the website gets the
+// root again in a "changed" frame.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -81,7 +82,7 @@ async function thread(alpha: TestAgent, beta: TestAgent): Promise<{ plan: PostMe
   return { plan, draft };
 }
 
-test("the first agent woken in an untitled thread is asked once; op=title names the thread on its root", async () => {
+test("woken agents are asked until the thread has a title; op=title names the thread on its root", async () => {
   const alpha = await agent("alpha");
   const beta = await agent("beta");
   const { plan, draft } = await thread(alpha, beta);
@@ -100,9 +101,9 @@ test("the first agent woken in an untitled thread is asked once; op=title names 
   expect(quiet.titleThread).toBeUndefined();
   expect(formatDelivery(quiet, [], beta.id)).not.toContain("no title yet");
 
-  // Asked once: the next woken delivery in the thread does not ask again, though it has no title yet.
+  // The ask was ignored: the next woken delivery in the still untitled thread asks again (Can #17636).
   const again = await send({ from: "carol", replyToSeq: reply.message.seq, text: "and tag it" });
-  expect((await alpha.next()).titleThread).toBeUndefined();
+  expect((await alpha.next()).titleThread).toBe(root);
   await beta.next();
 
   // The tool takes any message of the thread and titles its root; open pages get the root as it is now.
@@ -128,6 +129,14 @@ test("the first agent woken in an untitled thread is asked once; op=title names 
   expect(res.status).toBe(200);
   const body: { message: Message } = await res.json();
   expect(body.message).toMatchObject({ seq: root, threadTitle: "Release: final review" });
+
+  // Titled: woken deliveries in the thread no longer ask.
+  await send({ from: "carol", replyToSeq: again.message.seq, text: "one more thing" });
+  const after = await alpha.next();
+  expect(after.wake).toBe(true);
+  expect(after.titleThread).toBeUndefined();
+  expect(formatDelivery(after, [], alpha.id)).not.toContain("no title yet");
+  await beta.next();
 });
 
 test("two agents woken by the same reply: only one is asked", async () => {

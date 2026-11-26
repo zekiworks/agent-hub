@@ -287,8 +287,8 @@ CREATE TABLE IF NOT EXISTS pinned_messages (
   PRIMARY KEY (conversation_id, seq)
 );
 
--- Thread titles (Can #17615), by the thread's root message (seqs are global). A row without a title records the one
--- delivery that asked an agent for it (asked_to, asked_seq), so a thread is asked about once.
+-- Thread titles (Can #17615), by the thread's root message (seqs are global). While a thread has no title, a row
+-- records the latest delivery that asked an agent for one (asked_to, asked_seq), so one message asks one agent.
 CREATE TABLE IF NOT EXISTS thread_titles (
   root_seq INTEGER PRIMARY KEY,
   conversation_id TEXT NOT NULL,
@@ -1105,10 +1105,10 @@ export class BusDatabase {
   }
 
   /**
-   * Whether delivering `message` to agent `to` asks it to title the message's thread (Can #17615): the thread's root
-   * when the thread has no title and nobody was asked yet (this ask is recorded), or when this is the delivery that
-   * asked, handed over again (a dropped session, held while offline); else undefined. The caller asks only on
-   * deliveries that wake an agent connected now.
+   * Whether delivering `message` to agent `to` asks it to title the message's thread (Can #17615, #17636): the thread's
+   * root while the thread has no title, unless `message` already asked another agent (one agent per message; that
+   * delivery handed over again asks again); else undefined. Each ask is recorded. The caller asks only on deliveries
+   * that wake an agent connected now.
    */
   threadTitleAsk(message: Message, to: string): number | undefined {
     const root = this.threadRootOf(message.seq);
@@ -1118,13 +1118,15 @@ export class BusDatabase {
         "SELECT title, asked_to, asked_seq FROM thread_titles WHERE root_seq = ?1"
       )
       .get(root);
-    if (!row) {
-      this.db
-        .query("INSERT INTO thread_titles (root_seq, conversation_id, asked_to, asked_seq) VALUES (?1, ?2, ?3, ?4)")
-        .run(root, message.conversationId, to, message.seq);
-      return root;
-    }
-    return row.title === null && row.asked_to === to && row.asked_seq === message.seq ? root : undefined;
+    if (row?.title) return undefined;
+    if (row?.asked_seq === message.seq) return row.asked_to === to ? root : undefined;
+    this.db
+      .query(
+        `INSERT INTO thread_titles (root_seq, conversation_id, asked_to, asked_seq) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(root_seq) DO UPDATE SET asked_to = excluded.asked_to, asked_seq = excluded.asked_seq`
+      )
+      .run(root, message.conversationId, to, message.seq);
+    return root;
   }
 
   /** Titles thread `root` of `conversationId` (a later title replaces it). Callers check who may and that it is a thread. */

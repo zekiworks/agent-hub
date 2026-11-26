@@ -295,7 +295,7 @@ export interface Message {
   forwards?: MessageForward[];
   /**
    * On a thread's root (Can #17615): the thread's title, which the website shows on the thread's bar and above it when
-   * open. An agent woken in the untitled thread is asked once to give it one (deliver frame `titleThread`). A thread is
+   * open. Until it has one, an agent woken in the thread is asked to give it one (deliver frame `titleThread`). A thread is
    * a reply chain (quote.seq links) a person has replied in; its root is the chain's first message.
    */
   threadTitle?: string;
@@ -434,7 +434,7 @@ export type AgentServerFrame =
       held?: boolean;
       /**
        * The message is in a thread whose root, this #number, has no title yet: the agent is asked to give it one (op=title).
-       * Only the first woken delivery in the thread carries it (and that same delivery again if it is handed over).
+       * Every delivery that wakes a connected agent in an untitled thread carries it, for one agent per message.
        */
       titleThread?: number;
     }
