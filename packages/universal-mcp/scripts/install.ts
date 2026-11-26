@@ -243,12 +243,12 @@ function withoutOurs(config: Toml): Toml {
 
 /**
  * Throws unless the edited config differs from the one before only where Agent Hub meant to change it: its MCP server
- * there (install) or gone (uninstall), `cli.use_leader` as `leader` (unless undefined: not checked), all else equal.
+ * there (install) or gone (uninstall), `cli.use_leader` equal to `leader.value` (null: not checked), all else equal.
  */
-function checkGrokEdit(file: string, before: Toml, after: Toml, server: boolean, leader: unknown, hint: string): void {
+function checkGrokEdit(file: string, before: Toml, after: Toml, server: boolean, leader: { value: unknown } | null, hint: string): void {
   const ok = Bun.deepEquals(withoutOurs(before), withoutOurs(after))
     && (object(after.mcp_servers)["agent-hub"] !== undefined) === server
-    && (leader === undefined || leaderOf(after) === leader);
+    && (leader === null || leaderOf(after) === leader.value);
   if (!ok) throw new Error(`Agent Hub could not edit ${file} without changing other settings; nothing was changed. ${hint}`);
 }
 
@@ -258,6 +258,7 @@ const CLI_FALSE = new RegExp(`^\\s*${tomlKey("use_leader")}\\s*=\\s*false\\b`);
 const ROOT_FALSE = new RegExp(`^\\s*${tomlKey("cli")}\\s*\\.\\s*${tomlKey("use_leader")}\\s*=\\s*false\\b`);
 const ROOT_DOTTED = new RegExp(`^\\s*${tomlKey("cli")}\\s*\\.`);
 const ROOT_INLINE = new RegExp(`^\\s*${tomlKey("cli")}\\s*=`);
+const INLINE_FALSE = new RegExp(`(${tomlKey("use_leader")}\\s*=\\s*)false\\b`);
 
 /**
  * Where to edit Grok's `use_leader` in a config.toml (line numbers), read line by line, skipping multi-line strings.
@@ -272,7 +273,7 @@ interface LeaderScan {
   /** The last root `cli.KEY = …` line: `cli` is then a dotted-key table and must not get a `[cli]` header. */
   rootDotted?: number;
   /** `cli = { … }` at the root: an inline table, which cannot take another key. */
-  inline?: boolean;
+  inline?: number;
 }
 
 function scanLeader(text: string): LeaderScan {
@@ -302,7 +303,7 @@ function scanLeader(text: string): LeaderScan {
       scan.falseDotted = table === "";
     }
     if (table === "" && ROOT_DOTTED.test(line)) scan.rootDotted = i;
-    if (table === "" && ROOT_INLINE.test(line)) scan.inline = true;
+    if (table === "" && ROOT_INLINE.test(line)) scan.inline = i;
   });
   return scan;
 }
@@ -310,9 +311,9 @@ function scanLeader(text: string): LeaderScan {
 /**
  * Sets `use_leader = true` in the user's own `[cli]` table (or root `cli.` keys) when there is one; otherwise adds a
  * `[cli]` table at the end of the file, outside the MCP block, so keys the person adds to it later stay theirs. The
- * file stays valid TOML. Undefined: `cli` is an inline table (`cli = {…}`), which takes no further key.
+ * file stays valid TOML. `inline`: `cli` is an inline table (`cli = {…}`), which takes no further key; its line.
  */
-function setLeader(text: string): { text: string; replaced?: string } | undefined {
+function setLeader(text: string): { text: string; replaced?: string } | { inline: string } {
   const scan = scanLeader(text);
   const lines = text.split("\n");
   if (scan.falseLine !== undefined) {
@@ -320,7 +321,7 @@ function setLeader(text: string): { text: string; replaced?: string } | undefine
     lines[scan.falseLine] = `${/^\s*/.exec(replaced)![0]}${scan.falseDotted ? "cli." : ""}use_leader = true ${LEADER_MARK}`;
     return { text: lines.join("\n"), replaced };
   }
-  if (scan.inline) return undefined;
+  if (scan.inline !== undefined) return { inline: lines[scan.inline]! };
   if (scan.cliHeader !== undefined) lines.splice(scan.cliHeader + 1, 0, `use_leader = true ${LEADER_MARK}`);
   else if (scan.rootDotted !== undefined) lines.splice(scan.rootDotted + 1, 0, `cli.use_leader = true ${LEADER_MARK}`);
   else return { text: `${text}${text && !text.endsWith("\n") ? "\n" : ""}${text ? "\n" : ""}[cli] ${LEADER_MARK}\nuse_leader = true ${LEADER_MARK}\n` };
@@ -433,7 +434,7 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
   if (value === undefined && previous?.leader && leaderOf(parsed) === true) {
     // An install before 27 Nov kept the setting inside the MCP block; it moves to the person's config, still on.
     const set = setLeader(base);
-    if (set) {
+    if ("text" in set) {
       console.log(`Grok leader mode is already on in ${file}, so Grok wakes for Agent Hub messages.`);
       return { ...plan, base: set.text, leaderValue: true, leader: {} };
     }
@@ -451,9 +452,15 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
     return plan;
   }
   const set = setLeader(base);
-  if (set === undefined) {
-    console.log(`${file} sets cli as an inline table; add use_leader = true to it by hand, or start Grok with grok --leader.`);
-    return plan;
+  if ("inline" in set) {
+    // Asked for and not possible: fail, never install with leader mode silently still off.
+    const on = INLINE_FALSE.test(set.inline) ? set.inline.replace(INLINE_FALSE, "$1true")
+      : /\{\s*\}/.test(set.inline) ? set.inline.replace(/\{\s*\}/, "{ use_leader = true }")
+      : set.inline.replace(/\{\s*/, "{ use_leader = true, ");
+    throw new Error(
+      `${file} sets cli as an inline table, which Agent Hub does not edit; nothing was changed. To turn leader mode on, ` +
+        `change that line to \`${on.trim()}\`, then run this again, or start Grok with grok --leader.`,
+    );
   }
   return { ...plan, base: set.text, leaderValue: true, leader: { replaced: set.replaced }, turnedOn: true };
 }
@@ -468,7 +475,7 @@ function grokInstalled(name: UniversalAdapterName, plan: GrokPlan, target: strin
   const body = `${GROK_BEGIN}\n[mcp_servers.agent-hub]\ncommand = ${JSON.stringify(jsRuntime())}\nargs = [${args}]\n${GROK_END}\n`;
   const installed = `${base}${base && !base.endsWith("\n") ? "\n" : ""}${base ? "\n" : ""}${body}`;
   const after = parseToml(installed, `${file} with Agent Hub's block added`, BY_HAND);
-  checkGrokEdit(file, plan.parsed, after, true, plan.leaderValue, BY_HAND);
+  checkGrokEdit(file, plan.parsed, after, true, { value: plan.leaderValue }, BY_HAND);
   return installed;
 }
 
@@ -500,7 +507,7 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
   }
   if (parsed) {
     const hint = `If Grok reads it fine, delete the lines from "${GROK_BEGIN}" to "${GROK_END}" by hand.`;
-    checkGrokEdit(file, parsed, parseToml(cleaned, `${file} with Agent Hub's block removed`, hint), false, undefined, hint);
+    checkGrokEdit(file, parsed, parseToml(cleaned, `${file} with Agent Hub's block removed`, hint), false, null, hint);
   }
   writeFileSync(file, cleaned === "\n" ? "" : cleaned);
 }
@@ -552,15 +559,15 @@ export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions
   }
   if (installed && definition.kind === "grok") {
     const text = existsSync(definition.config!) ? readFileSync(definition.config!, "utf8") : "";
-    let leader: unknown;
+    let config: Toml | undefined;
     try {
-      leader = leaderOf(Bun.TOML.parse(text) as Toml);
+      config = Bun.TOML.parse(text) as Toml;
     } catch {
       notes.push(`Bun could not parse ${definition.config}`);
     }
-    if (!text.includes(GROK_BEGIN)) notes.push(`MCP entry missing from ${definition.config}`);
-    else if (leader === true) notes.push("idle wake: leader mode on");
-    else notes.push("no idle wake: leader mode off (agent-bus install grok --leader, or grok --leader)");
+    if (config && !text.includes(GROK_BEGIN)) notes.push(`MCP entry missing from ${definition.config}`);
+    else if (config && leaderOf(config) === true) notes.push("idle wake: leader mode on");
+    else if (config) notes.push("no idle wake: leader mode off (agent-bus install grok --leader, or grok --leader)");
   }
   return { installed, where: target, busUrl: configBusUrl(configFile(target)), notes };
 }

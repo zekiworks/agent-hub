@@ -387,7 +387,51 @@ describe("universal MCP adapter configuration", () => {
     expect(again.code).not.toBe(0);
     expect(again.output).toContain(`Bun could not parse ${config} (`);
     expect(readFileSync(config, "utf8")).toBe(broken);
+    // doctor reports only that Bun could not parse it, not a leader-mode verdict it cannot know.
+    const doctor = await run(root, ["doctor", "--url", "http://127.0.0.1:9"]);
+    expect(doctor.output).toContain(`Bun could not parse ${config}`);
+    expect(doctor.output).not.toContain("leader mode");
   }, 30_000);
+
+  test("Grok: an [mcp_servers.agent-hub] block added by hand, without the markers, is the person's", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const before = `[mcp_servers.agent-hub]\ncommand = "/home/YOU/.bun/bin/bun"\nargs = ["/home/YOU/agent-hub/packages/universal-mcp/src/server.ts", "--harness", "grok", "--url", "http://127.0.0.1:7800"]\n`;
+    await Bun.write(config, before);
+    const install = await run(root, [...INSTALL_GROK, "--leader"]);
+    expect(install.code).not.toBe(0);
+    expect(install.output).toContain("already has an agent-hub MCP server not written by Agent Hub");
+    await agentBus(root, "uninstall", "grok");
+    expect(readFileSync(config, "utf8")).toBe(before);
+  }, 30_000);
+
+  test("Grok leader mode: --leader with an inline cli table fails, changes nothing, and gives the line to write", async () => {
+    const inputs: Array<[string, string]> = [
+      [`cli = { use_leader = false }`, `cli = { use_leader = true }`],
+      [`cli = { theme = "light" }`, `cli = { use_leader = true, theme = "light" }`],
+      [`cli = {}`, `cli = { use_leader = true }`],
+    ];
+    for (const [line, fixed] of inputs) {
+      const root = home();
+      const config = join(root, ".grok", "config.toml");
+      const before = `${line}\n\n[models]\ndefault = "dspark"\n`;
+      await Bun.write(config, before);
+      const leader = await run(root, [...INSTALL_GROK, "--leader"]);
+      expect(leader.code).not.toBe(0);
+      expect(leader.output).toContain("sets cli as an inline table, which Agent Hub does not edit; nothing was changed");
+      expect(leader.output).toContain(`change that line to \`${fixed}\``);
+      expect(readFileSync(config, "utf8")).toBe(before);
+      expect(toml(config).cli?.use_leader).not.toBe(true);
+      expect(existsSync(join(root, ".agent-bus", "adapters", "grok"))).toBe(false);
+
+      // Leaving leader mode alone works; the suggested line is valid TOML that turns it on.
+      await agentBus(root, ...INSTALL_GROK, "--no-leader");
+      expect(toml(config).cli?.use_leader).not.toBe(true);
+      await Bun.write(config, readFileSync(config, "utf8").replace(line, fixed));
+      expect(toml(config).cli?.use_leader).toBe(true);
+      expect(await agentBus(root, ...INSTALL_GROK, "--leader")).toContain("already on");
+    }
+  }, 60_000);
 
   test("Grok leader mode: use_leader inside a multi-line string is text, not the setting", async () => {
     for (const quote of [`"""`, `'''`]) {
