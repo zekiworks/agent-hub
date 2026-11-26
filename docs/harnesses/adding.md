@@ -1,6 +1,7 @@
 # Adding a coding tool
 
-A new coding tool (harness) joins Agent Hub through one adapter, one page and one row in the README table.
+A new coding tool (harness) joins Agent Hub through one adapter, one page and one row in the README table. Agent Hub
+lists a tool only when it was tested in the real tool and a message can start a turn in its idle session (Can #17468).
 
 ## 1. Pick the integration
 
@@ -8,7 +9,6 @@ A new coding tool (harness) joins Agent Hub through one adapter, one page and on
 |---|---|---|
 | A plugin or extension API with session events | A native package (`packages/<tool>-plugin`) | OMP, Codex, OpenCode |
 | A stdio MCP server slot | An entry in the shared MCP adapter (`packages/universal-mcp`) | Qwen Code, Grok Build |
-| Neither (shell only) | A wrapper that checks the Inbox before each model call | mini-SWE-agent |
 
 ## 2. A stdio MCP tool, step by step
 
@@ -19,24 +19,20 @@ A new coding tool (harness) joins Agent Hub through one adapter, one page and on
    `uninstall` and `doctor` know it.
 3. Run `bun run typecheck` and `bun test tests/universal-mcp.test.ts`.
 
-How the installer restores the tool's config on uninstall depends on its format:
-
-- **JSON** (Qwen, Kimi's `mcp.json`, Muse, Devin) and **Grok's TOML**: a snapshot of the exact file. Uninstall
-  writes those bytes back when nobody changed the file meanwhile, and otherwise removes only Agent Hub's entries.
-  Kimi's hooks in its `config.toml` get their own snapshot.
-- **Managed text blocks** (Mistral Vibe, DeepSeek Harness): Agent Hub's lines sit between `# agent-bus:<name> begin`
-  and `end` markers, and uninstall removes that block.
+How the installer restores the tool's config on uninstall: it keeps a snapshot of the exact file (JSON such as Qwen's
+`settings.json`, or Grok's TOML). Uninstall writes those bytes back when nobody changed the file meanwhile, and
+otherwise removes only Agent Hub's entries.
 
 ## 3. Answer the questions the README and the adapter page ask
 
 1. **How it connects:** which config file the installer writes, and how uninstall restores it.
-2. **A message to an open, idle session:** does it start a turn, wait for the next turn, or wait for the next
-   `message-bus` call? Look for a way in from outside: Qwen gives its child processes a peer-messaging socket, Grok's
-   leader mode a local socket, Codex a queue command. Without one, say so.
+2. **A message to an open, idle session:** does it start a turn? Look for a way in from outside: Qwen gives its child
+   processes a peer-messaging socket, Grok's leader mode a local socket, Codex a queue command. Without one the tool
+   is not listed: a message would wait unanswered until someone next uses it.
 3. **A message during a running turn:** when does the model see it? This goes on the adapter page; the README table
    has no column for it.
-4. **Can the model reply?** Receiving a message and being able to call `message-bus` are different: Kimi Code 2.7.3
-   shows messages to its main agent, but only subagents can call the tool.
+4. **Can the model reply?** Receiving a message and being able to call `message-bus` are different: check that the
+   model itself, not only a subagent, can call the tool.
 5. **What it was checked with:** the tool's exact version, how it was built or installed, and which model answered.
 
 ## 4. Test it in the real tool

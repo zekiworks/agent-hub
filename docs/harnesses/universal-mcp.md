@@ -1,30 +1,22 @@
-# MCP and shell harness adapters
+# MCP harness adapters: Qwen Code and Grok Build
 
-Agent Hub has shared adapters for coding tools that expose a standard **stdio MCP** server slot but do not yet expose enough session APIs for a native plugin:
+Agent Hub has a shared adapter for coding tools that expose a standard **stdio MCP** server slot but no native plugin API:
 
 - Qwen Code: `agent-bus install qwen` (tested with real Qwen Code 0.28.4 and 1.0.0-preview.2)
-- Kimi Code CLI: `agent-bus install kimi` (**blocked upstream**: Kimi Code 2.7.3's main agent defers MCP tools behind a `select_tools` loader it never sends the model, even with `KIMI_CODE_EXPERIMENTAL_TOOL_SELECT=0`; its subagents do get `message-bus` directly and can call it, so a coder subagent is the workaround)
 - Grok Build: `agent-bus install grok` (tested with Grok Build 1.0.45 built from source)
-- DeepSeek Harness: `agent-bus install deepseek` (not yet tested in the harness)
-- Muse Code: `agent-bus install muse` (not yet tested in the harness)
-- Mistral Vibe: `agent-bus install vibe` (not yet tested in the harness)
-- Devin CLI: `agent-bus install devin` (not yet tested in the harness)
 
-Pass `--url http://BUS:7800` when the bus is on another machine. Installing again updates the adapter without changing unrelated MCP servers. `agent-bus uninstall HARNESS` removes only entries and files marked as Agent Hub-owned. JSON adapters snapshot the exact pre-install configuration: uninstall restores those bytes when the file was otherwise untouched; if it changed meanwhile, uninstall removes only the managed entry and keeps the new settings.
+Only tools that were tested and whose idle session a message can wake are supported (Can #17468). Kimi Code CLI, DeepSeek Harness, Muse Code, Mistral Vibe, mini-SWE-agent and Devin CLI had adapters until 26 Nov 2026; they were removed because they were untested or a message could not start a turn in them (see git history).
+
+Pass `--url http://BUS:7800` when the bus is on another machine. Installing again updates the adapter without changing unrelated MCP servers. `agent-bus uninstall HARNESS` removes only entries and files marked as Agent Hub-owned. The installer snapshots the exact pre-install configuration: uninstall restores those bytes when the file was otherwise untouched; if it changed meanwhile, uninstall removes only the managed entry and keeps the new settings.
 
 The installer writes each harness's native user configuration:
 
 | Harness | Configuration |
 |---|---|
 | Qwen Code | `~/.qwen/settings.json` → `mcpServers.agent-hub` and an owned `hooks.UserPromptSubmit` entry |
-| Kimi Code CLI | `~/.kimi-code/mcp.json` (`$KIMI_CODE_HOME`) → `mcpServers.agent-hub` |
 | Grok Build | owned `[mcp_servers.agent-hub]` block in `~/.grok/config.toml` (`$GROK_HOME`); a plugin under `~/.grok/plugins` would start disabled |
-| DeepSeek Harness | owned block in `~/.dsh/cordis.patch.yml` using `@deepseek-ai/dsh-mcp-client` |
-| Muse Code | user settings `mcp_servers.agent-hub` |
-| Mistral Vibe | owned `[[mcp_servers]]` block in `~/.vibe/config.toml` |
-| Devin CLI | `~/.config/devin/mcp_config.json` → `mcpServers.agent-hub` |
 
-The MCP process joins from the harness's working directory and exposes the typed `message-bus` tool. For generic MCP adapters, a delivery is kept unacknowledged until the model next calls that tool; the MCP client also receives a standard logging notification naming the waiting message. This preserves delivery across a crashed or closed session.
+The MCP process joins from the harness's working directory and exposes the typed `message-bus` tool. A delivery that does not wake the session is kept unacknowledged until the model next calls that tool (Qwen: until its turn hook injects it); the MCP client also receives a standard logging notification naming the waiting message. This preserves delivery across a crashed or closed session.
 
 Qwen Code also installs an owned `UserPromptSubmit` command hook. Immediately before every model call, the hook reads unseen Agent Hub Inbox messages, writes them to hook stdout for Qwen to inject into model context, then marks them seen. The model does not have to remember to call Inbox or run a timer. Reinstall replaces only Agent Hub's hook; uninstall restores an otherwise untouched settings file byte for byte.
 
@@ -32,18 +24,7 @@ Qwen Code also installs an owned `UserPromptSubmit` command hook. Immediately be
 
 **Grok idle wake:** in leader mode (`[cli] use_leader = true` in `~/.grok/config.toml`, or `grok --leader`) one leader process owns every Grok session and spawns its MCP servers. The bridge, a child of that leader with `GROK_SESSION_ID`, sends a waking delivery to `~/.grok/leader.sock` as `x.ai/interject`: an idle session starts a turn at once and the TUI shows it live; a busy one takes it into the running turn. The installer does not turn leader mode on. Standalone Grok has no external entry point and no hook that adds model context, so there messages arrive with the next `message-bus` call. Grok asks once before the model's first `message-bus` call, as for any MCP tool. Verified with Grok Build 1.0.45 built from source (`xai-org/grok-build` `2bdd1d6`).
 
-**MCP limitation:** generic MCP cannot start an idle model turn. The other MCP adapters receive messages at their next `message-bus` call. Native adapters such as OMP, Codex, Claude Code, and OpenCode provide wake and live output through their own session APIs.
-
-## mini-SWE-agent
-
-mini-SWE-agent is shell-only and has no MCP client. Install its polling subclass and launch it through the provided wrapper:
-
-```bash
-agent-bus install mini-swe-agent --url http://BUS:7800
-agent-bus-mini -t "the coding task"
-```
-
-`agent-bus-mini` loads `AgentHubAgent`, which checks the Inbox immediately before each model call and injects new deliveries as explicitly marked developer context. The agent can write or reply through the installed `agent-hub-message '{"op":"…"}'` shell command. A batch that has exited cannot be woken; messages wait for its next run.
+**MCP limitation:** plain MCP cannot start an idle model turn; both adapters wake through the tool's own mechanism above. Without it (Qwen 1.0 previews, Grok outside leader mode) messages wait for the next turn or `message-bus` call. Native adapters such as OMP, Codex, Claude Code, and OpenCode provide wake and live output through their own session APIs.
 
 ## Verification
 
