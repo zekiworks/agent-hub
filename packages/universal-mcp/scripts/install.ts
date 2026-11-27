@@ -584,6 +584,8 @@ interface GrokPlan {
   file: string;
   /** The config to write the MCP block after: the current file without the block, leader setting already applied. */
   base: string;
+  /** The file's line breaks are CRLF: worked on with LF, written back with CRLF. */
+  crlf: boolean;
   /** The current file, parsed: the install may change only Agent Hub's server and `cli.use_leader` in it. */
   parsed: Toml;
   /** `cli.use_leader` the written file must have. */
@@ -595,6 +597,21 @@ interface GrokPlan {
   leader?: { replaced?: string };
   /** This install turned leader mode on. */
   turnedOn?: boolean;
+}
+
+/** Whether every line break in `text` is CRLF (a file edited on Windows): it is then written back the same way. */
+const usesCrlf = (text: string): boolean => text.includes("\r\n") && !/(^|[^\r])\n/.test(text);
+const withEol = (text: string, crlf: boolean): string => (crlf ? text.replace(/\n/g, "\r\n") : text);
+
+/** Whether a config.toml text (either line ending) has an Agent Hub block whose parsed server runs `file`. */
+function blockRuns(text: string, file: string): boolean {
+  return (text.replace(/\r\n/g, "\n").match(GROK_BLOCK) ?? []).some((block) => {
+    try {
+      return runs(object((Bun.TOML.parse(block) as Toml).mcp_servers)["agent-hub"], file);
+    } catch {
+      return false;
+    }
+  });
 }
 
 /**
@@ -609,24 +626,27 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
   const say = decided === undefined ? (text: string): void => console.log(text) : (): void => {};
   const file = definition.config!;
   const existed = existsSync(file);
-  const before = existed ? readFileSync(file, "utf8") : "";
-  const parsed = parseToml(before, file, BY_HAND);
+  const raw = existed ? readFileSync(file, "utf8") : "";
+  const crlf = usesCrlf(raw);
+  const before = crlf ? raw.replace(/\r\n/g, "\n") : raw;
+  const parsed = parseToml(raw, file, BY_HAND);
   const stripped = stripGrokBlock(before);
   const base = stripped !== before && stripped.trim() === "" ? "" : stripped;
   const parsedBase = parseToml(base, file, BY_HAND);
   if (object(parsedBase.mcp_servers)["agent-hub"] !== undefined) {
     throw new Error(`${file} already has an agent-hub MCP server not written by Agent Hub; not replacing it`);
   }
-  const untouched = previous !== undefined && before === previous.installed;
+  const untouched = previous !== undefined && raw === previous.installed;
   const ours = base.split("\n").some((line) => LEADER_LINE.test(line));
   const value = leaderOf(parsedBase);
   const plan: GrokPlan = {
     file,
     base,
+    crlf,
     parsed,
     leaderValue: value,
     originalExists: untouched ? previous.originalExists : existed,
-    original: untouched ? previous.original : ours ? revertLeader(base, previous?.leader?.replaced) : base,
+    original: untouched ? previous.original : withEol(ours ? revertLeader(base, previous?.leader?.replaced) : base, crlf),
     ...(ours ? { leader: { replaced: previous?.leader?.replaced } } : {}),
   };
   if (value === true) {
@@ -672,7 +692,7 @@ function grokInstalled(name: UniversalAdapterName, plan: GrokPlan, target: strin
   const { file, base } = plan;
   const args = argsFor(name, target, url).map((value) => JSON.stringify(value)).join(", ");
   const body = `${GROK_BEGIN}\n[mcp_servers.agent-hub]\ncommand = ${JSON.stringify(jsRuntime())}\nargs = [${args}]\n${GROK_END}\n`;
-  const installed = `${base}${base && !base.endsWith("\n") ? "\n" : ""}${base ? "\n" : ""}${body}`;
+  const installed = withEol(`${base}${base && !base.endsWith("\n") ? "\n" : ""}${base ? "\n" : ""}${body}`, plan.crlf);
   const after = parseToml(installed, `${file} with Agent Hub's block added`, BY_HAND);
   checkGrokEdit(file, plan.parsed, after, true, { value: plan.leaderValue }, BY_HAND);
   return installed;
@@ -684,16 +704,22 @@ function writeGrokEntry(plan: GrokPlan, installed: string, snapshot: string, jou
   replaceFile(file, installed, journal);
 }
 
-/** Takes the installation at `target` out of config.toml: its block (only one that runs its server) and leader line. */
+/**
+ * Takes the installation at `target` out of config.toml: its block, only when the block's parsed server runs this
+ * target's server.mjs, and its leader line. With no block, the snapshot is used only if what it installed ran this
+ * target (a copy of an adapter folder carries another's). Either line ending; the file keeps its own.
+ */
 function removeGrokEntry(definition: Definition, target: string, snapshot?: ConfigSnapshot): boolean {
   const file = definition.config!;
   if (!existsSync(file)) return false;
-  const current = readFileSync(file, "utf8");
-  // Another installation's block (or, with no adapter here, its leader line) is not this uninstall's to take, and
-  // neither is its snapshot applied: a copy of an adapter folder carries the same one.
-  const blocks = current.match(GROK_BLOCK) ?? [];
-  if (blocks.length > 0 ? !blocks.some((block) => block.includes(JSON.stringify(serverFile(target)))) : !snapshot) return false;
-  if (snapshot && current === snapshot.installed) {
+  const raw = readFileSync(file, "utf8");
+  const crlf = usesCrlf(raw);
+  const current = crlf ? raw.replace(/\r\n/g, "\n") : raw;
+  const server = serverFile(target);
+  // Another installation's block, or (with no block) its snapshot and leader line, is not this uninstall's to take.
+  const hasBlock = (current.match(GROK_BLOCK) ?? []).length > 0;
+  if (hasBlock ? !blockRuns(current, server) : !(snapshot && blockRuns(snapshot.installed, server))) return false;
+  if (snapshot && raw === snapshot.installed) {
     if (snapshot.originalExists) replaceFile(file, snapshot.original);
     else rmSync(file);
     return true;
@@ -706,7 +732,7 @@ function removeGrokEntry(definition: Definition, target: string, snapshot?: Conf
   const cleaned = withoutBlock === current ? stripped : stripped.replace(/\n+$/, "\n");
   let parsed: Toml | undefined;
   try {
-    parsed = Bun.TOML.parse(current) as Toml;
+    parsed = Bun.TOML.parse(raw) as Toml;
   } catch {
     // Already unreadable: removing Agent Hub's lines cannot make it worse.
   }
@@ -715,7 +741,7 @@ function removeGrokEntry(definition: Definition, target: string, snapshot?: Conf
     const handWritten = withoutBlock === current && object(parsed.mcp_servers)["agent-hub"] !== undefined;
     checkGrokEdit(file, parsed, parseToml(cleaned, `${file} with Agent Hub's block removed`, hint), handWritten, null, hint);
   }
-  replaceFile(file, cleaned === "\n" ? "" : cleaned);
+  replaceFile(file, withEol(cleaned === "\n" ? "" : cleaned, crlf));
   return true;
 }
 

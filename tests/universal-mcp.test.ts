@@ -526,6 +526,67 @@ describe("universal MCP adapter configuration", () => {
     }
   }, 60_000);
 
+  test("Grok: a CRLF config.toml keeps its line endings through install, reinstall and uninstall", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const before = `[models]\r\ndefault = "dspark"\r\n\r\n[cli]\r\n# mine\r\nuse_leader = false\r\n`;
+    await Bun.write(config, before);
+    await agentBus(root, ...INSTALL_GROK, "--leader");
+    const installed = readFileSync(config, "utf8");
+    expect(installed).not.toMatch(/(^|[^\r])\n/);
+    expect(toml(config).cli?.use_leader).toBe(true);
+    expect(toml(config).mcp_servers?.["agent-hub"]).toBeDefined();
+    await agentBus(root, ...INSTALL_GROK, "--leader");
+    expect(readFileSync(config, "utf8")).toBe(installed);
+    await agentBus(root, "uninstall", "grok");
+    expect(readFileSync(config, "utf8")).toBe(before);
+  }, 30_000);
+
+  test("Grok: in a config.toml turned CRLF, uninstall of a copied adapter changes nothing and of the real one removes it", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const adapter = join(root, ".agent-bus", "adapters", "grok");
+    const copy = join(root, "copy-of-adapter");
+    await Bun.write(config, `[models]\ndefault = "dspark"\n\n[cli]\n# mine\nuse_leader = false\n`);
+    await agentBus(root, ...INSTALL_GROK, "--leader");
+    cpSync(adapter, copy, { recursive: true });
+    // An editor on Windows saves it with CRLF.
+    const crlf = readFileSync(config, "utf8").replaceAll("\n", "\r\n");
+    writeFileSync(config, crlf);
+
+    await agentBus(root, "uninstall", "grok", "--dir", copy);
+    expect(readFileSync(config, "utf8")).toBe(crlf);
+
+    await agentBus(root, "uninstall", "grok");
+    const after = readFileSync(config, "utf8");
+    expect(after).not.toContain("agent-hub");
+    expect(after).not.toMatch(/(^|[^\r])\n/);
+    expect(toml(config)).toEqual({ models: { default: "dspark" }, cli: { use_leader: false } });
+    expect(after).toContain("# mine\r\nuse_leader = false\r\n");
+  }, 30_000);
+
+  test("Grok: with no Agent Hub block, a copied adapter's snapshot does not take back the real install's leader line", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const adapter = join(root, ".agent-bus", "adapters", "grok");
+    const copy = join(root, "copy-of-adapter");
+    await Bun.write(config, `[cli]\nuse_leader = false\n`);
+    await agentBus(root, ...INSTALL_GROK, "--leader");
+    cpSync(adapter, copy, { recursive: true });
+    // The person replaced the block with a server of their own; the installer's leader line is still there.
+    const server = `[mcp_servers.agent-hub]\ncommand = "/home/YOU/.bun/bin/bun"\nargs = ["server.ts"]\n`;
+    writeFileSync(config, readFileSync(config, "utf8").replace(/# agent-bus:grok begin\n[\s\S]*# agent-bus:grok end\n/, server));
+    const edited = readFileSync(config, "utf8");
+
+    await agentBus(root, "uninstall", "grok", "--dir", copy);
+    expect(readFileSync(config, "utf8")).toBe(edited);
+    expect(toml(config).cli?.use_leader).toBe(true);
+
+    await agentBus(root, "uninstall", "grok");
+    expect(toml(config).cli?.use_leader).toBe(false);
+    expect(readFileSync(config, "utf8")).toContain(server);
+  }, 30_000);
+
   test("uninstall --dir of a copy of the adapter folder leaves the installation the config runs alone", async () => {
     for (const [harness, relative] of [["qwen", join(".qwen", "settings.json")], ["grok", join(".grok", "config.toml")]] as const) {
       // No config before the install: the snapshot says so, and the copy carries that same snapshot.
