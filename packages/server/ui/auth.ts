@@ -105,7 +105,8 @@ async function renderMe(me: string): Promise<void> {
     ...credentials.map((c) => {
       const li = document.createElement("li");
       const when = c.lastUsedAt ? `last used ${shortTime(c.lastUsedAt)}` : "not used to sign in yet";
-      li.textContent = `${c.label} · made ${shortTime(c.createdAt)} · ${when} `;
+      // A no-break space before each "·": a wrapped line never starts with one (launch review D1).
+      li.textContent = `${c.label}\u00a0· made ${shortTime(c.createdAt)}\u00a0· ${when} `;
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "link-btn";
@@ -136,7 +137,7 @@ async function renderDevices(): Promise<string[]> {
   el<HTMLUListElement>("auth-devices").replaceChildren(
     ...sessions.map((s) => {
       const li = document.createElement("li");
-      li.textContent = `${s.label}${s.current ? " (this browser)" : ""} · signed in ${shortTime(s.createdAt)} · last seen ${shortTime(s.lastSeenAt)} `;
+      li.textContent = `${s.label}${s.current ? " (this browser)" : ""}\u00a0· signed in ${shortTime(s.createdAt)}\u00a0· last seen ${shortTime(s.lastSeenAt)} `;
       if (!s.current) {
         const end = document.createElement("button");
         end.type = "button";
@@ -246,7 +247,7 @@ async function renderMachines(): Promise<void> {
       const state = t.state === "approved" ? "allowed" : t.state === "denied" ? "denied" : `waiting, code ${t.code}`;
       // The bus notes the folders (and older entries, agent ids) that asked; one name per folder is enough here.
       const agents = [...new Set(t.agents.map((a) => (a.split("/").filter(Boolean).pop() ?? a).toLowerCase()))];
-      li.textContent = `${t.host ?? "?"}${t.addr ? ` (${t.addr})` : ""} · ${agents.join(", ") || "no agents yet"} · ${state} · `;
+      li.textContent = `${t.host ?? "?"}${t.addr ? ` (${t.addr})` : ""}\u00a0· ${agents.join(", ") || "no agents yet"}\u00a0· ${state}\u00a0· `;
       // The date stays on one line; Revoke reads as a button, not as more of the line (launch review, 26 Nov).
       li.append(Object.assign(document.createElement("span"), { className: "nowrap", textContent: used }));
       const action = t.state === "approved" ? "deny" : "approve";

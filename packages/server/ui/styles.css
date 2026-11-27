@@ -1965,6 +1965,8 @@ button:disabled {
   padding: 2px 4px;
   font-size: 12px;
   font-weight: 600;
+  /* As a link (the account page's "Back to the conversations") it looks like the buttons: underlined on hover only. */
+  text-decoration: none;
 }
 
 .sidebar .link-btn {
@@ -5192,6 +5194,13 @@ ul.md-list ul.md-list { list-style: circle; }
   margin-top: 6px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.agent-request-code-value {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  letter-spacing: 0.04em;
 }
 
 .agent-request-actions {

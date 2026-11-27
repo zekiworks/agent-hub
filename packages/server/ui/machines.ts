@@ -17,6 +17,9 @@ export async function loadAgentRequests(): Promise<void> {
   const pending = tokens.filter((t) => t.state === "pending");
   box.hidden = pending.length === 0;
   box.replaceChildren(...pending.map(requestCard));
+  // Below the top bar, whatever its height (on a phone it is taller and the card covered its buttons).
+  const bar = document.querySelector(".topbar")?.getBoundingClientRect();
+  if (bar && bar.height > 0) box.style.top = `${Math.round(bar.bottom + 8)}px`;
 }
 
 function requestCard(t: AgentTokenInfo): HTMLElement {
@@ -40,9 +43,16 @@ function requestCard(t: AgentTokenInfo): HTMLElement {
   card.append(
     h("div", "agent-request-title", "A new machine wants to put agents on the Hub"),
     h("div", "agent-request-what", `${where}: ${t.agents.join(", ")}`),
-    h("div", "agent-request-code", `Code ${t.code}. Allow only if the agent shows the same code.`),
+    codeLine(t.code),
     actions,
     error
   );
   return card;
+}
+
+/** "Code ABC-123. Allow only if …", the code itself standing out: it is what the person compares. */
+function codeLine(code: string): HTMLElement {
+  const line = h("div", "agent-request-code", "Code ");
+  line.append(h("strong", "agent-request-code-value", code), ". Allow only if the agent shows the same code.");
+  return line;
 }
