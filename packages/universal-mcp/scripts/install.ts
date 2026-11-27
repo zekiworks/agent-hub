@@ -79,23 +79,30 @@ function managedEntry(value: unknown): boolean {
 const QWEN_HOOK_MARKER = "--managed-by agent-bus";
 
 /** Agent Hub's hook: the shell-form command it writes, or the exec form (`args`) installed before 24 Nov. */
-function managedQwenHook(value: unknown): boolean {
-  const hooks = object(value).hooks;
-  return Array.isArray(hooks) && hooks.some((hook) => {
-    const command = object(hook).command;
-    return managedEntry(hook) || (typeof command === "string" && command.endsWith(` ${QWEN_HOOK_MARKER}`));
-  });
+function managedQwenHook(hook: unknown): boolean {
+  const command = object(hook).command;
+  return managedEntry(hook) || (typeof command === "string" && command.endsWith(` ${QWEN_HOOK_MARKER}`));
 }
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 
-/** Removes only Agent Hub's UserPromptSubmit definition; returns whether one was present. */
+/**
+ * Removes only Agent Hub's hooks from UserPromptSubmit, one by one: a definition that also holds the person's hooks
+ * keeps them, in order, with its other fields; one left with no hooks goes. Returns whether any was present.
+ */
 function removeManagedQwenHooks(config: Record<string, unknown>): boolean {
   const hooks = object(config.hooks);
   const definitions = hooks.UserPromptSubmit;
   if (!Array.isArray(definitions)) return false;
-  const kept = definitions.filter((definition) => !managedQwenHook(definition));
-  if (kept.length === definitions.length) return false;
+  let removed = false;
+  const kept = definitions.flatMap((definition) => {
+    const nested = object(definition).hooks;
+    if (!Array.isArray(nested) || !nested.some(managedQwenHook)) return [definition];
+    removed = true;
+    const theirs = nested.filter((hook) => !managedQwenHook(hook));
+    return theirs.length > 0 ? [{ ...object(definition), hooks: theirs }] : [];
+  });
+  if (!removed) return false;
   if (kept.length > 0) hooks.UserPromptSubmit = kept;
   else delete hooks.UserPromptSubmit;
   if (Object.keys(hooks).length > 0) config.hooks = hooks;

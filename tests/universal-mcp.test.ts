@@ -118,6 +118,41 @@ describe("universal MCP adapter configuration", () => {
     expect(readFileSync(settings, "utf8")).toBe(before);
   }, 30_000);
 
+  test("Qwen reinstall and uninstall keep the person's hooks inside a definition that also holds Agent Hub's", async () => {
+    const root = home();
+    const settings = join(root, ".qwen", "settings.json");
+    const first = { hooks: [{ type: "command", command: "echo first" }] };
+    await Bun.write(settings, JSON.stringify({ hooks: { UserPromptSubmit: [first] } }));
+    const install = ["install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only"];
+    await agentBus(root, ...install);
+
+    // The person adds their own hooks, and a field, to Agent Hub's definition.
+    const managedCommand = (hook: { command?: string }): boolean => hook.command?.endsWith(" --managed-by agent-bus") === true;
+    const config = JSON.parse(readFileSync(settings, "utf8"));
+    const definitions = config.hooks.UserPromptSubmit as Array<{ hooks: Array<{ command?: string }> }>;
+    const ours = definitions.find((definition) => definition.hooks.some(managedCommand))!;
+    const before = { type: "command", command: "echo mine-before" };
+    const after = { type: "command", command: "echo mine-after" };
+    Object.assign(ours, { matcher: "*", hooks: [before, ...ours.hooks, after] });
+    writeFileSync(settings, JSON.stringify(config, null, 2));
+    const mixed = { matcher: "*", hooks: [before, after] };
+
+    await agentBus(root, ...install);
+    const reinstalled = JSON.parse(readFileSync(settings, "utf8"));
+    const now = reinstalled.hooks.UserPromptSubmit as Array<{ hooks: Array<{ command?: string }> }>;
+    expect(now.slice(0, 2)).toEqual([first, mixed]);
+    expect(now).toHaveLength(3);
+    expect(now[2]!.hooks.filter(managedCommand)).toHaveLength(1);
+    const doctor = await run(root, ["doctor", "--url", "http://127.0.0.1:9"]);
+    expect(doctor.output).toContain("qwen:");
+    expect(doctor.output).not.toContain("Inbox hook missing");
+
+    // Edited again, so uninstall takes out only Agent Hub's entries.
+    writeFileSync(settings, JSON.stringify({ ...reinstalled, theme: "dark" }, null, 2));
+    await agentBus(root, "uninstall", "qwen");
+    expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({ hooks: { UserPromptSubmit: [first, mixed] }, mcpServers: {}, theme: "dark" });
+  }, 30_000);
+
   test("Qwen uninstall removes a settings file created only for Agent Hub", async () => {
     const root = home();
     const settings = join(root, ".qwen", "settings.json");
