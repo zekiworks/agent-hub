@@ -65,7 +65,11 @@ export function threadsOf(messages: readonly Message[]): Threads {
   return { rootOf, replies };
 }
 
-/** What the main pane lists: the room's messages (threads folded into their roots), or one thread. */
+/**
+ * What the main pane lists: the room's messages (threads folded into their roots), or one thread. In the room a
+ * thread sits where its newest reply is (Ümit #18011: replies into an older thread seemed to vanish, its bar far up),
+ * so the bottom of the room is always the newest activity.
+ */
 export function displayed(messages: readonly Message[]): { shown: readonly Message[]; threads?: Threads } {
   if (!threadsOn()) return { shown: messages };
   const threads = threadsOf(messages);
@@ -73,7 +77,13 @@ export function displayed(messages: readonly Message[]): { shown: readonly Messa
   if (open !== undefined && threads.rootOf.get(open) === open) {
     return { shown: messages.filter((m) => threads.rootOf.get(m.seq) === open), threads };
   }
-  return { shown: messages.filter((m) => threads.rootOf.get(m.seq) === m.seq), threads };
+  const lastSeq = (m: Message) => threads.replies.get(m.seq)?.at(-1)?.seq ?? m.seq;
+  return { shown: messages.filter((m) => threads.rootOf.get(m.seq) === m.seq).sort((a, b) => lastSeq(a) - lastSeq(b)), threads };
+}
+
+/** When a message shown in the room was last active: its newest reply's time for a thread, else its own. */
+export function activeAt(message: Message, threads: Threads | undefined): number {
+  return threads?.replies.get(message.seq)?.at(-1)?.createdAt ?? message.createdAt;
 }
 
 function readMarks(): Record<string, Record<string, number>> {

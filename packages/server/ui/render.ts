@@ -24,7 +24,7 @@ import { conversationLink, flashMessage, markReadParts, markSelected, mentionNod
 import { PULSE_MS } from "./toast";
 import { noteAttention } from "./attention";
 import { inlinedFiles, markInlined, placeInlined } from "./inline";
-import { displayed, markThreadRead, newReplies, type Threads } from "./threads";
+import { activeAt, displayed, markThreadRead, newReplies, type Threads } from "./threads";
 import { startVoiceReply } from "./voice";
 
 export function renderAll(): void {
@@ -187,20 +187,31 @@ export function renderMessages(): void {
   const nodes: HTMLElement[] = [];
   let lastDay = "";
   let previous: Message | undefined;
+  // In the room a thread sits at its newest reply: its day is that reply's, and it starts a block of its own.
+  const roomThreads = threads && !inThread ? threads : undefined;
+  const isThread = (m: Message) => (roomThreads?.replies.get(m.seq)?.length ?? 0) > 0;
   for (const message of shown) {
-    const day = dayKey(message.createdAt);
+    const at = activeAt(message, roomThreads);
+    const day = dayKey(at);
     if (day !== lastDay) {
-      nodes.push(h("li", "day-divider", dayFormat.format(message.createdAt)));
+      nodes.push(h("li", "day-divider", dayFormat.format(at)));
       lastDay = day;
     }
     const continued =
-      previous !== undefined && dayKey(previous.createdAt) === day && previous.from === message.from && message.createdAt - previous.createdAt < 5 * 60_000;
+      previous !== undefined &&
+      !isThread(message) &&
+      !isThread(previous) &&
+      dayKey(previous.createdAt) === day &&
+      previous.from === message.from &&
+      message.createdAt - previous.createdAt < 5 * 60_000;
     const li = renderMessage(message, continued, previous?.seq);
     if (threads && !inThread) threadBar(li, view.id, message, threads);
     nodes.push(li);
     previous = message;
   }
-  seenLine(shown.at(-1), nodes.at(-1));
+  // "Seen by" belongs under my newest message; a thread moved to the bottom is not that.
+  const last = shown.at(-1);
+  seenLine(last && !isThread(last) ? last : undefined, nodes.at(-1));
   dom.messageList.replaceChildren(...nodes);
   if (inThread) markThreadRead(view.id, shown[0]!.seq, shown.at(-1)!.seq);
   renderSpeaking();
@@ -221,11 +232,13 @@ export function appendMessage(message: Message): boolean {
   if (!messages || messages.at(-1)?.seq !== message.seq || !dom.messageEmpty.hidden) return false;
   const { shown, threads } = displayed(messages);
   if (shown.at(-1)?.seq !== message.seq) {
-    // Folded into a thread of the room: only its root's bar changes.
+    // Folded into a thread of the room: only its root's bar changes, when the thread is already the last one shown;
+    // otherwise it moves down to the bottom, and the caller draws the list.
     const root = threads?.rootOf.get(message.seq);
     const rootLi = root === undefined ? null : dom.messageList.querySelector<HTMLElement>(`:scope > .msg[data-seq="${root}"]`);
     const rootMessage = messages.find((m) => m.seq === root);
     if (!threads || !rootLi || !rootMessage || state.thread !== undefined) return false;
+    if (rootLi !== dom.messageList.querySelector(":scope > .msg:last-of-type")) return false;
     // A person's reply just turned a chain into a thread (Can #14532): its earlier replies, in the room until now, go.
     if (threads.replies.get(root!)?.some((m) => dom.messageList.querySelector(`:scope > .msg[data-seq="${m.seq}"]`))) return false;
     threadBar(rootLi, view.id, rootMessage, threads);
@@ -235,9 +248,12 @@ export function appendMessage(message: Message): boolean {
   const lastLi = dom.messageList.querySelector<HTMLElement>(":scope > .msg:last-of-type");
   if (!previous || !lastLi || Number(lastLi.dataset.seq) !== previous.seq) return false;
   const nodes: HTMLElement[] = [];
-  const newDay = dayKey(message.createdAt) !== dayKey(previous.createdAt);
+  // The message above may be a thread moved down to its newest reply: its day and block are that reply's.
+  const roomThreads = threads && state.thread === undefined ? threads : undefined;
+  const previousIsThread = (roomThreads?.replies.get(previous.seq)?.length ?? 0) > 0;
+  const newDay = dayKey(message.createdAt) !== dayKey(activeAt(previous, roomThreads));
   if (newDay) nodes.push(h("li", "day-divider", dayFormat.format(message.createdAt)));
-  const continued = !newDay && previous.from === message.from && message.createdAt - previous.createdAt < 5 * 60_000;
+  const continued = !newDay && !previousIsThread && previous.from === message.from && message.createdAt - previous.createdAt < 5 * 60_000;
   const li = renderMessage(message, continued, previous.seq);
   if (threads && state.thread === undefined) threadBar(li, view.id, message, threads);
   nodes.push(li);
@@ -308,10 +324,13 @@ function renderCrumb(conversationId: string, root: Message | undefined, threads:
 export function updateSeenLine(): void {
   const view = state.view;
   const cache = view.kind === "conversation" ? state.caches.get(view.id) : undefined;
-  const last = cache ? displayed(cache.messages).shown.at(-1) : undefined;
+  const shown = cache ? displayed(cache.messages) : undefined;
+  const last = shown?.shown.at(-1);
   const li = last ? dom.messageList.querySelector<HTMLElement>(`:scope > .msg[data-seq="${last.seq}"]`) : null;
   if (!last || !li) return;
   li.querySelector(":scope > .msg-seen")?.remove();
+  // A thread moved to the bottom of the room is not my newest message.
+  if (state.thread === undefined && (shown?.threads?.replies.get(last.seq)?.length ?? 0) > 0) return;
   seenLine(last, li);
 }
 
