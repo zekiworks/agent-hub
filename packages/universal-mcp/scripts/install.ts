@@ -1,5 +1,5 @@
 // Installs the shared stdio MCP bridge into harness-native user configuration without replacing unrelated servers.
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
@@ -145,6 +145,7 @@ function setJsonEntry(
   definition: Definition,
   target: string,
   url: string,
+  snapshot: string,
   previous?: ConfigSnapshot
 ): void {
   const file = definition.config!;
@@ -174,8 +175,9 @@ function setJsonEntry(
   servers["agent-hub"] = entry;
   config[definition.key!] = servers;
   if (name === "qwen") addQwenHook(config, target, url);
+  // The snapshot first: a settings file is never left edited without the record that undoes the edit.
+  writePrivateJson(snapshot, { originalExists, original, installed: jsonText(config) });
   writeJson(file, config);
-  writePrivateJson(configSnapshotFile(target), { originalExists, original, installed: readFileSync(file, "utf8") });
 }
 
 function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
@@ -570,11 +572,11 @@ function grokInstalled(name: UniversalAdapterName, plan: GrokPlan, target: strin
   return installed;
 }
 
-function writeGrokEntry(plan: GrokPlan, installed: string, target: string): void {
+function writeGrokEntry(plan: GrokPlan, installed: string, snapshot: string): void {
   const { file, originalExists, original, leader } = plan;
   mkdirSync(path.dirname(file), { recursive: true });
+  writePrivateJson(snapshot, { originalExists, original, installed, ...(leader ? { leader } : {}) });
   writeFileSync(file, installed);
-  writePrivateJson(configSnapshotFile(target), { originalExists, original, installed, ...(leader ? { leader } : {}) });
   if (plan.turnedOn) console.log(`Grok leader mode is on: use_leader = true under [cli] in ${file}.`);
 }
 
@@ -611,21 +613,43 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
   const definition = DEFINITIONS[name];
   const target = targetDir(name, opts);
   const owned = manifestName(manifest(target)) === ownedName(name);
+  if (existsSync(target) && !owned) throw new Error(`${target} exists and is not the ${ownedName(name)} plugin; not touching it.`);
   const previous = owned ? readConfigSnapshot(target) : undefined;
   const url = installBusUrl(configFile(target), opts.url);
   // Asked, and the new config.toml checked, before anything is written.
   const grok = definition.kind === "grok" ? planGrok(definition, opts, previous) : undefined;
   const grokText = grok ? grokInstalled(name, grok, target, url) : undefined;
-  removeOwnedDir(target, manifest(target), ownedName(name), "plugin");
-  mkdirSync(target, { recursive: true });
-  const entries: Array<[string, string]> =
-    name === "qwen" ? [["src/server.ts", "server"], ["src/inbox-hook.ts", "inbox-hook"]] : [["src/server.ts", "server"]];
-  await bundleForNode(root, target, entries);
-  writeJson(manifest(target), { name: ownedName(name), version: "0.2.0", private: true });
-  writeJson(configFile(target), { busUrl: url, harness: name });
-  writeMetadata(target, "message-bus", `${definition.title} bridge for Agent Hub.`);
-  if (grok) writeGrokEntry(grok, grokText!, target);
-  else setJsonEntry(name, definition, target, url, previous);
+  // Built beside the installed adapter, which keeps working, with its snapshot, until the new one is complete and the
+  // harness config points at it; a failure removes only the staging folder, so a plain retry works.
+  const staging = `${target}.staging-${process.pid}`;
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(path.dirname(target), { recursive: true });
+  mkdirSync(staging, { mode: 0o700 });
+  chmodSync(staging, 0o700);
+  try {
+    const entries: Array<[string, string]> =
+      name === "qwen" ? [["src/server.ts", "server"], ["src/inbox-hook.ts", "inbox-hook"]] : [["src/server.ts", "server"]];
+    await bundleForNode(root, staging, entries);
+    writeJson(manifest(staging), { name: ownedName(name), version: "0.2.0", private: true });
+    writeJson(configFile(staging), { busUrl: url, harness: name });
+    writeMetadata(staging, "message-bus", `${definition.title} bridge for Agent Hub.`);
+    // The harness config names the final paths (under `target`); the snapshot goes with the new adapter.
+    if (grok) writeGrokEntry(grok, grokText!, configSnapshotFile(staging));
+    else setJsonEntry(name, definition, target, url, configSnapshotFile(staging), previous);
+    const old = `${target}.old-${process.pid}`;
+    rmSync(old, { recursive: true, force: true });
+    if (existsSync(target)) renameSync(target, old);
+    try {
+      renameSync(staging, target);
+    } catch (error) {
+      if (existsSync(old)) renameSync(old, target);
+      throw error;
+    }
+    rmSync(old, { recursive: true, force: true });
+  } catch (error) {
+    rmSync(staging, { recursive: true, force: true });
+    throw error;
+  }
   console.log(`Installed ${definition.title} Agent Hub adapter in ${target} (Hub ${url}).`);
 }
 

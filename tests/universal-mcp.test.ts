@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { StateResponse } from "@agent-bus/protocol";
@@ -194,6 +194,52 @@ describe("universal MCP adapter configuration", () => {
     expect(after).toContain("[models]");
     expect(after).toContain("theme = \"dark\"");
   }, 30_000);
+
+  test("a reinstall whose bundle fails leaves the installed adapter and its 0600 snapshot, and a retry works", async () => {
+    const cases: Array<[string, string, string]> = [
+      ["qwen", join(".qwen", "settings.json"), `{\n  "theme": "dark"\n}\n`],
+      ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`],
+    ];
+    for (const [harness, relative, before] of cases) {
+      const root = home();
+      const config = join(root, relative);
+      const adapters = join(root, ".agent-bus", "adapters");
+      const adapter = join(adapters, harness);
+      const snapshot = join(adapter, "config-snapshot.json");
+      await Bun.write(config, before);
+      const install = ["install", harness, "--url", "http://127.0.0.1:7800", "--build-only", ...(harness === "grok" ? ["--no-leader"] : [])];
+      await agentBus(root, ...install);
+      const installed = readFileSync(config, "utf8");
+      const snapshotText = readFileSync(snapshot, "utf8");
+
+      // Bun.build fails, as when the checkout is broken or the disk is full.
+      const preload = join(root, "fail-build.ts");
+      await Bun.write(preload, `(Bun as { build: unknown }).build = async () => { throw new Error("injected bundle failure"); };\n`);
+      const child = Bun.spawn([process.execPath, "run", "--preload", preload, "packages/cli/src/bin.ts", ...install, "--url", "http://127.0.0.1:7801"], {
+        cwd: repo,
+        env: { ...process.env, HOME: root },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+      expect(code).not.toBe(0);
+      expect(stderr).toContain("injected bundle failure");
+      expect(readdirSync(adapters)).toEqual([harness]);
+      expect(existsSync(join(adapter, "package.json"))).toBe(true);
+      expect(existsSync(join(adapter, "server.mjs"))).toBe(true);
+      expect(readFileSync(snapshot, "utf8")).toBe(snapshotText);
+      expect((statSync(snapshot).mode & 0o777).toString(8)).toBe("600");
+      expect(readFileSync(config, "utf8")).toBe(installed);
+
+      // The ordinary retry works, and the snapshot it keeps still undoes the whole install.
+      await agentBus(root, ...install);
+      expect(readdirSync(adapters)).toEqual([harness]);
+      expect((statSync(snapshot).mode & 0o777).toString(8)).toBe("600");
+      expect((statSync(adapter).mode & 0o777).toString(8)).toBe("700");
+      await agentBus(root, "uninstall", harness);
+      expect(readFileSync(config, "utf8")).toBe(before);
+    }
+  }, 60_000);
 
   test("a 0600 harness config stays 0600, and its snapshot is 0600, under umask 022", async () => {
     const mode = (file: string): string => (statSync(file).mode & 0o777).toString(8);
