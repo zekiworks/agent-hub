@@ -442,6 +442,11 @@ export type AgentServerFrame =
        * Every delivery that wakes a connected agent in an untitled thread carries it, for one agent per message.
        */
       titleThread?: number;
+      /**
+       * The agent that was woken for this message and passed it on to this one without writing anything (op=handoff,
+       * Can #17876): the message is for this agent to answer.
+       */
+      handedBy?: string;
     }
   | { type: "participants"; participants: Participant[] }
   | ReceiptFrame

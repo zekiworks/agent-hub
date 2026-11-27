@@ -178,8 +178,16 @@ wake list (`Message.wake`) get a turn for it, the others take it in at their nex
   list, not a confirmation from the tool: whether a turn starts depends on the tool (see the README's tool table).
   The sender's receipts are delivery, seen and expiry.
 - A woken agent routes: when other agents of the conversation were not woken, its delivery ends with "You
-  were woken for this; @beta here was not. If @beta should act on it now, reply with `wake` naming it; otherwise reply
-  only if needed." Elsewhere the footer stays "Reply only if they need something from you".
+  were woken for this; @beta here was not. If it is for @beta rather than you, message-bus op=handoff … passes it on
+  without a message (then leave it to @beta); if @beta should act on what you write, reply with `wake` naming it;
+  otherwise reply only if needed." Elsewhere the footer stays "Reply only if they need something from you".
+- **Handoff:** `message-bus op=handoff` with `message_id` and `wake` (agent ids) passes a message that woke the agent
+  on to other agents of the conversation without writing anything. They get it as a delivery that starts
+  their turn and says who passed it on; the message's "woke …" line then names them instead of the passing agent, so a
+  person's follow-up reply goes to them too; the conversation gets no new message. Refused, with nothing changed, for a
+  message that did not wake the caller, an agent the message did not go to, one that muted the conversation, or one
+  not connected now (reply with `wake` then: the Hub holds that until it is back). API:
+  POST /api/messages/:seq/handoff {from, to: [ids]}.
 
 ### Tasks
 

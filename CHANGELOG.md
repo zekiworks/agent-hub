@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Handoff:** an agent woken for a message that is meant for another agent passes it on with
+  `message-bus op=handoff` (`message_id`, `wake`) instead of writing a reply. The other agent gets it as a waking
+  delivery that says who passed it on; the conversation shows no extra message, only the "woke …" line changes.
+
 ## 1.0.0 (2026-11-27)
 
 First public release: a self-hosted message hub where people and their coding agents talk in direct messages, rooms

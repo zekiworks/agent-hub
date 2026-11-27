@@ -103,6 +103,11 @@ SCHEMA = {
         "Threads (same as packages/client/src/tool.ts): a delivery saying its thread has no title yet asks you to name "
         "it: op=title with `message_id` (the thread's first message, or any in it) and `value` (3-6 words, one line, at "
         "most 80 characters); the website shows it on the thread. "
+        "Handoff (same as packages/client/src/tool.ts): woken for a message that is for another agent of the "
+        "conversation rather than you? op=handoff with `message_id` and `wake` (their ids) passes it on without writing "
+        "anything: they get it as a delivery that starts their turn, the conversation shows no reply, and you leave it "
+        "to them. Only for a message that woke you, to agents it went to that are connected now; to add something of "
+        "your own, reply with `wake` instead. "
         "Your Home is now a stream of update panes: op=home with `message` publishes it as the newest pane through "
         "@status (equivalent to replying to the hourly status ask). `to` may be omitted or your own \"@@<id>\"; an agent "
         "cannot publish another agent's Home. Without `message`, op=home explains how the stream works. Put newest first: "
@@ -122,9 +127,10 @@ SCHEMA = {
         "type": "object",
         "properties": {
             "op": {"type": "string", "enum": ["reply", "write", "send", "set", "inbox", "show", "history", "search",
-                                               "tasks", "accept", "done", "reject", "withdraw", "home", "checklist", "title"],
-                   "description": "reply/write/send a message, set a setting, read: inbox, show, history, search, the conversation's checklist, or title a thread"},
-            "message_id": {"type": "integer", "description": "a message's #number (reply, show, history, title)"},
+                                               "tasks", "accept", "done", "reject", "withdraw", "home", "checklist", "title",
+                                               "handoff"],
+                   "description": "reply/write/send a message, set a setting, read: inbox, show, history, search, the conversation's checklist, title a thread, or pass a message that woke you on to other agents (handoff)"},
+            "message_id": {"type": "integer", "description": "a message's #number (reply, show, history, title, handoff)"},
             "to": {"type": "string", "description": "\"@all\", \"@id\", \"@{id1,id2}\" (\"@{@@project,id1,id2}\" for the group under that project) or \"@@project\" (write/send, history)"},
             "message": {"type": "string", "description": "message text (reply/write; Home update for home; optional caption for send)"},
             "files": {"type": "array", "items": {"type": "string"},
@@ -139,7 +145,8 @@ SCHEMA = {
                       "description": "\"mine\" (default): your conversations and @all; \"all\": every conversation"},
             "wake": {"type": "array", "items": {"type": "string"},
                      "description": "reply/write/send: agent ids of the conversation to start a turn for now, besides the "
-                                    "one you reply to (always woken); default none: the others read it at their next turn"},
+                                    "one you reply to (always woken); default none: the others read it at their next turn. "
+                                    "handoff: the agents to pass the message on to"},
             "task": {"type": "string", "enum": ["task", "approval"],
                      "description": "reply/write/send: make the message a task of this type for `assignees` (approvals: people only)"},
             "assignees": {"type": "array", "items": {"type": "string"},
@@ -418,6 +425,8 @@ def format_delivery(frame: dict, saved_files: list[str], me: str | None = None) 
                      f"with message_id {message['seq']}; reason optional.)")
     elif task:
         lines.append(f"(Task #{message['seq']} ({task['type']}) for {', '.join('@' + a['id'] for a in task['assignees'])}.)")
+    if frame.get("handedBy"):
+        lines.append(f"(@{frame['handedBy']} was woken for this and passed it on to you: it is yours to answer.)")
     if frame.get("titleThread") is not None:
         lines.append(f"(This thread has no title yet: give it one (3-6 words) with {TOOL_NAME} op=title, "
                      f"message_id {frame['titleThread']}, value \"…\".)")
@@ -430,16 +439,19 @@ def reply_footer(frame: dict) -> str:
     message = frame["message"]
     target = f"{TOOL_NAME} reply, message_id {message['seq']} → {frame['replyTo']}"
     wake = message.get("wake")
-    # @resources is the bus's own notice sender: it never acts on a message.
-    not_woken = ([r["to"] for r in message.get("receipts", []) if r["to"] not in wake and r["to"] != "resources"]
+    # @resources is the bus's own notice sender: it never acts on a message; the agent that handed it over already passed.
+    not_woken = ([r["to"] for r in message.get("receipts", [])
+                  if r["to"] not in wake and r["to"] != "resources" and r["to"] != frame.get("handedBy")]
                  if frame.get("wake") and wake is not None else [])
     if not not_woken:
         return f"(Reply only if they need something from you: {target}.)"
     names = ", ".join(f"@{i}" for i in not_woken)
-    ask = (f"If {names} should act on it now, reply with `wake` naming it" if len(not_woken) == 1
-           else "If one of them should act on it now, reply with `wake` naming them")
-    return (f"(You were woken for this; {names} here {'was' if len(not_woken) == 1 else 'were'} not. {ask}; "
-            f"otherwise reply only if needed. {target}.)")
+    one = len(not_woken) == 1
+    who, it = (names, "it") if one else ("one of them", "them")
+    return (f"(You were woken for this; {names} here {'was' if one else 'were'} not. "
+            f"If it is for {who} rather than you, {TOOL_NAME} op=handoff, message_id {message['seq']}, `wake` naming {it} "
+            f"passes it on without a message (then leave it to {names if one else 'them'}); if {who} should act on what you write, reply with "
+            f"`wake` naming {it}; otherwise reply only if needed. {target}.)")
 
 
 HEADER_SEQ = re.compile(r"\[message-bus\] #(\d+) @")
@@ -517,6 +529,10 @@ class BusClient:
     def title_thread(self, seq: int, title: str) -> dict:
         """Titles the thread message #seq is in, as in BusConnection.titleThread."""
         return self._request("POST", f"/api/messages/{seq}/title", json.dumps({"from": self.my_id(), "title": title}).encode())
+
+    def hand_off(self, seq: int, to: list[str]) -> dict:
+        """Passes message #seq, which woke this agent, on to `to` without writing anything, as BusConnection.handOff."""
+        return self._request("POST", f"/api/messages/{seq}/handoff", json.dumps({"from": self.my_id(), "to": to}).encode())
 
     def extension_action(self, name: str, seq: int, action: str, values: dict) -> dict:
         body = {"from": self.my_id(), "message_id": seq, **{k: v for k, v in values.items() if v is not None}}
@@ -896,6 +912,14 @@ def register(ctx: Any) -> None:
                 raise ValueError("title needs `message_id` (a message of the thread) and `value` (the title).")
             root = client.title_thread(int(args["message_id"]), args["value"])["message"]
             return f"Thread #{root['seq']} titled \"{root.get('threadTitle') or args['value'].strip()}\". (you are @{me})"
+        if op == "handoff":
+            wake = args.get("wake") or []
+            if args.get("message_id") is None or not wake:
+                raise ValueError("handoff needs `message_id` (the message that woke you) and `wake` (the agents to pass it on to).")
+            res = client.hand_off(int(args["message_id"]), [str(i) for i in wake])
+            names = ", ".join(f"@{i}" for i in res["handedTo"])
+            return (f"#{args['message_id']} passed on to {names}: it starts their turn now. Nothing was written in the "
+                    f"conversation; leave it to them. (you are @{me})")
 
         def named_project(target: str) -> dict:
             """The project or room `target` ("@@name", "#name") names, as this agent sees it."""

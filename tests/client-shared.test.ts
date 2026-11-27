@@ -41,7 +41,8 @@ test("a woken delivery names the agents not woken, so the woken one decides who 
   const footer = (wake: string[] | undefined, woken: boolean) =>
     formatDelivery({ type: "deliver", message: message(wake), conversation, replyTo: "@{beta,carol,gamma}", wake: woken } as never, []).split("\n").at(-1);
   expect(footer(["alpha"], true)).toBe(
-    "(You were woken for this; @beta, @gamma here were not. If one of them should act on it now, reply with `wake` naming them; " +
+    "(You were woken for this; @beta, @gamma here were not. If it is for one of them rather than you, message-bus op=handoff, message_id 9, " +
+      "`wake` naming them passes it on without a message (then leave it to them); if one of them should act on what you write, reply with `wake` naming them; " +
       "otherwise reply only if needed. message-bus reply, message_id 9 → @{beta,carol,gamma}.)"
   );
   const plain = "(Reply only if they need something from you: message-bus reply, message_id 9 → @{beta,carol,gamma}.)";

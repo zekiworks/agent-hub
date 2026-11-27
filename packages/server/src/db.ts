@@ -1168,6 +1168,11 @@ export class BusDatabase {
       .run(root, conversationId, title, by, now);
   }
 
+  /** Replaces message `seq`'s wake list (a handoff, Can #17876). */
+  setMessageWake(seq: number, wake: readonly string[]): void {
+    this.db.query("UPDATE messages SET wake_json = ?2 WHERE seq = ?1").run(seq, JSON.stringify(wake));
+  }
+
   /** `participantId`'s own bookmarks, newest first (Can #11065). */
   bookmarksOf(participantId: string): Bookmark[] {
     return this.db

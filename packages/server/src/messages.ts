@@ -637,6 +637,64 @@ export async function titleThread(ctx: BusContext, req: Request, seq: number): P
 }
 
 /**
+ * POST /api/messages/:seq/handoff {from, to} (Can #17876): an agent woken for message `seq` that is for other agents of
+ * its conversation passes it on without writing anything. The message's wake list then names them instead of it, and
+ * each gets the message again now, as a delivery that starts a turn and says who passed it on; the conversation shows
+ * no new message, only its "woke …" line changed. Checked before anything changes: the targets are agents the message
+ * went to, connected now (an offline one would only get it as backlog, if at all: the writer replies with `wake`
+ * instead), and not muting the conversation.
+ */
+export async function handOffMessage(ctx: BusContext, req: Request, seq: number): Promise<{ message: Message; handedTo: string[] }> {
+  const { db, hub } = ctx;
+  const body = await readJsonObject(req);
+  if (typeof body.from !== "string") throw new HttpError(400, "from must be a participant id");
+  const writer = hub.knownParticipant(body.from.trim().toLowerCase());
+  if (!writer) throw new HttpError(400, `Unknown participant "${body.from}"`);
+  ctx.checkWriter(req, writer);
+  if (writer.kind !== "agent") throw new HttpError(400, "Only an agent hands a message over");
+  const message = db.getMessage(seq);
+  const conversation = message ? db.getConversation(message.conversationId) : null;
+  if (!message || !conversation || !message.receipts.some((r) => r.to === writer.id)) throw new HttpError(404, `Unknown message ${seq}`);
+  if (message.deletedAt) throw new HttpError(409, `#${seq} is deleted`);
+  if (!message.wake?.includes(writer.id)) throw new HttpError(409, `#${seq} did not wake you: only an agent it woke hands it over`);
+  if (!Array.isArray(body.to) || body.to.length === 0 || !body.to.every((id) => typeof id === "string")) {
+    throw new HttpError(400, "to must be a list of agent ids");
+  }
+  const ids = [
+    ...new Set(
+      (body.to as string[])
+        .map((id) => id.trim().replace(/^@/, "").toLowerCase())
+        .filter(Boolean)
+        .map((id) => db.renamedTo(id) ?? id)
+    ),
+  ];
+  const hubOwn = new Set<string>([SYSTEM_AGENT_ID, RESOURCES_AGENT_ID, ...SYSTEM_SOURCE_AGENT_IDS]);
+  const notOne = ids.filter((id) => id === writer.id || hubOwn.has(id) || hub.isHuman(id) || !message.receipts.some((r) => r.to === id));
+  if (notOne.length > 0) {
+    throw new HttpError(
+      400,
+      `${notOne.map((id) => `@${id}`).join(", ")} ${notOne.length > 1 ? "are" : "is"} not another agent this message went to. Nothing was changed.`
+    );
+  }
+  const fresh = ids.filter((id) => !message.wake?.includes(id));
+  if (fresh.length === 0) throw new HttpError(409, `${ids.map((id) => `@${id}`).join(", ")} ${ids.length > 1 ? "were" : "was"} already woken by #${seq}. Nothing was changed.`);
+  const muted = fresh.filter((id) => conversation.notify?.[id] === "none");
+  if (muted.length > 0) throw new HttpError(409, `${muted.map((id) => `@${id}`).join(", ")} muted this conversation. Nothing was changed.`);
+  const offline = fresh.filter((id) => hub.deliveryTargets(id).length === 0);
+  if (offline.length > 0) {
+    throw new HttpError(
+      409,
+      `${offline.map((id) => `@${id}`).join(", ")} ${offline.length > 1 ? "are" : "is"} not connected now. Nothing was changed; reply with \`wake\` naming ${offline.length > 1 ? "them" : "it"} instead, so the Hub holds it until ${offline.length > 1 ? "they are" : "it is"} back.`
+    );
+  }
+  db.setMessageWake(seq, [...message.wake.filter((id) => id !== writer.id), ...fresh]);
+  const updated = db.getMessage(seq);
+  if (!updated) throw new HttpError(404, `Unknown message ${seq}`);
+  hub.handedOver(updated, conversation, fresh, writer.id);
+  return { message: updated, handedTo: fresh };
+}
+
+/**
  * POST /api/messages/:seq/forward {from, to, note?} (Can #12470, #12471): `from`, who may read message `seq`, shows it to
  * `to`. A participant in its conversation (or anyone, for @all) gets a reply to it there that @mentions them, which
  * wakes them as a mention does; nothing is copied. Anyone else gets it in their DM with `from`, and a conversation

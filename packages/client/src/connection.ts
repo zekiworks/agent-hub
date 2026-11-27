@@ -337,6 +337,15 @@ export class BusConnection {
     });
   }
 
+  /** Passes message #seq, which woke this agent, on to the agents `to` without writing anything (Can #17876). */
+  handOff(seq: number, to: string[]): Promise<{ message: Message; handedTo: string[] }> {
+    return this.request<{ message: Message; handedTo: string[] }>(`/api/messages/${seq}/handoff`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: this.requireId(), to }),
+    });
+  }
+
   /** Runs one action supplied by an extension manifest. */
   extensionAction(name: string, seq: number, action: string, input: Record<string, string | undefined> = {}): Promise<{ message: Message }> {
     return this.request<{ message: Message }>(`/api/ext/${encodeURIComponent(name)}/actions/${encodeURIComponent(action)}`, {

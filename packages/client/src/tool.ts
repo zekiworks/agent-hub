@@ -43,7 +43,8 @@ export interface MessageBusToolParams {
     | "reject"
     | "withdraw"
     | "checklist"
-    | "title";
+    | "title"
+    | "handoff";
   message_id?: number;
   to?: string;
   message?: string;
@@ -106,13 +107,13 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
     enum: [
       "reply", "write", "send", "set", "inbox", "show", "history", "search",
       "projects", "invite", "leave", "notify", "project", "room", "parent",
-      "tasks", "accept", "done", "reject", "withdraw", "checklist", "title",
+      "tasks", "accept", "done", "reject", "withdraw", "checklist", "title", "handoff",
       "resources", "servers", "reserve", "release", "extend", "mode", "subscribe", "unsubscribe",
     ],
     description:
-      "reply/write/send a message, set a setting, read (inbox, show, history, search), conversations (projects, invite, leave, notify, project, parent), the conversation's checklist (checklist), title a thread (title), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
+      "reply/write/send a message, set a setting, read (inbox, show, history, search), conversations (projects, invite, leave, notify, project, parent), the conversation's checklist (checklist), title a thread (title), pass a message that woke you on to other agents (handoff), or shared GPUs (resources, servers, reserve, release, extend, mode, subscribe, unsubscribe)",
   },
-  { name: "message_id", type: "number", description: "a message's #number (reply, show, history, title)" },
+  { name: "message_id", type: "number", description: "a message's #number (reply, show, history, title, handoff)" },
   { name: "to", type: "string", description: '"@all", "@id" (a DM), "@{id1,id2}" (a group DM; "@{@@project,id1,id2}" for the one under that project) or "@@name" (a project) (write/send, history, invite, leave, notify, project)' },
   { name: "message", type: "string", description: "message text (reply/write; optional caption for send)" },
   { name: "files", type: "string[]", description: "file paths, relative to the project folder or absolute (optional for reply and write)" },
@@ -131,7 +132,7 @@ export const TOOL_PARAMS: readonly ToolParam[] = [
   {
     name: "wake",
     type: "string[]",
-    description: "reply/write/send: agent ids of the conversation to start a turn for now, besides the one you reply to (always woken); default none: the others read it at their next turn",
+    description: "reply/write/send: agent ids of the conversation to start a turn for now, besides the one you reply to (always woken); default none: the others read it at their next turn. handoff: the agents to pass the message on to",
   },
   { name: "task", type: "string", enum: ["task", "approval"], description: "reply/write/send: make the message a task of this type for `assignees` (approvals: people only)" },
   { name: "assignees", type: "string[]", description: "with `task`: who is to do it, members of the conversation (default: those you @mention, else the other member of a DM)" },
@@ -260,6 +261,11 @@ export function toolDescription(harness: { arrives: string; notJoining: string }
     "Threads: a delivery saying its thread has no title yet asks you to name it: op=title with `message_id` (the " +
     "thread's first message, or any in it) and `value` (3-6 words, one line, at most 80 characters); the website shows " +
     "it on the thread. " +
+    "Handoff: woken for a message that is for another agent of the conversation rather than you? op=handoff with " +
+    "`message_id` and `wake` (their ids) passes it on without writing anything: they get it as a delivery that starts " +
+    "their turn, the conversation shows no reply, and you leave it to them (do not answer it as well). Only for a " +
+    "message that woke you, to agents it went to that are connected now; to add something of your own, reply with " +
+    "`wake` instead. " +
     "Conversations: op=projects lists the top level you can see: root projects (yours, open, discoverable) and your group DMs under no project, each with how many sub-groups it has; with `parent` (\"@@name\") it lists that project's sub-groups. " +
     "op=invite (`to` or `message_id` for the conversation, `ids`) adds others to a group DM or project; they get its " +
     "last 5 messages. op=leave leaves one. op=notify (`level`: none) mutes a conversation for you: no message there " +
@@ -393,6 +399,7 @@ export function formatDelivery(delivery: Delivery, savedFiles: string[], me?: st
   } else if (task) {
     lines.push(`(Task #${message.seq} (${task.type}) for ${task.assignees.map((a) => `@${a.id}`).join(", ")}.)`);
   }
+  if (delivery.handedBy) lines.push(`(@${delivery.handedBy} was woken for this and passed it on to you: it is yours to answer.)`);
   if (delivery.titleThread !== undefined) {
     lines.push(`(This thread has no title yet: give it one (3-6 words) with ${TOOL_NAME} op=title, message_id ${delivery.titleThread}, value "…".)`);
   }
@@ -408,13 +415,19 @@ export function replyFooter(delivery: Delivery): string {
   const { message, replyTo } = delivery;
   const target = `${TOOL_NAME} reply, message_id ${message.seq} → ${replyTo}`;
   const wake = message.wake;
-  // @resources is the bus's own notice sender: it never acts on a message.
-  const notWoken = delivery.wake && wake ? message.receipts.map((r) => r.to).filter((id) => !wake.includes(id) && id !== RESOURCES_AGENT_ID) : [];
+  // @resources is the bus's own notice sender: it never acts on a message; the agent that handed it over already passed.
+  const notWoken =
+    delivery.wake && wake
+      ? message.receipts.map((r) => r.to).filter((id) => !wake.includes(id) && id !== RESOURCES_AGENT_ID && id !== delivery.handedBy)
+      : [];
   if (notWoken.length === 0) return `(Reply only if they need something from you: ${target}.)`;
   const names = notWoken.map((id) => `@${id}`).join(", ");
+  const one = notWoken.length === 1;
   return (
-    `(You were woken for this; ${names} here ${notWoken.length === 1 ? "was" : "were"} not. ` +
-    `${notWoken.length === 1 ? `If ${names} should act on it now, reply with \`wake\` naming it` : "If one of them should act on it now, reply with `wake` naming them"}; ` +
+    `(You were woken for this; ${names} here ${one ? "was" : "were"} not. ` +
+    `If it is for ${one ? names : "one of them"} rather than you, ${TOOL_NAME} op=handoff, message_id ${message.seq}, ` +
+    `\`wake\` naming ${one ? "it" : "them"} passes it on without a message (then leave it to ${one ? names : "them"}); ` +
+    `if ${one ? names : "one of them"} should act on what you write, reply with \`wake\` naming ${one ? "it" : "them"}; ` +
     `otherwise reply only if needed. ${target}.)`
   );
 }
@@ -794,6 +807,13 @@ export class BusTool {
         if (params.message_id === undefined || !params.value?.trim()) throw new Error("title needs `message_id` (a message of the thread) and `value` (the title).");
         const { message } = await conn.titleThread(params.message_id, params.value);
         return result(`Thread #${message.seq} titled "${message.threadTitle ?? params.value.trim()}".`);
+      }
+      case "handoff": {
+        if (params.message_id === undefined || !params.wake?.length) throw new Error("handoff needs `message_id` (the message that woke you) and `wake` (the agents to pass it on to).");
+        const { handedTo } = await conn.handOff(params.message_id, params.wake);
+        return result(
+          `#${params.message_id} passed on to ${handedTo.map((id) => `@${id}`).join(", ")}: it starts their turn now. Nothing was written in the conversation; leave it to them.`
+        );
       }
       case "projects": {
         // Top level by default (root projects and group DMs under no project); with `parent`, what is under that project.

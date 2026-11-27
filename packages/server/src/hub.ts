@@ -415,8 +415,8 @@ export class Hub {
   }
 
   /** Sends a delivery to `sockets` and remembers it there until acked; `held`: it waited while the agent was offline. */
-  deliver(sockets: Socket[], message: Message, conversation: Conversation, recipient: ParticipantRecord, held = false): void {
-    const frame = JSON.stringify(this.deliverFrame(message, conversation, recipient, held, sockets.length > 0));
+  deliver(sockets: Socket[], message: Message, conversation: Conversation, recipient: ParticipantRecord, held = false, handedBy?: string): void {
+    const frame = JSON.stringify(this.deliverFrame(message, conversation, recipient, held, sockets.length > 0, handedBy));
     for (const ws of sockets) {
       if (ws.data.kind === "agent") ws.data.inflight.add(message.seq);
       ws.send(frame);
@@ -503,7 +503,7 @@ export class Hub {
   // ---- Messages and receipts ----
 
   /** `live`: it goes to a connected session now, so it may ask the agent to title the message's thread (Can #17615). */
-  deliverFrame(message: Message, conversation: Conversation, recipient: ParticipantRecord, held = false, live = false): AgentServerFrame {
+  deliverFrame(message: Message, conversation: Conversation, recipient: ParticipantRecord, held = false, live = false, handedBy?: string): AgentServerFrame {
     const wake = shouldWake(conversation, message, recipient.id, recipient.settings);
     // Only a delivery that starts a turn asks: the agent answers now, in the thread, and titles it once.
     const titleThread = live && wake ? this.db.threadTitleAsk(message, recipient.id) : undefined;
@@ -515,7 +515,22 @@ export class Hub {
       wake,
       ...(held ? { held } : {}),
       ...(titleThread !== undefined ? { titleThread } : {}),
+      ...(handedBy ? { handedBy } : {}),
     };
+  }
+
+  /**
+   * `by` passed message `seq` on to `ids` (Can #17876): each gets it again now, as a delivery that starts a turn and
+   * names `by`; the viewers get the message with its new wake list, which is all the conversation shows of it.
+   */
+  handedOver(message: Message, conversation: Conversation, ids: readonly string[], by: string): void {
+    for (const id of ids) {
+      const recipient = this.db.getParticipant(id);
+      const receipt = message.receipts.find((r) => r.to === id);
+      if (!recipient || !receipt) continue;
+      this.deliver(this.deliveryTargets(id, receipt.session), message, conversation, recipient, false, by);
+    }
+    this.messageChanged(message, conversation);
   }
 
   /** Called with every new message once it is published (the bus's Web Push, push.ts). */
