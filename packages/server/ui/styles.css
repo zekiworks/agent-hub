@@ -3016,6 +3016,51 @@ ul.md-list ul.md-list { list-style: circle; }
   text-underline-offset: 2px;
 }
 
+/* Each table in its own small frame, Copy at its top right (Ümit #18009). */
+.md-table-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: fit-content;
+  max-width: 100%;
+  margin: 4px 0;
+  padding: 2px 6px 6px;
+  /* --border alone hardly shows on a message in the dark theme; the frame should be seen (Ümit #18009). */
+  border: 1px solid color-mix(in srgb, var(--muted) 45%, transparent);
+  border-radius: 8px;
+}
+.md-table-copy {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.md-table-copy::after {
+  content: "Copy table";
+}
+.md-table-copy.copy-confirmed::after {
+  content: "Copied";
+}
+.md-table-copy.copy-failed::after {
+  content: "Not copied";
+}
+.md-table-copy:hover,
+.md-table-copy:focus-visible {
+  color: var(--text);
+  background: var(--hover);
+}
+.md-table-copy .icon {
+  width: 13px;
+  height: 13px;
+}
 .md-table-wrap {
   max-width: 100%;
   overflow-x: auto;
@@ -3028,7 +3073,7 @@ ul.md-list ul.md-list { list-style: circle; }
 .md-table th,
 .md-table td {
   padding: 3px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
   text-align: left;
   vertical-align: top;
   /* Words stay whole in a cell (a message's text breaks anywhere): on a phone "466" and "3,316" came out a digit a line

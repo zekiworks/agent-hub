@@ -5,6 +5,8 @@
  * `plain` renders text outside markup (the website uses it to highlight @mentions).
  */
 
+import { setIcon } from "./icons";
+
 export type PlainRenderer = (text: string) => Node[];
 
 const FENCE_RE = /^\s*(`{3,}|~{3,})\s*\S*\s*$/;
@@ -33,6 +35,48 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, ch
   node.className = className;
   node.append(...children);
   return node;
+}
+
+/**
+ * Copy for one table: the table itself (HTML: a spreadsheet, a document or Agent Hub's message box pastes a table) and
+ * its Markdown (plain-text places, and agents). Icon only, its name in the tooltip and label, so reading the message
+ * aloud never says it.
+ */
+function tableCopyButton(markdown: string, table: HTMLTableElement): HTMLButtonElement {
+  const button = el("button", "md-table-copy");
+  button.type = "button";
+  setIcon(button, "copy");
+  const idle = "Copy this table";
+  button.title = idle;
+  button.setAttribute("aria-label", idle);
+  button.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    let copied = false;
+    try {
+      const html = `<table>${table.innerHTML}</table>`;
+      await navigator.clipboard.write([
+        new ClipboardItem({ "text/plain": new Blob([markdown], { type: "text/plain" }), "text/html": new Blob([html], { type: "text/html" }) }),
+      ]);
+      copied = true;
+    } catch {
+      copied = await navigator.clipboard.writeText(markdown).then(
+        () => true,
+        () => false
+      );
+    }
+    button.classList.toggle("copy-confirmed", copied);
+    button.classList.toggle("copy-failed", !copied);
+    setIcon(button, copied ? "check" : "x");
+    button.title = copied ? "Copied" : "Not copied";
+    button.setAttribute("aria-label", button.title);
+    setTimeout(() => {
+      button.classList.remove("copy-confirmed", "copy-failed");
+      setIcon(button, "copy");
+      button.title = idle;
+      button.setAttribute("aria-label", idle);
+    }, 1500);
+  });
+  return button;
 }
 
 function inline(text: string, plain: PlainRenderer): Node[] {
@@ -144,6 +188,7 @@ function blocks(src: string[], plain: PlainRenderer): Node[] {
     }
 
     if (line.includes("|") && next !== undefined && TABLE_SEP_RE.test(next)) {
+      const start = i;
       const header = splitRow(line);
       const aligns = splitRow(next).map((c) => (c.endsWith(":") ? (c.startsWith(":") ? "center" : "right") : ""));
       i += 2;
@@ -157,7 +202,9 @@ function blocks(src: string[], plain: PlainRenderer): Node[] {
       };
       const thead = el("thead", "", [el("tr", "", header.map((t, c) => cell("th", t, c)))]);
       const tbody = el("tbody", "", rows.map((r) => el("tr", "", header.map((_, c) => cell("td", r[c] ?? "", c)))));
-      out.push(el("div", "md-table-wrap", [el("table", "md-table", [thead, tbody])]));
+      const table = el("table", "md-table", [thead, tbody]);
+      // Each table in its own frame with Copy (Ümit #18009), so it pastes as the same table.
+      out.push(el("div", "md-table-box", [tableCopyButton(src.slice(start, i).join("\n"), table), el("div", "md-table-wrap", [table])]));
       continue;
     }
 
