@@ -2421,6 +2421,15 @@ button:disabled {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+/* On a phone the message spans the screen: the ring sits inset with round corners, so it does not look cut off at the
+   screen's edge (demo review D1). */
+@media (max-width: 640px) {
+  .msg.msg-selected,
+  .msg.msg-selected:hover {
+    outline-offset: -4px;
+    border-radius: 10px;
+  }
+}
 .msg.msg-selected::before {
   content: "▶";
   position: absolute;
@@ -3936,7 +3945,8 @@ ul.md-list ul.md-list { list-style: circle; }
   display: none;
 }
 
-.room-fields label {
+.room-fields label,
+.ask-dialog label {
   display: grid;
   gap: 4px;
   color: var(--muted);
@@ -3945,7 +3955,8 @@ ul.md-list ul.md-list { list-style: circle; }
 
 .room-fields input,
 .room-fields select,
-.room-fields textarea {
+.room-fields textarea,
+.ask-dialog input {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--border);

@@ -3,7 +3,7 @@
 // project, a project's topic, visibility and name, archiving (POST /api/conversations/:id/…).
 import type { Conversation, ConversationResponse, NotifyLevel, Participant, ProjectVisibility } from "@agent-bus/protocol";
 import { postJson } from "./api";
-import { closeWindowButton } from "./dialogs";
+import { askText, closeWindowButton } from "./dialogs";
 import { dom, PHONE } from "./dom";
 import { errorText } from "./format";
 import { h } from "./html";
@@ -38,8 +38,9 @@ function directAgent(conv: Conversation): Participant | undefined {
 }
 
 async function renameAgent(agent: Participant): Promise<void> {
-  const value = prompt(
-    `Name Agent Hub shows for @${agent.id} (leave blank to show its address):`,
+  const value = await askText(
+    `Rename @${agent.id}`,
+    "The name Agent Hub shows for it; its address stays the same. Leave blank to show the address.",
     agent.settings.displayName ?? ""
   );
   if (value === null) return;

@@ -13,6 +13,44 @@ export function closeWindowButton(dialog: HTMLDialogElement): HTMLDivElement {
   return row;
 }
 
+/**
+ * Asks for one line of text in the page's own dialog, not the browser's prompt() (which some phones' Home Screen apps
+ * lack, and which looks like the browser rather than Agent Hub): the text, or null when cancelled.
+ */
+export function askText(heading: string, hint: string, initial = "", action = "Save"): Promise<string | null> {
+  const dialog = h("dialog", "dialog ask-dialog");
+  const form = h("form");
+  form.method = "dialog";
+  const input = h("input");
+  input.type = "text";
+  input.value = initial;
+  input.autocomplete = "off";
+  input.maxLength = 80;
+  const label = h("label", "", hint);
+  label.append(input);
+  const cancel = h("button", "btn", "Cancel");
+  cancel.type = "button";
+  const ok = h("button", "btn btn-primary", action);
+  ok.type = "submit";
+  const actions = h("div", "dialog-actions");
+  actions.append(cancel, ok);
+  form.append(h("h2", "", heading), label, actions);
+  dialog.append(form);
+  document.body.append(dialog);
+  return new Promise((resolve) => {
+    let answer: string | null = null;
+    form.addEventListener("submit", () => (answer = input.value));
+    cancel.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("close", () => {
+      dialog.remove();
+      resolve(answer);
+    });
+    dialog.showModal();
+    input.focus();
+    input.select();
+  });
+}
+
 for (const dialog of [dom.statsDialog, dom.gpuDialog, dom.profileDialog]) dialog.append(closeWindowButton(dialog));
 
 // The image viewer closes on any click already; the button says so where people look for it.
