@@ -2,7 +2,7 @@
 // plugin bus URL, the hook socket between hook processes and their server, how held deliveries read, and the installers'
 // owned-file writer.
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { HeldQueue, UnseenSeqs } from "../packages/client/src/held";
@@ -166,4 +166,31 @@ test("--force moves a file aside without replacing an earlier backup, and says w
   expect(readFileSync(`${file}.before-agent-bus.1`, "utf8")).toBe("the person's own agent-bus\n");
   expect(existsSync(`${file}.before-agent-bus.2`)).toBe(false);
   expect(readFileSync(file, "utf8")).toBe("# agent-bus install again\n");
+});
+
+test("overlapping --force installs of one file take turns: the person's file survives in exactly one backup", async () => {
+  const file = path.join(dir, "agent-bus");
+  const go = path.join(dir, "go");
+  writeFileSync(`${file}.before-agent-bus`, "first backup\n");
+  writeFileSync(file, "the person's own agent-bus\n");
+  const script = path.join(dir, "force.ts");
+  writeFileSync(script, [
+    `import { existsSync } from "node:fs";`,
+    `import { writeOwnedFile } from ${JSON.stringify(path.resolve(import.meta.dir, "../packages/client/src/install"))};`,
+    `const [file, go, n] = process.argv.slice(2);`,
+    `process.stdout.write("ready\\n");`,
+    `while (!existsSync(go)) Bun.sleepSync(1);`,
+    `writeOwnedFile(file, "# agent-bus install " + n + "\\n", true);`,
+  ].join("\n"));
+  const children = Array.from({ length: 6 }, (_, n) =>
+    Bun.spawn([process.execPath, script, file, go, String(n)], { stdout: "pipe", stderr: "pipe" }),
+  );
+  // All started and waiting, then released together.
+  await Promise.all(children.map((child) => child.stdout.getReader().read()));
+  writeFileSync(go, "");
+  expect(await Promise.all(children.map((child) => child.exited))).toEqual([0, 0, 0, 0, 0, 0]);
+  const backups = readdirSync(dir).filter((name) => name.startsWith("agent-bus.before-agent-bus")).sort();
+  expect(backups.map((name) => readFileSync(path.join(dir, name), "utf8"))).toEqual(["first backup\n", "the person's own agent-bus\n"]);
+  expect(readFileSync(file, "utf8")).toStartWith("# agent-bus install ");
+  expect(existsSync(`${file}.agent-bus-lock`)).toBe(false);
 });

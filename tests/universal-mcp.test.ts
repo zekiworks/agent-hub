@@ -1,5 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { StateResponse } from "@agent-bus/protocol";
@@ -353,6 +366,101 @@ describe("universal MCP adapter configuration", () => {
         expect(readFileSync(config, "utf8")).toBe(before);
         expect(existsSync(adapters) ? readdirSync(adapters) : []).toEqual([]);
       }
+    }
+  }, 60_000);
+
+  test("a config write killed before its rename, or a recovery killed midway, leaves the config whole and is cleaned up", async () => {
+    const cases: Array<[string, string, string]> = [
+      ["qwen", join(".qwen", "settings.json"), `{\n\t"theme":   "dark"\n}\n`],
+      ["grok", join(".grok", "config.toml"), `[cli]\n# off on purpose\nuse_leader = false\n`],
+    ];
+    for (const [harness, relative, before] of cases) {
+      for (const killed of ["publishing", "recovering"]) {
+        for (const next of ["install", "uninstall"]) {
+          const root = home();
+          const config = join(root, relative);
+          const adapters = join(root, ".agent-bus", "adapters");
+          await Bun.write(config, before);
+          const install = ["install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--leader"] : [])];
+          await agentBus(root, ...install);
+          const installed = readFileSync(config, "utf8");
+          // The install was killed with its new adapter staged and the config's earlier bytes kept. Publishing: the
+          // new config was in its temporary file, not yet renamed over the config. Recovering: a later run had put
+          // the earlier bytes back, then was killed (with its own temporary file) before removing the folder.
+          const tx = join(adapters, `${harness}.agent-hub-tx-Qq1Ww2`);
+          mkdirSync(tx);
+          writeFileSync(join(tx, ".agent-hub-tx"), "2147483646");
+          renameSync(join(adapters, harness), join(tx, "new"));
+          writeFileSync(join(tx, "settings-before.json"), JSON.stringify({ file: config, existed: true, bytes: Buffer.from(before).toString("base64") }));
+          writeFileSync(config, before);
+          if (killed === "publishing") writeFileSync(`${config}.agent-hub-tmp-2147483646`, installed);
+          else writeFileSync(`${config}.agent-hub-tmp-2147483645`, before);
+
+          if (next === "install") await agentBus(root, ...install);
+          await agentBus(root, "uninstall", harness);
+          expect(readFileSync(config, "utf8")).toBe(before);
+          expect(readdirSync(join(config, ".."))).toEqual([relative.split("/").pop()!]);
+          expect(existsSync(adapters) ? readdirSync(adapters) : []).toEqual([]);
+        }
+      }
+    }
+  }, 120_000);
+
+  test("recovery leaves a config changed after a killed install, and keeps the folder with its earlier bytes", async () => {
+    for (const [harness, relative, before, edit] of [
+      ["qwen", join(".qwen", "settings.json"), `{\n  "theme": "dark"\n}\n`, (text: string) => text.replace('"theme"', '"editor": "vim",\n  "theme"')],
+      ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`, (text: string) => `${text}\n[ui]\ntheme = "dark"\n`],
+    ] as const) {
+      const root = home();
+      const config = join(root, relative);
+      const adapters = join(root, ".agent-bus", "adapters");
+      await Bun.write(config, before);
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--no-leader"] : []));
+      const tx = join(adapters, `${harness}.agent-hub-tx-Ee3Rr4`);
+      mkdirSync(tx);
+      writeFileSync(join(tx, ".agent-hub-tx"), "2147483646");
+      renameSync(join(adapters, harness), join(tx, "new"));
+      writeFileSync(join(tx, "settings-before.json"), JSON.stringify({ file: config, existed: true, bytes: Buffer.from(before).toString("base64") }));
+      const changed = edit(readFileSync(config, "utf8"));
+      writeFileSync(config, changed);
+
+      const output = await agentBus(root, "uninstall", harness);
+      expect(output).toContain(`Kept ${tx}: ${config} changed after an interrupted Agent Hub install edited it`);
+      // The person's change stays (uninstall then takes out only Agent Hub's own entries), and so do the earlier bytes.
+      expect(readFileSync(config, "utf8")).toContain(harness === "qwen" ? `"editor": "vim"` : `[ui]\ntheme = "dark"`);
+      expect(existsSync(tx)).toBe(true);
+      expect(JSON.parse(readFileSync(join(tx, "settings-before.json"), "utf8")).bytes).toBe(Buffer.from(before).toString("base64"));
+    }
+  }, 60_000);
+
+  test("a harness config that is a link is written through: its target changes, the link stays", async () => {
+    for (const [harness, relative, before] of [
+      ["qwen", join(".qwen", "settings.json"), `{\n  "theme": "dark"\n}\n`],
+      ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`],
+    ] as const) {
+      const root = home();
+      const config = join(root, relative);
+      const real = join(root, "dotfiles", relative.split("/").pop()!);
+      await Bun.write(real, before);
+      chmodSync(real, 0o600);
+      mkdirSync(join(config, ".."), { recursive: true });
+      symlinkSync(real, config);
+      const install = ["install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--leader"] : [])];
+      await agentBus(root, ...install);
+      expect(lstatSync(config).isSymbolicLink()).toBe(true);
+      expect(readFileSync(real, "utf8")).toContain("agent-hub");
+      expect((statSync(real).mode & 0o777).toString(8)).toBe("600");
+      await agentBus(root, "uninstall", harness);
+      expect(lstatSync(config).isSymbolicLink()).toBe(true);
+      expect(readFileSync(real, "utf8")).toBe(before);
+
+      // A link to nothing: refused, nothing written.
+      rmSync(real);
+      const { code, output } = await run(root, install);
+      expect(code).not.toBe(0);
+      expect(output).toContain(`${config} is a link to a missing file; nothing was changed`);
+      expect(existsSync(real)).toBe(false);
+      expect(lstatSync(config).isSymbolicLink()).toBe(true);
     }
   }, 60_000);
 

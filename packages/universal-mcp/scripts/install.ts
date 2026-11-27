@@ -3,14 +3,17 @@ import {
   chmodSync,
   closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
   readdirSync,
   readFileSync,
   readSync,
+  realpathSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
   writeSync,
 } from "node:fs";
@@ -88,6 +91,64 @@ function readJson(file: string): Record<string, unknown> {
     throw new Error(`Could not parse ${file} (expected a JSON object); nothing was changed`);
   }
   return value as Record<string, unknown>;
+}
+
+/** Whether process `pid` runs (one of another user's counts). */
+function alive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+const TEMP_INFIX = ".agent-hub-tmp-";
+
+/** Where writes to `file` land: its target when it is a link, which stays a link. */
+function writePath(file: string): string {
+  try {
+    if (!lstatSync(file).isSymbolicLink()) return file;
+  } catch {
+    return file; // Not there yet.
+  }
+  try {
+    return realpathSync(file);
+  } catch {
+    throw new Error(`${file} is a link to a missing file; nothing was changed. Point it at a file, or replace it with one, and run this again.`);
+  }
+}
+
+/** Removes temporary files a killed write to `file` left beside it (`<file>.agent-hub-tmp-<pid>`, that pid gone). */
+function clearStaleTemps(file: string): void {
+  const dest = writePath(file);
+  const dir = path.dirname(dest);
+  const prefix = `${path.basename(dest)}${TEMP_INFIX}`;
+  for (const entry of existsSync(dir) ? readdirSync(dir) : []) {
+    if (entry.startsWith(prefix) && !alive(Number(entry.slice(prefix.length)))) rmSync(path.join(dir, entry), { force: true });
+  }
+}
+
+/**
+ * Replaces a harness config in one rename, so a reader or a crash sees its old bytes or its new ones, never part: the
+ * new bytes go to a temporary file beside it, with its mode, then over it. A link is written through: its target is
+ * replaced, and the link stays.
+ */
+function replaceFile(file: string, data: string | Uint8Array): void {
+  const dest = writePath(file);
+  mkdirSync(path.dirname(dest), { recursive: true });
+  clearStaleTemps(dest);
+  const temp = `${dest}${TEMP_INFIX}${process.pid}`;
+  const mode = existsSync(dest) ? statSync(dest).mode & 0o7777 : undefined;
+  try {
+    writeFileSync(temp, data, { mode: mode ?? 0o666 });
+    if (mode !== undefined) chmodSync(temp, mode);
+    renameSync(temp, dest);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
 }
 
 /**
@@ -211,10 +272,9 @@ function planJsonEntry(name: UniversalAdapterName, definition: Definition, targe
 }
 
 function writeJsonEntry(plan: JsonPlan, snapshot: string): void {
-  mkdirSync(path.dirname(plan.file), { recursive: true });
   // The snapshot first: a settings file is never left edited without the record that undoes the edit.
   writePrivateJson(snapshot, plan.record);
-  writeJson(plan.file, plan.config);
+  replaceFile(plan.file, jsonText(plan.config));
 }
 
 function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
@@ -222,7 +282,7 @@ function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
   if (!existsSync(file)) return;
   const current = readFileSync(file, "utf8");
   if (snapshot && current === snapshot.installed) {
-    if (snapshot.originalExists) writeFileSync(file, snapshot.original);
+    if (snapshot.originalExists) replaceFile(file, snapshot.original);
     else rmSync(file);
     return;
   }
@@ -231,7 +291,7 @@ function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
   const hadManagedHook = definition.command === "qwen" && removeManagedQwenHooks(config);
   if (!hadManagedEntry && !hadManagedHook) return;
   if (hadManagedEntry) dropJsonServer(config, definition.key!, snapshot?.original);
-  writeJson(file, config);
+  replaceFile(file, jsonText(config));
 }
 
 const GROK_BEGIN = "# agent-bus:grok begin";
@@ -611,9 +671,8 @@ function grokInstalled(name: UniversalAdapterName, plan: GrokPlan, target: strin
 
 function writeGrokEntry(plan: GrokPlan, installed: string, snapshot: string): void {
   const { file, originalExists, original, leader } = plan;
-  mkdirSync(path.dirname(file), { recursive: true });
   writePrivateJson(snapshot, { originalExists, original, installed, ...(leader ? { leader } : {}) });
-  writeFileSync(file, installed);
+  replaceFile(file, installed);
 }
 
 function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
@@ -621,7 +680,7 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
   if (!existsSync(file)) return;
   const current = readFileSync(file, "utf8");
   if (snapshot && current === snapshot.installed) {
-    if (snapshot.originalExists) writeFileSync(file, snapshot.original);
+    if (snapshot.originalExists) replaceFile(file, snapshot.original);
     else rmSync(file);
     return;
   }
@@ -642,7 +701,7 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
     const handWritten = withoutBlock === current && object(parsed.mcp_servers)["agent-hub"] !== undefined;
     checkGrokEdit(file, parsed, parseToml(cleaned, `${file} with Agent Hub's block removed`, hint), handWritten, null, hint);
   }
-  writeFileSync(file, cleaned === "\n" ? "" : cleaned);
+  replaceFile(file, cleaned === "\n" ? "" : cleaned);
 }
 
 /** A planned, checked harness config edit, written together with the snapshot that undoes it. */
@@ -667,8 +726,10 @@ interface SettingsBefore {
 /**
  * Clears what an earlier, interrupted install of `target` left: transaction folders carrying the marker whose process
  * is gone. An install that had not yet put its new adapter in place (its `new` folder is still there) is rolled back:
- * the harness config goes back to its bytes from before, if it is still exactly as that install wrote it, and the
- * working adapter, if already moved into the folder, goes back too. One that had (no `new` folder) was complete.
+ * the harness config goes back to its bytes from before when it holds what that install wrote, and the working
+ * adapter, if already moved into the folder, goes back too. One that had (no `new` folder) was complete. A config that
+ * is neither its bytes from before nor what the install wrote was changed by someone since: it stays as it is, and so
+ * does the folder, which holds those bytes from before.
  */
 function recoverTransactions(target: string, owner: string): void {
   const parent = path.dirname(target);
@@ -677,27 +738,33 @@ function recoverTransactions(target: string, owner: string): void {
     const tx = path.join(parent, entry);
     if (!entry.startsWith(prefix) || !existsSync(path.join(tx, TX_MARK))) continue;
     const pid = Number(readFileSync(path.join(tx, TX_MARK), "utf8"));
-    try {
-      if (pid !== process.pid) {
-        process.kill(pid, 0);
-        continue; // Another install of this harness is running.
-      }
-    } catch {
-      // That process is gone.
-    }
+    if (pid !== process.pid && alive(pid)) continue; // Another install of this harness is running.
     const staged = path.join(tx, "new");
     const written = existsSync(staged) ? readConfigSnapshot(staged) : undefined;
-    if (written && existsSync(path.join(tx, SETTINGS_BEFORE))) {
+    let keep = false;
+    if (existsSync(path.join(tx, SETTINGS_BEFORE))) {
       const before = JSON.parse(readFileSync(path.join(tx, SETTINGS_BEFORE), "utf8")) as SettingsBefore;
-      // Changed since that install wrote it: the change is someone's, and stays.
-      if (existsSync(before.file) && readFileSync(before.file, "utf8") === written.installed) {
-        if (before.existed) writeFileSync(before.file, Buffer.from(before.bytes, "base64"));
-        else rmSync(before.file);
+      clearStaleTemps(before.file);
+      const live = existsSync(before.file) ? readFileSync(before.file) : undefined;
+      const original = before.existed ? Buffer.from(before.bytes, "base64") : undefined;
+      const unchanged = original === undefined ? live === undefined : live?.equals(original) === true;
+      // No snapshot staged: the install stopped before it edited the config (it writes the snapshot first).
+      if (written && !unchanged) {
+        if (live?.toString("utf8") === written.installed) {
+          if (original === undefined) rmSync(before.file);
+          else replaceFile(before.file, original);
+        } else {
+          keep = true;
+          console.log(
+            `Kept ${tx}: ${before.file} changed after an interrupted Agent Hub install edited it, so it was left as it is; ` +
+              `its bytes from before that install are in ${path.join(tx, SETTINGS_BEFORE)} (base64).`,
+          );
+        }
       }
     }
     const previous = path.join(tx, "previous");
     if (!existsSync(target) && manifestName(manifest(previous)) === owner) renameSync(previous, target);
-    rmSync(tx, { recursive: true, force: true });
+    if (!keep) rmSync(tx, { recursive: true, force: true });
   }
 }
 
@@ -728,6 +795,7 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
   const previous = owned ? readConfigSnapshot(target) : undefined;
   const url = installBusUrl(configFile(target), opts.url ?? harnessBusUrl(definition));
   const planEdit = (decided?: boolean): ConfigEdit => {
+    writePath(definition.config!); // A link to nothing is refused before anything is planned or written.
     if (definition.kind === "grok") {
       const plan = planGrok(definition, opts, previous, decided);
       const installed = grokInstalled(name, plan, target, url);
@@ -765,7 +833,7 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
       const bytes = existsSync(edit.file) ? readFileSync(edit.file) : undefined;
       // Kept in the transaction folder first, so an install killed after the edit can still be rolled back.
       writePrivateJson(path.join(tx, SETTINGS_BEFORE), { file: edit.file, existed: bytes !== undefined, bytes: bytes?.toString("base64") ?? "" });
-      restore = () => (bytes === undefined ? rmSync(edit.file, { force: true }) : writeFileSync(edit.file, bytes));
+      restore = () => (bytes === undefined ? rmSync(edit.file, { force: true }) : replaceFile(edit.file, bytes));
       edit.write(configSnapshotFile(staging));
       turnedOn = edit.turnedOn === true;
     } else if (previous) {

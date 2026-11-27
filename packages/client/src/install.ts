@@ -1,7 +1,21 @@
 // Shared by the harness installers (`agent-bus install <harness>`, packages/cli/src/harnesses.ts). Runs on Bun
 // (`Bun.build`, `Bun.which`); the bundled plugin code never imports it.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import * as path from "node:path";
 
 /** What `agent-bus install <harness>` passes to a harness's installer. */
@@ -130,25 +144,84 @@ export const OWNED_MARK = "agent-bus install";
 /**
  * Writes `file` (`mode` for executables), replacing an earlier one agent-bus wrote. Anything else there (a file or link
  * someone else put there) stops the install, unless `force`: then it is moved aside to `<file>.before-agent-bus`, or
- * `.before-agent-bus.1`, `.2`, … when that is taken, so an earlier backup is never replaced.
+ * `.before-agent-bus.1`, `.2`, … when that is taken, so an earlier backup is never replaced. Installs writing the same
+ * file take turns (a lock file beside it), so two never pick the same backup name.
  */
 export function writeOwnedFile(file: string, content: string, force = false, mode = 0o644): void {
-  let present = false;
-  try {
-    lstatSync(file);
-    present = true;
-  } catch {
-    // Not there yet.
-  }
-  if (present && !isOwnedFile(file)) {
-    if (!force) throw new Error(`${file} exists and was not written by agent-bus; not touching it (--force moves it aside).`);
-    const backup = freeBackupName(`${file}.before-agent-bus`);
-    renameSync(file, backup);
-    console.log(`Moved the existing ${file} to ${backup}.`);
-  }
   mkdirSync(path.dirname(file), { recursive: true });
-  if (present && isOwnedFile(file)) rmSync(file);
-  writeFileSync(file, content, { mode });
+  withLock(`${file}.agent-bus-lock`, () => {
+    let present = false;
+    try {
+      lstatSync(file);
+      present = true;
+    } catch {
+      // Not there yet.
+    }
+    if (present && !isOwnedFile(file)) {
+      if (!force) throw new Error(`${file} exists and was not written by agent-bus; not touching it (--force moves it aside).`);
+      const backup = freeBackupName(`${file}.before-agent-bus`);
+      renameSync(file, backup);
+      console.log(`Moved the existing ${file} to ${backup}.`);
+    } else if (present) {
+      rmSync(file);
+    }
+    writeFileSync(file, content, { mode });
+  });
+}
+
+/** Whether process `pid` runs (one of another user's counts). */
+function alive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Runs `work` holding `lock`: a file created only if absent, holding this process's id. A lock whose process is gone
+ * is taken over (renamed away first, so only one waiter does); a live one is waited for, up to 30 seconds.
+ */
+function withLock(lock: string, work: () => void): void {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      const fd = openSync(lock, "wx");
+      writeSync(fd, String(process.pid));
+      closeSync(fd);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    let holder = "";
+    try {
+      holder = readFileSync(lock, "utf8");
+    } catch {
+      continue; // Released meanwhile.
+    }
+    // An empty file is a lock being written: its holder lives.
+    if (holder !== "" && !alive(Number(holder))) {
+      const stale = `${lock}.stale-${process.pid}`;
+      try {
+        renameSync(lock, stale);
+        // Someone took the stale lock over and made a fresh one just before: give theirs back.
+        if (readFileSync(stale, "utf8") !== holder) linkSync(stale, lock);
+      } catch {
+        // Another waiter took it over first, or made a fresh one meanwhile.
+      }
+      rmSync(stale, { force: true });
+      continue;
+    }
+    if (Date.now() > deadline) throw new Error(`Another agent-bus install (process ${holder}) is writing ${lock.slice(0, -".agent-bus-lock".length)}; try again when it is done.`);
+    Bun.sleepSync(20);
+  }
+  try {
+    work();
+  } finally {
+    rmSync(lock, { force: true });
+  }
 }
 
 /** `base`, or `base.1`, `base.2`, …: the first name with nothing there, not even a dangling link. */
