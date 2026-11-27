@@ -11,6 +11,7 @@ import {
   removeOwnedDir,
   writeJson,
   writeMetadata,
+  writePrivateJson,
   type InstallOptions,
   type InstallStatus,
 } from "../../client/src/install";
@@ -167,7 +168,7 @@ function setJsonEntry(
   config[definition.key!] = servers;
   if (name === "qwen") addQwenHook(config, target, url);
   writeJson(file, config);
-  writeJson(configSnapshotFile(target), { originalExists, original, installed: readFileSync(file, "utf8") });
+  writePrivateJson(configSnapshotFile(target), { originalExists, original, installed: readFileSync(file, "utf8") });
 }
 
 function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
@@ -566,7 +567,7 @@ function writeGrokEntry(plan: GrokPlan, installed: string, target: string): void
   const { file, originalExists, original, leader } = plan;
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, installed);
-  writeJson(configSnapshotFile(target), { originalExists, original, installed, ...(leader ? { leader } : {}) });
+  writePrivateJson(configSnapshotFile(target), { originalExists, original, installed, ...(leader ? { leader } : {}) });
   if (plan.turnedOn) console.log(`Grok leader mode is on: use_leader = true under [cli] in ${file}.`);
 }
 

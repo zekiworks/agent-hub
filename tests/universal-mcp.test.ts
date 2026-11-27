@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { StateResponse } from "@agent-bus/protocol";
@@ -159,6 +159,44 @@ describe("universal MCP adapter configuration", () => {
     expect(after).toContain("[models]");
     expect(after).toContain("theme = \"dark\"");
   }, 30_000);
+
+  test("a 0600 harness config stays 0600, and its snapshot is 0600, under umask 022", async () => {
+    const mode = (file: string): string => (statSync(file).mode & 0o777).toString(8);
+    const previous = process.umask(0o022);
+    try {
+      const cases: Array<[string, string, string]> = [
+        ["qwen", join(".qwen", "settings.json"), `{\n  "mcpServers": { "other": { "command": "x", "env": { "TOKEN": "secret" } } }\n}\n`],
+        ["grok", join(".grok", "config.toml"), `[mcp_servers.other]\ncommand = "x"\nenv = { TOKEN = "secret" }\n`],
+      ];
+      for (const [harness, relative, before] of cases) {
+        for (const edited of [false, true]) {
+          const root = home();
+          const config = join(root, relative);
+          const snapshot = join(root, ".agent-bus", "adapters", harness, "config-snapshot.json");
+          mkdirSync(join(config, ".."), { recursive: true });
+          writeFileSync(config, before);
+          chmodSync(config, 0o600);
+          const install = ["install", harness, "--url", "http://127.0.0.1:7800", "--build-only", ...(harness === "grok" ? ["--no-leader"] : [])];
+
+          await agentBus(root, ...install);
+          expect(mode(config)).toBe("600");
+          expect(mode(snapshot)).toBe("600");
+          // A snapshot left readable by an earlier install is private again after a reinstall.
+          chmodSync(snapshot, 0o644);
+          await agentBus(root, ...install);
+          expect(mode(snapshot)).toBe("600");
+          expect(mode(config)).toBe("600");
+
+          if (edited) writeFileSync(config, harness === "grok" ? `${readFileSync(config, "utf8")}[ui]\ntheme = "dark"\n` : readFileSync(config, "utf8").replace('"other"', '"another"'));
+          await agentBus(root, "uninstall", harness);
+          expect(mode(config)).toBe("600");
+          if (!edited) expect(readFileSync(config, "utf8")).toBe(before);
+        }
+      }
+    } finally {
+      process.umask(previous);
+    }
+  }, 60_000);
 
   test("Grok leader mode: yes on a terminal adds [cli] to the owned block; uninstall restores the file byte for byte", async () => {
     const root = home();

@@ -1,7 +1,7 @@
 // Shared by the harness installers (`agent-bus install <harness>`, packages/cli/src/harnesses.ts). Runs on Bun
 // (`Bun.build`, `Bun.which`); the bundled plugin code never imports it.
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 
 /** What `agent-bus install <harness>` passes to a harness's installer. */
@@ -87,8 +87,21 @@ export async function bundleForNode(
   }
 }
 
+/** Writes `file` in place: an existing file (a harness's own config, which may be 0600) keeps its mode and owner. */
 export function writeJson(file: string, value: unknown): void {
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+/**
+ * Writes `file` readable by its owner only (0600), whatever the umask, and atomically: the content appears under the
+ * name only once it is complete and private. For copies of a person's config, which may hold other tools' secrets.
+ */
+export function writePrivateJson(file: string, value: unknown): void {
+  const temp = `${file}.${process.pid}.tmp`;
+  rmSync(temp, { force: true });
+  writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+  chmodSync(temp, 0o600);
+  renameSync(temp, file);
 }
 
 /** The `name` in a JSON manifest, if the file is there and readable. */
