@@ -441,6 +441,39 @@ describe("universal MCP adapter configuration", () => {
     expect(install.output).toContain("already has an agent-hub MCP server not written by Agent Hub");
     await agentBus(root, "uninstall", "grok");
     expect(readFileSync(config, "utf8")).toBe(before);
+    // Also when it ends in a blank line: nothing of Agent Hub's there, so not a byte changes.
+    await Bun.write(config, `${before}\n`);
+    await agentBus(root, "uninstall", "grok");
+    expect(readFileSync(config, "utf8")).toBe(`${before}\n`);
+  }, 30_000);
+
+  test("Grok uninstall leaves a config with nothing of Agent Hub's byte for byte, blank last line included", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const before = `[models]\ndefault = "a"\n\n`;
+    await Bun.write(config, before);
+    await agentBus(root, "uninstall", "grok");
+    expect(readFileSync(config, "utf8")).toBe(before);
+
+    // Installed, then the person took the block out themselves.
+    await agentBus(root, ...INSTALL_GROK, "--no-leader");
+    await Bun.write(config, before);
+    await agentBus(root, "uninstall", "grok");
+    expect(readFileSync(config, "utf8")).toBe(before);
+  }, 30_000);
+
+  test("Grok uninstall takes back its leader line even when the block was replaced by a hand-written server", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    await Bun.write(config, `[models]\ndefault = "a"\n`);
+    await agentBus(root, ...INSTALL_GROK, "--leader");
+    const server = `[mcp_servers.agent-hub]\ncommand = "/home/YOU/.bun/bin/bun"\nargs = ["server.ts"]\n`;
+    await Bun.write(config, readFileSync(config, "utf8").replace(/# agent-bus:grok begin\n[\s\S]*# agent-bus:grok end\n/, server));
+    expect(toml(config).cli?.use_leader).toBe(true);
+
+    await agentBus(root, "uninstall", "grok");
+    expect(toml(config)).toEqual({ models: { default: "a" }, mcp_servers: { "agent-hub": { command: "/home/YOU/.bun/bin/bun", args: ["server.ts"] } } });
+    expect(readFileSync(config, "utf8")).toContain(server);
   }, 30_000);
 
   test("Grok leader mode: --leader with an inline cli table fails, changes nothing, and gives the line to write", async () => {

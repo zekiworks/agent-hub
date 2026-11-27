@@ -580,9 +580,12 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
     else rmSync(file);
     return;
   }
-  // Edited since install: the user's changes stay; only Agent Hub's block and its own unchanged leader line go.
-  const cleaned = revertLeader(stripGrokBlock(current), snapshot?.leader?.replaced).replace(/\n+$/, "\n");
-  if (cleaned === current) return;
+  // Edited since install: the user's changes stay; only Agent Hub's block and its own unchanged leader line go. A file
+  // with neither is left byte for byte, and a hand-written [mcp_servers.agent-hub] (no markers) stays.
+  const withoutBlock = stripGrokBlock(current);
+  const stripped = revertLeader(withoutBlock, snapshot?.leader?.replaced);
+  if (stripped === current) return;
+  const cleaned = withoutBlock === current ? stripped : stripped.replace(/\n+$/, "\n");
   let parsed: Toml | undefined;
   try {
     parsed = Bun.TOML.parse(current) as Toml;
@@ -591,7 +594,8 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
   }
   if (parsed) {
     const hint = `If Grok reads it fine, delete the lines from "${GROK_BEGIN}" to "${GROK_END}" by hand.`;
-    checkGrokEdit(file, parsed, parseToml(cleaned, `${file} with Agent Hub's block removed`, hint), false, null, hint);
+    const handWritten = withoutBlock === current && object(parsed.mcp_servers)["agent-hub"] !== undefined;
+    checkGrokEdit(file, parsed, parseToml(cleaned, `${file} with Agent Hub's block removed`, hint), handWritten, null, hint);
   }
   writeFileSync(file, cleaned === "\n" ? "" : cleaned);
 }
