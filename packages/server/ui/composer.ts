@@ -326,11 +326,73 @@ function pastedName(file: File, index: number): File {
 // local suggestion remain available.
 dom.input.setAttribute("autocorrect", "off");
 
+/** A cell's text on one line, its `|` escaped so it stays one Markdown cell. */
+function cellText(cell: Element): string {
+  return (cell.textContent ?? "").replace(/\s+/g, " ").trim().replace(/\|/g, "\\|");
+}
+
+/** `table` as a Markdown table, its first row the header (as messages show it). */
+function markdownTable(table: HTMLTableElement): string {
+  const rows = Array.from(table.rows).map((row) => Array.from(row.cells).map(cellText));
+  if (rows.length === 0) return "";
+  const width = Math.max(...rows.map((row) => row.length));
+  const line = (cells: readonly string[]) => `| ${Array.from({ length: width }, (_, i) => cells[i] ?? "").join(" | ")} |`;
+  const [head = [], ...body] = rows;
+  return [line(head), line(Array<string>(width).fill("---")), ...body.map(line)].join("\n");
+}
+
+const BLOCKS = new Set(["P", "DIV", "LI", "UL", "OL", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "SECTION", "ARTICLE", "HEADER", "FOOTER"]);
+
+/**
+ * Pasted HTML with a table as text, the tables as Markdown (Ümit #17989: a table copied from a message, a spreadsheet
+ * or a page pasted as cells separated by invisible tabs). Read from the parsed HTML without putting it in the page.
+ * Undefined when it has no table: the browser's own paste is fine then.
+ */
+function pastedWithTables(html: string): string | undefined {
+  if (!/<table[\s>]/i.test(html)) return undefined;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  if (!doc.querySelector("table")) return undefined;
+  const out: string[] = [];
+  const walk = (node: Node, pre: boolean): void => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out.push(pre ? (node.textContent ?? "") : (node.textContent ?? "").replace(/\s+/g, " "));
+      return;
+    }
+    if (!(node instanceof Element) || ["SCRIPT", "STYLE", "TEMPLATE"].includes(node.tagName)) return;
+    if (node.tagName === "TABLE") return void out.push(`\n\n${markdownTable(node as HTMLTableElement)}\n\n`);
+    if (node.tagName === "BR") return void out.push("\n");
+    const block = BLOCKS.has(node.tagName) || node.tagName === "PRE";
+    if (block) out.push("\n");
+    for (const child of Array.from(node.childNodes)) walk(child, pre || node.tagName === "PRE");
+    if (block) out.push("\n");
+  };
+  walk(doc.body, false);
+  return out
+    .join("")
+    .split("\n")
+    .map((line) => (line.startsWith("|") ? line : line.replace(/^ +| +$/g, "")))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // Ctrl/⌘+V of an image (a screenshot) or of copied files attaches them; text pastes as usual. When the clipboard holds
 // text as well (copied from Notes, Mail or a web page, which also carry a picture of it), the text is what was meant:
 // it pastes and nothing is attached (Ümit #12591: on the iPhone the text vanished and an image was attached instead).
+// Copied tables paste as Markdown tables (pastedWithTables).
 dom.input.addEventListener("paste", (event) => {
   const data = event.clipboardData;
+  const withTables = pastedWithTables(data?.getData("text/html") ?? "");
+  if (withTables !== undefined) {
+    event.preventDefault();
+    const { selectionStart: from, selectionEnd: to, value: before } = dom.input;
+    // insertText keeps ⌘Z working; where it inserted nothing, the text is put in directly.
+    if (!document.execCommand("insertText", false, withTables) || dom.input.value === before) {
+      dom.input.setRangeText(withTables, from, to, "end");
+      dom.input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    return;
+  }
   const files = Array.from(data?.files ?? []);
   if (files.length === 0 || (data?.getData("text/plain") ?? "").trim() !== "") return;
   event.preventDefault();
