@@ -1206,11 +1206,19 @@ button:disabled {
   color: var(--error);
 }
 
+/* The models' percentages, once shown, are what the person came to read: full text colour, set off from the card's
+   "#n from …" that follows (demo review D2). */
 .needs-model-detail {
   margin-right: 6px;
-  color: var(--muted);
+  color: var(--text);
   font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
+}
+.needs-model-detail::after {
+  content: " ·";
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .needs-actions {
@@ -2841,11 +2849,13 @@ button:disabled {
   z-index: 100;
   transform: translateX(-50%);
   padding: 8px 16px;
+  border: 1px solid color-mix(in srgb, var(--success) 60%, transparent);
   border-radius: 8px;
   background: var(--panel-raised);
   color: var(--success);
   box-shadow: 0 8px 24px var(--shadow);
   font-size: 14px;
+  font-weight: 600;
 }
 
 /* Phones: the dialog is a full-width sheet at the top, with 44 px targets; 16 px fields so iOS does not zoom. At the
@@ -5500,6 +5510,12 @@ ul.md-list ul.md-list { list-style: circle; }
   max-height: calc(100dvh - 310px);
   overflow-y: auto;
   pointer-events: none;
+}
+/* On a desktop there is room for a banner's whole row of buttons on one line (demo review D2: Copy wrapped alone). */
+@media (min-width: 641px) {
+  .answer-toasts {
+    width: min(440px, calc(100vw - 32px));
+  }
 }
 
 .answer-toast {

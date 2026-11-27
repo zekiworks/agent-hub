@@ -328,10 +328,11 @@ function suggestionSetting(): HTMLElement {
     h(
       "p",
       "dialog-hint",
-      "As you type, the rest of the word appears in grey after the cursor: Tab adds it, → (or Ctrl+→) one word at a " +
-        "time (on a phone, tap the word in the row of buttons, or × to dismiss it). Escape drops it, and typing other " +
-        "letters makes it go. Enter still sends what you typed. Words come from English and Turkish word lists (Turkish " +
-        "also typed without ç ğ ı ö ş ü) " +
+      // "The rest of the word" undersold it once the Hub suggests whole phrases (demo review D2).
+      "As you type, a suggestion appears in grey after the cursor: Tab adds it, → (or Ctrl+→) one word at a time " +
+        "(on a phone, tap it in the row of buttons, or × to dismiss it). Escape drops it, and typing something else " +
+        "makes it go. Enter still sends what you typed. The rest of the word being typed comes from English and " +
+        "Turkish word lists (Turkish also typed without ç ğ ı ö ş ü) " +
         `and from the conversation itself, inside this page.${model} Only this browser.`
     )
   );

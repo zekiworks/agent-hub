@@ -11,7 +11,7 @@ import { h } from "./html";
 import { setIcon } from "./icons";
 import { renderMarkdown } from "./markdown";
 import { mentionCandidates } from "./mentions";
-import { conversationAddress, conversationTitle, state } from "./state";
+import { conversationAddress, conversationTitle, participantDisplayName, state } from "./state";
 import { mentionNodes, refLink } from "./text";
 import { noteAttention } from "./attention";
 
@@ -40,7 +40,11 @@ function writableAddress(conv: Conversation): string | undefined {
 function choices(message: Message): Choice[] {
   const people = mentionCandidates()
     .filter((c) => c.id !== "all")
-    .map((c) => ({ to: c.id, label: c.label, hint: c.hint }));
+    // A renamed agent by its name too ("Trainer (@ml-train)"), as everywhere else on the page.
+    .map((c) => {
+      const name = participantDisplayName(c.id);
+      return { to: c.id, label: name === c.id ? c.label : `${name} (@${c.id})`, hint: c.hint };
+    });
   const places = Array.from(state.conversations.values())
     .filter((c) => c.id !== message.conversationId)
     .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
@@ -202,6 +206,9 @@ function showForwarded(text: string): void {
   document.querySelector(".forward-toast")?.remove();
   const toast = h("div", "forward-toast", text);
   toast.setAttribute("role", "status");
+  // Above the message box when one is on screen, not over its text (demo review D2: it covered "Write a message…").
+  const box = dom.composer.getBoundingClientRect();
+  if (box.height > 0 && box.top < innerHeight) toast.style.bottom = `${Math.round(innerHeight - box.top + 12)}px`;
   document.body.append(toast);
   setTimeout(() => toast.remove(), 2500);
 }

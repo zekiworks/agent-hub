@@ -11,7 +11,7 @@ import { loadState } from "./loading";
 import { renderAll } from "./render";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
-import { conversationTitle, state } from "./state";
+import { conversationTitle, participantDisplayName, state } from "./state";
 import { isTab, moveTab, setTab } from "./tabs";
 
 const NOTIFY: Array<[NotifyLevel, string]> = [
@@ -35,6 +35,12 @@ function directAgent(conv: Conversation): Participant | undefined {
   const others = conv.members.filter((id) => id !== state.me);
   if (others.length !== 1) return undefined;
   return state.participants.find((participant) => participant.id === others[0] && participant.kind === "agent");
+}
+
+/** A participant as the lists show it: a renamed agent as "Trainer (@ml-train)", anyone else by id. */
+function memberLabel(id: string): string {
+  const name = participantDisplayName(id);
+  return name === id ? id : `${name} (@${id})`;
 }
 
 async function renameAgent(agent: Participant): Promise<void> {
@@ -251,7 +257,8 @@ function render(consumed: string[] = []): void {
   const list = h("div", "member-chips");
   const humans = new Set(state.humans);
   for (const id of conv.members) {
-    const chip = h("span", "member-chip", id);
+    // A renamed agent by its name, its address after it (demo review D2: "ml-train" read as another agent than Trainer).
+    const chip = h("span", "member-chip", memberLabel(id));
     if (member && !humans.has(id)) {
       const x = h("button", "member-remove", "✕");
       x.type = "button";
@@ -287,7 +294,7 @@ function render(consumed: string[] = []): void {
     }, true);
     const draw = (): void => {
       const q = search.value.trim().toLowerCase().replace(/^@+/, "");
-      const shown = candidates.filter((p) => !q || p.id.includes(q) || picking.ids.has(p.id));
+      const shown = candidates.filter((p) => !q || p.id.includes(q) || memberLabel(p.id).toLowerCase().includes(q) || picking.ids.has(p.id));
       choices.replaceChildren(
         ...(shown.length === 0
           ? [h("li", "forward-empty", candidates.length === 0 ? "Everyone on the Hub is in it already." : "Nobody by that name.")]
@@ -297,7 +304,7 @@ function render(consumed: string[] = []): void {
               li.setAttribute("role", "option");
               li.setAttribute("aria-selected", String(on));
               const where = p.kind === "human" ? "person" : `agent · ${p.online ? "online" : "offline"}${p.host ? ` · ${p.host.split(".")[0]}` : ""}`;
-              li.append(h("span", "forward-label", `${on ? "✓ " : ""}${p.id}`), h("span", "forward-hint", where));
+              li.append(h("span", "forward-label", `${on ? "✓ " : ""}${memberLabel(p.id)}`), h("span", "forward-hint", where));
               li.addEventListener("click", () => {
                 if (picking.ids.has(p.id)) picking.ids.delete(p.id);
                 else picking.ids.add(p.id);

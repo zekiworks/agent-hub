@@ -29,7 +29,7 @@ let waiting: NeedsResponse | undefined;
 
 const LABEL: Record<Task["type"], string> = { task: "Task", approval: "Approval" };
 /** The models' names on the cards, by the short names their verdicts carry. */
-const MODEL_NAMES: Record<string, string> = { d1: "d1-2B", glide: "GLiDE" };
+const MODEL_NAMES: Record<string, string> = { d1: "d1-2B", glide: "GLiDE-2B" };
 
 /** Fetches the counts for the button, and the list when the Inbox is open. */
 export async function refreshInbox(): Promise<void> {
