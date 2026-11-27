@@ -511,6 +511,17 @@ export class BusDatabase {
   /** `existing`: open a database that already exists, never create one (serve --existing-data). */
   constructor(dbPath: string, humans: readonly string[], now = Date.now(), { existing = false }: { existing?: boolean } = {}) {
     this.db = new Database(dbPath, { create: !existing, readwrite: true, strict: true });
+    if (existing) {
+      // An established Hub's database has its tables: an empty file (a half-copied volume, a stray touch) is not set
+      // up as a new Hub, before anything is written to it.
+      const tables = this.db
+        .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('messages', 'participants')")
+        .all();
+      if (tables.length < 2) {
+        this.db.close();
+        throw new Error(`${dbPath} is not a Hub database (no messages and participants tables); not setting up a new Hub there (--existing-data)`);
+      }
+    }
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA synchronous = NORMAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
