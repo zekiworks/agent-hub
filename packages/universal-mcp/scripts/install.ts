@@ -67,8 +67,25 @@ function readJson(file: string): Record<string, unknown> {
   try {
     return object(JSON.parse(readFileSync(file, "utf8")));
   } catch (error) {
-    throw new Error(`Cannot update ${file}: ${(error as Error).message}`);
+    throw new Error(`Could not parse ${file} (${(error as Error).message}); nothing was changed`);
   }
+}
+
+/**
+ * Removes Agent Hub's server from a JSON config, and the `mcpServers` object with it when that leaves it empty, unless
+ * the person had one in `original` (the settings before Agent Hub).
+ */
+function dropJsonServer(config: Record<string, unknown>, key: string, original?: string): void {
+  const servers = object(config[key]);
+  delete servers["agent-hub"];
+  let hadKey = false;
+  try {
+    hadKey = original !== undefined && key in object(JSON.parse(original));
+  } catch {
+    // Not JSON: it had no such key.
+  }
+  if (Object.keys(servers).length > 0 || hadKey) config[key] = servers;
+  else delete config[key];
 }
 
 function managedEntry(value: unknown): boolean {
@@ -140,14 +157,14 @@ function readConfigSnapshot(target: string): ConfigSnapshot | undefined {
   }
 }
 
-function setJsonEntry(
-  name: UniversalAdapterName,
-  definition: Definition,
-  target: string,
-  url: string,
-  snapshot: string,
-  previous?: ConfigSnapshot
-): void {
+/** What a JSON (Qwen) install will write, worked out and checked before anything is built or written. */
+interface JsonPlan {
+  file: string;
+  record: ConfigSnapshot;
+  config: Record<string, unknown>;
+}
+
+function planJsonEntry(name: UniversalAdapterName, definition: Definition, target: string, url: string, previous?: ConfigSnapshot): JsonPlan {
   const file = definition.config!;
   const existed = existsSync(file);
   const before = existed ? readFileSync(file, "utf8") : "";
@@ -166,18 +183,19 @@ function setJsonEntry(
   } else if (hadManagedEntry || hadManagedHook) {
     // An orphaned or edited prior install has no exact usable snapshot. Preserve its current user settings, but not
     // stale Agent Hub entries that this install replaces.
-    if (hadManagedEntry) delete servers["agent-hub"];
-    config[definition.key!] = servers;
+    if (hadManagedEntry) dropJsonServer(config, definition.key!, previous?.original);
     original = jsonText(config);
   }
-  const entry: Record<string, unknown> = { command: jsRuntime(), args: argsFor(name, target, url) };
-  mkdirSync(path.dirname(file), { recursive: true });
-  servers["agent-hub"] = entry;
-  config[definition.key!] = servers;
+  config[definition.key!] = { ...object(config[definition.key!]), "agent-hub": { command: jsRuntime(), args: argsFor(name, target, url) } };
   if (name === "qwen") addQwenHook(config, target, url);
+  return { file, config, record: { originalExists, original, installed: jsonText(config) } };
+}
+
+function writeJsonEntry(plan: JsonPlan, snapshot: string): void {
+  mkdirSync(path.dirname(plan.file), { recursive: true });
   // The snapshot first: a settings file is never left edited without the record that undoes the edit.
-  writePrivateJson(snapshot, { originalExists, original, installed: jsonText(config) });
-  writeJson(file, config);
+  writePrivateJson(snapshot, plan.record);
+  writeJson(plan.file, plan.config);
 }
 
 function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
@@ -190,12 +208,10 @@ function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
     return;
   }
   const config = readJson(file);
-  const servers = object(config[definition.key!]);
-  const hadManagedEntry = managedEntry(servers["agent-hub"]);
+  const hadManagedEntry = managedEntry(object(config[definition.key!])["agent-hub"]);
   const hadManagedHook = definition.command === "qwen" && removeManagedQwenHooks(config);
   if (!hadManagedEntry && !hadManagedHook) return;
-  if (hadManagedEntry) delete servers["agent-hub"];
-  config[definition.key!] = servers;
+  if (hadManagedEntry) dropJsonServer(config, definition.key!, snapshot?.original);
   writeJson(file, config);
 }
 
@@ -616,9 +632,10 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
   if (existsSync(target) && !owned) throw new Error(`${target} exists and is not the ${ownedName(name)} plugin; not touching it.`);
   const previous = owned ? readConfigSnapshot(target) : undefined;
   const url = installBusUrl(configFile(target), opts.url);
-  // Asked, and the new config.toml checked, before anything is written.
+  // Asked, and the new harness config checked, before anything is built or written.
   const grok = definition.kind === "grok" ? planGrok(definition, opts, previous) : undefined;
   const grokText = grok ? grokInstalled(name, grok, target, url) : undefined;
+  const json = definition.kind === "json" ? planJsonEntry(name, definition, target, url, previous) : undefined;
   // Built beside the installed adapter, which keeps working, with its snapshot, until the new one is complete and the
   // harness config points at it; a failure removes only the staging folder, so a plain retry works.
   const staging = `${target}.staging-${process.pid}`;
@@ -635,7 +652,7 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
     writeMetadata(staging, "message-bus", `${definition.title} bridge for Agent Hub.`);
     // The harness config names the final paths (under `target`); the snapshot goes with the new adapter.
     if (grok) writeGrokEntry(grok, grokText!, configSnapshotFile(staging));
-    else setJsonEntry(name, definition, target, url, configSnapshotFile(staging), previous);
+    else writeJsonEntry(json!, configSnapshotFile(staging));
     const old = `${target}.old-${process.pid}`;
     rmSync(old, { recursive: true, force: true });
     if (existsSync(target)) renameSync(target, old);
@@ -670,11 +687,14 @@ export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions
   const installed = manifestName(manifest(target)) === ownedName(name) && existsSync(serverFile(target));
   const notes: string[] = [];
   if (installed && definition.kind === "json") {
-    const servers = object(readJson(definition.config!)[definition.key!]);
-    if (!managedEntry(servers["agent-hub"])) notes.push(`MCP entry missing from ${definition.config}`);
-    if (name === "qwen" && !removeManagedQwenHooks(readJson(definition.config!))) {
-      notes.push(`Inbox hook missing from ${definition.config}`);
+    let config: Record<string, unknown> | undefined;
+    try {
+      config = readJson(definition.config!);
+    } catch {
+      notes.push(`could not parse ${definition.config}`);
     }
+    if (config && !managedEntry(object(config[definition.key!])["agent-hub"])) notes.push(`MCP entry missing from ${definition.config}`);
+    if (config && name === "qwen" && !removeManagedQwenHooks(config)) notes.push(`Inbox hook missing from ${definition.config}`);
   }
   if (installed && definition.kind === "grok") {
     const text = existsSync(definition.config!) ? readFileSync(definition.config!, "utf8") : "";

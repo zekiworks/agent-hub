@@ -150,7 +150,48 @@ describe("universal MCP adapter configuration", () => {
     // Edited again, so uninstall takes out only Agent Hub's entries.
     writeFileSync(settings, JSON.stringify({ ...reinstalled, theme: "dark" }, null, 2));
     await agentBus(root, "uninstall", "qwen");
-    expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({ hooks: { UserPromptSubmit: [first, mixed] }, mcpServers: {}, theme: "dark" });
+    expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({ hooks: { UserPromptSubmit: [first, mixed] }, theme: "dark" });
+  }, 30_000);
+
+  test("Qwen install refuses a settings.json it cannot parse, or another agent-hub server, before building anything", async () => {
+    for (const [before, message] of [
+      [`{ "theme": "dark", }\n`, "Could not parse"],
+      [`{ "mcpServers": { "agent-hub": { "command": "mine" } } }\n`, "already has an agent-hub MCP server not written by Agent Hub"],
+    ] as const) {
+      const root = home();
+      const settings = join(root, ".qwen", "settings.json");
+      await Bun.write(settings, before);
+      const { code, output } = await run(root, ["install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only"]);
+      expect(code).not.toBe(0);
+      expect(output).toContain(message);
+      expect(readFileSync(settings, "utf8")).toBe(before);
+      expect(existsSync(join(root, ".agent-bus", "adapters"))).toBe(false);
+    }
+  }, 30_000);
+
+  test("Qwen doctor notes a settings.json it cannot parse instead of failing", async () => {
+    const root = home();
+    const settings = join(root, ".qwen", "settings.json");
+    await Bun.write(settings, `{ "theme": "dark" }\n`);
+    await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only");
+    await Bun.write(settings, `{ "theme": "dark", oops }\n`);
+    const doctor = await run(root, ["doctor", "--url", "http://127.0.0.1:9"]);
+    expect(doctor.output).toContain(`could not parse ${settings}`);
+    expect(doctor.output).not.toContain("MCP entry missing");
+    expect(doctor.output).not.toContain("Inbox hook missing");
+    expect(doctor.output).toContain("agent token");
+  }, 30_000);
+
+  test("Qwen uninstall after an edit leaves no empty mcpServers the person did not have", async () => {
+    for (const before of [{ theme: "dark" }, { theme: "dark", mcpServers: {} }, { mcpServers: { other: { command: "x" } } }]) {
+      const root = home();
+      const settings = join(root, ".qwen", "settings.json");
+      await Bun.write(settings, `${JSON.stringify(before, null, 2)}\n`);
+      await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only");
+      writeFileSync(settings, JSON.stringify({ ...JSON.parse(readFileSync(settings, "utf8")), editor: "vim" }, null, 2));
+      await agentBus(root, "uninstall", "qwen");
+      expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({ ...before, editor: "vim" });
+    }
   }, 30_000);
 
   test("Qwen uninstall removes a settings file created only for Agent Hub", async () => {
