@@ -280,19 +280,22 @@ function writeJsonEntry(plan: JsonPlan, snapshot: string, journal: string): void
   replaceFile(plan.file, jsonText(plan.config), journal);
 }
 
-/** Takes the installation at `target` out of a JSON config: only the entry and hooks that run its files. */
+/**
+ * Takes the installation at `target` out of a JSON config: only the entry and hooks that run its files. Its snapshot
+ * is applied only while the active entry runs its server: a copy of an adapter folder carries the same snapshot.
+ */
 function removeJsonEntry(definition: Definition, target: string, snapshot?: ConfigSnapshot): boolean {
   const file = definition.config!;
   if (!existsSync(file)) return false;
   const current = readFileSync(file, "utf8");
-  if (snapshot && current === snapshot.installed) {
+  const config = readJson(file);
+  const entry = object(config[definition.key!])["agent-hub"];
+  const hadManagedEntry = managedEntry(entry) && runs(entry, serverFile(target));
+  if (hadManagedEntry && snapshot && current === snapshot.installed) {
     if (snapshot.originalExists) replaceFile(file, snapshot.original);
     else rmSync(file);
     return true;
   }
-  const config = readJson(file);
-  const entry = object(config[definition.key!])["agent-hub"];
-  const hadManagedEntry = managedEntry(entry) && runs(entry, serverFile(target));
   const hadManagedHook = definition.command === "qwen" && removeManagedQwenHooks(config, inboxHookFile(target));
   if (!hadManagedEntry && !hadManagedHook) return false;
   if (hadManagedEntry) dropJsonServer(config, definition.key!, snapshot?.original);
@@ -686,14 +689,15 @@ function removeGrokEntry(definition: Definition, target: string, snapshot?: Conf
   const file = definition.config!;
   if (!existsSync(file)) return false;
   const current = readFileSync(file, "utf8");
+  // Another installation's block (or, with no adapter here, its leader line) is not this uninstall's to take, and
+  // neither is its snapshot applied: a copy of an adapter folder carries the same one.
+  const blocks = current.match(GROK_BLOCK) ?? [];
+  if (blocks.length > 0 ? !blocks.some((block) => block.includes(JSON.stringify(serverFile(target)))) : !snapshot) return false;
   if (snapshot && current === snapshot.installed) {
     if (snapshot.originalExists) replaceFile(file, snapshot.original);
     else rmSync(file);
     return true;
   }
-  // Another installation's block (or, with no adapter here, its leader line) is not this uninstall's to take.
-  const blocks = current.match(GROK_BLOCK) ?? [];
-  if (blocks.length > 0 ? !blocks.some((block) => block.includes(JSON.stringify(serverFile(target)))) : !snapshot) return false;
   // Edited since install: the user's changes stay; only Agent Hub's block and its own unchanged leader line go. A file
   // with neither is left byte for byte, and a hand-written [mcp_servers.agent-hub] (no markers) stays.
   const withoutBlock = stripGrokBlock(current);

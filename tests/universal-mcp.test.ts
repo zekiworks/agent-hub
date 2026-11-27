@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   chmodSync,
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -522,6 +523,27 @@ describe("universal MCP adapter configuration", () => {
       expect(readdirSync(join(adapters, kept[0]!))).toEqual(["settings-before.json"]);
       // The working adapter is the one from before.
       expect(JSON.parse(readFileSync(join(adapters, harness, "config.json"), "utf8")).busUrl).toBe("http://127.0.0.1:7800");
+    }
+  }, 60_000);
+
+  test("uninstall --dir of a copy of the adapter folder leaves the installation the config runs alone", async () => {
+    for (const [harness, relative] of [["qwen", join(".qwen", "settings.json")], ["grok", join(".grok", "config.toml")]] as const) {
+      // No config before the install: the snapshot says so, and the copy carries that same snapshot.
+      const root = home();
+      const config = join(root, relative);
+      const adapter = join(root, ".agent-bus", "adapters", harness);
+      const copy = join(root, "copy-of-adapter");
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--no-leader"] : []));
+      const installed = readFileSync(config, "utf8");
+      cpSync(adapter, copy, { recursive: true });
+
+      await agentBus(root, "uninstall", harness, "--dir", copy);
+      expect(readFileSync(config, "utf8")).toBe(installed);
+      expect(existsSync(join(adapter, "server.mjs"))).toBe(true);
+      expect(existsSync(copy)).toBe(false);
+
+      await agentBus(root, "uninstall", harness);
+      expect(existsSync(config)).toBe(false);
     }
   }, 60_000);
 
