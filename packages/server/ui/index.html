@@ -20,9 +20,13 @@
   <script>
     (() => {
       let left = 5;
+      const sent = new Set();
       const send = (text, stack) => {
         const session = localStorage.getItem("agent-bus.session");
-        if (!session || left <= 0) return;
+        // The same error again (a handler firing in a loop) adds nothing: one report each per page load.
+        const key = String(text) + "\n" + String(stack || "");
+        if (!session || left <= 0 || sent.has(key)) return;
+        sent.add(key);
         left -= 1;
         fetch("/api/bug-reports", {
           method: "POST",
@@ -34,7 +38,12 @@
           }),
         }).catch(() => undefined);
       };
-      addEventListener("error", (e) => send(e.message || "Script error", e.error && e.error.stack ? e.error.stack : (e.filename || "") + ":" + e.lineno + ":" + e.colno));
+      addEventListener("error", (e) => {
+        // "Script error." with no file is what browsers report for an error in a script from elsewhere (the browser's
+        // own or an extension's), with every detail withheld: nothing in it points at Agent Hub (Ümit #17801).
+        if (!e.filename && !e.error && /^Script error\.?$/.test(e.message || "")) return;
+        send(e.message || "Script error", e.error && e.error.stack ? e.error.stack : (e.filename || "") + ":" + e.lineno + ":" + e.colno);
+      });
       addEventListener("unhandledrejection", (e) => send(e.reason instanceof Error ? e.reason.message : String(e.reason), e.reason instanceof Error ? e.reason.stack : undefined));
       setTimeout(() => {
         if (!window.agentHubStarted && document.visibilityState === "visible") send("The page stayed blank: the app had not drawn anything 20 s after it opened.");
