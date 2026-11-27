@@ -103,6 +103,9 @@ function applyView(view: View): void {
     state.tappedSeq = undefined;
   }
   setPhoneList(false);
+  // Where I was, for opening Agent Hub again without an address (Ümit #17999: the Home Screen and Dock apps start at
+  // "/", so every reopen showed #all).
+  if (state.me && resolved.kind === "conversation") localStorage.setItem(`${LAST_PLACE_KEY}.${state.me}`, location.hash || viewHash(resolved));
   renderAll();
   if (changed) {
     loadDraft();
@@ -110,6 +113,15 @@ function applyView(view: View): void {
     if (at === undefined) scrollToBottom();
     else dom.messageScroll.scrollTop = at;
   }
+}
+
+const LAST_PLACE_KEY = "agent-bus.lastPlace";
+
+/** Opened without an address (an app's start page, the bare site): back to the conversation or thread I was last in. */
+function restoreLastPlace(): void {
+  if (location.hash || !state.me) return;
+  const last = localStorage.getItem(`${LAST_PLACE_KEY}.${state.me}`);
+  if (last && /^#\/c\/[^/]+(\/t\/\d+)?$/.test(last)) history.replaceState(null, "", last);
 }
 
 /** A task's state changed: the conversation shows the message as it is now, and the inbox refreshes. */
@@ -387,8 +399,10 @@ async function boot(): Promise<void> {
   const reloaded = navigation?.type === "reload";
   const linkedSeq = takeMessageLink();
   takeDraftLink();
-  // Phones opened without a conversation in the address, or reloaded on the list, start on the conversation list.
+  // Phones opened without a conversation in the address, or reloaded on the list, start on the conversation list;
+  // behind it (and on a desktop) is the conversation I was last in.
   const startOnList = location.hash === "" || (reloaded && wasOnPhoneList());
+  restoreLastPlace();
   applyView(parseHash());
   startCrashLog();
   if (startOnList) setPhoneList(true);
