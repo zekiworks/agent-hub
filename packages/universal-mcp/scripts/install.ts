@@ -305,22 +305,25 @@ function removeJsonEntry(definition: Definition, target: string, snapshot?: Conf
 
 const GROK_BEGIN = "# agent-bus:grok begin";
 const GROK_END = "# agent-bus:grok end";
-const GROK_BLOCK = /\n*# agent-bus:grok begin\n[\s\S]*?# agent-bus:grok end\n?/g;
+/** Agent Hub's block; each line may end with LF or CRLF. `$1`: the line break ending the line before it. */
+const GROK_BLOCK = /(\r?\n)?(?:\r?\n)*# agent-bus:grok begin\r?\n[\s\S]*?# agent-bus:grok end(?:\r?\n)?/g;
 /** Marks the `use_leader = true` line an install wrote, and a `[cli]` header it added because the file had none. */
 const LEADER_MARK = "# agent-bus:grok leader";
 const LEADER_LINE = new RegExp(`^\\s*(?:cli\\s*\\.\\s*)?use_leader\\s*=\\s*true\\s*${LEADER_MARK}\\s*$`);
 const LEADER_HEADER = new RegExp(`^\\s*\\[\\s*cli\\s*\\]\\s*${LEADER_MARK}\\s*$`);
 
 /**
- * Removes Agent Hub's MCP block, leaving a line break in its place so the settings on either side stay on their own
- * lines. Installs before 27 Nov kept a `[cli]` table at the end of the block; the person's keys there survive as their
- * own `[cli]` table, and only an unchanged `use_leader = true` (Agent Hub's) goes.
+ * Removes Agent Hub's MCP block, leaving the line break that ended the line before it, so the settings on either side
+ * stay on their own lines and every other line keeps its own line ending. Installs before 27 Nov kept a `[cli]` table
+ * at the end of the block; the person's keys there survive as their own `[cli]` table, and only an unchanged
+ * `use_leader = true` (Agent Hub's) goes.
  */
 function stripGrokBlock(text: string): string {
-  return text.replace(GROK_BLOCK, (block) => {
-    const cli = /\n\[cli\]\n([\s\S]*?)# agent-bus:grok end/.exec(block);
-    const kept = cli?.[1]!.split("\n").filter((line) => line.trim() !== "" && line.trim() !== "use_leader = true") ?? [];
-    return kept.length ? `\n\n[cli]\n${kept.join("\n")}\n` : "\n";
+  return text.replace(GROK_BLOCK, (block, before: string | undefined) => {
+    const eol = before ?? "\n";
+    const cli = /\r?\n\[cli\]\r?\n([\s\S]*?)# agent-bus:grok end/.exec(block);
+    const kept = cli?.[1]!.split(/\r?\n/).filter((line) => line.trim() !== "" && line.trim() !== "use_leader = true") ?? [];
+    return kept.length ? `${eol}${eol}[cli]${eol}${kept.join(eol)}${eol}` : eol;
   });
 }
 
@@ -492,7 +495,7 @@ function scanLeader(text: string): LeaderScan {
       table = undefined;
       return;
     }
-    const header = /^\s*\[([^\[\]]+)\]\s*(?:#.*)?$/.exec(line);
+    const header = /^\s*\[([^\[\]]+)\]\s*(?:#[^\n]*)?$/.exec(line);
     if (header) {
       table = header[1]!.split(".").map((part) => part.trim().replace(/^"(.*)"$|^'(.*)'$/, "$1$2")).join(".");
       if (table === "cli") scan.cliHeader ??= i;
@@ -515,16 +518,21 @@ function scanLeader(text: string): LeaderScan {
  */
 function setLeader(text: string): { text: string; replaced?: string } | { inline: number } {
   const scan = scanLeader(text);
+  // Lines are split on LF: a CRLF line keeps its CR, and a line written here ends like the line it replaces or follows.
   const lines = text.split("\n");
+  const cr = (line: string): string => (line.endsWith("\r") ? "\r" : "");
   if (scan.falseLine !== undefined) {
     const replaced = lines[scan.falseLine]!;
-    lines[scan.falseLine] = `${/^\s*/.exec(replaced)![0]}${scan.falseDotted ? "cli." : ""}use_leader = true ${LEADER_MARK}`;
+    lines[scan.falseLine] = `${/^\s*/.exec(replaced)![0]}${scan.falseDotted ? "cli." : ""}use_leader = true ${LEADER_MARK}${cr(replaced)}`;
     return { text: lines.join("\n"), replaced };
   }
   if (scan.inline !== undefined) return { inline: scan.inline };
-  if (scan.cliHeader !== undefined) lines.splice(scan.cliHeader + 1, 0, `use_leader = true ${LEADER_MARK}`);
-  else if (scan.rootDotted !== undefined) lines.splice(scan.rootDotted + 1, 0, `cli.use_leader = true ${LEADER_MARK}`);
-  else return { text: `${text}${text && !text.endsWith("\n") ? "\n" : ""}${text ? "\n" : ""}[cli] ${LEADER_MARK}\nuse_leader = true ${LEADER_MARK}\n` };
+  if (scan.cliHeader !== undefined) lines.splice(scan.cliHeader + 1, 0, `use_leader = true ${LEADER_MARK}${cr(lines[scan.cliHeader]!)}`);
+  else if (scan.rootDotted !== undefined) lines.splice(scan.rootDotted + 1, 0, `cli.use_leader = true ${LEADER_MARK}${cr(lines[scan.rootDotted]!)}`);
+  else {
+    const eol = usesCrlf(text) ? "\r\n" : "\n";
+    return { text: `${text}${text && !text.endsWith("\n") ? eol : ""}${text ? eol : ""}[cli] ${LEADER_MARK}${eol}use_leader = true ${LEADER_MARK}${eol}` };
+  }
   return { text: lines.join("\n") };
 }
 
@@ -537,7 +545,8 @@ function revertLeader(text: string, replaced?: string): string {
   const index = lines.findIndex((line) => LEADER_LINE.test(line));
   if (index < 0) return text;
   if (replaced === undefined) lines.splice(index, 1);
-  else lines[index] = replaced;
+  // The line it replaced, ending as the line there now does (the file may have changed line endings since).
+  else lines[index] = `${replaced.replace(/\r$/, "")}${lines[index]!.endsWith("\r") ? "\r" : ""}`;
   const header = lines.findIndex((line) => LEADER_HEADER.test(line));
   if (header >= 0) {
     let end = header + 1;
@@ -584,7 +593,7 @@ interface GrokPlan {
   file: string;
   /** The config to write the MCP block after: the current file without the block, leader setting already applied. */
   base: string;
-  /** The file's line breaks are CRLF: worked on with LF, written back with CRLF. */
+  /** The file's line breaks are mostly CRLF: the lines Agent Hub adds end with CRLF too. */
   crlf: boolean;
   /** The current file, parsed: the install may change only Agent Hub's server and `cli.use_leader` in it. */
   parsed: Toml;
@@ -599,13 +608,15 @@ interface GrokPlan {
   turnedOn?: boolean;
 }
 
-/** Whether every line break in `text` is CRLF (a file edited on Windows): it is then written back the same way. */
-const usesCrlf = (text: string): boolean => text.includes("\r\n") && !/(^|[^\r])\n/.test(text);
-const withEol = (text: string, crlf: boolean): string => (crlf ? text.replace(/\n/g, "\r\n") : text);
+/**
+ * Whether most line breaks in `text` are CRLF (a file edited on Windows): lines Agent Hub adds then end with CRLF.
+ * Markers and settings are found whatever each line ends with, and every other line keeps its own ending.
+ */
+const usesCrlf = (text: string): boolean => (text.match(/\r\n/g)?.length ?? 0) > (text.match(/(?:^|[^\r])\n/g)?.length ?? 0);
 
-/** Whether a config.toml text (either line ending) has an Agent Hub block whose parsed server runs `file`. */
+/** Whether a config.toml text has an Agent Hub block whose parsed server runs `file`. */
 function blockRuns(text: string, file: string): boolean {
-  return (text.replace(/\r\n/g, "\n").match(GROK_BLOCK) ?? []).some((block) => {
+  return (text.match(GROK_BLOCK) ?? []).some((block) => {
     try {
       return runs(object((Bun.TOML.parse(block) as Toml).mcp_servers)["agent-hub"], file);
     } catch {
@@ -628,7 +639,7 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
   const existed = existsSync(file);
   const raw = existed ? readFileSync(file, "utf8") : "";
   const crlf = usesCrlf(raw);
-  const before = crlf ? raw.replace(/\r\n/g, "\n") : raw;
+  const before = raw;
   const parsed = parseToml(raw, file, BY_HAND);
   const stripped = stripGrokBlock(before);
   const base = stripped !== before && stripped.trim() === "" ? "" : stripped;
@@ -646,7 +657,7 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
     parsed,
     leaderValue: value,
     originalExists: untouched ? previous.originalExists : existed,
-    original: untouched ? previous.original : withEol(ours ? revertLeader(base, previous?.leader?.replaced) : base, crlf),
+    original: untouched ? previous.original : ours ? revertLeader(base, previous?.leader?.replaced) : base,
     ...(ours ? { leader: { replaced: previous?.leader?.replaced } } : {}),
   };
   if (value === true) {
@@ -691,8 +702,9 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
 function grokInstalled(name: UniversalAdapterName, plan: GrokPlan, target: string, url: string): string {
   const { file, base } = plan;
   const args = argsFor(name, target, url).map((value) => JSON.stringify(value)).join(", ");
-  const body = `${GROK_BEGIN}\n[mcp_servers.agent-hub]\ncommand = ${JSON.stringify(jsRuntime())}\nargs = [${args}]\n${GROK_END}\n`;
-  const installed = withEol(`${base}${base && !base.endsWith("\n") ? "\n" : ""}${base ? "\n" : ""}${body}`, plan.crlf);
+  const eol = plan.crlf ? "\r\n" : "\n";
+  const body = [GROK_BEGIN, "[mcp_servers.agent-hub]", `command = ${JSON.stringify(jsRuntime())}`, `args = [${args}]`, GROK_END, ""].join(eol);
+  const installed = `${base}${base && !base.endsWith("\n") ? eol : ""}${base ? eol : ""}${body}`;
   const after = parseToml(installed, `${file} with Agent Hub's block added`, BY_HAND);
   checkGrokEdit(file, plan.parsed, after, true, { value: plan.leaderValue }, BY_HAND);
   return installed;
@@ -713,8 +725,7 @@ function removeGrokEntry(definition: Definition, target: string, snapshot?: Conf
   const file = definition.config!;
   if (!existsSync(file)) return false;
   const raw = readFileSync(file, "utf8");
-  const crlf = usesCrlf(raw);
-  const current = crlf ? raw.replace(/\r\n/g, "\n") : raw;
+  const current = raw;
   const server = serverFile(target);
   // Another installation's block, or (with no block) its snapshot and leader line, is not this uninstall's to take.
   const hasBlock = (current.match(GROK_BLOCK) ?? []).length > 0;
@@ -729,7 +740,7 @@ function removeGrokEntry(definition: Definition, target: string, snapshot?: Conf
   const withoutBlock = stripGrokBlock(current);
   const stripped = revertLeader(withoutBlock, snapshot?.leader?.replaced);
   if (stripped === current) return false;
-  const cleaned = withoutBlock === current ? stripped : stripped.replace(/\n+$/, "\n");
+  const cleaned = withoutBlock === current ? stripped : stripped.replace(/(\r?\n)(?:\r?\n)*$/, "$1");
   let parsed: Toml | undefined;
   try {
     parsed = Bun.TOML.parse(raw) as Toml;
@@ -741,7 +752,7 @@ function removeGrokEntry(definition: Definition, target: string, snapshot?: Conf
     const handWritten = withoutBlock === current && object(parsed.mcp_servers)["agent-hub"] !== undefined;
     checkGrokEdit(file, parsed, parseToml(cleaned, `${file} with Agent Hub's block removed`, hint), handWritten, null, hint);
   }
-  replaceFile(file, withEol(cleaned === "\n" ? "" : cleaned, crlf));
+  replaceFile(file, /^\r?\n$/.test(cleaned) ? "" : cleaned);
   return true;
 }
 
@@ -986,9 +997,27 @@ function uninstallTransaction(name: UniversalAdapterName, opts: InstallOptions):
   const snapshot = owned ? readConfigSnapshot(target) : undefined;
   // Only what belongs to the installation at `target`: another one (another --dir) keeps its entry and hooks.
   const changed = definition.kind === "json" ? removeJsonEntry(definition, target, snapshot) : removeGrokEntry(definition, target, snapshot);
+  // The adapter goes only once the config no longer runs it: deleting it first would break the harness.
+  if (owned && configRuns(definition, target)) {
+    throw new Error(
+      `${definition.config} still runs ${serverFile(target)} after Agent Hub took out what it recognises, so ${target} was kept ` +
+        `and the harness keeps working. Remove the agent-hub entry from ${definition.config} by hand, then run this again.`,
+    );
+  }
   removeOwnedDir(target, manifest(target), ownedName(name), "plugin");
   if (owned || changed) console.log(`Removed ${definition.title} Agent Hub adapter.`);
   else console.log(`No ${definition.title} Agent Hub adapter in ${target}, and nothing in ${definition.config} runs one there: nothing removed.`);
+}
+
+/** Whether the harness config, as it is now, runs the adapter at `target` (its server, or for Qwen its hook). */
+function configRuns(definition: Definition, target: string): boolean {
+  const file = definition.config!;
+  if (!existsSync(file)) return false;
+  // Any mention of its server.mjs: Agent Hub's block, or one Agent Hub does not recognise as its own.
+  if (definition.kind === "grok") return readFileSync(file, "utf8").includes(serverFile(target));
+  const config = readJson(file);
+  const entry = object(config[definition.key!])["agent-hub"];
+  return (managedEntry(entry) && runs(entry, serverFile(target))) || removeManagedQwenHooks(config, inboxHookFile(target));
 }
 
 export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions): InstallStatus {
@@ -1003,8 +1032,10 @@ export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions
     } catch (error) {
       notes.push((error as Error).message.replace(/; nothing was changed$/, ""));
     }
-    if (config && !managedEntry(object(config[definition.key!])["agent-hub"])) notes.push(`MCP entry missing from ${definition.config}`);
-    if (config && name === "qwen" && !removeManagedQwenHooks(config)) notes.push(`Inbox hook missing from ${definition.config}`);
+    // Entries and hooks that run this target's files: another installation's (another --dir) do not count.
+    const entry = config ? object(config[definition.key!])["agent-hub"] : undefined;
+    if (config && !(managedEntry(entry) && runs(entry, serverFile(target)))) notes.push(`MCP entry missing from ${definition.config}`);
+    if (config && name === "qwen" && !removeManagedQwenHooks(config, inboxHookFile(target))) notes.push(`Inbox hook missing from ${definition.config}`);
   }
   if (installed && definition.kind === "grok") {
     const text = existsSync(definition.config!) ? readFileSync(definition.config!, "utf8") : "";
@@ -1014,7 +1045,7 @@ export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions
     } catch {
       notes.push(`Bun could not parse ${definition.config}`);
     }
-    if (config && !text.includes(GROK_BEGIN)) notes.push(`MCP entry missing from ${definition.config}`);
+    if (config && !blockRuns(text, serverFile(target))) notes.push(`MCP entry missing from ${definition.config}`);
     else if (config && leaderOf(config) === true) notes.push("idle wake: leader mode on");
     else if (config) notes.push("no idle wake: leader mode off (agent-bus install grok --leader, or grok --leader)");
   }

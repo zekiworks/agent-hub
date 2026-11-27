@@ -542,6 +542,78 @@ describe("universal MCP adapter configuration", () => {
     expect(readFileSync(config, "utf8")).toBe(before);
   }, 30_000);
 
+  test("Grok: a CRLF block beside one LF line is removed, every other line keeps its ending, and an unrecognised one keeps the adapter", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const adapter = join(root, ".agent-bus", "adapters", "grok");
+    const before = `[models]\r\ndefault = "dspark"\r\n`;
+    await Bun.write(config, before);
+    await agentBus(root, ...INSTALL_GROK, "--no-leader");
+    const installed = readFileSync(config, "utf8");
+    expect(installed).not.toMatch(/(^|[^\r])\n/);
+    // The person adds one comment with an LF ending.
+    writeFileSync(config, `# my note\n${installed}`);
+    await agentBus(root, "uninstall", "grok");
+    expect(readFileSync(config, "utf8")).toBe(`# my note\n${before}`);
+    expect(existsSync(adapter)).toBe(false);
+
+    // A block whose end marker the person deleted is not Agent Hub's any more: the config still runs the adapter,
+    // so the adapter is kept, and uninstall says why.
+    await agentBus(root, ...INSTALL_GROK, "--no-leader");
+    const broken = readFileSync(config, "utf8").replace("# agent-bus:grok end\r\n", "");
+    writeFileSync(config, broken);
+    const { code, output } = await run(root, ["uninstall", "grok"]);
+    expect(code).not.toBe(0);
+    expect(output).toContain(`${config} still runs ${join(adapter, "server.mjs")}`);
+    expect(readFileSync(config, "utf8")).toBe(broken);
+    expect(existsSync(join(adapter, "server.mjs"))).toBe(true);
+  }, 30_000);
+
+  test("Grok: a config.toml with mixed line endings is read whatever each line ends with", async () => {
+    const root = home();
+    const config = join(root, ".grok", "config.toml");
+    const before = `[models]\r\ndefault = "dspark"\n\n[cli]\r\nuse_leader = false\n`;
+    await Bun.write(config, before);
+    await agentBus(root, ...INSTALL_GROK, "--leader");
+    const installed = readFileSync(config, "utf8");
+    await agentBus(root, ...INSTALL_GROK, "--leader");
+    expect(readFileSync(config, "utf8")).toBe(installed);
+    await agentBus(root, "uninstall", "grok");
+    expect(readFileSync(config, "utf8")).toBe(before);
+
+    // Only Agent Hub's block (and its leader line) saved with CRLF, the rest LF: still found, reinstalled, removed.
+    await agentBus(root, ...INSTALL_GROK, "--leader");
+    const text = readFileSync(config, "utf8");
+    const mixed = text.replace(/# agent-bus:grok begin\n[\s\S]*# agent-bus:grok end\n/, (block) => block.replaceAll("\n", "\r\n"))
+      .replace("use_leader = true # agent-bus:grok leader\n", "use_leader = true # agent-bus:grok leader\r\n");
+    expect(mixed).not.toBe(text);
+    writeFileSync(config, mixed);
+    const reinstall = await run(root, [...INSTALL_GROK, "--leader"]);
+    expect(reinstall.code).toBe(0);
+    expect(toml(config).mcp_servers?.["agent-hub"]).toBeDefined();
+    writeFileSync(config, readFileSync(config, "utf8").replace(/# agent-bus:grok begin\n[\s\S]*# agent-bus:grok end\n/, (block) => block.replaceAll("\n", "\r\n")));
+    await agentBus(root, "uninstall", "grok");
+    const after = readFileSync(config, "utf8");
+    expect(after).not.toContain("agent-hub");
+    expect(after).not.toContain("agent-bus:grok");
+    expect(toml(config)).toEqual({ models: { default: "dspark" }, cli: { use_leader: false } });
+  }, 30_000);
+
+  test("doctor counts only the entries that run the adapter it checks, not another installation's", async () => {
+    for (const [harness, relative] of [["qwen", join(".qwen", "settings.json")], ["grok", join(".grok", "config.toml")]] as const) {
+      const root = home();
+      const config = join(root, relative);
+      const leader = harness === "grok" ? ["--no-leader"] : [];
+      // The config runs an adapter at a custom --dir; the default folder holds one only built (not registered).
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", "--dir", join(root, "custom"), ...leader);
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", "--build-only");
+      const doctor = await run(root, ["doctor", "--url", "http://127.0.0.1:9"]);
+      expect(doctor.output).toContain(`MCP entry missing from ${config}`);
+      if (harness === "qwen") expect(doctor.output).toContain(`Inbox hook missing from ${config}`);
+      else expect(doctor.output).not.toContain("leader mode");
+    }
+  }, 60_000);
+
   test("Grok: in a config.toml turned CRLF, uninstall of a copied adapter changes nothing and of the real one removes it", async () => {
     const root = home();
     const config = join(root, ".grok", "config.toml");
