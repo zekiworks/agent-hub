@@ -5,9 +5,9 @@ import {
   ALL_CONVERSATION_ID,
   DEFAULT_BUS_PORT,
   PROTOCOL_VERSION,
-  RESOURCES_AGENT_ID,
   slugifyId,
   SYSTEM_AGENT_ID,
+  SYSTEM_SOURCE_AGENT_IDS,
   type HealthResponse,
   type PushKeyResponse,
   type StateResponse,
@@ -126,9 +126,9 @@ function resolveHumans(option: string[] | undefined): string[] {
   const out: string[] = [];
   for (const entry of raw) {
     const id = slugifyId(entry);
-    // The Hub's own agents keep their ids: a person named "system" would be seeded as a human and the built-in agent
-    // never registered.
-    if (id === SYSTEM_AGENT_ID || id === RESOURCES_AGENT_ID) {
+    // The Hub's own agents keep their ids: a person named "system" (or "task", "status", "resources") would be seeded
+    // as a human and the built-in agent hidden or never registered.
+    if (id === SYSTEM_AGENT_ID || (SYSTEM_SOURCE_AGENT_IDS as readonly string[]).includes(id)) {
       throw new Error(`"${id}" is the Hub's own agent and cannot be a person's name; pick another name for --humans`);
     }
     if (id && id !== ALL_CONVERSATION_ID && !out.includes(id)) out.push(id);

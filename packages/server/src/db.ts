@@ -722,6 +722,19 @@ export class BusDatabase {
          VALUES (?1, 'all', '[]', ?2, ?2)`
       )
       .run(ALL_CONVERSATION_ID, now);
+    // A person's name that is already an agent here (or an agent's old name) would leave the row an agent while the
+    // Hub treats the id as a person: refuse before seeding, naming the conflict.
+    for (const id of humans) {
+      const agent = this.db
+        .query<{ id: string }, [string]>("SELECT id FROM participants WHERE id = ?1 AND kind = 'agent'")
+        .get(id);
+      const alias = this.renamedTo(id);
+      if (agent || alias) {
+        throw new Error(
+          `"${id}" is ${agent ? "an agent" : `the old name of agent "${alias}"`} on this Hub and cannot also be a person's name; pick another name for --humans`
+        );
+      }
+    }
     const insertHuman = this.db.query(
       `INSERT OR IGNORE INTO participants (id, kind, settings_json, created_at, last_seen_at)
        VALUES (?1, 'human', ?2, ?3, ?3)`
