@@ -5053,8 +5053,20 @@ ul.md-list ul.md-list { list-style: circle; }
 }
 
 .verified-tag {
+  display: inline-flex;
+  align-items: center;
   color: var(--online);
-  font-weight: 700;
+}
+
+.verified-tag .icon,
+.account-link .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.account-link .icon {
+  margin-right: 4px;
+  vertical-align: -2px;
 }
 
 .unverified-tag {

@@ -12,6 +12,7 @@ import { errorText } from "./format";
 import "./group";
 import { resourcesChanged } from "./gpus";
 import { hooks } from "./hooks";
+import { setIcon } from "./icons";
 import { applyActivity, syncWatch } from "./live";
 import { loadEarlierUntil, loadMessages, loadState, receive } from "./loading";
 import { loadAgentRequests } from "./machines";
@@ -328,7 +329,8 @@ async function loadAuth(): Promise<string | undefined> {
   setFileKey(auth.fileKey ?? "");
   // The account, once, at the right of the top bar (Can #11389): the name, a link to passkeys, machines, sign out.
   dom.authLink.hidden = false;
-  dom.authLink.textContent = `✓ ${auth.me}`;
+  // A key, as on signed-in messages: a ✓ read as "sent" or "seen" (Ümit #17935).
+  setIcon(dom.authLink, "key-round", auth.me);
   dom.authLink.title = `Signed in as ${auth.me} with a passkey: passkeys, machines on the Hub, sign out`;
   dom.authLink.setAttribute("aria-label", `Your account: signed in as ${auth.me} (passkeys, machines on the Hub, sign out)`);
   return auth.me;

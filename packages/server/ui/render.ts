@@ -348,10 +348,13 @@ function renderMessage(message: Message, continued: boolean, previousSeq?: numbe
   sender.title = `${human ? "Human" : "Agent — click to open a direct conversation"}\nAddress: @${address}`;
   if (!human) sender.addEventListener("click", () => navigate({ kind: "draft", to: [message.from] }));
   head.append(sender, h("span", `kind-tag ${human ? "kind-human" : "kind-agent"}`, human ? "human" : "agent"));
-  // Human messages written while the bus checks who humans are: signed in with a passkey, or not.
+  // Human messages written while the bus checks who humans are: signed in with a passkey, or not. A key, not a ✓
+  // (Ümit #17935: next to "Sent · not seen yet" a green tick read as "delivered" or "seen").
   if (message.verified === true) {
-    const badge = h("span", "verified-tag", "✓");
+    const badge = h("span", "verified-tag");
+    setIcon(badge, "key-round");
     badge.title = "Signed in with a passkey: really them";
+    badge.setAttribute("aria-label", "signed in with a passkey");
     head.append(badge);
   } else if (message.verified === false) {
     const badge = h("span", "unverified-tag", "not verified");
