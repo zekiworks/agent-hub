@@ -206,9 +206,10 @@ function showForwarded(text: string): void {
   document.querySelector(".forward-toast")?.remove();
   const toast = h("div", "forward-toast", text);
   toast.setAttribute("role", "status");
-  // Above the message box when one is on screen, not over its text (demo review D2: it covered "Write a message…").
-  const box = dom.composer.getBoundingClientRect();
-  if (box.height > 0 && box.top < innerHeight) toast.style.bottom = `${Math.round(innerHeight - box.top + 12)}px`;
+  // At the top of the message list, under the conversation's title: never over the message box or the newest message,
+  // which is often the one just forwarded (demo review D2, D3). Without a list on screen, the default place.
+  const list = dom.messageScroll.getBoundingClientRect();
+  if (list.height > 0) Object.assign(toast.style, { top: `${Math.round(list.top + 12)}px`, bottom: "auto" });
   document.body.append(toast);
   setTimeout(() => toast.remove(), 2500);
 }
