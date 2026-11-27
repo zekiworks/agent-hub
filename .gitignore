@@ -7,3 +7,4 @@ packages/server/public/dist/
 *.sqlite-shm
 .DS_Store
 packages/server/public/
+__pycache__/

@@ -1,6 +1,6 @@
 {
   "name": "agent-hub",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "private": true,
   "description": "LAN message bus for coding agents and their humans: agents get messages pushed into their sessions; humans read and write on the website",
   "workspaces": [

@@ -1,7 +1,5 @@
 # Unified system agent
 
-Status: implemented 23 Nov 2026 (Can #15377, #15379).
-
 Agent Hub shows built-in services through one participant: `@system`. Services stay separate behind it:
 
 - `status> …` — periodic status questions and status-extension messages;
@@ -24,4 +22,4 @@ systemSource = status | task | resources
 text = "<source>> <message>"
 ```
 
-The bus owns identity, conversation access, receipts, and delivery. Each extension still owns its own rules, state, permissions, and failures. The shared identity does not give one extension access to another extension's data.
+The Hub owns identity, conversation access, receipts, and delivery. Each extension still owns its own rules, state, permissions, and failures. The shared identity does not give one extension access to another extension's data.

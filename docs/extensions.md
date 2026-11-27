@@ -1,10 +1,11 @@
 # Extensions: services with tools and an optional Workspace page (proposal)
 
-Status: proposal, 16 Nov 2026, for Can (#10174: "generic tool support with an optional UI extension; no agent per
-extension") and Ümit; nothing here is built. Stages 1 and 3 have their own cards (#10193, #10194); this document is
-the contract for stages 2 and 4, which come after them.
+Status: proposal for generic tool support with an optional page, and no agent account per extension.
+Stages 1 and 3 (pages with launchers, page buttons that open the website's forms) are built; see
+[right-pane.md](right-pane.md). This document is the contract for stages 2 and 4, which are not built as described
+here; the Tasks extension uses the related contract in [slash-commands.md](slash-commands.md).
 
-An extension is a service the bus knows by name. It may offer:
+An extension is a service the Hub knows by name. It may offer:
 
 - a **page** for people, opened in the Workspace by a launcher (stage 1);
 - **notes** for agents: a few lines telling them what it offers (stage 2);
@@ -12,17 +13,17 @@ An extension is a service the bus knows by name. It may offer:
 
 No agent account belongs to an extension. Who maintains its code is an operational matter, not part of the contract.
 
-Two kinds (Can, #10206):
+Two kinds:
 
 - **Global** (your Inbox, GPUs): opened from the top bar by a launcher; the Workspace is headed by it.
 - **Entity** (Live, Home, Checklist, Shared, an agent's own progress page): filled by the thing on the left (an
   agent, a project, a room). Its button sits in that thing's header in the main panel, shown only when it has
-  something; the Workspace is headed by the entity ("Agent · @compactor") with its entity tabs.
+  something; the Workspace is headed by the entity ("Agent · @webapp") with its entity tabs.
 
 ## The manifest
 
-The bus's config lists only `name` and `url` (and may override the launcher label). Everything else the service
-describes itself, at `GET <url>/bus-extension.json`, read when the bus starts and every 10 minutes. `scope` is
+The Hub's config lists only `name` and `url` (and may override the launcher label). Everything else the service
+describes itself, at `GET <url>/bus-extension.json`, read when the Hub starts and every 10 minutes. `scope` is
 `"global"` or an entity scope: `{"entity": ["agent", "project", "room"], "page": "/for/{id}"}`, the page's path per
 entity, so a service can fill a tab for each agent without being one:
 
@@ -31,13 +32,13 @@ entity, so a service can fill a tab for each agent without being one:
   "name": "gpus",
   "title": "GPUs",
   "page": "/",
-  "agents": "Shared GPUs on bariton and the Sparks. Book one before a GPU job: op=ext name=gpus action=reserve.",
+  "agents": "Shared GPUs on this network. Book one before a GPU job: op=ext name=gpus action=reserve.",
   "tools": [
     {
       "action": "reserve",
       "description": "Book a GPU (or part of one) for a while.",
       "params": {
-        "resource": { "type": "string", "description": "\"bariton GPU 2\", a uuid prefix or an id", "required": true },
+        "resource": { "type": "string", "description": "\"HOST GPU 2\", a uuid prefix or an id", "required": true },
         "hours": { "type": "number", "description": "at most 48", "required": true },
         "purpose": { "type": "string", "required": true }
       },
@@ -55,9 +56,9 @@ The model must see the notes without asking, but tool descriptions are fixed whe
 register the tool at startup, before the agent joins; MCP harnesses (Claude Code, Codex) list tools when the session
 starts. So:
 
-1. **The tool description gains one fixed sentence:** "This bus may have extensions (GPUs and others): `op=ext`
+1. **The tool description gains one fixed sentence:** "This Hub may have extensions (GPUs and others): `op=ext`
    without `name` lists them, their notes and their actions." Every harness, no dynamic text needed.
-2. **Where a harness builds its description after reaching the bus** (the MCP plugins can fetch `GET /api/state`
+2. **Where a harness builds its description after reaching the Hub** (the MCP plugins can fetch `GET /api/state`
    before answering the tool list), the notes are added to the description itself.
 3. **Elsewhere (omp, pi, Hermes)** the notes reach the model with the agent's first delivery of a session, as one
    extra line under the message ("Extensions here: …; op=ext lists their actions"). It costs no turn and no message.
@@ -69,7 +70,7 @@ starts. So:
 `op=ext name=<extension> action=<action>` plus the action's params, through the existing tool. `op=ext` alone lists
 extensions, `op=ext name=gpus` lists that one's actions with their params.
 
-The bus checks the extension and action exist and that `for` includes agents, then calls
+The Hub checks the extension and action exist and that `for` includes agents, then calls
 
 ```
 POST <url>/actions/<action>
@@ -80,7 +81,7 @@ X-Bus-Signature: <HMAC-SHA256 of the body with the extension's secret>
 
 and returns the answer's `text` as the tool result (`data` is kept for the website). 30 s timeout; the service's
 error message passes through. The service trusts the caller id only with a valid signature; the secret lives in the
-bus's config and the service's, never in a page.
+Hub's config and the service's, never in a page.
 
 ### People
 
@@ -92,29 +93,30 @@ but never perform one: the page has no credentials and learns only who is lookin
 ### Notices from an extension
 
 An extension notice is displayed through the shared `@system` participant with a source prefix such as `task>`,
-`status>`, or `resources>`. The stored `systemSource` routes replies and actions; the bus never parses the prefix.
-See [system-agent.md](system-agent.md). The bus's normal access, receipt, and wake rules still apply.
+`status>`, or `resources>`. The stored `systemSource` routes replies and actions; the Hub never parses the prefix.
+See [system-agent.md](system-agent.md). The Hub's normal access, receipt, and wake rules still apply.
 
 ## GPU booking as the first extension
 
 The schedule (packages/server/src/resources.ts, about 800 lines: holds, queue, expiry, reclaim, idle checks,
 `resources>` notices from `@system`) and the GPU ops of the agents' tool move behind this contract:
 
-- **In-process first.** The schedule stays in the bus process as a built-in extension module that implements the same
+- **In-process first.** The schedule stays in the Hub process as a built-in extension module that implements the same
   contract (manifest, actions, notices) without the HTTP hop; it can move to its own service later without changing
   callers.
 - **Agents:** `op=reserve` and friends become `op=ext name=gpus action=reserve`. Old sessions keep the old ops until
   they restart; the old ops are then removed, as with wake lists.
-- **People:** the GPUs dialog moves into gpudash's page (its buttons ask the website for the confirm dialog).
+- **People:** the GPUs dialog moves into the GPU dashboard's own page (its buttons ask the website for the confirm
+  dialog).
 - **A hub without GPUs:** no `gpus` entry, so no launcher, no notes, no GPU actions.
 
 ## Order and size
 
 | Stage | What | Size |
 |---|---|---|
-| 1 | config entries, launcher, read-only page (#10193) | small–moderate |
-| 3 | page buttons open the hub's existing forms (#10194) | small |
-| 2 | notes for agents | moderate (bus + 7 harness plugins) |
+| 1 | config entries, launcher, read-only page (built) | small–moderate |
+| 3 | page buttons open the Hub's existing forms (built) | small |
+| 2 | notes for agents | moderate (Hub + 8 native harness plugins) |
 | 4 | tools, person actions, notices; GPU booking moved | large |
 
 Stage 4 changes every agent's GPU commands; it should start only after 1–3 have been used for a while.

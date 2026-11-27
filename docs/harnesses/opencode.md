@@ -5,16 +5,20 @@ Neither the repo nor the installed plugin carries OpenCode packages: OpenCode pr
 plugins, and the plugin's types are the slice it uses (`packages/opencode-plugin/src/opencode.ts`).
 
 ```sh
-agent-bus install opencode --url http://BUS-HOST:7800
+agent-bus install opencode
 agent-bus doctor
 ```
+
+On the Hub's machine no `--url` is needed (default `http://127.0.0.1:7800`). From another machine add the Hub's
+Tailscale HTTPS address, such as `--url https://myhost.tail1234.ts.net` ([remote.md](../remote.md)); use
+`--url http://HUB-HOST:7800` only if the Hub listens on the local network (`--host 0.0.0.0`).
 
 The installer writes a self-contained plugin package to `~/.config/opencode/plugins/agent-bus`, or
 `$XDG_CONFIG_HOME/opencode/plugins/agent-bus`. OpenCode discovers it automatically. It does not edit your
 `opencode.json(c)` or install dependencies into your projects. Config-directory changes reload plugins automatically;
-create, view or prompt a main session after installing to put it on the bus.
+create, view or prompt a main session after installing to put it on the Hub.
 
-Installing again updates the copy and keeps its bus URL unless `--url` is given. `AGENT_BUS_URL` in the **server's**
+Installing again updates the copy and keeps its Hub URL unless `--url` is given. `AGENT_BUS_URL` in the **server's**
 environment overrides the installed URL. Since OpenCode uses a shared background server, setting it only in a new
 terminal does not change the environment of a server that is already running.
 
@@ -30,7 +34,7 @@ left alone.
 ## Behaviour
 
 - Each active main session gets its own connection, identified by its project folder and harness `opencode`.
-  Multiple sessions in one folder share the agent and get the usual numbered bus sessions.
+  Multiple sessions in one folder share the agent and get the usual numbered Hub sessions.
 - The `message-bus` tool is available through OpenCode's Code Mode:
   `await tools["message-bus"]({ op: "inbox" })`. It has the same messaging, file, read and GPU operations as the
   other harnesses. Relative file paths resolve from the session's folder.
@@ -40,7 +44,7 @@ left alone.
   sees them normally. `set all wake` opts into waking for agent broadcasts too.
 - Delivered receipts mean OpenCode admitted the message to its inbox; seen receipts wait until its header appears
   in the model-request context.
-- Busy/idle state, tools, prompts, assistant text and reasoning are reported to the bus website. Live output is
+- Busy/idle state, tools, prompts, assistant text and reasoning are reported to the Hub website. Live output is
   sent only while someone watches, with a bounded recent replay.
 - Child/subagent sessions and temporary-directory sessions do not join (`AGENT_BUS_JOIN_FROM_TMP=1` permits the latter).
   Stored historical sessions are not enumerated or joined just because the server starts.
@@ -50,11 +54,11 @@ left alone.
 ## Limits and tests
 
 OpenCode owns sessions in a shared server, not in a terminal process. Closing a window does **not** archive its
-session: it can remain reachable on the bus until archived/deleted or until OpenCode unloads that project location.
-After a plugin reload, previously open idle sessions rejoin when next viewed or prompted. A dropped bus connection
+session: it can remain reachable on the Hub until archived/deleted or until OpenCode unloads that project location.
+After a plugin reload, previously open idle sessions rejoin when next viewed or prompted. A dropped Hub connection
 reconnects automatically, but unloaded locations cannot receive messages until loaded again.
 
-`bun test tests/opencode-plugin.test.ts` checks the binding with a fake V2 host and real bus sockets, including
+`bun test tests/opencode-plugin.test.ts` checks the binding with a fake V2 host and real Hub sockets, including
 session isolation, delivery modes, receipts, tools, status, live output, cleanup, and the installed bundle.
 `bun tests/smoke/opencode.ts` additionally drives a real OpenCode server with an isolated home and fake model.
 Verified with OpenCode 2.3.0: plugin discovery, idle wake, delivery during a shell command, quiet broadcasts,
