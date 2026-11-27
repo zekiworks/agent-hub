@@ -333,7 +333,11 @@ function cellText(cell: Element): string {
 
 /** `table` as a Markdown table, its first row the header (as messages show it). */
 function markdownTable(table: HTMLTableElement): string {
-  const rows = Array.from(table.rows).map((row) => Array.from(row.cells).map(cellText));
+  return markdownRows(Array.from(table.rows).map((row) => Array.from(row.cells).map(cellText)));
+}
+
+/** Rows of cells as a Markdown table, the first row the header; shorter rows are filled with empty cells. */
+function markdownRows(rows: readonly (readonly string[])[]): string {
   if (rows.length === 0) return "";
   const width = Math.max(...rows.map((row) => row.length));
   const line = (cells: readonly string[]) => `| ${Array.from({ length: width }, (_, i) => cells[i] ?? "").join(" | ")} |`;
@@ -376,13 +380,47 @@ function pastedWithTables(html: string): string | undefined {
     .trim();
 }
 
+/**
+ * Plain text whose runs of two or more tab-separated lines (the same number of tabs on each, not indentation) become
+ * Markdown tables: what a copied table is on a clipboard without its HTML (Ümit #17997: Safari on the iPhone pastes
+ * only the text into the message box). Undefined when it has no such run.
+ */
+function pastedTabTables(text: string): string | undefined {
+  if (!text.includes("\t") || !text.includes("\n")) return undefined;
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const tabs = (line: string) => line.split("\t").length - 1;
+  const out: string[] = [];
+  let changed = false;
+  for (let i = 0; i < lines.length; ) {
+    // A header row whose empty first cell was dropped has one tab fewer than the rows under it.
+    const next = i + 1 < lines.length ? tabs(lines[i + 1] as string) : 0;
+    const short = tabs(lines[i] as string) === next - 1 && next > 1;
+    const count = short ? next : tabs(lines[i] as string);
+    let end = i + 1;
+    while (count > 0 && end < lines.length && tabs(lines[end] as string) === count) end++;
+    const run = lines.slice(i, end);
+    // Indented code starts most lines with a tab; a table's first cell starts at most the header row empty.
+    if (run.length >= 2 && run.filter((line) => line.startsWith("\t")).length <= 1) {
+      const rows = run.map((line) => line.split("\t").map((cell) => cell.trim().replace(/\|/g, "\\|")));
+      if (short) rows[0]?.unshift("");
+      // A blank line on each side, or Markdown would read the next line of text as another row.
+      if (out.length > 0 && out.at(-1)?.trim() !== "") out.push("");
+      out.push(markdownRows(rows));
+      if (end < lines.length && (lines[end] as string).trim() !== "") out.push("");
+      changed = true;
+    } else out.push(...run);
+    i = end;
+  }
+  return changed ? out.join("\n") : undefined;
+}
+
 // Ctrl/⌘+V of an image (a screenshot) or of copied files attaches them; text pastes as usual. When the clipboard holds
 // text as well (copied from Notes, Mail or a web page, which also carry a picture of it), the text is what was meant:
 // it pastes and nothing is attached (Ümit #12591: on the iPhone the text vanished and an image was attached instead).
-// Copied tables paste as Markdown tables (pastedWithTables).
+// Copied tables paste as Markdown tables (pastedWithTables, else pastedTabTables).
 dom.input.addEventListener("paste", (event) => {
   const data = event.clipboardData;
-  const withTables = pastedWithTables(data?.getData("text/html") ?? "");
+  const withTables = pastedWithTables(data?.getData("text/html") ?? "") ?? pastedTabTables(data?.getData("text/plain") ?? "");
   if (withTables !== undefined) {
     event.preventDefault();
     const { selectionStart: from, selectionEnd: to, value: before } = dom.input;
