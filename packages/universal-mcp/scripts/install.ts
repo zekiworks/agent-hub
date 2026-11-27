@@ -723,13 +723,25 @@ interface SettingsBefore {
   bytes: string;
 }
 
+/** The bytes a transaction folder kept from before its install edited the config; undefined if unreadable. */
+function settingsBefore(tx: string): SettingsBefore | undefined {
+  try {
+    const value = JSON.parse(readFileSync(path.join(tx, SETTINGS_BEFORE), "utf8")) as Partial<SettingsBefore>;
+    return typeof value.file === "string" && typeof value.existed === "boolean" && typeof value.bytes === "string"
+      ? value as SettingsBefore
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Clears what an earlier, interrupted install of `target` left: transaction folders carrying the marker whose process
- * is gone. An install that had not yet put its new adapter in place (its `new` folder is still there) is rolled back:
- * the harness config goes back to its bytes from before when it holds what that install wrote, and the working
- * adapter, if already moved into the folder, goes back too. One that had (no `new` folder) was complete. A config that
- * is neither its bytes from before nor what the install wrote was changed by someone since: it stays as it is, and so
- * does the folder, which holds those bytes from before.
+ * is gone. The working adapter, if that install had already moved it into its folder, goes back first. An install that
+ * had staged its config edit (a snapshot in `new`) but not put its adapter in place is rolled back: the config goes
+ * back to its bytes from before when it still holds exactly what that install wrote. A config that is neither those
+ * bytes nor what the install wrote was changed by someone since: it stays as it is, and the folder is retired, holding
+ * only those earlier bytes for the person, so no later run acts on it again.
  */
 function recoverTransactions(target: string, owner: string): void {
   const parent = path.dirname(target);
@@ -739,32 +751,38 @@ function recoverTransactions(target: string, owner: string): void {
     if (!entry.startsWith(prefix) || !existsSync(path.join(tx, TX_MARK))) continue;
     const pid = Number(readFileSync(path.join(tx, TX_MARK), "utf8"));
     if (pid !== process.pid && alive(pid)) continue; // Another install of this harness is running.
+    const previous = path.join(tx, "previous");
+    if (!existsSync(target) && manifestName(manifest(previous)) === owner) renameSync(previous, target);
     const staged = path.join(tx, "new");
+    // The install writes the earlier bytes, then the snapshot, then the config: no snapshot, no edit to undo.
     const written = existsSync(staged) ? readConfigSnapshot(staged) : undefined;
-    let keep = false;
-    if (existsSync(path.join(tx, SETTINGS_BEFORE))) {
-      const before = JSON.parse(readFileSync(path.join(tx, SETTINGS_BEFORE), "utf8")) as SettingsBefore;
-      clearStaleTemps(before.file);
+    const before = written && existsSync(path.join(tx, SETTINGS_BEFORE)) ? settingsBefore(tx) : undefined;
+    let retire = false;
+    if (written && before) {
+      try {
+        clearStaleTemps(before.file);
+      } catch {
+        // A link to nothing now: there are no temporary files beside its target to clear.
+      }
       const live = existsSync(before.file) ? readFileSync(before.file) : undefined;
       const original = before.existed ? Buffer.from(before.bytes, "base64") : undefined;
       const unchanged = original === undefined ? live === undefined : live?.equals(original) === true;
-      // No snapshot staged: the install stopped before it edited the config (it writes the snapshot first).
-      if (written && !unchanged) {
-        if (live?.toString("utf8") === written.installed) {
-          if (original === undefined) rmSync(before.file);
-          else replaceFile(before.file, original);
-        } else {
-          keep = true;
-          console.log(
-            `Kept ${tx}: ${before.file} changed after an interrupted Agent Hub install edited it, so it was left as it is; ` +
-              `its bytes from before that install are in ${path.join(tx, SETTINGS_BEFORE)} (base64).`,
-          );
-        }
+      if (!unchanged && live?.equals(Buffer.from(written.installed)) === true) {
+        if (original === undefined) rmSync(before.file);
+        else replaceFile(before.file, original);
+      } else if (!unchanged) {
+        retire = true;
       }
     }
-    const previous = path.join(tx, "previous");
-    if (!existsSync(target) && manifestName(manifest(previous)) === owner) renameSync(previous, target);
-    if (!keep) rmSync(tx, { recursive: true, force: true });
+    if (!retire) {
+      rmSync(tx, { recursive: true, force: true });
+      continue;
+    }
+    for (const left of [staged, previous, path.join(tx, TX_MARK)]) rmSync(left, { recursive: true, force: true });
+    console.log(
+      `${before!.file} changed after an interrupted Agent Hub install edited it, so it was left as it is; its bytes from ` +
+        `before that install are kept in ${path.join(tx, SETTINGS_BEFORE)} (base64, "bytes"). Delete that folder when done.`,
+    );
   }
 }
 
@@ -833,8 +851,9 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
       const bytes = existsSync(edit.file) ? readFileSync(edit.file) : undefined;
       // Kept in the transaction folder first, so an install killed after the edit can still be rolled back.
       writePrivateJson(path.join(tx, SETTINGS_BEFORE), { file: edit.file, existed: bytes !== undefined, bytes: bytes?.toString("base64") ?? "" });
-      restore = () => (bytes === undefined ? rmSync(edit.file, { force: true }) : replaceFile(edit.file, bytes));
       edit.write(configSnapshotFile(staging));
+      // Only now is there an edit to take back.
+      restore = () => (bytes === undefined ? rmSync(edit.file, { force: true }) : replaceFile(edit.file, bytes));
       turnedOn = edit.turnedOn === true;
     } else if (previous) {
       writePrivateJson(configSnapshotFile(staging), previous);
@@ -842,12 +861,24 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
     if (existsSync(target)) renameSync(target, replaced);
     renameSync(staging, target);
   } catch (error) {
-    restore?.();
+    // Each step back is tried on its own; if either fails the folder stays, marked, for the next run to finish.
+    let undone = true;
     try {
       if (!existsSync(target) && existsSync(replaced)) renameSync(replaced, target);
-      rmSync(tx, { recursive: true, force: true });
     } catch {
-      // Left marked; the next install puts the adapter back and clears it.
+      undone = false;
+    }
+    try {
+      restore?.();
+    } catch {
+      undone = false;
+    }
+    if (undone) {
+      try {
+        rmSync(tx, { recursive: true, force: true });
+      } catch {
+        // Left marked; the next run clears it.
+      }
     }
     throw error;
   }

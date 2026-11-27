@@ -406,7 +406,7 @@ describe("universal MCP adapter configuration", () => {
     }
   }, 120_000);
 
-  test("recovery leaves a config changed after a killed install, and keeps the folder with its earlier bytes", async () => {
+  test("recovery leaves a config changed after a killed install, and retires the folder to just its earlier bytes", async () => {
     for (const [harness, relative, before, edit] of [
       ["qwen", join(".qwen", "settings.json"), `{\n  "theme": "dark"\n}\n`, (text: string) => text.replace('"theme"', '"editor": "vim",\n  "theme"')],
       ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`, (text: string) => `${text}\n[ui]\ntheme = "dark"\n`],
@@ -421,15 +421,93 @@ describe("universal MCP adapter configuration", () => {
       writeFileSync(join(tx, ".agent-hub-tx"), "2147483646");
       renameSync(join(adapters, harness), join(tx, "new"));
       writeFileSync(join(tx, "settings-before.json"), JSON.stringify({ file: config, existed: true, bytes: Buffer.from(before).toString("base64") }));
-      const changed = edit(readFileSync(config, "utf8"));
+      const installed = readFileSync(config, "utf8");
+      const changed = edit(installed);
       writeFileSync(config, changed);
 
       const output = await agentBus(root, "uninstall", harness);
-      expect(output).toContain(`Kept ${tx}: ${config} changed after an interrupted Agent Hub install edited it`);
+      expect(output).toContain(`${config} changed after an interrupted Agent Hub install edited it, so it was left as it is`);
+      expect(output).toContain(`kept in ${join(tx, "settings-before.json")}`);
       // The person's change stays (uninstall then takes out only Agent Hub's own entries), and so do the earlier bytes.
       expect(readFileSync(config, "utf8")).toContain(harness === "qwen" ? `"editor": "vim"` : `[ui]\ntheme = "dark"`);
-      expect(existsSync(tx)).toBe(true);
+      expect(readdirSync(tx)).toEqual(["settings-before.json"]);
       expect(JSON.parse(readFileSync(join(tx, "settings-before.json"), "utf8")).bytes).toBe(Buffer.from(before).toString("base64"));
+
+      // Retired: later runs neither repeat it nor act on it, even when the config holds what that install wrote.
+      writeFileSync(config, installed);
+      const again = await agentBus(root, "uninstall", harness);
+      expect(again).not.toContain("interrupted Agent Hub install");
+      expect(readdirSync(tx)).toEqual(["settings-before.json"]);
+    }
+  }, 60_000);
+
+  test("recovery is not blocked by an unreadable record of earlier bytes, or by a config that became a link to nothing", async () => {
+    for (const harness of ["qwen", "grok"]) {
+      const relative = harness === "qwen" ? join(".qwen", "settings.json") : join(".grok", "config.toml");
+      for (const broken of ["record", "link"]) {
+        const root = home();
+        const config = join(root, relative);
+        const adapters = join(root, ".agent-bus", "adapters");
+        const before = harness === "qwen" ? `{ "theme": "dark" }\n` : `[models]\ndefault = "dspark"\n`;
+        await Bun.write(config, before);
+        await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--no-leader"] : []));
+        const tx = join(adapters, `${harness}.agent-hub-tx-Tt5Yy6`);
+        mkdirSync(tx);
+        writeFileSync(join(tx, ".agent-hub-tx"), "2147483646");
+        renameSync(join(adapters, harness), join(tx, "new"));
+        if (broken === "record") {
+          writeFileSync(join(tx, "settings-before.json"), `{ "file": ${JSON.stringify(config)}, "exi`);
+        } else {
+          writeFileSync(join(tx, "settings-before.json"), JSON.stringify({ file: config, existed: true, bytes: Buffer.from(before).toString("base64") }));
+          rmSync(config);
+          symlinkSync(join(root, "gone"), config);
+        }
+        const { code, output } = await run(root, ["uninstall", harness]);
+        expect(output).not.toContain("Unexpected");
+        expect(code).toBe(0);
+        if (broken === "record") expect(existsSync(tx)).toBe(false);
+        else expect(readdirSync(tx)).toEqual(["settings-before.json"]);
+      }
+    }
+  }, 60_000);
+
+  test("an install whose config write fails takes back nothing it did not do, and reports that failure", async () => {
+    if (process.getuid?.() === 0) return; // root ignores the read-only folder this uses to make the write fail
+    for (const [harness, relative, before] of [
+      ["qwen", join(".qwen", "settings.json"), `{\n  "theme": "dark"\n}\n`],
+      ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`],
+    ] as const) {
+      const root = home();
+      const config = join(root, relative);
+      const adapters = join(root, ".agent-bus", "adapters");
+      await Bun.write(config, before);
+      const install = ["install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--no-leader"] : [])];
+      await agentBus(root, ...install);
+      const installed = readFileSync(config, "utf8");
+      // Once built, the config's folder turns read-only: the new config cannot be renamed into place.
+      const preload = join(root, "fail-config.ts");
+      await Bun.write(preload, [
+        `import { chmodSync } from "node:fs";`,
+        `const build = Bun.build;`,
+        `(Bun as { build: unknown }).build = async (options: Parameters<typeof build>[0]) => {`,
+        `  const result = await build(options);`,
+        `  chmodSync(${JSON.stringify(join(config, ".."))}, 0o555);`,
+        `  return result;`,
+        `};`,
+      ].join("\n"));
+      const child = Bun.spawn([process.execPath, "run", "--preload", preload, "packages/cli/src/bin.ts", ...install.slice(0, 2), "--url", "http://127.0.0.1:7801", ...install.slice(4)], {
+        cwd: repo,
+        env: { ...process.env, HOME: root },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+      chmodSync(join(config, ".."), 0o755);
+      expect(code).not.toBe(0);
+      expect(stderr).toContain("EACCES");
+      expect(readFileSync(config, "utf8")).toBe(installed);
+      expect(readdirSync(adapters)).toEqual([harness]);
+      expect(JSON.parse(readFileSync(join(adapters, harness, "config.json"), "utf8")).busUrl).toBe("http://127.0.0.1:7800");
     }
   }, 60_000);
 
