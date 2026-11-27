@@ -433,6 +433,7 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
             sessionKey: nonEmptyParam(url, "session") ?? `connection:${crypto.randomUUID()}`,
             sessionNo: 0,
             activeAt: 0,
+            joinedAt: 0,
             inflight: new Set(),
             id: "",
           };

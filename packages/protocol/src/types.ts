@@ -77,6 +77,11 @@ export interface AgentSession {
   status?: AgentStatus;
   /** Last time it joined or started working: the most recent one gets messages that name no session. */
   activeAt: number;
+  /**
+   * When this session's newest live connection joined (Hub clock, ms); never moved by activity, so a client can tell a
+   * fresh connection (e.g. after a restart) from an old one that is still busy.
+   */
+  joinedAt: number;
 }
 
 /** An agent's own report of what it is doing; sent by the harness, never costs a model turn. */

@@ -49,6 +49,8 @@ export type SocketData =
       sessionNo: number;
       /** Last time this connection joined or started working: messages that name no session go to the latest. */
       activeAt: number;
+      /** When this connection joined (0 until then); never moved by activity. */
+      joinedAt: number;
       /** Deliveries sent here and not acked yet: handed to another session if this one goes away. */
       inflight: Set<number>;
       /** Assigned on open; "" until joined. */
@@ -168,7 +170,8 @@ export class Hub {
       .map(([n, sockets]) => {
         const status = this.statusOf(sockets);
         const activeAt = Math.max(...sockets.map((ws) => (ws.data.kind === "agent" ? ws.data.activeAt : 0)));
-        return { n, ...(status ? { status } : {}), activeAt };
+        const joinedAt = Math.max(...sockets.map((ws) => (ws.data.kind === "agent" ? ws.data.joinedAt : 0)));
+        return { n, ...(status ? { status } : {}), activeAt, joinedAt };
       })
       .sort((a, b) => a.n - b.n);
   }

@@ -113,6 +113,7 @@ export function socketHandlers(ctx: BusContext): AgentSockets {
     const othersLive = hub.sessionsOf(participant.id).length > 0 && hub.liveSessionNumber(participant.id, data.sessionKey) === undefined;
     data.sessionNo = hub.sessionNumber(participant.id, data.sessionKey);
     data.activeAt = hub.activityStamp();
+    data.joinedAt = data.activeAt;
     hub.addAgentSocket(participant.id, ws);
 
     sendFrame(ws, { type: "joined", id: participant.id, session: data.sessionNo, participants: hub.listParticipants() });
