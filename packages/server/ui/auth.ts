@@ -106,9 +106,10 @@ async function renderMe(me: string): Promise<void> {
   list.replaceChildren(
     ...credentials.map((c) => {
       const li = document.createElement("li");
-      const when = c.lastUsedAt ? `last used ${shortTime(c.lastUsedAt)}` : "not used to sign in yet";
-      // A no-break space before each "·": a wrapped line never starts with one (launch review D1).
-      li.textContent = `${c.label}\u00a0· made ${shortTime(c.createdAt)}\u00a0· ${when} `;
+      const when = c.lastUsedAt ? `last\u00a0used\u00a0${shortTime(c.lastUsedAt)}` : "not used to sign in yet";
+      // A no-break space before each "·": a wrapped line never starts with one (launch review D1); and between a label
+      // and its date, so "last used" never ends a line without its date (demo review D6).
+      li.textContent = `${c.label}\u00a0· made\u00a0${shortTime(c.createdAt)}\u00a0· ${when} `;
       const remove = document.createElement("button");
       remove.type = "button";
       // Every row's action is the same small button as Revoke on a machine (demo review D3: two looked like links).
@@ -140,7 +141,7 @@ async function renderDevices(): Promise<string[]> {
   el<HTMLUListElement>("auth-devices").replaceChildren(
     ...sessions.map((s) => {
       const li = document.createElement("li");
-      li.textContent = `${s.label}${s.current ? " (this browser)" : ""}\u00a0· signed in ${shortTime(s.createdAt)}\u00a0· last seen ${shortTime(s.lastSeenAt)} `;
+      li.textContent = `${s.label}${s.current ? " (this browser)" : ""}\u00a0· signed\u00a0in\u00a0${shortTime(s.createdAt)}\u00a0· last\u00a0seen\u00a0${shortTime(s.lastSeenAt)} `;
       if (!s.current) {
         const end = document.createElement("button");
         end.type = "button";
@@ -246,7 +247,7 @@ async function renderMachines(): Promise<void> {
   list.replaceChildren(
     ...tokens.map((t) => {
       const li = document.createElement("li");
-      const used = t.lastUsedAt ? `last used ${shortTime(t.lastUsedAt)}` : "not used yet";
+      const used = t.lastUsedAt ? `last\u00a0used\u00a0${shortTime(t.lastUsedAt)}` : "not used yet";
       const state = t.state === "approved" ? "allowed" : t.state === "denied" ? "denied" : `waiting, code ${t.code}`;
       // The bus notes the folders (and older entries, agent ids) that asked; one name per folder is enough here.
       const agents = [...new Set(t.agents.map((a) => (a.split("/").filter(Boolean).pop() ?? a).toLowerCase()))];

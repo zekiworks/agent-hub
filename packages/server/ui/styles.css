@@ -5192,6 +5192,11 @@ ul.md-list ul.md-list { list-style: circle; }
   padding-left: 18px;
 }
 
+/* Rows that wrap stand apart from the next row (demo review D6: two devices ran together). */
+.auth-list li + li {
+  margin-top: 8px;
+}
+
 .auth-list .nowrap {
   white-space: nowrap;
 }

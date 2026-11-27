@@ -31,6 +31,12 @@ const LABEL: Record<Task["type"], string> = { task: "Task", approval: "Approval"
 /** The models' names on the cards, by the short names their verdicts carry. */
 const MODEL_NAMES: Record<string, string> = { d1: "d1-2B", glide: "GLiDE-2B" };
 
+/** " in webapp-codex" on a card's head: hyphens do not break, so a name is never split across lines; a long title still
+ * wraps at its spaces (demo review D6: "in webapp-" / "codex"). */
+function inWhere(conversation: Conversation): HTMLElement {
+  return h("span", "inbox-where", ` in ${conversationTitle(state.conversations.get(conversation.id) ?? conversation).replace(/-/g, "\u2011")}`);
+}
+
 /** Fetches the counts for the button, and the list when the Inbox is open. */
 export async function refreshInbox(): Promise<void> {
   if (!state.me) return;
@@ -176,7 +182,7 @@ function renderOwnTasks(root: HTMLElement): boolean {
     // Sender, conversation and text from the bus (it may not be loaded on the left).
     void fetchMessage(own.seq).then(
       ({ message, conversation }) => {
-        from.replaceChildren(...mentionNodes(` #${own.seq} from @${message.from}`), h("span", "inbox-where", ` in ${conversationTitle(state.conversations.get(conversation.id) ?? conversation)}`));
+        from.replaceChildren(...mentionNodes(` #${own.seq} from @${message.from}`), inWhere(conversation));
         const body = message.deletedAt ? "(message deleted)" : message.text;
         text.replaceChildren(...inline(body.length > 600 ? `${body.slice(0, 599)}…` : body));
       },
@@ -260,7 +266,7 @@ function waitingCard(item: NeedsResponse["items"][number], byId: Map<string, Con
   close.addEventListener("click", () => void dismissWaiting(message.seq, "read", note));
   const head = h("div", "inbox-head");
   head.append(modelMarks(verdicts), ...mentionNodes(` #${message.seq} from @${message.from}`));
-  if (conversation) head.append(h("span", "inbox-where", ` in ${conversationTitle(state.conversations.get(conversation.id) ?? conversation)}`));
+  if (conversation) head.append(inWhere(conversation));
   head.append(h("span", "inbox-when", ` · ${relativeTime(message.createdAt)}`));
   const text = h("div", "inbox-text");
   text.append(...inline(message.text.length > 600 ? `${message.text.slice(0, 599)}…` : message.text));
@@ -401,7 +407,7 @@ function renderCard(message: Message, conversation: Conversation | undefined): H
   const head = h("div", "inbox-head");
   head.append(h("span", `task-label task-type-${task.type}`, LABEL[task.type]));
   head.append(...mentionNodes(` #${message.seq} from @${message.from}`));
-  if (conversation) head.append(h("span", "inbox-where", ` in ${conversationTitle(conversation)}`));
+  if (conversation) head.append(inWhere(conversation));
   head.append(h("span", "inbox-when", ` · ${relativeTime(message.createdAt)}`));
   const text = h("div", "inbox-text");
   text.append(...inline(message.text.length > 600 ? `${message.text.slice(0, 599)}…` : message.text));

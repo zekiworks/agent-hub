@@ -292,15 +292,16 @@ function threadsSetting(): HTMLElement {
     else hooks.applyView(state.view);
   });
   const label = h("label", "settings-check");
-  label.append(box, " Threads: show reply chains as threads of the room");
+  label.append(box, " Threads: show reply chains as threads of the conversation");
   const wrap = h("div");
   wrap.append(
     label,
     h(
       "p",
       "dialog-hint",
-      "A message with replies shows \"↳ 3 replies\" in the room; a click opens the chain on its own, under a way back to " +
-        "the room (or Esc). Writing there answers the chain. Built from the messages the page has loaded. Only this browser."
+      "A message with replies shows \"↳ 3 replies\" in the conversation; a click opens the chain on its own, under a way " +
+        "back to the conversation (or Esc). Writing there answers the chain. Built from the messages the page has loaded. " +
+        "Only this browser."
     )
   );
   return wrap;
