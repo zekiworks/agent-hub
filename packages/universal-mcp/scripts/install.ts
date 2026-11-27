@@ -1,5 +1,19 @@
 // Installs the shared stdio MCP bridge into harness-native user configuration without replacing unrelated servers.
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
@@ -638,17 +652,60 @@ interface ConfigEdit {
   write(snapshot: string): void;
 }
 
+/** Inside a transaction folder an install made (`<target>.agent-hub-tx-XXXXXX`): marks it, and only it, as removable. */
+const TX_MARK = ".agent-hub-tx";
+
+/**
+ * Clears what an earlier, interrupted install of `target` left: transaction folders carrying the marker whose process
+ * is gone. If that install had already moved the working adapter into its folder, the adapter goes back first.
+ */
+function recoverTransactions(target: string, owner: string): void {
+  const parent = path.dirname(target);
+  const prefix = `${path.basename(target)}.agent-hub-tx-`;
+  for (const entry of existsSync(parent) ? readdirSync(parent) : []) {
+    const tx = path.join(parent, entry);
+    if (!entry.startsWith(prefix) || !existsSync(path.join(tx, TX_MARK))) continue;
+    const pid = Number(readFileSync(path.join(tx, TX_MARK), "utf8"));
+    try {
+      if (pid !== process.pid) {
+        process.kill(pid, 0);
+        continue; // Another install of this harness is running.
+      }
+    } catch {
+      // That process is gone.
+    }
+    const previous = path.join(tx, "previous");
+    if (!existsSync(target) && manifestName(manifest(previous)) === owner) renameSync(previous, target);
+    rmSync(tx, { recursive: true, force: true });
+  }
+}
+
+/** The Hub URL the harness actually launches Agent Hub's server with: `--url` in its managed entry. */
+function harnessBusUrl(definition: Definition): string | undefined {
+  const file = definition.config!;
+  if (!existsSync(file)) return undefined;
+  let entry: unknown;
+  try {
+    entry = definition.kind === "json"
+      ? object(readJson(file)[definition.key!])["agent-hub"]
+      : object((Bun.TOML.parse(readFileSync(file, "utf8")) as Toml).mcp_servers)["agent-hub"];
+  } catch {
+    return undefined;
+  }
+  if (!managedEntry(entry)) return undefined;
+  const args = object(entry).args as unknown[];
+  const url = args[args.indexOf("--url") + 1];
+  return args.includes("--url") && typeof url === "string" ? url : undefined;
+}
+
 export async function installUniversal(name: UniversalAdapterName, opts: UniversalInstallOptions): Promise<void> {
   const definition = DEFINITIONS[name];
   const target = targetDir(name, opts);
-  const staging = `${target}.staging`;
-  const old = `${target}.old`;
-  // An install that stopped between the two renames of its swap left the working adapter at `old`: put it back.
-  if (!existsSync(target) && manifestName(manifest(old)) === ownedName(name)) renameSync(old, target);
+  recoverTransactions(target, ownedName(name));
   const owned = manifestName(manifest(target)) === ownedName(name);
   if (existsSync(target) && !owned) throw new Error(`${target} exists and is not the ${ownedName(name)} plugin; not touching it.`);
   const previous = owned ? readConfigSnapshot(target) : undefined;
-  const url = installBusUrl(configFile(target), opts.url);
+  const url = installBusUrl(configFile(target), opts.url ?? harnessBusUrl(definition));
   const planEdit = (decided?: boolean): ConfigEdit => {
     if (definition.kind === "grok") {
       const plan = planGrok(definition, opts, previous, decided);
@@ -661,13 +718,16 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
   // --build-only builds the adapter alone: the harness config, its leader mode and the snapshot stay as they are.
   // Otherwise the person is asked, and the harness config checked, before anything is built.
   const asked = opts.buildOnly ? undefined : planEdit();
-  // Built beside the installed adapter, which keeps working, with its snapshot, until the new one is complete and the
-  // harness config points at it. A failure takes back the config edit and removes only the staging folder.
-  rmSync(staging, { recursive: true, force: true });
-  if (manifestName(manifest(old)) === ownedName(name)) rmSync(old, { recursive: true, force: true });
+  // Built in a transaction folder of its own beside the installed adapter, which keeps working, with its snapshot,
+  // until the new one is complete and the harness config points at it. A failure takes back the config edit and puts
+  // the previous adapter back. Only that folder, which this install made and marked, is ever removed.
   mkdirSync(path.dirname(target), { recursive: true });
+  const tx = mkdtempSync(`${target}.agent-hub-tx-`);
+  chmodSync(tx, 0o700);
+  writeFileSync(path.join(tx, TX_MARK), String(process.pid));
+  const staging = path.join(tx, "new");
+  const replaced = path.join(tx, "previous");
   mkdirSync(staging, { mode: 0o700 });
-  chmodSync(staging, 0o700);
   let restore: (() => void) | undefined;
   let turnedOn = false;
   try {
@@ -688,23 +748,19 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
     } else if (previous) {
       writePrivateJson(configSnapshotFile(staging), previous);
     }
-    if (existsSync(target)) renameSync(target, old);
-    try {
-      renameSync(staging, target);
-    } catch (error) {
-      if (existsSync(old)) renameSync(old, target);
-      throw error;
-    }
-    rmSync(old, { recursive: true, force: true });
+    if (existsSync(target)) renameSync(target, replaced);
+    renameSync(staging, target);
   } catch (error) {
     restore?.();
     try {
-      rmSync(staging, { recursive: true, force: true });
+      if (!existsSync(target) && existsSync(replaced)) renameSync(replaced, target);
+      rmSync(tx, { recursive: true, force: true });
     } catch {
-      // Left for the next install, which clears it first.
+      // Left marked; the next install puts the adapter back and clears it.
     }
     throw error;
   }
+  rmSync(tx, { recursive: true, force: true });
   if (turnedOn) console.log(`Grok leader mode is on: use_leader = true under [cli] in ${definition.config}.`);
   if (asked) console.log(`Installed ${definition.title} Agent Hub adapter in ${target} (Hub ${url}).`);
   else console.log(`Built ${definition.title} Agent Hub adapter in ${target} (Hub ${url}); ${definition.config} not changed (--build-only).`);
@@ -748,7 +804,8 @@ export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions
     else if (config && leaderOf(config) === true) notes.push("idle wake: leader mode on");
     else if (config) notes.push("no idle wake: leader mode off (agent-bus install grok --leader, or grok --leader)");
   }
-  return { installed, where: target, busUrl: configBusUrl(configFile(target)), notes };
+  // The URL the harness launches the server with; the bundle's own only when the harness has no managed entry.
+  return { installed, where: target, busUrl: harnessBusUrl(definition) ?? configBusUrl(configFile(target)), notes };
 }
 
 export const universalDefinition = (name: UniversalAdapterName): Readonly<Definition> => DEFINITIONS[name];

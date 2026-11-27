@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { StateResponse } from "@agent-bus/protocol";
@@ -310,8 +310,45 @@ describe("universal MCP adapter configuration", () => {
       expect(readFileSync(join(adapter, "config-snapshot.json"), "utf8")).toBe(JSON.stringify(JSON.parse(snapshot), null, 2) + "\n");
       expect((statSync(join(adapter, "config-snapshot.json")).mode & 0o777).toString(8)).toBe("600");
       expect(JSON.parse(readFileSync(join(adapter, "config.json"), "utf8")).busUrl).toBe("http://127.0.0.1:7801");
+      // Doctor and the next reinstall go by the URL the harness launches the server with, not the bundle's.
+      const doctor = await run(root, ["doctor", "--url", "http://127.0.0.1:9"]);
+      expect(doctor.output).toContain(`${harness}: ${adapter} → http://127.0.0.1:7800`);
+      await agentBus(root, "install", harness);
+      expect(readFileSync(config, "utf8")).toBe(installed);
+      expect(JSON.parse(readFileSync(join(adapter, "config.json"), "utf8")).busUrl).toBe("http://127.0.0.1:7800");
       await agentBus(root, "uninstall", harness);
       expect(readFileSync(config, "utf8")).toBe(before);
+    }
+  }, 60_000);
+
+  test("folders beside the adapter that Agent Hub did not make survive install, reinstall and --build-only", async () => {
+    for (const harness of ["qwen", "grok"]) {
+      const root = home();
+      const adapters = join(root, ".agent-bus", "adapters");
+      const adapter = join(adapters, harness);
+      const theirs = [`${harness}.staging`, `${harness}.old`, `${harness}.agent-hub-tx-mine`];
+      for (const folder of theirs) {
+        mkdirSync(join(adapters, folder), { recursive: true });
+        writeFileSync(join(adapters, folder, "keep.txt"), folder);
+      }
+      const leader = harness === "grok" ? ["--no-leader"] : [];
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", ...leader);
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", ...leader);
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", "--build-only");
+      expect(readdirSync(adapters).sort()).toEqual([harness, ...theirs].sort());
+      for (const folder of theirs) expect(readFileSync(join(adapters, folder, "keep.txt"), "utf8")).toBe(folder);
+      expect(existsSync(join(adapter, "server.mjs"))).toBe(true);
+
+      // An install interrupted mid-swap: its marked folder holds the working adapter. The next run puts it back
+      // (its snapshot with it) and clears only that folder.
+      const snapshot = existsSync(join(adapter, "config-snapshot.json")) ? readFileSync(join(adapter, "config-snapshot.json"), "utf8") : undefined;
+      const tx = join(adapters, `${harness}.agent-hub-tx-Ab12Cd`);
+      mkdirSync(tx);
+      writeFileSync(join(tx, ".agent-hub-tx"), "2147483646");
+      renameSync(adapter, join(tx, "previous"));
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", "--build-only");
+      expect(readdirSync(adapters).sort()).toEqual([harness, ...theirs].sort());
+      if (snapshot !== undefined) expect(JSON.parse(readFileSync(join(adapter, "config-snapshot.json"), "utf8"))).toEqual(JSON.parse(snapshot));
     }
   }, 60_000);
 
