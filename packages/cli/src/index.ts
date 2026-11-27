@@ -7,7 +7,7 @@ import { DEFAULT_BUS_PORT } from "@agent-bus/protocol";
 import type { TrainSuggestionsOptions } from "../../complete-ext/finetune/train-suggestions";
 import { runTicketed } from "./run";
 
-const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR] --humans carol,uma
+const USAGE = `Usage: agent-bus serve [--host 0.0.0.0] [--port 7800] [--data-dir DIR [--existing-data]] --humans carol,uma
                        [--https-port 7843 --tls-cert FILE --tls-key FILE] [--gpudash URL] [--forget-offline-days 15]
                        [--rp-id HOST [--origin URL]…] [--public-url URL]… [--stt-url URL] [--tts-url URL] [--task-ext URL] [--ext NAME=URL[,launcher=LABEL|,box=complete|recipient|needs]]… [--bug-reports-to AGENT]
                        [--brand-name NAME [--brand-logo FILE] [--brand-icon FILE]]
@@ -63,6 +63,8 @@ serve:
   --host        Interface to bind (default 0.0.0.0)
   --port        Port to listen on (default 7800; 0 picks a free port)
   --data-dir    Data directory (default $AGENT_BUS_DATA_DIR or ~/.agent-bus)
+  --existing-data  Only open an existing database there: if message-bus.sqlite is missing (an unmounted volume),
+                stop instead of starting a new, empty Hub
   --humans      Comma-separated ids of the humans who use the website (required; or $BUS_HUMANS)
   --https-port  Also serve over TLS on this port (for browsers; agents keep the plain port)
   --tls-cert    PEM certificate for --https-port
@@ -116,6 +118,10 @@ function parseServeArgs(args: string[]): BusServerOptions {
   const tls: { port?: number; certFile?: string; keyFile?: string } = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] ?? "";
+    if (arg === "--existing-data") {
+      options.existingData = true;
+      continue;
+    }
     const eq = arg.indexOf("=");
     const flag = eq >= 0 ? arg.slice(0, eq) : arg;
     const value = eq >= 0 ? arg.slice(eq + 1) : args[++i];
@@ -368,7 +374,13 @@ export async function runCli(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const bus = createBusServer(options);
+  let bus: ReturnType<typeof createBusServer>;
+  try {
+    bus = createBusServer(options);
+  } catch (error) {
+    console.error(`agent-bus serve: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
   console.log(`agent-bus listening on ${bus.url}`);
   for (const lanUrl of bus.lanUrls) console.log(`  LAN: ${lanUrl}`);
   for (const httpsUrl of bus.httpsLanUrls ?? []) console.log(`  HTTPS: ${httpsUrl}`);

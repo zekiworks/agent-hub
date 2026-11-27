@@ -41,6 +41,11 @@ export interface BusServerOptions {
   /** 0 picks a free port. */
   port?: number;
   dataDir?: string;
+  /**
+   * Only open a database that already exists (`serve --existing-data`): a missing message-bus.sqlite, e.g. an
+   * unmounted data volume, stops the start instead of creating a new, empty Hub there.
+   */
+  existingData?: boolean;
   humans?: string[];
   /**
    * Also serve everything over TLS on a second port (browsers need https for notifications). Agents keep
@@ -133,6 +138,9 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
   );
   const filesDir = path.join(dataDir, "files");
   const dbPath = path.join(dataDir, "message-bus.sqlite");
+  if (options.existingData && !existsSync(dbPath)) {
+    throw new Error(`No Hub database at ${dbPath}; not creating a new one (--existing-data)`);
+  }
   // Messages, files, session and token hashes are the account's alone: the directory is 700 and what the bus writes
   // there 600, on a fresh install and fixed on an existing one (launch check, 16 Nov: other local users could read
   // the database).
