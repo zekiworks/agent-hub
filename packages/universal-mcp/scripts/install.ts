@@ -64,11 +64,16 @@ function object(value: unknown): Record<string, unknown> {
 
 function readJson(file: string): Record<string, unknown> {
   if (!existsSync(file)) return {};
+  let value: unknown;
   try {
-    return object(JSON.parse(readFileSync(file, "utf8")));
+    value = JSON.parse(readFileSync(file, "utf8"));
   } catch (error) {
     throw new Error(`Could not parse ${file} (${(error as Error).message}); nothing was changed`);
   }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Could not parse ${file} (expected a JSON object); nothing was changed`);
+  }
+  return value as Record<string, unknown>;
 }
 
 /**
@@ -516,7 +521,9 @@ interface GrokPlan {
  * The leader setting lives in the person's `[cli]` table, never in the MCP block, and is read from the file as it is
  * now: a value the person changed since an earlier install is theirs.
  */
-function planGrok(definition: Definition, opts: UniversalInstallOptions, previous?: ConfigSnapshot): GrokPlan {
+function planGrok(definition: Definition, opts: UniversalInstallOptions, previous?: ConfigSnapshot, decided?: boolean): GrokPlan {
+  // Planned twice: once to ask and check before building, again (`decided`: the answer) from the file after it.
+  const say = decided === undefined ? (text: string): void => console.log(text) : (): void => {};
   const file = definition.config!;
   const existed = existsSync(file);
   const before = existed ? readFileSync(file, "utf8") : "";
@@ -540,27 +547,27 @@ function planGrok(definition: Definition, opts: UniversalInstallOptions, previou
     ...(ours ? { leader: { replaced: previous?.leader?.replaced } } : {}),
   };
   if (value === true) {
-    console.log(`Grok leader mode is already on in ${file}, so Grok wakes for Agent Hub messages.`);
+    say(`Grok leader mode is already on in ${file}, so Grok wakes for Agent Hub messages.`);
     return plan;
   }
   if (value === undefined && previous?.leader && leaderOf(parsed) === true) {
     // An install before 27 Nov kept the setting inside the MCP block; it moves to the person's config, still on.
     const set = setLeader(base);
     if ("text" in set) {
-      console.log(`Grok leader mode is already on in ${file}, so Grok wakes for Agent Hub messages.`);
+      say(`Grok leader mode is already on in ${file}, so Grok wakes for Agent Hub messages.`);
       return { ...plan, base: set.text, leaderValue: true, leader: {} };
     }
   }
-  const turnOn = opts.leader ?? askTerminal([
+  const turnOn = decided ?? opts.leader ?? askTerminal([
     "Grok wakes for Agent Hub messages only in leader mode, and it is off.",
     "In leader mode one Grok process, the leader, owns every Grok session on this machine.",
   ], `Turn on leader mode in ${file}?`);
   if (turnOn === undefined) {
-    console.log(`Grok leader mode is off, so Grok reads Agent Hub messages only when it next calls message-bus. ${leaderLater(file)}`);
+    say(`Grok leader mode is off, so Grok reads Agent Hub messages only when it next calls message-bus. ${leaderLater(file)}`);
     return plan;
   }
   if (!turnOn) {
-    console.log(`Leaving Grok leader mode off. ${leaderLater(file)}`);
+    say(`Leaving Grok leader mode off. ${leaderLater(file)}`);
     return plan;
   }
   const set = setLeader(base);
@@ -593,7 +600,6 @@ function writeGrokEntry(plan: GrokPlan, installed: string, snapshot: string): vo
   mkdirSync(path.dirname(file), { recursive: true });
   writePrivateJson(snapshot, { originalExists, original, installed, ...(leader ? { leader } : {}) });
   writeFileSync(file, installed);
-  if (plan.turnedOn) console.log(`Grok leader mode is on: use_leader = true under [cli] in ${file}.`);
 }
 
 function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
@@ -625,24 +631,45 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
   writeFileSync(file, cleaned === "\n" ? "" : cleaned);
 }
 
+/** A planned, checked harness config edit, written together with the snapshot that undoes it. */
+interface ConfigEdit {
+  file: string;
+  turnedOn?: boolean;
+  write(snapshot: string): void;
+}
+
 export async function installUniversal(name: UniversalAdapterName, opts: UniversalInstallOptions): Promise<void> {
   const definition = DEFINITIONS[name];
   const target = targetDir(name, opts);
+  const staging = `${target}.staging`;
+  const old = `${target}.old`;
+  // An install that stopped between the two renames of its swap left the working adapter at `old`: put it back.
+  if (!existsSync(target) && manifestName(manifest(old)) === ownedName(name)) renameSync(old, target);
   const owned = manifestName(manifest(target)) === ownedName(name);
   if (existsSync(target) && !owned) throw new Error(`${target} exists and is not the ${ownedName(name)} plugin; not touching it.`);
   const previous = owned ? readConfigSnapshot(target) : undefined;
   const url = installBusUrl(configFile(target), opts.url);
-  // Asked, and the new harness config checked, before anything is built or written.
-  const grok = definition.kind === "grok" ? planGrok(definition, opts, previous) : undefined;
-  const grokText = grok ? grokInstalled(name, grok, target, url) : undefined;
-  const json = definition.kind === "json" ? planJsonEntry(name, definition, target, url, previous) : undefined;
+  const planEdit = (decided?: boolean): ConfigEdit => {
+    if (definition.kind === "grok") {
+      const plan = planGrok(definition, opts, previous, decided);
+      const installed = grokInstalled(name, plan, target, url);
+      return { file: plan.file, turnedOn: plan.turnedOn, write: (snapshot) => writeGrokEntry(plan, installed, snapshot) };
+    }
+    const plan = planJsonEntry(name, definition, target, url, previous);
+    return { file: plan.file, write: (snapshot) => writeJsonEntry(plan, snapshot) };
+  };
+  // --build-only builds the adapter alone: the harness config, its leader mode and the snapshot stay as they are.
+  // Otherwise the person is asked, and the harness config checked, before anything is built.
+  const asked = opts.buildOnly ? undefined : planEdit();
   // Built beside the installed adapter, which keeps working, with its snapshot, until the new one is complete and the
-  // harness config points at it; a failure removes only the staging folder, so a plain retry works.
-  const staging = `${target}.staging-${process.pid}`;
+  // harness config points at it. A failure takes back the config edit and removes only the staging folder.
   rmSync(staging, { recursive: true, force: true });
+  if (manifestName(manifest(old)) === ownedName(name)) rmSync(old, { recursive: true, force: true });
   mkdirSync(path.dirname(target), { recursive: true });
   mkdirSync(staging, { mode: 0o700 });
   chmodSync(staging, 0o700);
+  let restore: (() => void) | undefined;
+  let turnedOn = false;
   try {
     const entries: Array<[string, string]> =
       name === "qwen" ? [["src/server.ts", "server"], ["src/inbox-hook.ts", "inbox-hook"]] : [["src/server.ts", "server"]];
@@ -650,11 +677,17 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
     writeJson(manifest(staging), { name: ownedName(name), version: "0.2.0", private: true });
     writeJson(configFile(staging), { busUrl: url, harness: name });
     writeMetadata(staging, "message-bus", `${definition.title} bridge for Agent Hub.`);
-    // The harness config names the final paths (under `target`); the snapshot goes with the new adapter.
-    if (grok) writeGrokEntry(grok, grokText!, configSnapshotFile(staging));
-    else writeJsonEntry(json!, configSnapshotFile(staging));
-    const old = `${target}.old-${process.pid}`;
-    rmSync(old, { recursive: true, force: true });
+    if (asked) {
+      // Planned again from the file as it is now, so a change made while the adapter was building is kept; the
+      // person's answer about leader mode stands. The config names the final paths (under `target`).
+      const edit = planEdit(asked.turnedOn === true);
+      const bytes = existsSync(edit.file) ? readFileSync(edit.file) : undefined;
+      restore = () => (bytes === undefined ? rmSync(edit.file, { force: true }) : writeFileSync(edit.file, bytes));
+      edit.write(configSnapshotFile(staging));
+      turnedOn = edit.turnedOn === true;
+    } else if (previous) {
+      writePrivateJson(configSnapshotFile(staging), previous);
+    }
     if (existsSync(target)) renameSync(target, old);
     try {
       renameSync(staging, target);
@@ -664,10 +697,17 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
     }
     rmSync(old, { recursive: true, force: true });
   } catch (error) {
-    rmSync(staging, { recursive: true, force: true });
+    restore?.();
+    try {
+      rmSync(staging, { recursive: true, force: true });
+    } catch {
+      // Left for the next install, which clears it first.
+    }
     throw error;
   }
-  console.log(`Installed ${definition.title} Agent Hub adapter in ${target} (Hub ${url}).`);
+  if (turnedOn) console.log(`Grok leader mode is on: use_leader = true under [cli] in ${definition.config}.`);
+  if (asked) console.log(`Installed ${definition.title} Agent Hub adapter in ${target} (Hub ${url}).`);
+  else console.log(`Built ${definition.title} Agent Hub adapter in ${target} (Hub ${url}); ${definition.config} not changed (--build-only).`);
 }
 
 export async function uninstallUniversal(name: UniversalAdapterName, opts: InstallOptions): Promise<void> {
@@ -690,8 +730,8 @@ export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions
     let config: Record<string, unknown> | undefined;
     try {
       config = readJson(definition.config!);
-    } catch {
-      notes.push(`could not parse ${definition.config}`);
+    } catch (error) {
+      notes.push((error as Error).message.replace(/; nothing was changed$/, ""));
     }
     if (config && !managedEntry(object(config[definition.key!])["agent-hub"])) notes.push(`MCP entry missing from ${definition.config}`);
     if (config && name === "qwen" && !removeManagedQwenHooks(config)) notes.push(`Inbox hook missing from ${definition.config}`);

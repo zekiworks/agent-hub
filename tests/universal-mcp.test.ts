@@ -40,7 +40,7 @@ type GrokConfig = { cli?: { use_leader?: boolean; [key: string]: unknown }; mcp_
 const toml = (file: string): GrokConfig => Bun.TOML.parse(readFileSync(file, "utf8")) as GrokConfig;
 
 const PROMPT = "Turn on leader mode in";
-const INSTALL_GROK = ["install", "grok", "--url", "http://127.0.0.1:7800", "--build-only"];
+const INSTALL_GROK = ["install", "grok", "--url", "http://127.0.0.1:7800"];
 
 async function runHook(home: string, cwd: string): Promise<string> {
   const settings = JSON.parse(readFileSync(join(home, ".qwen", "settings.json"), "utf8"));
@@ -105,12 +105,12 @@ describe("universal MCP adapter configuration", () => {
 `;
     await Bun.write(settings, before);
 
-    await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only");
+    await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800");
     const first = JSON.parse(readFileSync(settings, "utf8"));
     expect(first.hooks.UserPromptSubmit).toHaveLength(2);
     expect(first.hooks.UserPromptSubmit[1].hooks[0].command).toEndWith(" --managed-by agent-bus");
     expect(existsSync(join(root, ".agent-bus", "adapters", "qwen", "inbox-hook.mjs"))).toBe(true);
-    await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only");
+    await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800");
     const second = JSON.parse(readFileSync(settings, "utf8"));
     expect(second.hooks.UserPromptSubmit).toHaveLength(2);
     await agentBus(root, "uninstall", "qwen");
@@ -123,7 +123,7 @@ describe("universal MCP adapter configuration", () => {
     const settings = join(root, ".qwen", "settings.json");
     const first = { hooks: [{ type: "command", command: "echo first" }] };
     await Bun.write(settings, JSON.stringify({ hooks: { UserPromptSubmit: [first] } }));
-    const install = ["install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only"];
+    const install = ["install", "qwen", "--url", "http://127.0.0.1:7800"];
     await agentBus(root, ...install);
 
     // The person adds their own hooks, and a field, to Agent Hub's definition.
@@ -161,7 +161,7 @@ describe("universal MCP adapter configuration", () => {
       const root = home();
       const settings = join(root, ".qwen", "settings.json");
       await Bun.write(settings, before);
-      const { code, output } = await run(root, ["install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only"]);
+      const { code, output } = await run(root, ["install", "qwen", "--url", "http://127.0.0.1:7800"]);
       expect(code).not.toBe(0);
       expect(output).toContain(message);
       expect(readFileSync(settings, "utf8")).toBe(before);
@@ -173,10 +173,10 @@ describe("universal MCP adapter configuration", () => {
     const root = home();
     const settings = join(root, ".qwen", "settings.json");
     await Bun.write(settings, `{ "theme": "dark" }\n`);
-    await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only");
+    await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800");
     await Bun.write(settings, `{ "theme": "dark", oops }\n`);
     const doctor = await run(root, ["doctor", "--url", "http://127.0.0.1:9"]);
-    expect(doctor.output).toContain(`could not parse ${settings}`);
+    expect(doctor.output).toContain(`Could not parse ${settings} (`);
     expect(doctor.output).not.toContain("MCP entry missing");
     expect(doctor.output).not.toContain("Inbox hook missing");
     expect(doctor.output).toContain("agent token");
@@ -187,7 +187,7 @@ describe("universal MCP adapter configuration", () => {
       const root = home();
       const settings = join(root, ".qwen", "settings.json");
       await Bun.write(settings, `${JSON.stringify(before, null, 2)}\n`);
-      await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only");
+      await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800");
       writeFileSync(settings, JSON.stringify({ ...JSON.parse(readFileSync(settings, "utf8")), editor: "vim" }, null, 2));
       await agentBus(root, "uninstall", "qwen");
       expect(JSON.parse(readFileSync(settings, "utf8"))).toEqual({ ...before, editor: "vim" });
@@ -198,7 +198,7 @@ describe("universal MCP adapter configuration", () => {
     const root = home();
     const settings = join(root, ".qwen", "settings.json");
 
-    await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800", "--build-only");
+    await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800");
     expect(existsSync(settings)).toBe(true);
     await agentBus(root, "uninstall", "qwen");
 
@@ -211,11 +211,11 @@ describe("universal MCP adapter configuration", () => {
     const before = `[models]\ndefault = "dspark"\n\n[mcp_servers.other]\ncommand = "printf"\nargs = ["keep-me"]`;
     await Bun.write(config, before);
 
-    await agentBus(root, "install", "grok", "--url", "http://127.0.0.1:7800", "--build-only");
+    await agentBus(root, "install", "grok", "--url", "http://127.0.0.1:7800");
     const installed = readFileSync(config, "utf8");
     expect(installed.startsWith(`${before}\n`)).toBe(true);
     expect(installed).toContain("[mcp_servers.agent-hub]");
-    await agentBus(root, "install", "grok", "--url", "http://127.0.0.1:7800", "--build-only");
+    await agentBus(root, "install", "grok", "--url", "http://127.0.0.1:7800");
     expect(readFileSync(config, "utf8")).toBe(installed);
     await agentBus(root, "uninstall", "grok");
 
@@ -226,7 +226,7 @@ describe("universal MCP adapter configuration", () => {
     const root = home();
     const config = join(root, ".grok", "config.toml");
     await Bun.write(config, "[models]\ndefault = \"dspark\"\n");
-    await agentBus(root, "install", "grok", "--url", "http://127.0.0.1:7800", "--build-only");
+    await agentBus(root, "install", "grok", "--url", "http://127.0.0.1:7800");
     await Bun.write(config, `${readFileSync(config, "utf8")}\n[ui]\ntheme = "dark"\n`);
     await agentBus(root, "uninstall", "grok");
 
@@ -248,7 +248,7 @@ describe("universal MCP adapter configuration", () => {
       const adapter = join(adapters, harness);
       const snapshot = join(adapter, "config-snapshot.json");
       await Bun.write(config, before);
-      const install = ["install", harness, "--url", "http://127.0.0.1:7800", "--build-only", ...(harness === "grok" ? ["--no-leader"] : [])];
+      const install = ["install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--no-leader"] : [])];
       await agentBus(root, ...install);
       const installed = readFileSync(config, "utf8");
       const snapshotText = readFileSync(snapshot, "utf8");
@@ -282,6 +282,155 @@ describe("universal MCP adapter configuration", () => {
     }
   }, 60_000);
 
+  test("--build-only builds the adapter and leaves the harness config, leader mode and snapshot as they are", async () => {
+    const cases: Array<[string, string, string]> = [
+      ["qwen", join(".qwen", "settings.json"), `{\n  "theme": "dark"\n}\n`],
+      ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`],
+    ];
+    for (const [harness, relative, before] of cases) {
+      const root = home();
+      const config = join(root, relative);
+      const adapter = join(root, ".agent-bus", "adapters", harness);
+      await Bun.write(config, before);
+      // Before any install: no prompt, no edit, no snapshot.
+      const fresh = await run(root, ["install", harness, "--url", "http://127.0.0.1:7800", "--build-only"], "y\n");
+      expect(fresh.code).toBe(0);
+      expect(fresh.output).not.toContain(PROMPT);
+      expect(fresh.output).toContain("not changed (--build-only)");
+      expect(readFileSync(config, "utf8")).toBe(before);
+      expect(existsSync(join(adapter, "server.mjs"))).toBe(true);
+      expect(existsSync(join(adapter, "config-snapshot.json"))).toBe(false);
+
+      // After an install: the snapshot is kept, private, and still undoes the install.
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--leader"] : []));
+      const installed = readFileSync(config, "utf8");
+      const snapshot = readFileSync(join(adapter, "config-snapshot.json"), "utf8");
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7801", "--build-only", ...(harness === "grok" ? ["--no-leader"] : []));
+      expect(readFileSync(config, "utf8")).toBe(installed);
+      expect(readFileSync(join(adapter, "config-snapshot.json"), "utf8")).toBe(JSON.stringify(JSON.parse(snapshot), null, 2) + "\n");
+      expect((statSync(join(adapter, "config-snapshot.json")).mode & 0o777).toString(8)).toBe("600");
+      expect(JSON.parse(readFileSync(join(adapter, "config.json"), "utf8")).busUrl).toBe("http://127.0.0.1:7801");
+      await agentBus(root, "uninstall", harness);
+      expect(readFileSync(config, "utf8")).toBe(before);
+    }
+  }, 60_000);
+
+  test("a harness config edited while the adapter builds keeps that edit", async () => {
+    // The edit the preload makes once the adapter is built, as code run against `file`.
+    const cases: Array<[string, string, string, string]> = [
+      ["qwen", join(".qwen", "settings.json"), `{\n  "theme": "dark"\n}\n`,
+        `writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), editor: "vim" }, null, 2) + "\\n");`],
+      ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`,
+        `if (!readFileSync(file, "utf8").includes("[ui]")) writeFileSync(file, readFileSync(file, "utf8") + "\\n[ui]\\ntheme = \\"dark\\"\\n");`],
+    ];
+    for (const [harness, relative, before, edit] of cases) {
+      const root = home();
+      const config = join(root, relative);
+      await Bun.write(config, before);
+      const preload = join(root, "edit-during-build.ts");
+      await Bun.write(preload, [
+        `import { readFileSync, writeFileSync } from "node:fs";`,
+        `const file = ${JSON.stringify(config)};`,
+        `const build = Bun.build;`,
+        `(Bun as { build: unknown }).build = async (options: Parameters<typeof build>[0]) => {`,
+        `  const result = await build(options);`,
+        `  ${edit}`,
+        `  return result;`,
+        `};`,
+      ].join("\n"));
+      const child = Bun.spawn([process.execPath, "run", "--preload", preload, "packages/cli/src/bin.ts", "install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--no-leader"] : [])], {
+        cwd: repo,
+        env: { ...process.env, HOME: root },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+      expect(stderr).toBe("");
+      expect(code).toBe(0);
+      if (harness === "qwen") {
+        const settings = JSON.parse(readFileSync(config, "utf8"));
+        expect(settings.editor).toBe("vim");
+        expect(settings.mcpServers["agent-hub"]).toBeDefined();
+      } else {
+        expect(toml(config).ui).toEqual({ theme: "dark" });
+        expect(toml(config).mcp_servers?.["agent-hub"]).toBeDefined();
+      }
+      const edited = readFileSync(config, "utf8").replace(/\n*# agent-bus:grok begin[\s\S]*# agent-bus:grok end\n/, "\n");
+      await agentBus(root, "uninstall", harness);
+      if (harness === "qwen") expect(JSON.parse(readFileSync(config, "utf8"))).toEqual({ theme: "dark", editor: "vim" });
+      else expect(readFileSync(config, "utf8")).toBe(edited);
+    }
+  }, 60_000);
+
+  test("a swap that fails puts back the harness config and the working adapter, and a retry works", async () => {
+    if (process.getuid?.() === 0) return; // root ignores the read-only folder this uses to make the swap fail
+    const cases: Array<[string, string, string]> = [
+      ["qwen", join(".qwen", "settings.json"), `{\n  "theme": "dark"\n}\n`],
+      ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`],
+    ];
+    for (const [harness, relative, before] of cases) {
+      const root = home();
+      const config = join(root, relative);
+      const adapters = join(root, ".agent-bus", "adapters");
+      const adapter = join(adapters, harness);
+      await Bun.write(config, before);
+      const install = (url: string): string[] => ["install", harness, "--url", url, ...(harness === "grok" ? ["--no-leader"] : [])];
+      await agentBus(root, ...install("http://127.0.0.1:7800"));
+      const installed = readFileSync(config, "utf8");
+      const snapshot = readFileSync(join(adapter, "config-snapshot.json"), "utf8");
+
+      // Once built, the adapters folder turns read-only, so moving the old adapter aside fails.
+      const preload = join(root, "fail-swap.ts");
+      await Bun.write(preload, [
+        `import { chmodSync } from "node:fs";`,
+        `const build = Bun.build;`,
+        `(Bun as { build: unknown }).build = async (options: Parameters<typeof build>[0]) => {`,
+        `  const result = await build(options);`,
+        `  chmodSync(${JSON.stringify(adapters)}, 0o555);`,
+        `  return result;`,
+        `};`,
+      ].join("\n"));
+      const child = Bun.spawn([process.execPath, "run", "--preload", preload, "packages/cli/src/bin.ts", ...install("http://127.0.0.1:7801")], {
+        cwd: repo,
+        env: { ...process.env, HOME: root },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const code = await child.exited;
+      chmodSync(adapters, 0o755);
+      expect(code).not.toBe(0);
+      expect(readFileSync(config, "utf8")).toBe(installed);
+      expect(readFileSync(join(adapter, "config-snapshot.json"), "utf8")).toBe(snapshot);
+      expect(JSON.parse(readFileSync(join(adapter, "config.json"), "utf8")).busUrl).toBe("http://127.0.0.1:7800");
+
+      await agentBus(root, ...install("http://127.0.0.1:7801"));
+      expect(readdirSync(adapters)).toEqual([harness]);
+      expect(readFileSync(config, "utf8")).toContain("http://127.0.0.1:7801");
+      await agentBus(root, "uninstall", harness);
+      expect(readFileSync(config, "utf8")).toBe(before);
+    }
+  }, 60_000);
+
+  test("Qwen refuses a settings.json that is valid JSON but not an object, and doctor says so", async () => {
+    for (const before of ["null\n", "[]\n", "\"x\"\n", "3\n"]) {
+      const root = home();
+      const settings = join(root, ".qwen", "settings.json");
+      await Bun.write(settings, before);
+      const { code, output } = await run(root, ["install", "qwen", "--url", "http://127.0.0.1:7800"]);
+      expect(code).not.toBe(0);
+      expect(output).toContain(`Could not parse ${settings} (expected a JSON object); nothing was changed`);
+      expect(readFileSync(settings, "utf8")).toBe(before);
+      expect(existsSync(join(root, ".agent-bus", "adapters"))).toBe(false);
+    }
+    const root = home();
+    const settings = join(root, ".qwen", "settings.json");
+    await agentBus(root, "install", "qwen", "--url", "http://127.0.0.1:7800");
+    await Bun.write(settings, "[]\n");
+    const doctor = await run(root, ["doctor", "--url", "http://127.0.0.1:9"]);
+    expect(doctor.output).toContain(`Could not parse ${settings} (expected a JSON object)`);
+    expect(doctor.output).not.toContain("MCP entry missing");
+  }, 30_000);
+
   test("a 0600 harness config stays 0600, and its snapshot is 0600, under umask 022", async () => {
     const mode = (file: string): string => (statSync(file).mode & 0o777).toString(8);
     const previous = process.umask(0o022);
@@ -298,7 +447,7 @@ describe("universal MCP adapter configuration", () => {
           mkdirSync(join(config, ".."), { recursive: true });
           writeFileSync(config, before);
           chmodSync(config, 0o600);
-          const install = ["install", harness, "--url", "http://127.0.0.1:7800", "--build-only", ...(harness === "grok" ? ["--no-leader"] : [])];
+          const install = ["install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--no-leader"] : [])];
 
           await agentBus(root, ...install);
           expect(mode(config)).toBe("600");
@@ -746,7 +895,7 @@ describe("universal MCP adapter configuration", () => {
     const bus: BusServerHandle = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol"] });
     let bridge: ReturnType<typeof Bun.spawn> | undefined;
     try {
-      await agentBus(root, "install", "qwen", "--url", bus.url, "--build-only");
+      await agentBus(root, "install", "qwen", "--url", bus.url);
       const settings = JSON.parse(readFileSync(join(root, ".qwen", "settings.json"), "utf8"));
       const server = settings.mcpServers["agent-hub"];
       bridge = Bun.spawn([server.command, ...server.args], {
@@ -842,7 +991,7 @@ describe("universal MCP adapter configuration", () => {
       return reply.result !== undefined && (reply.result as { isError?: boolean }).isError !== true;
     };
     try {
-      await agentBus(root, "install", "qwen", "--url", bus.url, "--build-only");
+      await agentBus(root, "install", "qwen", "--url", bus.url);
       const server = JSON.parse(readFileSync(join(root, ".qwen", "settings.json"), "utf8")).mcpServers["agent-hub"];
       const spawnBridge = (): ReturnType<typeof Bun.spawn> => {
         const child = Bun.spawn([server.command, ...server.args], {
