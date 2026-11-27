@@ -465,7 +465,7 @@ describe("universal MCP adapter configuration", () => {
       writeFileSync(config, changed);
 
       const output = await agentBus(root, "uninstall", harness);
-      expect(output).toContain(`${config} changed after an interrupted Agent Hub install edited it, so it was left as it is`);
+      expect(output).toContain(`${config} changed after an Agent Hub install that did not finish edited it, so it was left as it is`);
       expect(output).toContain(`kept in ${join(tx, "settings-before.json")}`);
       // The person's change stays (uninstall then takes out only Agent Hub's own entries), and so do the earlier bytes.
       expect(readFileSync(config, "utf8")).toContain(harness === "qwen" ? `"editor": "vim"` : `[ui]\ntheme = "dark"`);
@@ -475,8 +475,82 @@ describe("universal MCP adapter configuration", () => {
       // Retired: later runs neither repeat it nor act on it, even when the config holds what that install wrote.
       writeFileSync(config, installed);
       const again = await agentBus(root, "uninstall", harness);
-      expect(again).not.toContain("interrupted Agent Hub install");
+      expect(again).not.toContain("did not finish");
       expect(readdirSync(tx)).toEqual(["settings-before.json"]);
+    }
+  }, 60_000);
+
+  test("a failed install leaves a config the harness saved meanwhile, and keeps the earlier bytes for the person", async () => {
+    for (const [harness, relative, before, save] of [
+      ["qwen", join(".qwen", "settings.json"), `{\n  "theme": "dark"\n}\n`,
+        `fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, "utf8")), editor: "vim" }, null, 2) + "\\n");`],
+      ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`,
+        `fs.writeFileSync(file, fs.readFileSync(file, "utf8") + "\\n[ui]\\ntheme = \\"dark\\"\\n");`],
+    ] as const) {
+      const root = home();
+      const config = join(root, relative);
+      const adapters = join(root, ".agent-bus", "adapters");
+      await Bun.write(config, before);
+      const install = (url: string): string[] => ["install", harness, "--url", url, ...(harness === "grok" ? ["--no-leader"] : [])];
+      await agentBus(root, ...install("http://127.0.0.1:7800"));
+      // Publishing the new adapter fails, and just before, the harness saves its config (the new edit in it).
+      const preload = join(root, "save-then-fail.js");
+      await Bun.write(preload, [
+        `const fs = require("node:fs");`,
+        `const file = ${JSON.stringify(config)};`,
+        `const rename = fs.renameSync;`,
+        `fs.renameSync = (from, to) => {`,
+        `  if (String(from).endsWith("/new")) { ${save} throw new Error("publishing the adapter failed"); }`,
+        `  return rename(from, to);`,
+        `};`,
+      ].join("\n"));
+      const child = Bun.spawn([process.execPath, "run", "--preload", preload, "packages/cli/src/bin.ts", ...install("http://127.0.0.1:7801")], {
+        cwd: repo,
+        env: { ...process.env, HOME: root },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+      expect(code).not.toBe(0);
+      expect(stderr).toContain("publishing the adapter failed");
+      expect(stdout).toContain(`${config} changed after an Agent Hub install that did not finish edited it, so it was left as it is`);
+      const saved = readFileSync(config, "utf8");
+      expect(saved).toContain("http://127.0.0.1:7801");
+      expect(saved).toContain(harness === "qwen" ? `"editor": "vim"` : `[ui]\ntheme = "dark"`);
+      const kept = readdirSync(adapters).filter((entry) => entry.startsWith(`${harness}.agent-hub-tx-`));
+      expect(kept).toHaveLength(1);
+      expect(readdirSync(join(adapters, kept[0]!))).toEqual(["settings-before.json"]);
+      // The working adapter is the one from before.
+      expect(JSON.parse(readFileSync(join(adapters, harness, "config.json"), "utf8")).busUrl).toBe("http://127.0.0.1:7800");
+    }
+  }, 60_000);
+
+  test("uninstall --dir of a folder with no adapter leaves another working installation alone", async () => {
+    for (const [harness, relative, before] of [
+      ["qwen", join(".qwen", "settings.json"), `{\n  "theme": "dark"\n}\n`],
+      ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`],
+    ] as const) {
+      const root = home();
+      const config = join(root, relative);
+      const adapter = join(root, ".agent-bus", "adapters", harness);
+      await Bun.write(config, before);
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--leader"] : []));
+      const installed = readFileSync(config, "utf8");
+
+      const absent = await agentBus(root, "uninstall", harness, "--dir", join(root, "elsewhere"));
+      expect(absent).toContain("nothing removed");
+      expect(readFileSync(config, "utf8")).toBe(installed);
+      expect(existsSync(join(adapter, "server.mjs"))).toBe(true);
+
+      // A folder there that is not an adapter: refused, nothing changed.
+      mkdirSync(join(root, "theirs"));
+      const refused = await run(root, ["uninstall", harness, "--dir", join(root, "theirs")]);
+      expect(refused.code).not.toBe(0);
+      expect(refused.output).toContain("is not the");
+      expect(readFileSync(config, "utf8")).toBe(installed);
+
+      await agentBus(root, "uninstall", harness);
+      expect(readFileSync(config, "utf8")).toBe(before);
     }
   }, 60_000);
 

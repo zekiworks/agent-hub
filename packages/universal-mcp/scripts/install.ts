@@ -178,20 +178,28 @@ function managedQwenHook(hook: unknown): boolean {
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 
+/** Whether an MCP entry or hook (`args`, or a shell `command`) runs `file`: the adapter it belongs to. */
+function runs(value: unknown, file: string): boolean {
+  const { args, command } = object(value);
+  return (Array.isArray(args) && args.includes(file)) || (typeof command === "string" && command.includes(shellQuote(file)));
+}
+
 /**
  * Removes only Agent Hub's hooks from UserPromptSubmit, one by one: a definition that also holds the person's hooks
- * keeps them, in order, with its other fields; one left with no hooks goes. Returns whether any was present.
+ * keeps them, in order, with its other fields; one left with no hooks goes. With `hookFile`, only the hooks that run
+ * it (one installation's). Returns whether any was present.
  */
-function removeManagedQwenHooks(config: Record<string, unknown>): boolean {
+function removeManagedQwenHooks(config: Record<string, unknown>, hookFile?: string): boolean {
   const hooks = object(config.hooks);
   const definitions = hooks.UserPromptSubmit;
   if (!Array.isArray(definitions)) return false;
+  const ours = (hook: unknown): boolean => managedQwenHook(hook) && (hookFile === undefined || runs(hook, hookFile));
   let removed = false;
   const kept = definitions.flatMap((definition) => {
     const nested = object(definition).hooks;
-    if (!Array.isArray(nested) || !nested.some(managedQwenHook)) return [definition];
+    if (!Array.isArray(nested) || !nested.some(ours)) return [definition];
     removed = true;
-    const theirs = nested.filter((hook) => !managedQwenHook(hook));
+    const theirs = nested.filter((hook) => !ours(hook));
     return theirs.length > 0 ? [{ ...object(definition), hooks: theirs }] : [];
   });
   if (!removed) return false;
@@ -272,21 +280,24 @@ function writeJsonEntry(plan: JsonPlan, snapshot: string, journal: string): void
   replaceFile(plan.file, jsonText(plan.config), journal);
 }
 
-function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
+/** Takes the installation at `target` out of a JSON config: only the entry and hooks that run its files. */
+function removeJsonEntry(definition: Definition, target: string, snapshot?: ConfigSnapshot): boolean {
   const file = definition.config!;
-  if (!existsSync(file)) return;
+  if (!existsSync(file)) return false;
   const current = readFileSync(file, "utf8");
   if (snapshot && current === snapshot.installed) {
     if (snapshot.originalExists) replaceFile(file, snapshot.original);
     else rmSync(file);
-    return;
+    return true;
   }
   const config = readJson(file);
-  const hadManagedEntry = managedEntry(object(config[definition.key!])["agent-hub"]);
-  const hadManagedHook = definition.command === "qwen" && removeManagedQwenHooks(config);
-  if (!hadManagedEntry && !hadManagedHook) return;
+  const entry = object(config[definition.key!])["agent-hub"];
+  const hadManagedEntry = managedEntry(entry) && runs(entry, serverFile(target));
+  const hadManagedHook = definition.command === "qwen" && removeManagedQwenHooks(config, inboxHookFile(target));
+  if (!hadManagedEntry && !hadManagedHook) return false;
   if (hadManagedEntry) dropJsonServer(config, definition.key!, snapshot?.original);
   replaceFile(file, jsonText(config));
+  return true;
 }
 
 const GROK_BEGIN = "# agent-bus:grok begin";
@@ -670,20 +681,24 @@ function writeGrokEntry(plan: GrokPlan, installed: string, snapshot: string, jou
   replaceFile(file, installed, journal);
 }
 
-function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
+/** Takes the installation at `target` out of config.toml: its block (only one that runs its server) and leader line. */
+function removeGrokEntry(definition: Definition, target: string, snapshot?: ConfigSnapshot): boolean {
   const file = definition.config!;
-  if (!existsSync(file)) return;
+  if (!existsSync(file)) return false;
   const current = readFileSync(file, "utf8");
   if (snapshot && current === snapshot.installed) {
     if (snapshot.originalExists) replaceFile(file, snapshot.original);
     else rmSync(file);
-    return;
+    return true;
   }
+  // Another installation's block (or, with no adapter here, its leader line) is not this uninstall's to take.
+  const blocks = current.match(GROK_BLOCK) ?? [];
+  if (blocks.length > 0 ? !blocks.some((block) => block.includes(JSON.stringify(serverFile(target)))) : !snapshot) return false;
   // Edited since install: the user's changes stay; only Agent Hub's block and its own unchanged leader line go. A file
   // with neither is left byte for byte, and a hand-written [mcp_servers.agent-hub] (no markers) stays.
   const withoutBlock = stripGrokBlock(current);
   const stripped = revertLeader(withoutBlock, snapshot?.leader?.replaced);
-  if (stripped === current) return;
+  if (stripped === current) return false;
   const cleaned = withoutBlock === current ? stripped : stripped.replace(/\n+$/, "\n");
   let parsed: Toml | undefined;
   try {
@@ -697,11 +712,14 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
     checkGrokEdit(file, parsed, parseToml(cleaned, `${file} with Agent Hub's block removed`, hint), handWritten, null, hint);
   }
   replaceFile(file, cleaned === "\n" ? "" : cleaned);
+  return true;
 }
 
 /** A planned, checked harness config edit, written together with the snapshot that undoes it. */
 interface ConfigEdit {
   file: string;
+  /** The config's bytes once written. */
+  published: string;
   turnedOn?: boolean;
   write(snapshot: string, journal: string): void;
 }
@@ -769,12 +787,21 @@ function recoverTransactions(target: string, owner: string): void {
       rmSync(tx, { recursive: true, force: true });
       continue;
     }
-    for (const left of [staged, previous, path.join(tx, TEMPS), path.join(tx, TX_MARK)]) rmSync(left, { recursive: true, force: true });
-    console.log(
-      `${before!.file} changed after an interrupted Agent Hub install edited it, so it was left as it is; its bytes from ` +
-        `before that install are kept in ${path.join(tx, SETTINGS_BEFORE)} (base64, "bytes"). Delete that folder when done.`,
-    );
+    retireTransaction(tx, before!.file);
   }
+}
+
+/**
+ * Leaves of a transaction only the config's bytes from before it, when the config changed after the install edited it
+ * and that change is someone's: nothing acts on the folder again, and the person is told where those bytes are.
+ */
+function retireTransaction(tx: string, file: string): void {
+  clearJournal(tx);
+  for (const left of ["new", "previous", TX_MARK]) rmSync(path.join(tx, left), { recursive: true, force: true });
+  console.log(
+    `${file} changed after an Agent Hub install that did not finish edited it, so it was left as it is; its bytes from ` +
+      `before that install are kept in ${path.join(tx, SETTINGS_BEFORE)} (base64, "bytes"). Delete that folder when done.`,
+  );
 }
 
 /** The Hub URL the harness actually launches Agent Hub's server with: `--url` in its managed entry. */
@@ -834,10 +861,10 @@ async function installTransaction(name: UniversalAdapterName, opts: UniversalIns
     if (definition.kind === "grok") {
       const plan = planGrok(definition, opts, previous, decided);
       const installed = grokInstalled(name, plan, target, url);
-      return { file: plan.file, turnedOn: plan.turnedOn, write: (snapshot, journal) => writeGrokEntry(plan, installed, snapshot, journal) };
+      return { file: plan.file, published: installed, turnedOn: plan.turnedOn, write: (snapshot, journal) => writeGrokEntry(plan, installed, snapshot, journal) };
     }
     const plan = planJsonEntry(name, definition, target, url, previous);
-    return { file: plan.file, write: (snapshot, journal) => writeJsonEntry(plan, snapshot, journal) };
+    return { file: plan.file, published: plan.record.installed, write: (snapshot, journal) => writeJsonEntry(plan, snapshot, journal) };
   };
   // --build-only builds the adapter alone: the harness config, its leader mode and the snapshot stay as they are.
   // Otherwise the person is asked, and the harness config checked, before anything is built.
@@ -853,7 +880,9 @@ async function installTransaction(name: UniversalAdapterName, opts: UniversalIns
   const journal = path.join(tx, TEMPS);
   const replaced = path.join(tx, "previous");
   mkdirSync(staging, { mode: 0o700 });
-  let restore: (() => void) | undefined;
+  /** Takes the config edit back if the config still holds it; false when someone changed the config since. */
+  let restore: (() => boolean) | undefined;
+  let configFileName = "";
   let turnedOn = false;
   try {
     const entries: Array<[string, string]> =
@@ -870,8 +899,17 @@ async function installTransaction(name: UniversalAdapterName, opts: UniversalIns
       // Kept in the transaction folder first, so an install killed after the edit can still be rolled back.
       writePrivateJson(path.join(tx, SETTINGS_BEFORE), { file: edit.file, existed: bytes !== undefined, bytes: bytes?.toString("base64") ?? "" });
       edit.write(configSnapshotFile(staging), journal);
-      // Only now is there an edit to take back.
-      restore = () => (bytes === undefined ? rmSync(edit.file, { force: true }) : replaceFile(edit.file, bytes, journal));
+      // Only now is there an edit to take back, and only while the config still holds exactly that edit.
+      configFileName = edit.file;
+      restore = () => {
+        const live = existsSync(edit.file) ? readFileSync(edit.file) : undefined;
+        if (live?.equals(Buffer.from(edit.published))) {
+          if (bytes === undefined) rmSync(edit.file, { force: true });
+          else replaceFile(edit.file, bytes, journal);
+          return true;
+        }
+        return bytes === undefined ? live === undefined : live?.equals(bytes) === true;
+      };
       turnedOn = edit.turnedOn === true;
     } else if (previous) {
       writePrivateJson(configSnapshotFile(staging), previous);
@@ -881,17 +919,20 @@ async function installTransaction(name: UniversalAdapterName, opts: UniversalIns
   } catch (error) {
     // Each step back is tried on its own; if either fails the folder stays, marked, for the next run to finish.
     let undone = true;
+    let changed = false;
     try {
       if (!existsSync(target) && existsSync(replaced)) renameSync(replaced, target);
     } catch {
       undone = false;
     }
     try {
-      restore?.();
+      changed = restore?.() === false;
     } catch {
       undone = false;
     }
-    if (undone) {
+    if (undone && changed) {
+      retireTransaction(tx, configFileName);
+    } else if (undone) {
       try {
         rmSync(tx, { recursive: true, force: true });
       } catch {
@@ -911,11 +952,13 @@ function uninstallTransaction(name: UniversalAdapterName, opts: InstallOptions):
   const target = targetDir(name, opts);
   recoverTransactions(target, ownedName(name));
   const owned = manifestName(manifest(target)) === ownedName(name);
+  if (existsSync(target) && !owned) throw new Error(`${target} exists and is not the ${ownedName(name)} plugin; not touching it. Nothing was changed.`);
   const snapshot = owned ? readConfigSnapshot(target) : undefined;
-  if (definition.kind === "json") removeJsonEntry(definition, snapshot);
-  else removeGrokEntry(definition, snapshot);
+  // Only what belongs to the installation at `target`: another one (another --dir) keeps its entry and hooks.
+  const changed = definition.kind === "json" ? removeJsonEntry(definition, target, snapshot) : removeGrokEntry(definition, target, snapshot);
   removeOwnedDir(target, manifest(target), ownedName(name), "plugin");
-  console.log(`Removed ${definition.title} Agent Hub adapter.`);
+  if (owned || changed) console.log(`Removed ${definition.title} Agent Hub adapter.`);
+  else console.log(`No ${definition.title} Agent Hub adapter in ${target}, and nothing in ${definition.config} runs one there: nothing removed.`);
 }
 
 export function statusUniversal(name: UniversalAdapterName, opts: InstallOptions): InstallStatus {
