@@ -109,7 +109,8 @@ async function renderMe(me: string): Promise<void> {
       li.textContent = `${c.label}\u00a0· made ${shortTime(c.createdAt)}\u00a0· ${when} `;
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.className = "link-btn";
+      // Every row's action is the same small button as Revoke on a machine (demo review D3: two looked like links).
+      remove.className = "btn auth-row-btn";
       remove.textContent = "Remove";
       remove.addEventListener("click", () => {
         if (!confirm(`Remove the passkey "${c.label}"? You will be signed out everywhere.`)) return;
@@ -141,7 +142,7 @@ async function renderDevices(): Promise<string[]> {
       if (!s.current) {
         const end = document.createElement("button");
         end.type = "button";
-        end.className = "link-btn";
+        end.className = "btn auth-row-btn";
         end.textContent = "Sign out";
         end.addEventListener("click", () => {
           if (!confirm(`Sign out ${s.label}?`)) return;

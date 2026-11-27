@@ -1220,6 +1220,14 @@ button:disabled {
   color: var(--muted);
   font-weight: 400;
 }
+/* Shown, the percentages take a line of their own above the card's "#n from …", which then wraps whole (demo review D3). */
+.needs-model-detail:not([hidden]) {
+  display: block;
+  margin: 2px 0;
+}
+.needs-model-detail:not([hidden])::after {
+  content: none;
+}
 
 .needs-actions {
   margin-top: 6px;
@@ -4141,6 +4149,18 @@ ul.md-list ul.md-list { list-style: circle; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+/* A conversation's settings keep their title (its name and address) and ✕ in view while the dialog scrolls (demo
+   review D3: after Rename, scrolled to the address, the title was gone). The negative top and margin cover the
+   dialog's own padding, so nothing shows through above the title. */
+.conv-dialog .gpu-head {
+  position: sticky;
+  top: -22px;
+  z-index: 2;
+  margin-top: -22px;
+  padding: 22px 0 8px;
+  background: var(--panel);
 }
 
 /* A dialog's ✕ (Ümit #14422: it was a 12 px letter): big enough to hit, a thumb's size on a phone (below). */
