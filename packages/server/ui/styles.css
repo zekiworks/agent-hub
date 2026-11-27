@@ -1113,6 +1113,11 @@ button:disabled {
   font-size: 12px;
 }
 
+/* "· 7 min ago" stays one piece when a card's head wraps (demo review D5: "ago" alone on the next line). */
+.inbox-when {
+  white-space: nowrap;
+}
+
 .inbox-text {
   margin: 4px 0;
 }
@@ -4160,6 +4165,7 @@ ul.md-list ul.md-list { list-style: circle; }
   z-index: 2;
   margin-top: -22px;
   padding: 22px 0 8px;
+  border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
 

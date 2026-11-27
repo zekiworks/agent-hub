@@ -188,7 +188,7 @@ function openNameMenu(): void {
   // The gear remains the direct way to add people and agents or change room settings (Ümit #16151). Less frequent
   // destinations stay under the room name, with labels that say what opens.
   if (PHONE.matches) {
-    item("Search messages in this room", () => dom.convSearchBtn.click());
+    item("Search messages in this conversation", () => dom.convSearchBtn.click());
     item("People and agents", () => dom.detailsBtn.click());
     if (!dom.checklistBtn.hidden) item("Pinned messages and checklist", () => dom.checklistBtn.click());
     if (!dom.paneBtn.hidden) item("Open conversation tools", () => dom.paneBtn.click());
