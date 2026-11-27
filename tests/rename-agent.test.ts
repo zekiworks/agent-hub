@@ -22,8 +22,8 @@ afterEach(async () => {
 const start = (): BusServerHandle => (bus = startBus({ host: "127.0.0.1", port: 0, dataDir, humans: ["carol"] }));
 
 /** Joins an agent from `folder`: its id, or the close reason when the bus refuses it. */
-function join(b: BusServerHandle, folder: string): Promise<{ id?: string; refused?: string }> {
-  const ws = new WebSocket(agentSocketUrl(b, { host: "h1", harness: "omp", path: folder }));
+function join(b: BusServerHandle, folder: string, harness = "omp"): Promise<{ id?: string; refused?: string }> {
+  const ws = new WebSocket(agentSocketUrl(b, { host: "h1", harness, path: folder }));
   sockets.push(ws);
   return new Promise((resolve) => {
     ws.addEventListener("message", (event) => {
@@ -82,4 +82,26 @@ test("rename-agent: history, project, aliases and the moved folder all follow th
   // The old folder's session is refused; the new folder joins as the renamed agent.
   expect((await join(b, "/tmp/x/turkce")).refused).toContain("renamed to @jack");
   expect((await join(b, "/tmp/x/jack")).id).toBe("jack");
+});
+
+test("rename-agent: a second harness in the folder does not take the renamed agent's old address", async () => {
+  let b = start();
+  expect((await join(b, "/tmp/x/webapp")).id).toBe("webapp");
+  expect((await join(b, "/tmp/x/webapp", "codex")).id).toBe("webapp-codex");
+  // An agent that has written stays known after it disconnects.
+  await send(b, { from: "webapp", to: "@carol", text: "hi", wake: [] });
+  await send(b, { from: "webapp-codex", to: "@carol", text: "hi", wake: [] });
+  for (const ws of sockets.splice(0)) ws.close();
+  await b.stop();
+
+  const db = new Database(path.join(dataDir, "message-bus.sqlite"), { strict: true });
+  renameAgent(db, "webapp-codex", "reviewer", "/tmp/x/reviewer");
+  db.close();
+
+  b = start();
+  expect((await join(b, "/tmp/x/webapp")).id).toBe("webapp");
+  // Codex starts again beside webapp: a new agent, not the old address that still reaches @reviewer.
+  const again = await join(b, "/tmp/x/webapp", "codex");
+  expect(again.id).toBe("webapp-codex-2");
+  expect((await send(b, { from: "carol", to: "@webapp-codex", text: "old address" })).conversation.members).toEqual(["carol", "reviewer"]);
 });

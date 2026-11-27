@@ -995,8 +995,12 @@ export class BusDatabase {
   private harnessId(holderId: string, harness: string, reservedIds: ReadonlySet<string>): string {
     const suffix = `-${slugifyId(harness) || "agent"}`;
     const stem = `${holderId.slice(0, MAX_ID_LENGTH - suffix.length)}${suffix}`;
+    // An agent's old address (renamed away) stays its own, as in pickId: reusing it would make @old resolve to the
+    // newcomer instead of the renamed agent.
     const taken = (id: string): boolean =>
-      reservedIds.has(id) || this.db.query("SELECT 1 FROM participants WHERE id = ?1").get(id) !== null;
+      reservedIds.has(id) ||
+      this.db.query("SELECT 1 FROM participants WHERE id = ?1").get(id) !== null ||
+      this.renamedTo(id) !== undefined;
     if (!taken(stem)) return stem;
     for (let n = 2; ; n++) {
       const id = `${stem.slice(0, MAX_ID_LENGTH - `-${n}`.length)}-${n}`;
