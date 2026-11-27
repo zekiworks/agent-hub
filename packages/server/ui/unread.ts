@@ -73,20 +73,27 @@ export async function refreshUnread(): Promise<void> {
   }
   const since = (conv: Conversation): number => state.readAt[conv.id] ?? state.readAt["*"] ?? 0;
   const stale = [...state.conversations.values()].filter((c) => c.lastMessageAt > since(c) && !viewingNow(c.id));
-  const counts = await Promise.all(
-    stale.map(async (conv) => {
-      const res = await api<MessagesResponse>(
-        `/api/conversations/${encodeURIComponent(conv.id)}/messages?limit=${PAGE_SIZE}`
-      );
-      const fresh = res.messages.filter((m) => m.createdAt > since(conv) && m.from !== state.me);
-      return {
-        conv,
-        unread: fresh.length,
-        attention: fresh.filter((m) => isForMe(m, conv)).length,
-        urgent: fresh.filter((m) => isUrgent(m, conv)).length,
-      };
-    })
-  );
+  let counts: Array<{ conv: Conversation; unread: number; attention: number; urgent: number }>;
+  try {
+    counts = await Promise.all(
+      stale.map(async (conv) => {
+        const res = await api<MessagesResponse>(
+          `/api/conversations/${encodeURIComponent(conv.id)}/messages?limit=${PAGE_SIZE}`
+        );
+        const fresh = res.messages.filter((m) => m.createdAt > since(conv) && m.from !== state.me);
+        return {
+          conv,
+          unread: fresh.length,
+          attention: fresh.filter((m) => isForMe(m, conv)).length,
+          urgent: fresh.filter((m) => isUrgent(m, conv)).length,
+        };
+      })
+    );
+  } catch {
+    // The network dropped mid-refresh (Can #18026: "Load failed" as the Home Screen app woke on an iPhone): the counts
+    // stay as they were, and the next reconnect refreshes them. Not a crash.
+    return;
+  }
   if (generation !== refreshGeneration) return;
   state.unread.clear();
   state.attention.clear();

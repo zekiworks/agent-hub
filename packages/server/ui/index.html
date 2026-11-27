@@ -44,7 +44,13 @@
         if (!e.filename && !e.error && /^Script error\.?$/.test(e.message || "")) return;
         send(e.message || "Script error", e.error && e.error.stack ? e.error.stack : (e.filename || "") + ":" + e.lineno + ":" + e.colno);
       });
-      addEventListener("unhandledrejection", (e) => send(e.reason instanceof Error ? e.reason.message : String(e.reason), e.reason instanceof Error ? e.reason.stack : undefined));
+      addEventListener("unhandledrejection", (e) => {
+        // A request the network dropped ("Load failed" in Safari, "Failed to fetch" in Chrome, "NetworkError…" in
+        // Firefox) is the connection, not Agent Hub's code: the app reconnects and refreshes (Can #18026). A page that
+        // never starts is still reported by the blank-page check below.
+        if (e.reason instanceof TypeError && /^(Load failed|Failed to fetch|NetworkError when attempting to fetch resource\.?)$/.test(e.reason.message)) return;
+        send(e.reason instanceof Error ? e.reason.message : String(e.reason), e.reason instanceof Error ? e.reason.stack : undefined);
+      });
       setTimeout(() => {
         if (!window.agentHubStarted && document.visibilityState === "visible") send("The page stayed blank: the app had not drawn anything 20 s after it opened.");
       }, 20_000);
