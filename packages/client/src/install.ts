@@ -1,20 +1,18 @@
 // Shared by the harness installers (`agent-bus install <harness>`, packages/cli/src/harnesses.ts). Runs on Bun
 // (`Bun.build`, `Bun.which`); the bundled plugin code never imports it.
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   chmodSync,
-  closeSync,
   existsSync,
   linkSync,
   lstatSync,
   mkdirSync,
-  openSync,
   readFileSync,
   realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
-  writeSync,
 } from "node:fs";
 import * as path from "node:path";
 
@@ -149,7 +147,8 @@ export const OWNED_MARK = "agent-bus install";
  */
 export function writeOwnedFile(file: string, content: string, force = false, mode = 0o644): void {
   mkdirSync(path.dirname(file), { recursive: true });
-  withLock(`${file}.agent-bus-lock`, () => {
+  const release = acquireLock(`${file}.agent-bus-lock`, `writing ${file}`, 30_000);
+  try {
     let present = false;
     try {
       lstatSync(file);
@@ -166,11 +165,13 @@ export function writeOwnedFile(file: string, content: string, force = false, mod
       rmSync(file);
     }
     writeFileSync(file, content, { mode });
-  });
+  } finally {
+    release();
+  }
 }
 
 /** Whether process `pid` runs (one of another user's counts). */
-function alive(pid: number): boolean {
+export function alive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
@@ -180,48 +181,64 @@ function alive(pid: number): boolean {
   }
 }
 
+/** Makes `lock` hold this process's id, only if nothing is there: the id is written first, then linked into place. */
+function publishLock(lock: string): boolean {
+  const temp = `${lock}.${process.pid}.${randomUUID()}`;
+  writeFileSync(temp, String(process.pid), { flag: "wx" });
+  try {
+    linkSync(temp, lock);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return false;
+  } finally {
+    rmSync(temp, { force: true });
+  }
+}
+
+/** The process id in a lock ("" when empty or unreadable as one); undefined when there is no lock. */
+function lockHolder(lock: string): string | undefined {
+  try {
+    return readFileSync(lock, "utf8").trim();
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : "";
+  }
+}
+
 /**
- * Runs `work` holding `lock`: a file created only if absent, holding this process's id. A lock whose process is gone
- * is taken over (renamed away first, so only one waiter does); a live one is waited for, up to 30 seconds.
+ * Takes `lock` for this process and returns its release. A lock's id is published whole (linked into place), so an
+ * empty lock was left by a killed run, as is one whose process is gone: such a lock is taken over, under a second lock
+ * (`<lock>.takeover`) and only if it is still the same dead one, so two waiters never take over at once and a live
+ * run's lock is never removed. A live lock is waited for, up to `waitMs`.
  */
-function withLock(lock: string, work: () => void): void {
-  const deadline = Date.now() + 30_000;
+export function acquireLock(lock: string, what: string, waitMs: number): () => void {
+  const guard = `${lock}.takeover`;
+  const deadline = Date.now() + waitMs;
   for (;;) {
-    try {
-      const fd = openSync(lock, "wx");
-      writeSync(fd, String(process.pid));
-      closeSync(fd);
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
-    let holder = "";
-    try {
-      holder = readFileSync(lock, "utf8");
-    } catch {
-      continue; // Released meanwhile.
-    }
-    // An empty file is a lock being written: its holder lives.
-    if (holder !== "" && !alive(Number(holder))) {
-      const stale = `${lock}.stale-${process.pid}`;
-      try {
-        renameSync(lock, stale);
-        // Someone took the stale lock over and made a fresh one just before: give theirs back.
-        if (readFileSync(stale, "utf8") !== holder) linkSync(stale, lock);
-      } catch {
-        // Another waiter took it over first, or made a fresh one meanwhile.
+    if (publishLock(lock)) break;
+    const holder = lockHolder(lock);
+    if (holder === undefined) continue; // Released meanwhile.
+    if (!alive(Number(holder))) {
+      if (publishLock(guard)) {
+        try {
+          if (lockHolder(lock) === holder) rmSync(lock, { force: true });
+        } finally {
+          rmSync(guard, { force: true });
+        }
+        continue;
       }
-      rmSync(stale, { force: true });
-      continue;
+      const guardHolder = lockHolder(guard);
+      if (guardHolder !== undefined && !alive(Number(guardHolder))) {
+        throw new Error(`${guard} was left by an agent-bus run that ended while taking over ${lock}; remove both, then run this again. Nothing was changed.`);
+      }
+    } else if (Date.now() > deadline) {
+      throw new Error(`Another agent-bus run (process ${holder}) is ${what}; try again when it is done. Nothing was changed.`);
     }
-    if (Date.now() > deadline) throw new Error(`Another agent-bus install (process ${holder}) is writing ${lock.slice(0, -".agent-bus-lock".length)}; try again when it is done.`);
     Bun.sleepSync(20);
   }
-  try {
-    work();
-  } finally {
-    rmSync(lock, { force: true });
-  }
+  return () => {
+    if (lockHolder(lock) === String(process.pid)) rmSync(lock, { force: true });
+  };
 }
 
 /** `base`, or `base.1`, `base.2`, …: the first name with nothing there, not even a dangling link. */

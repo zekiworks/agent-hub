@@ -1,5 +1,7 @@
 // Installs the shared stdio MCP bridge into harness-native user configuration without replacing unrelated servers.
+import { randomUUID } from "node:crypto";
 import {
+  appendFileSync,
   chmodSync,
   closeSync,
   existsSync,
@@ -20,6 +22,8 @@ import {
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+  acquireLock,
+  alive,
   bundleForNode,
   configBusUrl,
   installBusUrl,
@@ -93,19 +97,6 @@ function readJson(file: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/** Whether process `pid` runs (one of another user's counts). */
-function alive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-const TEMP_INFIX = ".agent-hub-tmp-";
-
 /** Where writes to `file` land: its target when it is a link, which stays a link. */
 function writePath(file: string): string {
   try {
@@ -120,35 +111,39 @@ function writePath(file: string): string {
   }
 }
 
-/** Removes temporary files a killed write to `file` left beside it (`<file>.agent-hub-tmp-<pid>`, that pid gone). */
-function clearStaleTemps(file: string): void {
-  const dest = writePath(file);
-  const dir = path.dirname(dest);
-  const prefix = `${path.basename(dest)}${TEMP_INFIX}`;
-  for (const entry of existsSync(dir) ? readdirSync(dir) : []) {
-    if (entry.startsWith(prefix) && !alive(Number(entry.slice(prefix.length)))) rmSync(path.join(dir, entry), { force: true });
-  }
-}
-
 /**
  * Replaces a harness config in one rename, so a reader or a crash sees its old bytes or its new ones, never part: the
- * new bytes go to a temporary file beside it, with its mode, then over it. A link is written through: its target is
- * replaced, and the link stays.
+ * new bytes go to a temporary file of a fresh name beside it (made only if nothing is there), with its mode, then over
+ * it. A link is written through: its target is replaced, and the link stays. Within an install, the temporary file's
+ * name is added to the transaction's `journal` before the file is made, so recovery removes exactly that file.
  */
-function replaceFile(file: string, data: string | Uint8Array): void {
+function replaceFile(file: string, data: string | Uint8Array, journal?: string): void {
   const dest = writePath(file);
   mkdirSync(path.dirname(dest), { recursive: true });
-  clearStaleTemps(dest);
-  const temp = `${dest}${TEMP_INFIX}${process.pid}`;
+  const temp = `${dest}.agent-hub-tmp-${process.pid}-${randomUUID()}`;
+  if (journal) appendFileSync(journal, `${temp}\n`);
   const mode = existsSync(dest) ? statSync(dest).mode & 0o7777 : undefined;
+  let made = false;
   try {
-    writeFileSync(temp, data, { mode: mode ?? 0o666 });
+    writeFileSync(temp, data, { mode: mode ?? 0o666, flag: "wx" });
+    made = true;
     if (mode !== undefined) chmodSync(temp, mode);
     renameSync(temp, dest);
   } catch (error) {
-    rmSync(temp, { force: true });
+    if (made) rmSync(temp, { force: true });
     throw error;
   }
+}
+
+/** In a transaction folder: the temporary files its config writes made, one path a line, each listed before made. */
+const TEMPS = "temps";
+
+/** Removes the temporary files a transaction's journal lists, and only those. */
+function clearJournal(tx: string): void {
+  const journal = path.join(tx, TEMPS);
+  if (!existsSync(journal)) return;
+  for (const temp of readFileSync(journal, "utf8").split("\n")) if (temp) rmSync(temp, { force: true });
+  rmSync(journal, { force: true });
 }
 
 /**
@@ -271,10 +266,10 @@ function planJsonEntry(name: UniversalAdapterName, definition: Definition, targe
   return { file, config, record: { originalExists, original, installed: jsonText(config) } };
 }
 
-function writeJsonEntry(plan: JsonPlan, snapshot: string): void {
+function writeJsonEntry(plan: JsonPlan, snapshot: string, journal: string): void {
   // The snapshot first: a settings file is never left edited without the record that undoes the edit.
   writePrivateJson(snapshot, plan.record);
-  replaceFile(plan.file, jsonText(plan.config));
+  replaceFile(plan.file, jsonText(plan.config), journal);
 }
 
 function removeJsonEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
@@ -669,10 +664,10 @@ function grokInstalled(name: UniversalAdapterName, plan: GrokPlan, target: strin
   return installed;
 }
 
-function writeGrokEntry(plan: GrokPlan, installed: string, snapshot: string): void {
+function writeGrokEntry(plan: GrokPlan, installed: string, snapshot: string, journal: string): void {
   const { file, originalExists, original, leader } = plan;
   writePrivateJson(snapshot, { originalExists, original, installed, ...(leader ? { leader } : {}) });
-  replaceFile(file, installed);
+  replaceFile(file, installed, journal);
 }
 
 function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): void {
@@ -708,7 +703,7 @@ function removeGrokEntry(definition: Definition, snapshot?: ConfigSnapshot): voi
 interface ConfigEdit {
   file: string;
   turnedOn?: boolean;
-  write(snapshot: string): void;
+  write(snapshot: string, journal: string): void;
 }
 
 /** Inside a transaction folder an install made (`<target>.agent-hub-tx-XXXXXX`): marks it, and only it, as removable. */
@@ -753,23 +748,19 @@ function recoverTransactions(target: string, owner: string): void {
     if (pid !== process.pid && alive(pid)) continue; // Another install of this harness is running.
     const previous = path.join(tx, "previous");
     if (!existsSync(target) && manifestName(manifest(previous)) === owner) renameSync(previous, target);
+    clearJournal(tx);
     const staged = path.join(tx, "new");
     // The install writes the earlier bytes, then the snapshot, then the config: no snapshot, no edit to undo.
     const written = existsSync(staged) ? readConfigSnapshot(staged) : undefined;
     const before = written && existsSync(path.join(tx, SETTINGS_BEFORE)) ? settingsBefore(tx) : undefined;
     let retire = false;
     if (written && before) {
-      try {
-        clearStaleTemps(before.file);
-      } catch {
-        // A link to nothing now: there are no temporary files beside its target to clear.
-      }
       const live = existsSync(before.file) ? readFileSync(before.file) : undefined;
       const original = before.existed ? Buffer.from(before.bytes, "base64") : undefined;
       const unchanged = original === undefined ? live === undefined : live?.equals(original) === true;
       if (!unchanged && live?.equals(Buffer.from(written.installed)) === true) {
         if (original === undefined) rmSync(before.file);
-        else replaceFile(before.file, original);
+        else replaceFile(before.file, original, path.join(tx, TEMPS));
       } else if (!unchanged) {
         retire = true;
       }
@@ -778,7 +769,7 @@ function recoverTransactions(target: string, owner: string): void {
       rmSync(tx, { recursive: true, force: true });
       continue;
     }
-    for (const left of [staged, previous, path.join(tx, TX_MARK)]) rmSync(left, { recursive: true, force: true });
+    for (const left of [staged, previous, path.join(tx, TEMPS), path.join(tx, TX_MARK)]) rmSync(left, { recursive: true, force: true });
     console.log(
       `${before!.file} changed after an interrupted Agent Hub install edited it, so it was left as it is; its bytes from ` +
         `before that install are kept in ${path.join(tx, SETTINGS_BEFORE)} (base64, "bytes"). Delete that folder when done.`,
@@ -804,7 +795,33 @@ function harnessBusUrl(definition: Definition): string | undefined {
   return args.includes("--url") && typeof url === "string" ? url : undefined;
 }
 
-export async function installUniversal(name: UniversalAdapterName, opts: UniversalInstallOptions): Promise<void> {
+/**
+ * One install or uninstall at a time per harness config, held from recovery through the snapshot, the config edit and
+ * the adapter swap: two overlapping runs would otherwise each take the other's half-done edit for the person's own.
+ */
+function configLock<T>(name: UniversalAdapterName, work: () => T): T {
+  const config = DEFINITIONS[name].config!;
+  const locks = path.join(os.homedir(), ".agent-bus", "locks");
+  mkdirSync(locks, { recursive: true });
+  const release = acquireLock(path.join(locks, `${name}-${Bun.hash(config).toString(16)}.lock`), `changing ${config}`, 10 * 60_000);
+  try {
+    const result = work();
+    if (result instanceof Promise) return result.finally(release) as T;
+    release();
+    return result;
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
+
+export const installUniversal = (name: UniversalAdapterName, opts: UniversalInstallOptions): Promise<void> =>
+  configLock(name, () => installTransaction(name, opts));
+
+export const uninstallUniversal = (name: UniversalAdapterName, opts: InstallOptions): Promise<void> =>
+  configLock(name, async () => uninstallTransaction(name, opts));
+
+async function installTransaction(name: UniversalAdapterName, opts: UniversalInstallOptions): Promise<void> {
   const definition = DEFINITIONS[name];
   const target = targetDir(name, opts);
   recoverTransactions(target, ownedName(name));
@@ -817,10 +834,10 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
     if (definition.kind === "grok") {
       const plan = planGrok(definition, opts, previous, decided);
       const installed = grokInstalled(name, plan, target, url);
-      return { file: plan.file, turnedOn: plan.turnedOn, write: (snapshot) => writeGrokEntry(plan, installed, snapshot) };
+      return { file: plan.file, turnedOn: plan.turnedOn, write: (snapshot, journal) => writeGrokEntry(plan, installed, snapshot, journal) };
     }
     const plan = planJsonEntry(name, definition, target, url, previous);
-    return { file: plan.file, write: (snapshot) => writeJsonEntry(plan, snapshot) };
+    return { file: plan.file, write: (snapshot, journal) => writeJsonEntry(plan, snapshot, journal) };
   };
   // --build-only builds the adapter alone: the harness config, its leader mode and the snapshot stay as they are.
   // Otherwise the person is asked, and the harness config checked, before anything is built.
@@ -833,6 +850,7 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
   chmodSync(tx, 0o700);
   writeFileSync(path.join(tx, TX_MARK), String(process.pid));
   const staging = path.join(tx, "new");
+  const journal = path.join(tx, TEMPS);
   const replaced = path.join(tx, "previous");
   mkdirSync(staging, { mode: 0o700 });
   let restore: (() => void) | undefined;
@@ -851,9 +869,9 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
       const bytes = existsSync(edit.file) ? readFileSync(edit.file) : undefined;
       // Kept in the transaction folder first, so an install killed after the edit can still be rolled back.
       writePrivateJson(path.join(tx, SETTINGS_BEFORE), { file: edit.file, existed: bytes !== undefined, bytes: bytes?.toString("base64") ?? "" });
-      edit.write(configSnapshotFile(staging));
+      edit.write(configSnapshotFile(staging), journal);
       // Only now is there an edit to take back.
-      restore = () => (bytes === undefined ? rmSync(edit.file, { force: true }) : replaceFile(edit.file, bytes));
+      restore = () => (bytes === undefined ? rmSync(edit.file, { force: true }) : replaceFile(edit.file, bytes, journal));
       turnedOn = edit.turnedOn === true;
     } else if (previous) {
       writePrivateJson(configSnapshotFile(staging), previous);
@@ -888,7 +906,7 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
   else console.log(`Built ${definition.title} Agent Hub adapter in ${target} (Hub ${url}); ${definition.config} not changed (--build-only).`);
 }
 
-export async function uninstallUniversal(name: UniversalAdapterName, opts: InstallOptions): Promise<void> {
+function uninstallTransaction(name: UniversalAdapterName, opts: InstallOptions): void {
   const definition = DEFINITIONS[name];
   const target = targetDir(name, opts);
   recoverTransactions(target, ownedName(name));

@@ -393,8 +393,10 @@ describe("universal MCP adapter configuration", () => {
           renameSync(join(adapters, harness), join(tx, "new"));
           writeFileSync(join(tx, "settings-before.json"), JSON.stringify({ file: config, existed: true, bytes: Buffer.from(before).toString("base64") }));
           writeFileSync(config, before);
-          if (killed === "publishing") writeFileSync(`${config}.agent-hub-tmp-2147483646`, installed);
-          else writeFileSync(`${config}.agent-hub-tmp-2147483645`, before);
+          // Each run lists its temporary file in the folder's journal before making it.
+          const temp = `${config}.agent-hub-tmp-${killed === "publishing" ? "2147483646" : "2147483645"}-a1b2`;
+          writeFileSync(temp, killed === "publishing" ? installed : before);
+          writeFileSync(join(tx, "temps"), `${temp}\n`);
 
           if (next === "install") await agentBus(root, ...install);
           await agentBus(root, "uninstall", harness);
@@ -405,6 +407,43 @@ describe("universal MCP adapter configuration", () => {
       }
     }
   }, 120_000);
+
+  test("overlapping first installs take turns, so the config's state from before is the one recorded", async () => {
+    for (const [harness, relative, before] of [
+      ["qwen", join(".qwen", "settings.json"), undefined],
+      ["qwen", join(".qwen", "settings.json"), `{\n\t"theme":   "dark"\n}\n`],
+      ["grok", join(".grok", "config.toml"), undefined],
+      ["grok", join(".grok", "config.toml"), `[cli]\n# off on purpose\nuse_leader = false\n`],
+    ] as const) {
+      const root = home();
+      const config = join(root, relative);
+      if (before !== undefined) await Bun.write(config, before);
+      const install = ["install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--no-leader"] : [])];
+      const runs = await Promise.all([run(root, install), run(root, install)]);
+      expect(runs.map((result) => result.code)).toEqual([0, 0]);
+      expect(readFileSync(config, "utf8")).toContain("agent-hub");
+      await agentBus(root, "uninstall", harness);
+      if (before === undefined) expect(existsSync(config)).toBe(false);
+      else expect(readFileSync(config, "utf8")).toBe(before);
+    }
+  }, 120_000);
+
+  test("files beside the config that only look like Agent Hub's temporary files survive install and uninstall", async () => {
+    for (const [harness, relative, before] of [
+      ["qwen", join(".qwen", "settings.json"), `{ "theme": "dark" }\n`],
+      ["grok", join(".grok", "config.toml"), `[models]\ndefault = "dspark"\n`],
+    ] as const) {
+      const root = home();
+      const config = join(root, relative);
+      await Bun.write(config, before);
+      const theirs = [`${config}.agent-hub-tmp-notes`, `${config}.agent-hub-tmp-2147483646`];
+      for (const file of theirs) writeFileSync(file, "mine\n");
+      await agentBus(root, "install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--no-leader"] : []));
+      await agentBus(root, "uninstall", harness);
+      expect(readFileSync(config, "utf8")).toBe(before);
+      for (const file of theirs) expect(readFileSync(file, "utf8")).toBe("mine\n");
+    }
+  }, 60_000);
 
   test("recovery leaves a config changed after a killed install, and retires the folder to just its earlier bytes", async () => {
     for (const [harness, relative, before, edit] of [
