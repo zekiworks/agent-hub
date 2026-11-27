@@ -145,11 +145,13 @@ export function createBusServer(options: BusServerOptions = {}): BusServerHandle
   // there 600, on a fresh install and fixed on an existing one (launch check, 16 Nov: other local users could read
   // the database).
   process.umask(0o077);
-  mkdirSync(filesDir, { recursive: true, mode: 0o700 });
+  // With --existing-data the data directory must already be there (a vanished volume is not recreated).
+  if (!options.existingData) mkdirSync(filesDir, { recursive: true, mode: 0o700 });
+  else if (!existsSync(filesDir)) mkdirSync(filesDir, { mode: 0o700 });
   for (const p of [dataDir, filesDir]) chmodSync(p, 0o700);
   for (const suffix of ["", "-wal", "-shm"]) if (existsSync(dbPath + suffix)) chmodSync(dbPath + suffix, 0o600);
   const humans = resolveHumans(options.humans);
-  const db = new BusDatabase(dbPath, humans);
+  const db = new BusDatabase(dbPath, humans, Date.now(), { existing: options.existingData });
   // The ports are known once the servers listen; the passkey origins follow them.
   let boundPort = 0;
   let boundHttpsPort: number | undefined;

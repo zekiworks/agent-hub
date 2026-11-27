@@ -508,8 +508,9 @@ const MIGRATION_ARCHIVE_AFTER_MS = 7 * 24 * 3600_000;
 export class BusDatabase {
   readonly db: Database;
 
-  constructor(dbPath: string, humans: readonly string[], now = Date.now()) {
-    this.db = new Database(dbPath, { create: true, strict: true });
+  /** `existing`: open a database that already exists, never create one (serve --existing-data). */
+  constructor(dbPath: string, humans: readonly string[], now = Date.now(), { existing = false }: { existing?: boolean } = {}) {
+    this.db = new Database(dbPath, { create: !existing, readwrite: true, strict: true });
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA synchronous = NORMAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
