@@ -1,11 +1,13 @@
 // The client modules the plugins share whose behaviour their own tests do not pin down: the held-message budget, the
-// plugin bus URL, the hook socket between hook processes and their server, and how held deliveries read.
-import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+// plugin bus URL, the hook socket between hook processes and their server, how held deliveries read, and the installers'
+// owned-file writer.
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { HeldQueue, UnseenSeqs } from "../packages/client/src/held";
 import { serveHookSocket } from "../packages/client/src/hook-socket";
+import { writeOwnedFile } from "../packages/client/src/install";
 import { pluginBusUrl, realFolder } from "../packages/client/src/runtime";
 import { deliveryText, formatDelivery } from "../packages/client/src/tool";
 
@@ -144,4 +146,24 @@ test("an attachment that cannot be downloaded still delivers the message, naming
   const text = await deliveryText(conn, { type: "deliver", message, conversation, replyTo: "@carol", wake: true } as never);
   expect(text).toContain("see the file");
   expect(text).toContain("File: report.tar.gz not downloaded (Download of report.tar.gz failed: HTTP 401); message-bus op=show message_id 7 tries again");
+});
+
+test("--force moves a file aside without replacing an earlier backup, and says where it went", () => {
+  const file = path.join(dir, "agent-bus");
+  writeFileSync(`${file}.before-agent-bus`, "first backup\n");
+  writeFileSync(file, "the person's own agent-bus\n");
+  const log = spyOn(console, "log").mockImplementation(() => {});
+  try {
+    expect(() => writeOwnedFile(file, "# agent-bus install\n")).toThrow("not touching it");
+    writeOwnedFile(file, "# agent-bus install\n", true);
+    expect(log).toHaveBeenCalledWith(`Moved the existing ${file} to ${file}.before-agent-bus.1.`);
+    // Ours now: replaced in place, no new backup.
+    writeOwnedFile(file, "# agent-bus install again\n", true);
+  } finally {
+    log.mockRestore();
+  }
+  expect(readFileSync(`${file}.before-agent-bus`, "utf8")).toBe("first backup\n");
+  expect(readFileSync(`${file}.before-agent-bus.1`, "utf8")).toBe("the person's own agent-bus\n");
+  expect(existsSync(`${file}.before-agent-bus.2`)).toBe(false);
+  expect(readFileSync(file, "utf8")).toBe("# agent-bus install again\n");
 });

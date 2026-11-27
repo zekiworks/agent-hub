@@ -654,10 +654,21 @@ interface ConfigEdit {
 
 /** Inside a transaction folder an install made (`<target>.agent-hub-tx-XXXXXX`): marks it, and only it, as removable. */
 const TX_MARK = ".agent-hub-tx";
+/** In a transaction folder: the harness config's exact bytes before the install edited it. */
+const SETTINGS_BEFORE = "settings-before.json";
+
+interface SettingsBefore {
+  file: string;
+  existed: boolean;
+  /** base64 of the exact bytes. */
+  bytes: string;
+}
 
 /**
  * Clears what an earlier, interrupted install of `target` left: transaction folders carrying the marker whose process
- * is gone. If that install had already moved the working adapter into its folder, the adapter goes back first.
+ * is gone. An install that had not yet put its new adapter in place (its `new` folder is still there) is rolled back:
+ * the harness config goes back to its bytes from before, if it is still exactly as that install wrote it, and the
+ * working adapter, if already moved into the folder, goes back too. One that had (no `new` folder) was complete.
  */
 function recoverTransactions(target: string, owner: string): void {
   const parent = path.dirname(target);
@@ -673,6 +684,16 @@ function recoverTransactions(target: string, owner: string): void {
       }
     } catch {
       // That process is gone.
+    }
+    const staged = path.join(tx, "new");
+    const written = existsSync(staged) ? readConfigSnapshot(staged) : undefined;
+    if (written && existsSync(path.join(tx, SETTINGS_BEFORE))) {
+      const before = JSON.parse(readFileSync(path.join(tx, SETTINGS_BEFORE), "utf8")) as SettingsBefore;
+      // Changed since that install wrote it: the change is someone's, and stays.
+      if (existsSync(before.file) && readFileSync(before.file, "utf8") === written.installed) {
+        if (before.existed) writeFileSync(before.file, Buffer.from(before.bytes, "base64"));
+        else rmSync(before.file);
+      }
     }
     const previous = path.join(tx, "previous");
     if (!existsSync(target) && manifestName(manifest(previous)) === owner) renameSync(previous, target);
@@ -742,6 +763,8 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
       // person's answer about leader mode stands. The config names the final paths (under `target`).
       const edit = planEdit(asked.turnedOn === true);
       const bytes = existsSync(edit.file) ? readFileSync(edit.file) : undefined;
+      // Kept in the transaction folder first, so an install killed after the edit can still be rolled back.
+      writePrivateJson(path.join(tx, SETTINGS_BEFORE), { file: edit.file, existed: bytes !== undefined, bytes: bytes?.toString("base64") ?? "" });
       restore = () => (bytes === undefined ? rmSync(edit.file, { force: true }) : writeFileSync(edit.file, bytes));
       edit.write(configSnapshotFile(staging));
       turnedOn = edit.turnedOn === true;
@@ -769,6 +792,7 @@ export async function installUniversal(name: UniversalAdapterName, opts: Univers
 export async function uninstallUniversal(name: UniversalAdapterName, opts: InstallOptions): Promise<void> {
   const definition = DEFINITIONS[name];
   const target = targetDir(name, opts);
+  recoverTransactions(target, ownedName(name));
   const owned = manifestName(manifest(target)) === ownedName(name);
   const snapshot = owned ? readConfigSnapshot(target) : undefined;
   if (definition.kind === "json") removeJsonEntry(definition, snapshot);

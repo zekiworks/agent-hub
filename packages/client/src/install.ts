@@ -129,7 +129,8 @@ export const OWNED_MARK = "agent-bus install";
 
 /**
  * Writes `file` (`mode` for executables), replacing an earlier one agent-bus wrote. Anything else there (a file or link
- * someone else put there) stops the install, unless `force`: then it is moved aside to `<file>.before-agent-bus`.
+ * someone else put there) stops the install, unless `force`: then it is moved aside to `<file>.before-agent-bus`, or
+ * `.before-agent-bus.1`, `.2`, … when that is taken, so an earlier backup is never replaced.
  */
 export function writeOwnedFile(file: string, content: string, force = false, mode = 0o644): void {
   let present = false;
@@ -141,12 +142,25 @@ export function writeOwnedFile(file: string, content: string, force = false, mod
   }
   if (present && !isOwnedFile(file)) {
     if (!force) throw new Error(`${file} exists and was not written by agent-bus; not touching it (--force moves it aside).`);
-    renameSync(file, `${file}.before-agent-bus`);
-    console.log(`Moved the existing ${file} to ${file}.before-agent-bus.`);
+    const backup = freeBackupName(`${file}.before-agent-bus`);
+    renameSync(file, backup);
+    console.log(`Moved the existing ${file} to ${backup}.`);
   }
   mkdirSync(path.dirname(file), { recursive: true });
   if (present && isOwnedFile(file)) rmSync(file);
   writeFileSync(file, content, { mode });
+}
+
+/** `base`, or `base.1`, `base.2`, …: the first name with nothing there, not even a dangling link. */
+function freeBackupName(base: string): string {
+  for (let n = 0; ; n++) {
+    const name = n === 0 ? base : `${base}.${n}`;
+    try {
+      lstatSync(name);
+    } catch {
+      return name;
+    }
+  }
 }
 
 /**

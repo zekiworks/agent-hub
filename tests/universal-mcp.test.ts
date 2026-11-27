@@ -321,6 +321,41 @@ describe("universal MCP adapter configuration", () => {
     }
   }, 60_000);
 
+  test("a first install killed after the config edit, before the swap, is rolled back by the next install or uninstall", async () => {
+    const cases: Array<[string, string, string]> = [
+      ["qwen", join(".qwen", "settings.json"), `{\n\t"theme":   "dark"\n}\n`],
+      ["grok", join(".grok", "config.toml"), `[cli]\n# off on purpose\nuse_leader = false\n`],
+    ];
+    for (const [harness, relative, before] of cases) {
+      for (const next of ["install", "uninstall"]) {
+        const root = home();
+        const config = join(root, relative);
+        const adapters = join(root, ".agent-bus", "adapters");
+        const adapter = join(adapters, harness);
+        await Bun.write(config, before);
+        const install = ["install", harness, "--url", "http://127.0.0.1:7800", ...(harness === "grok" ? ["--leader"] : [])];
+        await agentBus(root, ...install);
+        expect(readFileSync(config, "utf8")).not.toBe(before);
+        // The state the install was in when killed: config edited, new adapter (with its snapshot) still staged in
+        // the marked transaction folder, beside the config's bytes from before; no adapter in place yet.
+        const tx = join(adapters, `${harness}.agent-hub-tx-Zz9Yy8`);
+        mkdirSync(tx);
+        writeFileSync(join(tx, ".agent-hub-tx"), "2147483646");
+        renameSync(adapter, join(tx, "new"));
+        writeFileSync(join(tx, "settings-before.json"), JSON.stringify({ file: config, existed: true, bytes: Buffer.from(before).toString("base64") }));
+
+        if (next === "install") {
+          await agentBus(root, ...install);
+          expect(readdirSync(adapters)).toEqual([harness]);
+          expect(readFileSync(config, "utf8")).toContain("agent-hub");
+        }
+        await agentBus(root, "uninstall", harness);
+        expect(readFileSync(config, "utf8")).toBe(before);
+        expect(existsSync(adapters) ? readdirSync(adapters) : []).toEqual([]);
+      }
+    }
+  }, 60_000);
+
   test("folders beside the adapter that Agent Hub did not make survive install, reinstall and --build-only", async () => {
     for (const harness of ["qwen", "grok"]) {
       const root = home();
