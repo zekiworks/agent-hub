@@ -88,8 +88,10 @@ async function signIn(): Promise<void> {
   localStorage.setItem(SESSION_KEY, done.session);
 }
 
-/** Times on this page, in the viewer's local time: "Nov 13, 2026, 11:20 AM". */
-const shortTime = (ms: number): string => new Date(ms).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+/** Times on this page, in the viewer's local time: "Nov 13, 2026, 11:20 AM", as one unbreakable string so a wrapped row
+ * never leaves "PM" or the time alone on the next line (demo review D4). */
+const shortTime = (ms: number): string =>
+  new Date(ms).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }).replace(/\s/g, "\u00a0");
 
 async function renderMe(me: string): Promise<void> {
   show("auth-me");

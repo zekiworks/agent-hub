@@ -11,7 +11,7 @@ import { loadState } from "./loading";
 import { renderAll } from "./render";
 import { navigate } from "./routing";
 import { renderSidebar } from "./sidebar";
-import { conversationTitle, participantDisplayName, state } from "./state";
+import { conversationAddress, conversationTitle, participantDisplayName, state } from "./state";
 import { isTab, moveTab, setTab } from "./tabs";
 
 const NOTIFY: Array<[NotifyLevel, string]> = [
@@ -249,7 +249,11 @@ function render(consumed: string[] = []): void {
   const close = button("✕", () => dom.convDialog.close());
   close.className = "link-btn dialog-x";
   close.title = "Close (Esc)";
-  head.append(h("h2", "", conversationTitle(conv)), close);
+  // A renamed project keeps its address beside the name, so the sticky title says both (demo review D4).
+  const title = h("h2", "", conversationTitle(conv));
+  const address = conversationAddress(conv);
+  if (address && address !== conversationTitle(conv)) title.append(" ", h("span", "conv-dialog-address", address));
+  head.append(title, close);
   const body: HTMLElement[] = [head];
 
   body.push(h("h3", "", `Members (${conv.members.length})`));

@@ -12,7 +12,7 @@ import { setIcon } from "./icons";
 import { renderMarkdown } from "./markdown";
 import { mentionCandidates } from "./mentions";
 import { conversationAddress, conversationTitle, participantDisplayName, state } from "./state";
-import { mentionNodes, refLink } from "./text";
+import { mentionNodes, refLink, shownMessage } from "./text";
 import { noteAttention } from "./attention";
 
 /** At most this many choices are listed; the search narrows them. */
@@ -154,7 +154,7 @@ function openForward(message: Message): void {
       });
       dialog.close();
       noteAttention(current.message.seq, "forwarded");
-      showForwarded(`Forwarded to ${res.to}`);
+      showForwarded(`Forwarded to ${res.to}`, current.message.seq);
     } catch (err) {
       error.textContent = errorText(err);
       error.hidden = false;
@@ -201,15 +201,19 @@ dom.forwardDialog.addEventListener("close", () => {
   dom.forwardDialog.replaceChildren();
 });
 
-/** "Forwarded to @b", briefly, where it is seen whatever is open (and read out by screen readers). */
-function showForwarded(text: string): void {
+/**
+ * "Forwarded to @b", briefly, read out by screen readers. When the forwarded message is on screen, its own new
+ * "Forwarded to @b by @me" line says it, so the notice is for screen readers only: shown on top of the list it covered a
+ * date line or a message (demo review D2–D4). Otherwise it shows at the top of the message list, else the default place.
+ */
+function showForwarded(text: string, seq: number): void {
   document.querySelector(".forward-toast")?.remove();
   const toast = h("div", "forward-toast", text);
   toast.setAttribute("role", "status");
-  // At the top of the message list, under the conversation's title: never over the message box or the newest message,
-  // which is often the one just forwarded (demo review D2, D3). Without a list on screen, the default place.
+  const shown = shownMessage(seq)?.getBoundingClientRect();
   const list = dom.messageScroll.getBoundingClientRect();
-  if (list.height > 0) Object.assign(toast.style, { top: `${Math.round(list.top + 12)}px`, bottom: "auto" });
+  if (shown && shown.bottom > list.top && shown.top < list.bottom) toast.classList.add("visually-hidden");
+  else if (list.height > 0) Object.assign(toast.style, { top: `${Math.round(list.top + 12)}px`, bottom: "auto" });
   document.body.append(toast);
   setTimeout(() => toast.remove(), 2500);
 }

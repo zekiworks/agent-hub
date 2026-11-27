@@ -5190,6 +5190,18 @@ ul.md-list ul.md-list { list-style: circle; }
   white-space: nowrap;
 }
 
+/* The account's own Sign out, set apart from the machines list above it (demo review D4). */
+#auth-signout-btn {
+  margin-top: 24px;
+}
+
+/* A renamed project's address beside its name in the settings title. */
+.conv-dialog-address {
+  color: var(--muted);
+  font-size: 0.75em;
+  font-weight: 500;
+}
+
 /* Revoke / Allow on a machine: a small button after the line, not more of its text. */
 .auth-row-btn {
   margin-left: 8px;
