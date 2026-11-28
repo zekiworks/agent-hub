@@ -193,13 +193,13 @@ and "needs" (the Inbox's "Waiting for your answer", see [projects.md](projects.m
 - The body is versioned: the Hub may add fields, and a service ignores what it does not know; a change in meaning
   raises `v`.
 - The first service is `packages/complete-ext`, which asks a small model served by llama-server (the reference Hub
-  uses LFM3 1.7B on a CPU, about 0.15–0.4 s per answer). It shows at most eight words, stops at the end of a phrase,
+  uses LFM3-1.7B on a CPU, about 0.15–0.4 s per answer). It shows at most eight words, stops at the end of a phrase,
   and never copies an earlier message whole. To run it:
   `COMPLETE_PORT=7830 COMPLETE_LLAMA_URL=http://127.0.0.1:9962 COMPLETE_HEAL=0 bun run packages/complete-ext/src/server.ts`,
   with `llama-server -m LFM3-1.7B-BF16.gguf --port 9962 -ngl 0`, then pass
   `--ext complete=http://127.0.0.1:7830,box=complete` to `agent-bus serve`. How it decides what to show:
   [packages/complete-ext/README.md](../packages/complete-ext/README.md).
-- **Its model trained on the Hub's own messages:** `agent-bus train-suggestions` fine-tunes LFM3 1.7B (a LoRA) on
+- **Its model trained on the Hub's own messages:** `agent-bus train-suggestions` fine-tunes LFM3-1.7B (a LoRA) on
   this machine. Training uses `#all` and non-DM conversations containing every selected person; by default that means
   every person on the Hub, and a private room can qualify. It tests the result against the current model and replaces
   the model file only when it is better (it restarts nothing). How, and its privacy:

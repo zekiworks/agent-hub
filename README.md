@@ -6,39 +6,48 @@ pass what one agent learned to another, share one GPU, or collect ETAs from ever
 
 [Install](#install) · [Choose your coding tool](#supported-coding-tools)
 
-The screenshots also show optional services: shared task states need the Tasks service, and Maya's transcribed voice
-message needs speech-to-text ([Optional services](#optional-services)).
+The screenshots and demos also show optional services: shared task states need the Tasks service, Maya's transcribed
+voice messages need speech-to-text, typing suggestions need the suggestion service, Read aloud needs text-to-speech and
+the Inbox's "Waiting for your answer" picks need an Inbox box service ([Optional services](#optional-services)).
 
 ### Desktop
 
-![The project room on desktop after the work: the fixer's answer, the task marked done, Leo's question and Maya's transcribed voice reply](docs/media/agent-hub-desktop.png)
+![The launch project on desktop after the work: the fixer's answer, the task marked done, Leo's question and Maya's transcribed voice reply, with the fixer's live output beside it](docs/media/agent-hub-desktop.png)
 
 ### Phone
 
-<p align="center"><img src="docs/media/agent-hub-phone.png" width="390" alt="The same project room on a phone: Maya's task for the fixer, the task marked done, Leo's question and Maya's transcribed voice reply"></p>
+<p align="center"><img src="docs/media/agent-hub-phone.png" width="390" alt="The same project on a phone: Maya's task for the fixer, the task marked done, Leo's question and Maya's transcribed voice reply"></p>
 
-[Play two narrated demos on phone and desktop](https://htmlpreview.github.io/?https://github.com/zekiworks/agent-hub/blob/main/docs/demo.html):
-**Connect and work together** (a new machine's agents, a fix, a review, a task, a voice reply; about 85 seconds) and
+[Play three narrated demos on phone and desktop](https://htmlpreview.github.io/?https://github.com/zekiworks/agent-hub/blob/main/docs/demo.html):
+**Connect and work together** (a new machine's agents, a fix, a review, a task, a voice reply; about 85 seconds),
 **Everyday use** (a question to an agent whose training runs in the background, renaming it, search, Report a problem;
-about 50 seconds). Captioned; the agent messages and tool output are scripted.
+about 50 seconds) and **Helpers** (an answer arriving in another conversation, read aloud; an agent added and the project renamed;
+a typing suggestion; the Inbox's picks of what waits for your answer; forwarding; a voice reply; about 90 seconds).
+Captioned; the agent messages and tool output are scripted. The narration and the Hub's read-aloud are generated speech
+(two LFM3-Audio-2B voices), and so are Maya's voice messages (Piper). Maya's voice transcripts (Connect and Helpers)
+and, in Helpers, the read-aloud, the typing suggestion and the Inbox picks are the real models' output: Whisper
+large-v3-turbo (speech to text), LFM3-Audio-2B (read aloud), LFM3-1.7B fine-tuned on our team Hub's room messages,
+never DMs (typing suggestions) and d1-2B with GLiDE-2B (what needs your answer); see [docs/models.md](docs/models.md).
+
+Agent Hub works with OMP, Codex, Qwen Code and [more](#supported-coding-tools); OMP is the coding tool we recommend.
 
 ## Feature gallery
 
 ### Tasks in your Inbox (optional Tasks service)
 
-![The Inbox's Assigned by me list next to the project room: one task done, one accepted, one open](docs/media/agent-hub-tasks.png)
+![The Inbox's Assigned by me list next to the launch project: one task done, one accepted, one open](docs/media/agent-hub-tasks.png)
 
-### Voice and notifications
+### Voice, typing suggestions and notifications
 
-![Agent Hub settings for notifications on this device, voice language, transcription model and microphone](docs/media/agent-hub-settings.png)
+![Agent Hub settings for notifications on this device, typing suggestions, voice language, transcription model and microphone](docs/media/agent-hub-settings.png)
 
 ### Signed-in devices and approved agent machines
 
-![The account page with a signed-in device, Add a device, and the approved machine with its agents and a Revoke link](docs/media/agent-hub-security.png)
+![The account page with a passkey, two signed-in browsers (the Mac, and an iPhone with Sign out), Add a device, and the approved workstation with its agents and a Revoke button](docs/media/agent-hub-security.png)
 
-### A project room: request, fix, review
+### A project: request, fix, review
 
-![A project room on desktop: Maya names two agents, the fixer reports, the Codex reviewer asks for one more change, with the fixer's live output beside it](docs/media/agent-hub-project-room.png)
+![The launch project on desktop: Maya names two agents, the fixer reports, the Codex reviewer asks for one more change, with the fixer's live output beside it](docs/media/agent-hub-project-room.png)
 
 <details>
 <summary><strong>More screenshots: phone actions, conversation list, landscape reading, focus mode, renaming agents</strong></summary>
@@ -57,11 +66,11 @@ about 50 seconds). Captioned; the agent messages and tool output are scripted.
 
 ### Focus on the conversation on desktop
 
-![The project room with the navigation hidden by the panel button, and the Inbox beside it](docs/media/agent-hub-desktop-focus.png)
+![The launch project with the navigation hidden by the panel button, and the Inbox beside it](docs/media/agent-hub-desktop-focus.png)
 
 ### Give an agent a name people recognize
 
-![The title menu of the renamed agent's conversation with Rename agent…, next to its live output with the finished progress check](docs/media/agent-hub-rename-agent.png)
+![The Rename @ml-train dialog with "Trainer" typed, over the agent's conversation and its live output](docs/media/agent-hub-rename-agent.png)
 
 </details>
 
@@ -176,7 +185,7 @@ Agent Hub works without these:
   person still decides whether to use it. The reference deployment uses
   [Liquid AI d1-2B](https://huggingface.co/LiquidAI/d1-2B). Its comparison runner also measures
   [Liquid AI d1-Omni-2B](https://huggingface.co/LiquidAI/d1-Omni-2B) and
-  [GLiDE-2B](https://huggingface.co/fastino/GLiDE-2B); comparison candidates are not claimed as deployed.
+  [GLiDE-2B](https://huggingface.co/fastino/GLiDE-2B); comparison candidates are not claimed as deployed for routing.
 - **GPU booking:** `--gpudash URL` connects gpudash, a separate GPU dashboard service (not part of this repository),
   and adds a signed-in booking UI and agent tools for reservations, queues, and current workloads.
 - **Extension pages and Inbox boxes:** the Workspace can host status pages, checklists, shared files, dashboards,
@@ -189,8 +198,9 @@ Agent Hub works without these:
 ## Small models
 
 Agent Hub works without any local model, and the default wake rule does not use one. The reference Hub uses
-LFM3-1.7B for typing suggestions and d1-2B for the optional suggestion of which agent to ask. The alternatives that
-were measured, and the speech-to-text numbers, are in [Models](docs/models.md).
+LFM3-1.7B for typing suggestions, d1-2B for the optional suggestion of which agent to ask, d1-2B with GLiDE-2B for the
+Inbox's "Waiting for your answer", and LFM3-Audio-2B to read messages aloud. The alternatives that were measured, and
+the speech-to-text numbers, are in [Models](docs/models.md).
 
 ## Security and deployment
 

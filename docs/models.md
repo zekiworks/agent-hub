@@ -24,8 +24,9 @@ LFM3-Audio gets 55% of words wrong and Granite Speech has no Turkish, so Turkish
 
 ## Small models
 
-The reference Hub uses **LFM3-1.7B** for typing suggestions and **d1-2B** for the optional suggestion of which agent
-to ask.
+The reference Hub uses **LFM3-1.7B** for typing suggestions, **d1-2B** for the optional suggestion of which agent to
+ask, **d1-2B with GLiDE-2B** for the Inbox's "Waiting for your answer" picks, and **LFM3-Audio-2B** to read messages
+aloud.
 
 The other models below were measured as alternatives on
 [Model Atlas](https://zekiworks.github.io/analysis/?section=All+benches), in
@@ -55,15 +56,16 @@ shared-room messages)
 | Aion 1.0 Instruct | Microsoft | [microsoft/Aion-1.0-Instruct-2.3B](https://huggingface.co/microsoft/Aion-1.0-Instruct-2.3B) |
 | Nemotron-Labs-Sigma-3B-instruct | NVIDIA | [nvidia/Nemotron-Labs-Sigma-3B-instruct](https://huggingface.co/nvidia/Nemotron-Labs-Sigma-3B-instruct) |
 
-**Small decision models measured on Model Atlas** (agent suggestion; in use: d1-2B)
+**Small decision models measured on Model Atlas** (agent suggestion and Inbox picks; in use: d1-2B, and GLiDE-2B for
+the Inbox)
 
 | Model | Maker | Hugging Face |
 |---|---|---|
 | d1-2B | Liquid AI | [LiquidAI/d1-2B](https://huggingface.co/LiquidAI/d1-2B) |
 | d1-Omni-2B | Liquid AI | [LiquidAI/d1-Omni-2B](https://huggingface.co/LiquidAI/d1-Omni-2B) |
 | d1-3B | Liquid AI | [LiquidAI/d1-3B](https://huggingface.co/LiquidAI/d1-3B) |
-| GLiDE 2B | Fastino | [fastino/GLiDE-2B](https://huggingface.co/fastino/GLiDE-2B) |
-| GLiDE 0.8B | Fastino | [fastino/GLiDE-0.8B](https://huggingface.co/fastino/GLiDE-0.8B) |
+| GLiDE-2B | Fastino | [fastino/GLiDE-2B](https://huggingface.co/fastino/GLiDE-2B) |
+| GLiDE-0.8B | Fastino | [fastino/GLiDE-0.8B](https://huggingface.co/fastino/GLiDE-0.8B) |
 | KnowLine-2B-Gen1 | PelaAI | [PelaAI/KnowLine-2B-Gen1](https://huggingface.co/PelaAI/KnowLine-2B-Gen1) |
 | StartLux-Decision v1.1 2B | StartLux | [startlux-models/StartLux-Decision-v1.1-2B-Instant](https://huggingface.co/startlux-models/StartLux-Decision-v1.1-2B-Instant) |
 | Chinese Decision Pointer 4B | quincyqiang | [quincyqiang/chinese-decision-pointer-4b](https://huggingface.co/quincyqiang/chinese-decision-pointer-4b) |
