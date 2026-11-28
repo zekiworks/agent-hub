@@ -187,6 +187,11 @@ function openNameMenu(): void {
   if (agent) item("Rename agent…", () => void renameAgent(agent));
   // The gear remains the direct way to add people and agents or change room settings (Ümit #16151). Less frequent
   // destinations stay under the room name, with labels that say what opens.
+  // A folded header (or the keyboard up) hides the gear on a phone; then the name's menu leads to it, first (Ümit
+  // #18353: in a folded project she found no way to add someone).
+  if (!dom.convSettingsBtn.hidden && dom.convSettingsBtn.offsetParent === null) {
+    item("Add people and agents, settings…", () => dom.convSettingsBtn.click());
+  }
   if (PHONE.matches) {
     item("Search messages in this conversation", () => dom.convSearchBtn.click());
     item("People and agents", () => dom.detailsBtn.click());
