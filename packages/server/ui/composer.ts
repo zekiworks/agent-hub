@@ -1,5 +1,5 @@
 // The message box: its state, size, reply bar and staged files. Sending is send.ts.
-import { formatBytes, type Message } from "@agent-bus/protocol";
+import { formatBytes, mentionedIds, type Message } from "@agent-bus/protocol";
 import { dom, nearBottom, PHONE, scrollToBottom, showInView } from "./dom";
 import { nameList } from "./format";
 import { h } from "./html";
@@ -17,14 +17,24 @@ export function hideError(): void {
   dom.composerError.textContent = "";
 }
 
-/** Agents of the open conversation (or draft) that are offline now: a message for them is held until they are back. */
+/**
+ * Offline agents the message being written is for: it is held until they are back. In a DM (or a new message) that is
+ * every offline recipient; in a room, project or group only an offline agent the draft names (@id) or answers (the
+ * message replied to is its): a room member who sleeps but is not addressed only reads the message later anyway, and a
+ * standing "@x is offline" under the box said nothing she could act on (Ümit #18332).
+ */
 function offlineRecipients(): string[] {
   const view = state.view;
-  const ids = view.kind === "draft" ? view.to : (state.conversations.get(view.id)?.members ?? []);
-  return ids.filter((id) => {
+  const conv = view.kind === "conversation" ? state.conversations.get(view.id) : undefined;
+  const members = view.kind === "draft" ? view.to : (conv?.members ?? []);
+  const offline = members.filter((id) => {
     const p = state.participants.find((x) => x.id === id);
     return p?.kind === "agent" && !p.online;
   });
+  if (view.kind === "draft" || conv?.kind === "dm") return offline;
+  const named = new Set(mentionedIds(dom.input.value));
+  if (state.replyTo) named.add(state.replyTo.from);
+  return offline.filter((id) => named.has(id));
 }
 
 /** Hours to hold the next message for offline agents (the box's "kept for" choice), or undefined for the default. */
@@ -215,6 +225,8 @@ export function setReplyTo(message: Message | undefined, part?: string): void {
       }
     }
   }
+  // Answering an offline agent's message holds it for that agent: the "is offline" line follows the reply.
+  updateComposerState();
 }
 
 /**
