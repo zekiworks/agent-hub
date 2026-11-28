@@ -36,15 +36,23 @@ export function startCrashLog(): void {
   started = true;
   (window as { agentHubStarted?: boolean }).agentHubStarted = true;
   try {
-    const last = JSON.parse(localStorage.getItem(ALIVE_KEY) ?? "null") as { at?: number; where?: string; closed?: boolean } | null;
+    const last = JSON.parse(localStorage.getItem(ALIVE_KEY) ?? "null") as { at?: number; where?: string; closed?: boolean; since?: number; beats?: number } | null;
     if (last && !last.closed && typeof last.at === "number" && Date.now() - last.at < 24 * 3600_000) {
       const ago = Math.round((Date.now() - last.at) / 60_000);
-      void report("ended", `The page stopped while it was open, without closing, about ${ago} min before this start (a crash, a freeze ended by force-quitting, or a forced reload).`, `last view ${last.where ?? "?"}`).catch(() => undefined);
+      // How long that page had run and how many heartbeats it wrote: a page whose heartbeat stopped right after it
+      // started (Ümit #18334: one at 12:07 while she kept using the app until 12:24) is told apart from one that ran.
+      const ran = typeof last.since === "number" ? `; it had been open about ${Math.round((last.at - last.since) / 60_000)} min, ${last.beats ?? "?"} heartbeats` : "";
+      void report("ended", `The page stopped while it was open, without closing, about ${ago} min before this start (a crash, a freeze ended by force-quitting, or a forced reload).`, `last view ${last.where ?? "?"}${ran}`).catch(() => undefined);
     }
   } catch {
     // A broken record is just replaced.
   }
-  const beat = (closed: boolean): void => localStorage.setItem(ALIVE_KEY, JSON.stringify({ at: Date.now(), where: location.hash, closed }));
+  const since = Date.now();
+  let beats = 0;
+  const beat = (closed: boolean): void => {
+    beats += 1;
+    localStorage.setItem(ALIVE_KEY, JSON.stringify({ at: Date.now(), where: location.hash, closed, since, beats }));
+  };
   beat(false);
   let lastBeat = Date.now();
   let focusedAtBeat = document.hasFocus();
