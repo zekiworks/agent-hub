@@ -31,10 +31,10 @@ const LABEL: Record<Task["type"], string> = { task: "Task", approval: "Approval"
 /** The models' names on the cards, by the short names their verdicts carry. */
 const MODEL_NAMES: Record<string, string> = { d1: "d1-2B", glide: "GLiDE-2B" };
 
-/** " in webapp-codex" on a card's head: hyphens do not break, so a name is never split across lines; a long title still
- * wraps at its spaces (demo review D6: "in webapp-" / "codex"). */
+/** " in webapp-codex" on a card's head: "in" and the name stay together and hyphens do not break, so the name is never
+ * split or left without its "in"; a long title still wraps at its own spaces (demo review D6, D7). */
 function inWhere(conversation: Conversation): HTMLElement {
-  return h("span", "inbox-where", ` in ${conversationTitle(state.conversations.get(conversation.id) ?? conversation).replace(/-/g, "\u2011")}`);
+  return h("span", "inbox-where", ` in\u00a0${conversationTitle(state.conversations.get(conversation.id) ?? conversation).replace(/-/g, "\u2011")}`);
 }
 
 /** Fetches the counts for the button, and the list when the Inbox is open. */

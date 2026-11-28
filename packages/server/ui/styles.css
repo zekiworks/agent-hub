@@ -3990,6 +3990,11 @@ ul.md-list ul.md-list { list-style: circle; }
   font-size: 16px;
 }
 
+/* The field's focus ring clear of Cancel / Save under it (demo review D7: they nearly touched). */
+.ask-dialog .dialog-actions {
+  margin-top: 16px;
+}
+
 .group-choices {
   list-style: none;
   margin: 0 0 14px;
@@ -5803,6 +5808,16 @@ ul.md-list ul.md-list { list-style: circle; }
 
 .answer-toast-text.expanded {
   -webkit-line-clamp: unset;
+}
+
+/* Too little room above the message box (the phone keyboard is up): who wrote where, one line, ✕ (toast.ts fit). */
+.answer-toasts-tight .answer-toast-row {
+  display: none;
+}
+
+.answer-toasts-tight .answer-toast-text,
+.answer-toasts-tight .answer-toast-text.expanded {
+  -webkit-line-clamp: 1;
 }
 
 /* Phones: across the screen just below the conversation's two-row header (it ends at ~101 px) and ending above the

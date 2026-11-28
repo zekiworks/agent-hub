@@ -56,7 +56,7 @@ function place(position: Position | undefined): void {
   if (!box) return;
   if (!position) {
     box.style.left = box.style.top = box.style.right = box.style.maxHeight = "";
-    return;
+    return fit();
   }
   // The visible part of the page: on phones the keyboard shrinks only the visual viewport (codex-ui #10841).
   const vv = window.visualViewport;
@@ -74,6 +74,22 @@ function place(position: Position | undefined): void {
   box.style.left = `${Math.round(Math.min(Math.max(position.x, left + 8), maxX))}px`;
   box.style.top = `${Math.round(Math.min(Math.max(position.y, top + 8), maxY))}px`;
   box.style.right = "auto";
+  fit();
+}
+
+/**
+ * With the phone keyboard up there is often no room for a whole banner above the message box: it was cut to a strip,
+ * its text half shown and its buttons gone (Ümit #18110). Then the banners show only who wrote where, one line of the
+ * text and ✕, whole; a tap still opens the message. They grow back when the room returns (keyboard closed).
+ */
+function fit(): void {
+  if (!box) return;
+  box.classList.remove("answer-toasts-tight");
+  const vv = window.visualViewport;
+  const bottom = vv ? vv.offsetTop + vv.height : innerHeight;
+  const composerTop = dom.composer.getBoundingClientRect().top || bottom;
+  const room = Math.min(bottom, composerTop) - box.getBoundingClientRect().top - 8;
+  if (box.scrollHeight > room) box.classList.add("answer-toasts-tight");
 }
 
 /**
